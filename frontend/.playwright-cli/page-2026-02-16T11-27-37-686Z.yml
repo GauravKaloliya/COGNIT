@@ -1,7 +1,0 @@
-- generic [ref=e5]:
-  - img "Cute full body dog illustration" [ref=e7]
-  - heading "404" [level=1] [ref=e40] [cursor=pointer]
-  - heading "Page Not Found" [level=2] [ref=e41]
-  - paragraph [ref=e42]: Oops! The page you're looking for doesn't exist.
-  - button "Go Home" [ref=e44] [cursor=pointer]
-  - generic [ref=e45]: Created by Gaurav Kaloliya

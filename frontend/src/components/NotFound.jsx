@@ -1,11 +1,18 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getApiUrl } from '../utils/apiBase';
 
 export default function NotFound() {
   const navigate = useNavigate();
 
   return (
     <div className="app">
+      <header className="header">
+        <div className="brand">
+          <img src={getApiUrl('/api/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
+          <h1>C.O.G.N.I.T.</h1>
+        </div>
+      </header>
       <div className="panel">
         <div className="page-hero">
           <div className="not-found-dog">

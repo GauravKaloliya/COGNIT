@@ -238,6 +238,25 @@ body {
   align-items: center;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.app-logo {
+  height: clamp(56px, 8vw, 96px);
+  width: auto;
+  display: block;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  image-rendering: -webkit-optimize-contrast;
+}
+
+body.dark .app-logo {
+  border-color: var(--border);
+}
+
 /* Status Dot / Badge */
 .status-dot {
   display: inline-flex;
@@ -713,10 +732,10 @@ textarea {
   color: var(--muted);
   font-weight: var(--font-normal);
   text-align: left;
-  padding: var(--space-2) var(--space-3);
-  background: var(--panel);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  border: none;
   line-height: var(--leading-relaxed);
 }
 

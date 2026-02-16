@@ -585,7 +585,8 @@ export default function App() {
     <ErrorBoundary onError={() => addToast("Unexpected error occurred.", "error")}>
       <div className="app">
         <header className="header">
-          <div>
+          <div className="brand">
+            <img src={getApiUrl('/api/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
             <h1>C.O.G.N.I.T.</h1>
             {isTaskPage && (
               <p className="subtitle">Describe each image with as much detail as possible</p>

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import contextmanager
 
-from flask import Flask, jsonify, request, send_from_directory, abort, g, render_template
+from flask import Flask, jsonify, request, send_from_directory, send_file, abort, g, render_template
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -19,6 +19,7 @@ from sqlalchemy.pool import QueuePool, NullPool
 BASE_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = BASE_DIR / "images"
 DATA_DIR = BASE_DIR / "data"
+LOGO_DIR = BASE_DIR.parent / "images"
 
 MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
@@ -782,6 +783,10 @@ def serve_image(image_id):
         return send_from_directory(IMAGES_DIR, image_id, mimetype='image/svg+xml')
     return send_from_directory(IMAGES_DIR, image_id)
 
+@app.route("/api/logo")
+def serve_logo():
+    return send_file(LOGO_DIR / "cognit_logo.png", mimetype='image/png')
+
 
 @app.route("/api/submit", methods=["POST"])
 @limiter.limit("60 per minute")
@@ -1159,4 +1164,3 @@ def serve_api_docs():
 @track_performance
 def get_api_docs():
     return jsonify(_get_api_documentation())
-
