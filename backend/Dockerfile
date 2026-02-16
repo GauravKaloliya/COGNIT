@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -26,5 +27,8 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/api/health || exit 1
 
-# Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "--error-logfile", "-", "--log-level", "info", "--access-logformat", "%(m)s %(U)s %(s)s %(L)ss", "app:app"]
+# Run the application with Gunicorn
+# Production-optimized Gunicorn configuration for Vercel container deployment
+# Uses gunicorn.conf.py for configuration management
+# Configuration can be overridden via environment variables
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]

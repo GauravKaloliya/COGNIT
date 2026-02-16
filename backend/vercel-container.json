@@ -1,0 +1,6 @@
+{
+  "buildCommand": "docker build -t cognit-backend .",
+  "outputDirectory": ".",
+  "framework": null,
+  "devCommand": "gunicorn --bind 0.0.0.0:5000 --reload --workers 1 --threads 4 --timeout 60 --access-logfile - --error-logfile - --log-level debug app:app"
+}

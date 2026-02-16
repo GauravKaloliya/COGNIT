@@ -6,6 +6,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app
 
-# For Vercel serverless function deployment
-# Vercel will automatically detect and use the app object
+# Vercel serverless function handler
+# This handler is used when deploying as a Vercel serverless function
+def handler(event, context):
+    """
+    Vercel serverless function handler.
+    Vercel will automatically detect and call this function.
+    """
+    return app
+
+# Export the Flask app for Vercel
+# Vercel's Python runtime will use this as the default handler
 app = app
