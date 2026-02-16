@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="Moonlit Meadow">
+  <defs>
+    <linearGradient id="sky-10" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d4fc79" />
+      <stop offset="100%" stop-color="#ffffff" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#sky-10)" />
+  <circle cx="320" cy="70" r="32" fill="#81c784" opacity="0.85" />
+  <path d="M0 210 Q80 160 160 190 T320 180 T400 200 V300 H0 Z" fill="#ffe082" />
+  <path d="M0 235 Q100 260 200 240 T400 250 V300 H0 Z" fill="#4fc3f7" opacity="0.85" />
+  <path d="M60 190 L120 110 L180 190 Z" fill="#81c784" opacity="0.75" />
+  <path d="M160 200 L240 120 L320 200 Z" fill="#ffffff" opacity="0.4" />
+  <text x="24" y="40" font-family="'Segoe UI', sans-serif" font-size="18" fill="#283593" opacity="0.9">Moonlit Meadow</text>
+</svg>

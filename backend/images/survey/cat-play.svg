@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Background -->
+  <rect width="400" height="400" fill="#fff5f7"/>
+  
+  <!-- Sun -->
+  <circle cx="340" cy="60" r="35" fill="#ffd93d"/>
+  
+  <!-- Cat Body -->
+  <ellipse cx="200" cy="280" rx="80" ry="60" fill="#ffb5c5"/>
+  
+  <!-- Cat Head -->
+  <circle cx="200" cy="180" r="70" fill="#ffb5c5"/>
+  
+  <!-- Ears -->
+  <polygon points="150,130 170,80 190,130" fill="#ffb5c5"/>
+  <polygon points="210,130 230,80 250,130" fill="#ffb5c5"/>
+  <polygon points="155,125 170,95 185,125" fill="#ff8fa3"/>
+  <polygon points="215,125 230,95 245,125" fill="#ff8fa3"/>
+  
+  <!-- Eyes -->
+  <ellipse cx="175" cy="175" rx="15" ry="18" fill="white"/>
+  <ellipse cx="225" cy="175" rx="15" ry="18" fill="white"/>
+  <circle cx="175" cy="178" r="10" fill="#4a4a4a"/>
+  <circle cx="225" cy="178" r="10" fill="#4a4a4a"/>
+  <circle cx="178" cy="175" r="4" fill="white"/>
+  <circle cx="228" cy="175" r="4" fill="white"/>
+  
+  <!-- Nose -->
+  <ellipse cx="200" cy="200" rx="8" ry="5" fill="#ff8fa3"/>
+  
+  <!-- Mouth -->
+  <path d="M 200,205 Q 190,215 180,210" stroke="#4a4a4a" stroke-width="2" fill="none"/>
+  <path d="M 200,205 Q 210,215 220,210" stroke="#4a4a4a" stroke-width="2" fill="none"/>
+  
+  <!-- Whiskers -->
+  <line x1="160" y1="195" x2="120" y2="185" stroke="#4a4a4a" stroke-width="2"/>
+  <line x1="160" y1="200" x2="120" y2="200" stroke="#4a4a4a" stroke-width="2"/>
+  <line x1="160" y1="205" x2="120" y2="215" stroke="#4a4a4a" stroke-width="2"/>
+  <line x1="240" y1="195" x2="280" y2="185" stroke="#4a4a4a" stroke-width="2"/>
+  <line x1="240" y1="200" x2="280" y2="200" stroke="#4a4a4a" stroke-width="2"/>
+  <line x1="240" y1="205" x2="280" y2="215" stroke="#4a4a4a" stroke-width="2"/>
+  
+  <!-- Cheeks -->
+  <ellipse cx="155" cy="195" rx="12" ry="8" fill="#ffccd5" opacity="0.7"/>
+  <ellipse cx="245" cy="195" rx="12" ry="8" fill="#ffccd5" opacity="0.7"/>
+  
+  <!-- Paws -->
+  <ellipse cx="140" cy="330" rx="25" ry="18" fill="#ffb5c5"/>
+  <ellipse cx="260" cy="330" rx="25" ry="18" fill="#ffb5c5"/>
+  
+  <!-- Tail -->
+  <path d="M 280,280 Q 330,250 340,200 Q 350,180 320,170" stroke="#ffb5c5" stroke-width="25" fill="none" stroke-linecap="round"/>
+  
+  <!-- Ball of yarn -->
+  <circle cx="320" cy="300" r="35" fill="#a8e6cf"/>
+  <ellipse cx="300" cy="280" rx="20" ry="8" fill="#a8e6cf"/>
+  <ellipse cx="295" cy="310" rx="15" ry="6" fill="#a8e6cf"/>
+  
+  <!-- Hearts decoration -->
+  <text x="80" y="350" font-size="24" fill="#ff8fa3">💕</text>
+  <text x="300" y="100" font-size="20" fill="#ff8fa3">✨</text>
+</svg>

@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Sky gradient background -->
+  <rect width="400" height="400" fill="#e8f5ff"/>
+  
+  <!-- Grass ground -->
+  <ellipse cx="200" cy="380" rx="220" ry="60" fill="#a8e6cf"/>
+  
+  <!-- Flowers in garden -->
+  <g transform="translate(50, 340)">
+    <line x1="0" y1="0" x2="0" y2="30" stroke="#4ade80" stroke-width="3"/>
+    <circle cx="0" cy="-10" r="12" fill="#ff8fa3"/>
+    <circle cx="0" cy="-10" r="5" fill="#ffd93d"/>
+  </g>
+  <g transform="translate(90, 350)">
+    <line x1="0" y1="0" x2="0" y2="25" stroke="#4ade80" stroke-width="3"/>
+    <circle cx="0" cy="-8" r="10" fill="#c7b8ff"/>
+    <circle cx="0" cy="-8" r="4" fill="#ffd93d"/>
+  </g>
+  <g transform="translate(310, 345)">
+    <line x1="0" y1="0" x2="0" y2="28" stroke="#4ade80" stroke-width="3"/>
+    <circle cx="0" cy="-10" r="11" fill="#ff8fa3"/>
+    <circle cx="0" cy="-10" r="4" fill="#ffd93d"/>
+  </g>
+  <g transform="translate(350, 355)">
+    <line x1="0" y1="0" x2="0" y2="20" stroke="#4ade80" stroke-width="3"/>
+    <circle cx="0" cy="-8" r="9" fill="#a8e6cf"/>
+    <circle cx="0" cy="-8" r="3" fill="#ffd93d"/>
+  </g>
+  
+  <!-- Butterfly -->
+  <g transform="translate(280, 120)">
+    <ellipse cx="0" cy="0" rx="12" ry="18" fill="#c7b8ff"/>
+    <ellipse cx="0" cy="0" rx="12" ry="18" fill="#c7b8ff" transform="rotate(60)"/>
+    <ellipse cx="0" cy="0" rx="12" ry="18" fill="#c7b8ff" transform="rotate(-60)"/>
+    <ellipse cx="0" cy="0" rx="5" ry="10" fill="#4a4a4a"/>
+  </g>
+  
+  <!-- Sun rays -->
+  <circle cx="340" cy="60" r="30" fill="#ffd93d"/>
+  
+  <!-- Cloud -->
+  <ellipse cx="80" cy="80" rx="40" ry="22" fill="#fff"/>
+  <ellipse cx="115" cy="75" rx="35" ry="25" fill="#fff"/>
+  <ellipse cx="95" cy="62" rx="28" ry="20" fill="#fff"/>
+  
+  <!-- Bunny Body -->
+  <ellipse cx="200" cy="300" rx="65" ry="55" fill="#fff5e6"/>
+  
+  <!-- Bunny Head -->
+  <circle cx="200" cy="200" r="55" fill="#fff5e6"/>
+  
+  <!-- Ears -->
+  <ellipse cx="165" cy="110" rx="20" ry="60" fill="#fff5e6"/>
+  <ellipse cx="235" cy="110" rx="20" ry="60" fill="#fff5e6"/>
+  <ellipse cx="165" cy="115" rx="10" ry="45" fill="#ffb5c5"/>
+  <ellipse cx="235" cy="115" rx="10" ry="45" fill="#ffb5c5"/>
+  
+  <!-- Cheeks -->
+  <ellipse cx="160" cy="210" rx="12" ry="9" fill="#ffb5c5" opacity="0.7"/>
+  <ellipse cx="240" cy="210" rx="12" ry="9" fill="#ffb5c5" opacity="0.7"/>
+  
+  <!-- Eyes -->
+  <ellipse cx="180" cy="195" rx="12" ry="14" fill="#4a4a4a"/>
+  <ellipse cx="220" cy="195" rx="12" ry="14" fill="#4a4a4a"/>
+  <circle cx="183" cy="192" r="4" fill="white"/>
+  <circle cx="223" cy="192" r="4" fill="white"/>
+  
+  <!-- Nose -->
+  <ellipse cx="200" cy="215" rx="7" ry="5" fill="#ffb5c5"/>
+  
+  <!-- Mouth -->
+  <path d="M 200,220 Q 192,230 185,225" stroke="#4a4a4a" stroke-width="2" fill="none"/>
+  <path d="M 200,220 Q 208,230 215,225" stroke="#4a4a4a" stroke-width="2" fill="none"/>
+  
+  <!-- Whiskers -->
+  <line x1="170" y1="210" x2="135" y2="200" stroke="#ddd" stroke-width="1.5"/>
+  <line x1="170" y1="215" x2="135" y2="215" stroke="#ddd" stroke-width="1.5"/>
+  <line x1="170" y1="220" x2="135" y2="230" stroke="#ddd" stroke-width="1.5"/>
+  <line x1="230" y1="210" x2="265" y2="200" stroke="#ddd" stroke-width="1.5"/>
+  <line x1="230" y1="215" x2="265" y2="215" stroke="#ddd" stroke-width="1.5"/>
+  <line x1="230" y1="220" x2="265" y2="230" stroke="#ddd" stroke-width="1.5"/>
+  
+  <!-- Front paws -->
+  <ellipse cx="155" cy="340" rx="18" ry="14" fill="#fff5e6"/>
+  <ellipse cx="245" cy="340" rx="18" ry="14" fill="#fff5e6"/>
+  <ellipse cx="155" cy="340" rx="8" ry="6" fill="#ffb5c5"/>
+  <ellipse cx="245" cy="340" rx="8" ry="6" fill="#ffb5c5"/>
+  
+  <!-- Cotton tail -->
+  <circle cx="265" cy="300" r="18" fill="white"/>
+  
+  <!-- Carrot -->
+  <g transform="translate(290, 310) rotate(-15)">
+    <polygon points="0,0 15,60 -15,60" fill="#ff6b35"/>
+    <polygon points="0,-20 -8,0 8,0" fill="#4ade80"/>
+    <line x1="0" y1="-20" x2="-5" y2="-28" stroke="#4ade80" stroke-width="2"/>
+    <line x1="0" y1="-20" x2="0" y2="-30" stroke="#4ade80" stroke-width="2"/>
+    <line x1="0" y1="-20" x2="5" y2="-28" stroke="#4ade80" stroke-width="2"/>
+  </g>
+  
+  <!-- Decorative elements -->
+  <text x="30" y="150" font-size="22" fill="#c7b8ff">🦋</text>
+  <text x="50" y="300" font-size="18" fill="#ff8fa3">🌸</text>
+  <text x="320" y="280" font-size="20" fill="#a8e6cf">🥕</text>
+</svg>

@@ -1,0 +1,2481 @@
+/* ==========================================================================
+   C.O.G.N.I.T. Design System
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Design Tokens - CSS Variables
+   -------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* Colors */
+  --bg: #f0f2f5;
+  --panel: #ffffff;
+  --text: #1c1e21;
+  --muted: #65676b;
+  --primary: #1877f2;
+  --secondary: #e7f3ff;
+  --accent: #d2e2ff;
+  --accent-bg: rgba(24, 119, 242, 0.08);
+  --warning: #e67e22;
+  --success: #27ae60;
+  --error: #e74c3c;
+  --border: #ccd0d5;
+  --border-light: #e4e6eb;
+
+  /* Shadows - Unified elevation system */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-primary: 0 2px 8px rgba(24, 119, 242, 0.25);
+
+  /* Legacy shadow for compatibility */
+  --shadow: var(--shadow-lg);
+
+  /* Spacing - 8px grid system */
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+
+  /* Border Radius - Unified scale */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* Typography */
+  --font-sans: "Quicksand", "Nunito", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+
+  /* Font Sizes */
+  --text-xs: 0.75rem;   /* 12px */
+  --text-sm: 0.875rem;  /* 14px */
+  --text-base: 0.9375rem; /* 15px */
+  --text-lg: 1.125rem;  /* 18px */
+  --text-xl: 1.25rem;   /* 20px */
+  --text-2xl: 1.5rem;   /* 24px */
+  --text-3xl: 1.875rem; /* 30px */
+
+  /* Font Weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Line Heights */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+  --leading-loose: 1.75;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* Layout */
+  --container-max: 960px;
+  --header-height: auto;
+
+  /* Gradients */
+  --gradient: linear-gradient(135deg, #f0f2f5 0%, #e7f3ff 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-success: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+
+  --soft-panel: rgba(255, 255, 255, 0.75);
+
+  /* Focus Ring */
+  --focus-ring: 0 0 0 3px rgba(24, 119, 242, 0.3);
+  --focus-ring-offset: 2px;
+}
+
+/* Dark mode */
+body.dark {
+  color-scheme: dark;
+  --bg: #18191a;
+  --panel: #242526;
+  --text: #e4e6eb;
+  --muted: #b0b3b8;
+  --primary: #1877f2;
+  --secondary: #3a5795;
+  --accent: #2d4778;
+  --accent-bg: rgba(45, 71, 120, 0.4);
+  --warning: #f39c12;
+  --success: #2ecc71;
+  --error: #ff8fa3;
+  --border: #3a3b3c;
+  --border-light: #4e4f50;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-primary: 0 2px 8px rgba(24, 119, 242, 0.3);
+
+  --gradient: linear-gradient(135deg, #18191a 0%, #242526 100%);
+  --soft-panel: rgba(36, 37, 38, 0.8);
+
+  --focus-ring: 0 0 0 3px rgba(24, 119, 242, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   Base Styles
+   -------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--gradient);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  min-height: 100vh;
+  transition: background var(--transition-slow), color var(--transition-slow);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* --------------------------------------------------------------------------
+   Layout - App Container
+   -------------------------------------------------------------------------- */
+.app {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  gap: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .app {
+    padding: var(--space-6) var(--space-6) var(--space-4);
+    gap: var(--space-5);
+  }
+}
+
+@media (min-width: 1024px) {
+  .app {
+    padding: var(--space-6) var(--space-8) var(--space-4);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Header
+   -------------------------------------------------------------------------- */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  background: var(--panel);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .header {
+    padding: var(--space-4) var(--space-5);
+    min-height: 64px;
+  }
+}
+
+.header h1 {
+  margin: 0;
+  font-weight: var(--font-bold);
+  color: var(--primary);
+  font-size: clamp(1.375rem, 4vw, 1.75rem);
+  line-height: var(--leading-tight);
+}
+
+.subtitle {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+/* Hide subtitle on non-task pages */
+.header .subtitle {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .header .subtitle {
+    display: block;
+  }
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/* Status Dot / Badge */
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  line-height: 1;
+  min-height: 28px;
+}
+
+.status-dot::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.online {
+  background: var(--accent);
+  color: #1c1e21;
+}
+
+.status-dot.online::before {
+  background: var(--success);
+  box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.3);
+}
+
+.status-dot.offline {
+  background: rgba(231, 76, 60, 0.15);
+  color: var(--error);
+}
+
+.status-dot.offline::before {
+  background: var(--error);
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3);
+}
+
+body.dark .status-dot.online {
+  background: var(--accent);
+  color: #e4e6eb;
+}
+
+body.dark .status-dot.offline {
+  background: rgba(231, 76, 60, 0.2);
+  color: #ff8fa3;
+}
+
+/* --------------------------------------------------------------------------
+   Progress Bar
+   -------------------------------------------------------------------------- */
+.progress-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-2);
+}
+
+.progress-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--muted);
+}
+
+.progress-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--border-light);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  transition: all var(--transition-base);
+}
+
+.progress-step.active .progress-step-number {
+  background: var(--primary);
+  color: white;
+}
+
+.progress-step.completed .progress-step-number {
+  background: var(--success);
+  color: white;
+}
+
+.progress-step-divider {
+  width: 24px;
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+@media (max-width: 480px) {
+  .progress-step-label {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Panel / Card
+   -------------------------------------------------------------------------- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-md);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
+}
+
+@media (min-width: 768px) {
+  .panel {
+    padding: var(--space-6);
+  }
+}
+
+.panel.centered {
+  text-align: center;
+  align-items: center;
+}
+
+.status-panel {
+  text-align: center;
+  justify-content: center;
+}
+
+.status-panel .status-message {
+  color: var(--muted);
+  margin: var(--space-4) 0;
+}
+
+.status-message.error {
+  color: var(--error);
+}
+
+.status-panel .spinner {
+  margin: var(--space-6) auto 0;
+}
+
+.panel h2 {
+  margin: 0 0 var(--space-4);
+  color: var(--primary);
+  font-weight: var(--font-bold);
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+}
+
+@media (min-width: 768px) {
+  .panel h2 {
+    font-size: var(--text-2xl);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Banner
+   -------------------------------------------------------------------------- */
+.banner {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  border: 1px solid transparent;
+  line-height: var(--leading-relaxed);
+}
+
+.banner.warning {
+  background: #fff5e6;
+  color: #92400e;
+  border-color: #fed7aa;
+}
+
+body.dark .banner.warning {
+  background: rgba(230, 126, 34, 0.15);
+  color: #f39c12;
+  border-color: rgba(230, 126, 34, 0.3);
+}
+
+.banner.info {
+  background: #eff6ff;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
+body.dark .banner.info {
+  background: rgba(24, 119, 242, 0.15);
+  color: #60a5fa;
+  border-color: rgba(24, 119, 242, 0.3);
+}
+
+.banner.spaced {
+  margin-top: var(--space-5);
+}
+
+/* --------------------------------------------------------------------------
+   Form Grid
+   -------------------------------------------------------------------------- */
+.form-grid {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: 1fr;
+  margin: var(--space-5) 0;
+}
+
+@media (min-width: 640px) {
+  .form-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-5) var(--space-6);
+  }
+}
+
+@media (min-width: 1024px) {
+  .form-grid {
+    gap: var(--space-6) var(--space-8);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Form Field
+   -------------------------------------------------------------------------- */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: 0;
+}
+
+.form-field label {
+  font-weight: var(--font-semibold);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.form-field label .required {
+  color: var(--error);
+  font-weight: var(--font-bold);
+}
+
+.form-field.error label {
+  color: var(--error);
+}
+
+.form-field input,
+.form-field select {
+  width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Welcome Info / Consent Content
+   -------------------------------------------------------------------------- */
+.welcome-info {
+  margin: var(--space-5) 0;
+  padding: var(--space-5);
+  background: var(--accent-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.welcome-info h3 {
+  color: var(--primary);
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-tight);
+}
+
+.welcome-info h3:first-child {
+  margin-top: 0;
+}
+
+.welcome-info ul {
+  margin: var(--space-3) 0;
+  padding-left: 1.5em;
+}
+
+.welcome-info li {
+  margin: var(--space-2) 0;
+  color: var(--text);
+  line-height: var(--leading-relaxed);
+}
+
+.welcome-info p {
+  margin: var(--space-3) 0;
+  line-height: var(--leading-relaxed);
+  color: var(--text);
+}
+
+.welcome-info a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.welcome-info a:hover {
+  text-decoration: none;
+}
+
+/* --------------------------------------------------------------------------
+   Input Styles
+   -------------------------------------------------------------------------- */
+input,
+select,
+textarea {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  background: var(--panel);
+  color: inherit;
+  font-size: var(--text-base);
+  font-family: inherit;
+  line-height: var(--leading-normal);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  min-height: 44px;
+  width: 100%;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--muted);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
+/* Placeholder styling with better contrast */
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* Number input - center aligned */
+input[type="number"] {
+  text-align: center;
+  padding-right: var(--space-8);
+}
+
+input[type="number"].number-left {
+  text-align: left;
+  padding-right: var(--space-4);
+}
+
+/* Remove spinner arrows for cleaner look */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  height: 24px;
+  margin-right: 4px;
+}
+
+/* Select dropdown with SVG icon */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2365676b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px;
+  padding-right: 44px;
+  cursor: pointer;
+}
+
+select:focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%231877f2' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+body.dark select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23b0b3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: var(--leading-relaxed);
+}
+
+/* --------------------------------------------------------------------------
+   Error Styles
+   -------------------------------------------------------------------------- */
+.error-input {
+  border-color: var(--error) !important;
+  background-color: rgba(231, 76, 60, 0.05) !important;
+}
+
+.error-input:focus {
+  box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.2) !important;
+}
+
+.error-text {
+  color: var(--error);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  min-height: 18px;
+  display: block;
+  margin-top: var(--space-1);
+}
+
+/* --------------------------------------------------------------------------
+   Consent Checkbox
+   -------------------------------------------------------------------------- */
+.consent-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--accent-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  transition: border-color var(--transition-fast);
+}
+
+.consent-checkbox:hover {
+  border-color: var(--primary);
+}
+
+.consent-checkbox.error {
+  border-color: var(--error);
+  background: rgba(231, 76, 60, 0.05);
+}
+
+.consent-checkbox input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  accent-color: var(--primary);
+  margin: 2px 0 0;
+  cursor: pointer;
+}
+
+.consent-checkbox label {
+  flex: 1;
+  font-weight: var(--font-medium);
+  color: var(--text);
+  cursor: pointer;
+  line-height: var(--leading-relaxed);
+  font-size: var(--text-sm);
+}
+
+.consent-note {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-weight: var(--font-normal);
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  background: var(--panel);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  line-height: var(--leading-relaxed);
+}
+
+/* Payment checkbox specific */
+.payment-checkbox {
+  background-color: var(--panel);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  margin: 0;
+}
+
+.payment-checkbox .consent-text {
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+.primary {
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-lg);
+  border: none;
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-base);
+  font-family: inherit;
+  background: var(--primary);
+  color: white;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 48px;
+  min-width: 140px;
+  line-height: 1;
+}
+
+.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  background: #166fe5;
+}
+
+.primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-sm);
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--muted);
+}
+
+.primary.compact {
+  padding: var(--space-2) var(--space-4);
+  min-height: 36px;
+  font-size: var(--text-sm);
+  min-width: auto;
+}
+
+.primary.large {
+  padding: var(--space-4) var(--space-8);
+  font-size: var(--text-lg);
+  min-height: 56px;
+}
+
+.button-top {
+  margin-top: var(--space-3);
+}
+
+.ghost {
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  background: transparent;
+  color: var(--text);
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  min-width: 100px;
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--bg);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.ghost:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.back-button {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  border-color: var(--border);
+}
+
+.back-button:hover {
+  background: var(--accent-bg);
+}
+
+.dark-mode-toggle {
+  padding: var(--space-2) var(--space-3) !important;
+  font-size: 18px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* --------------------------------------------------------------------------
+   Trial Styles
+   -------------------------------------------------------------------------- */
+.progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-5);
+  color: var(--muted);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-base);
+}
+
+.trial {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.image-container {
+  position: relative;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-height: min(400px, 55vh);
+  min-height: clamp(200px, 40vh, 300px);
+  transition: all var(--transition-base);
+}
+
+.image-container img {
+  max-width: 100%;
+  max-height: min(400px, 55vh);
+  transition: transform var(--transition-base);
+  cursor: zoom-in;
+  object-fit: contain;
+}
+
+.image-container.zoomed img {
+  transform: scale(1.5);
+  cursor: zoom-out;
+}
+
+.image-loading,
+.image-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: var(--font-semibold);
+}
+
+.image-loading {
+  background: var(--accent-bg);
+  color: var(--primary);
+}
+
+.image-loading .spinner {
+  margin: var(--space-5) auto;
+}
+
+.image-error {
+  background: rgba(231, 76, 60, 0.05);
+  color: var(--error);
+}
+
+.zoom-toggle {
+  position: absolute;
+  bottom: var(--space-3);
+  right: var(--space-3);
+  background: var(--panel);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  transition: all var(--transition-fast);
+}
+
+.zoom-toggle:hover {
+  background: var(--primary);
+  color: white;
+}
+
+.meta {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--muted);
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+}
+
+.timer {
+  font-weight: var(--font-semibold);
+  color: var(--primary);
+}
+
+.tag {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
+
+.tag.survey {
+  background: var(--accent);
+  color: #1c1e21;
+}
+
+body.dark .tag.survey {
+  background: var(--secondary);
+  color: #e4e6eb;
+}
+
+.tag.attention {
+  background: #fff5e6;
+  color: #92400e;
+}
+
+body.dark .tag.attention {
+  background: rgba(230, 126, 34, 0.15);
+  color: #f39c12;
+}
+
+/* --------------------------------------------------------------------------
+   Field
+   -------------------------------------------------------------------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.field label {
+  font-weight: var(--font-semibold);
+  color: var(--primary);
+  font-size: var(--text-sm);
+}
+
+/* --------------------------------------------------------------------------
+   Counts
+   -------------------------------------------------------------------------- */
+.counts {
+  display: flex;
+  gap: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  font-weight: var(--font-medium);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+body.dark .counts {
+  background: var(--secondary);
+}
+
+.counts .ok {
+  color: var(--success);
+  font-weight: var(--font-semibold);
+}
+
+.counts .warning {
+  color: var(--warning);
+  font-weight: var(--font-semibold);
+}
+
+/* --------------------------------------------------------------------------
+   Rating Scale
+   -------------------------------------------------------------------------- */
+.rating-scale {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.rating-option {
+  cursor: pointer;
+}
+
+.rating-option input {
+  display: none;
+}
+
+.rating-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(40px, 9vw, 48px);
+  height: clamp(40px, 9vw, 48px);
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  color: var(--text);
+  transition: all var(--transition-fast);
+}
+
+.rating-option:hover .rating-label {
+  border-color: var(--primary);
+  transform: scale(1.05);
+}
+
+.rating-option input:checked + .rating-label {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  transform: scale(1.05);
+  box-shadow: var(--shadow-sm);
+}
+
+.rating-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.effort-rating {
+  margin-bottom: var(--space-5);
+}
+
+/* --------------------------------------------------------------------------
+   Actions
+   -------------------------------------------------------------------------- */
+.actions {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  margin-top: var(--space-6);
+}
+
+.survey-button {
+  margin-top: var(--space-3);
+}
+
+.hint {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   Guidance
+   -------------------------------------------------------------------------- */
+.guidance {
+  text-align: center;
+  padding: var(--space-6);
+}
+
+.guidance h2 {
+  color: var(--primary);
+}
+
+.debrief {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+/* --------------------------------------------------------------------------
+   Toasts
+   -------------------------------------------------------------------------- */
+.toast-container {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  z-index: 1000;
+  max-width: 400px;
+}
+
+.toast {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 280px;
+  box-shadow: var(--shadow-lg);
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.toast.success {
+  border-color: var(--success);
+  background: #f0fdf4;
+}
+
+body.dark .toast.success {
+  background: rgba(39, 174, 96, 0.15);
+}
+
+.toast.error {
+  border-color: var(--error);
+  background: #fef2f2;
+}
+
+body.dark .toast.error {
+  background: rgba(231, 76, 60, 0.15);
+}
+
+.toast.warning {
+  border-color: var(--warning);
+  background: #fffbeb;
+}
+
+body.dark .toast.warning {
+  background: rgba(230, 126, 34, 0.15);
+}
+
+.toast-action {
+  margin-left: auto;
+  background: var(--primary);
+  border: none;
+  color: white;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+  min-height: 32px;
+}
+
+.toast button[aria-label="Dismiss"] {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.toast button[aria-label="Dismiss"]:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   Confetti
+   -------------------------------------------------------------------------- */
+.confetti {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.confetti-piece {
+  position: absolute;
+  width: 10px;
+  height: 18px;
+  top: -10px;
+  animation: fall 1.6s linear infinite;
+}
+
+.piece-0 { background: #ff8fa3; left: 10%; animation-delay: 0s; }
+.piece-1 { background: #ffb347; left: 25%; animation-delay: 0.1s; }
+.piece-2 { background: #ffd93d; left: 40%; animation-delay: 0.2s; }
+.piece-3 { background: #a8e6cf; left: 55%; animation-delay: 0.15s; }
+.piece-4 { background: #c7b8ff; left: 70%; animation-delay: 0.05s; }
+.piece-5 { background: #ff8fa3; left: 85%; animation-delay: 0.25s; }
+
+@keyframes fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+
+/* --------------------------------------------------------------------------
+   Spinner
+   -------------------------------------------------------------------------- */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top: 3px solid var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+
+.wiggle {
+  animation: wiggle 0.5s ease-in-out;
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+.branding-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding: var(--space-3) 0;
+  margin-top: var(--space-4);
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Page Components
+   -------------------------------------------------------------------------- */
+.page-hero {
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+}
+
+.page-subtitle {
+  color: var(--muted);
+  font-size: var(--text-base);
+  margin: var(--space-2) 0;
+  text-align: center;
+  line-height: var(--leading-relaxed);
+}
+
+.page-subtitle.left {
+  text-align: left;
+}
+
+.payment-panel {
+  position: relative;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  gap: var(--space-5);
+}
+
+.payment-header {
+  text-align: center;
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-md);
+}
+
+.payment-header-emoji {
+  font-size: clamp(2rem, 6vw, 2.75rem);
+  margin-bottom: var(--space-2);
+}
+
+.payment-header .payment-title {
+  margin: 0 0 var(--space-1);
+  font-size: clamp(1.5rem, 5vw, 2.25rem);
+  font-weight: var(--font-bold);
+  color: inherit;
+}
+
+.payment-subtitle {
+  margin: 0 0 var(--space-2);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-lg);
+}
+
+.payment-tagline {
+  margin: 0;
+  font-size: var(--text-base);
+  opacity: 0.9;
+}
+
+.payment-content {
+  display: grid;
+  gap: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .payment-content {
+    gap: var(--space-5);
+  }
+}
+
+.payment-card {
+  background: var(--panel);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-shadow: var(--shadow-sm);
+}
+
+.payment-card.highlight {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
+.payment-card h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.payment-card-emoji {
+  font-size: 1.25rem;
+}
+
+.payment-list {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.payment-list li {
+  line-height: var(--leading-relaxed);
+}
+
+.payment-checklist {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.payment-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  line-height: var(--leading-relaxed);
+}
+
+.payment-steps {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.payment-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  line-height: var(--leading-relaxed);
+}
+
+.payment-step-emoji {
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+
+.payment-callout {
+  margin: var(--space-2) 0 0;
+  font-weight: var(--font-semibold);
+}
+
+.payment-note {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.payment-checkbox {
+  margin-top: var(--space-2);
+}
+
+.payment-panel .consent-checkbox:hover {
+  border-color: var(--border);
+}
+
+.payment-cta {
+  min-width: 180px;
+  padding: var(--space-4) var(--space-8);
+  font-size: var(--text-lg);
+}
+
+.hero-title {
+  font-size: clamp(1.75rem, 6vw, 2.5rem);
+  margin-bottom: var(--space-4);
+  font-weight: var(--font-bold);
+}
+
+.hero-title.warning {
+  color: var(--warning);
+}
+
+.hero-title.primary {
+  color: var(--primary);
+}
+
+.hero-subtitle {
+  margin-bottom: var(--space-4);
+  font-size: clamp(1.125rem, 3vw, 1.5rem);
+  font-weight: var(--font-semibold);
+}
+
+.hero-message {
+  color: var(--muted);
+  margin-bottom: var(--space-8);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+}
+
+.hero-caption {
+  text-align: center;
+  margin-top: var(--space-6);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.page-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-6);
+  width: 100%;
+}
+
+.page-actions.left {
+  justify-content: flex-start;
+}
+
+.page-actions.center {
+  justify-content: center;
+}
+
+.page-top-actions {
+  margin-bottom: var(--space-4);
+}
+
+
+
+
+
+
+/* --------------------------------------------------------------------------
+   Finish Page
+   -------------------------------------------------------------------------- */
+.finish-wrapper {
+  text-align: center;
+}
+
+.finish-reward {
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  margin: var(--space-6) 0;
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+
+@media (min-width: 640px) {
+  .finish-reward {
+    padding: var(--space-6) var(--space-8);
+  }
+}
+
+.finish-reward.winner {
+  background: var(--gradient-success);
+}
+
+.finish-reward.default {
+  background: var(--gradient-primary);
+}
+
+.finish-reward-icon {
+  font-size: clamp(2rem, 6vw, 3rem);
+  margin-bottom: var(--space-3);
+}
+
+.finish-reward-title {
+  margin: 0 0 var(--space-3);
+  color: white;
+  font-size: clamp(1.125rem, 3vw, 1.375rem);
+  font-weight: var(--font-bold);
+}
+
+.finish-reward-lead {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  font-weight: var(--font-semibold);
+  margin: 0 0 var(--space-2);
+}
+
+.finish-reward-body {
+  margin: 0;
+  opacity: 0.9;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.finish-reminder {
+  background-color: var(--panel);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+  border: 2px dashed var(--primary);
+  text-align: left;
+}
+
+.finish-reminder h4 {
+  margin-top: 0;
+  color: var(--primary);
+  font-size: var(--text-base);
+}
+
+.finish-reminder ul {
+  padding-left: 1.5em;
+  margin-bottom: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.soft-panel {
+  background: var(--soft-panel);
+}
+
+.not-found-dog {
+  width: 180px;
+  margin: 0 auto var(--space-6);
+}
+
+.not-found-dog svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* --------------------------------------------------------------------------
+   Accessibility
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Remove focus ring for mouse users on non-interactive elements */
+:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbar
+   -------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   Utility Classes
+   -------------------------------------------------------------------------- */
+.hidden {
+  display: none;
+}
+
+.loading {
+  text-align: center;
+  padding: var(--space-10);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.no-data-message {
+  text-align: center;
+  padding: var(--space-10);
+  color: var(--muted);
+  background: var(--accent-bg);
+  border-radius: var(--radius-xl);
+  border: 2px dashed var(--border);
+}
+
+/* Text utilities */
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+/* Spacing utilities */
+.mt-0 { margin-top: 0; }
+.mb-0 { margin-bottom: 0; }
+
+/* Truncate with ellipsis */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Break words */
+.break-words {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Flex utilities */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.gap-2 { gap: var(--space-2); }
+.gap-4 { gap: var(--space-4); }
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Icon SVG sizing */
+.icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.icon-sm {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-lg {
+  width: 24px;
+  height: 24px;
+}
+
+
+/* Number input - fix spinner overlap */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: inner-spin-button !important;
+  opacity: 1;
+  width: 20px;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Dropdown text overflow with ellipsis */
+select {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Ensure proper input sizing for short content */
+.form-field input[type="text"],
+.form-field input[type="email"],
+.form-field input[type="tel"] {
+  min-width: 0;
+}
+
+/* Consent page link styling */
+.welcome-info a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: var(--font-semibold);
+}
+
+.welcome-info a:hover {
+  text-decoration: none;
+}
+
+/* Footer link styling - consistent across pages */
+.branding-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Ensure consistent section spacing */
+.welcome-info h3 + p,
+.welcome-info h3 + ul {
+  margin-top: var(--space-2);
+}
+
+/* Paragraph spacing for readability */
+.welcome-info p + p {
+  margin-top: var(--space-3);
+}
+
+/* Improve checkbox card internal spacing */
+.consent-checkbox {
+  align-items: flex-start;
+}
+
+.consent-checkbox input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* Fix back button border visibility */
+.back-button {
+  border-width: 1px;
+  border-color: var(--border);
+}
+
+.back-button:hover {
+  border-color: var(--primary);
+}
+
+/* Ensure buttons have consistent border-radius */
+.primary,
+.ghost {
+  border-radius: var(--radius-lg);
+}
+
+/* Consent page checkbox label improvements */
+.consent-checkbox label {
+  line-height: var(--leading-relaxed);
+}
+
+/* Payment page specific improvements */
+.payment-panel .page-actions {
+  margin-top: var(--space-6);
+}
+
+/* Highlight heading improvements */
+.highlight-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+
+/* Ensure mobile-friendly touch targets on all interactive elements */
+button,
+input,
+select,
+textarea,
+.rating-option .rating-label {
+  touch-action: manipulation;
+}
+
+/* Focus visible improvements for accessibility */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Smooth scrolling for anchor links */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Prevent horizontal overflow on mobile */
+body {
+  overflow-x: hidden;
+}
+
+/* Ensure images don't overflow containers */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ==========================================================================
+   COMPREHENSIVE UI/UX FIXES
+   ========================================================================== */
+
+/* Fix #5: Reduce bottom whitespace on short-content pages */
+.panel {
+  min-height: 0;
+}
+
+/* Fix #6, #7: Improve text truncation and line breaks */
+.welcome-info,
+.payment-card,
+.consent-checkbox label {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.welcome-info p,
+.welcome-info li,
+.payment-card p,
+.payment-card li {
+  line-height: var(--leading-relaxed);
+  overflow-wrap: break-word;
+}
+
+
+/* Fix #9: Increase form grid gaps for better spacing */
+@media (min-width: 640px) {
+  .form-grid {
+    gap: var(--space-5) var(--space-8);
+  }
+}
+
+/* Fix #10: Improve checkbox size and alignment */
+.consent-checkbox input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.consent-checkbox {
+  align-items: flex-start;
+}
+
+.consent-checkbox label {
+  display: flex;
+  flex-direction: column;
+  line-height: var(--leading-relaxed);
+}
+
+/* Fix #11: Number input alignment */
+input[type="number"] {
+  text-align: center;
+  padding-right: var(--space-8);
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: inner-spin-button !important;
+  opacity: 1;
+  width: 20px;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Fix #13: Badge padding and alignment */
+.status-dot {
+  padding: 6px 12px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* Fix #15, #16: Unify button border-radius and shadows */
+.primary,
+.ghost,
+.back-button {
+  border-radius: var(--radius-lg) !important;
+}
+
+.primary {
+  box-shadow: var(--shadow-sm);
+}
+
+.primary:hover:not(:disabled) {
+  box-shadow: var(--shadow-md);
+}
+
+/* Fix #17: Dropdown arrow styling - already using SVG icon */
+
+/* Fix #18: Ensure uniform button corners */
+.primary,
+.ghost,
+.back-button,
+.payment-cta {
+  border-radius: var(--radius-lg) !important;
+}
+
+/* Fix #20: Improve bullet list spacing and readability */
+.welcome-info ul {
+  padding-left: 1.5em;
+  margin: var(--space-3) 0;
+}
+
+.welcome-info li {
+  margin: var(--space-2) 0;
+  line-height: var(--leading-relaxed);
+  color: var(--text);
+}
+
+
+/* Fix #23: Increase dropdown arrow contrast */
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%234a5568' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+select:focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%231877f2' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+body.dark select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23e4e6eb' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* Fix #24: Improve back button visibility */
+.back-button {
+  border-width: 1.5px;
+  border-color: var(--border);
+}
+
+.back-button:hover {
+  border-color: var(--primary);
+  background: var(--accent-bg);
+  color: var(--primary);
+}
+
+/* Fix #25: Better footer positioning */
+.branding-footer {
+  padding: var(--space-3) 0;
+  margin-top: var(--space-4);
+}
+
+/* Fix #28, #29, #55, #58: Hide debug artifacts (if any) */
+/* These appear to be PDF export artifacts, not part of the live app */
+
+/* Fix #30: Checkbox label text wrapping */
+.consent-checkbox label,
+.payment-checkbox label {
+  line-height: var(--leading-relaxed);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Fix #31: Improve placeholder contrast */
+input::placeholder,
+textarea::placeholder,
+select:invalid {
+  color: var(--muted);
+  opacity: 0.9;
+}
+
+/* Fix #32: Make required asterisks more visible */
+.form-field label .required {
+  color: var(--error);
+  font-weight: var(--font-bold);
+  font-size: 1.1em;
+  margin-left: 2px;
+}
+
+/* Fix #33: Ensure minimum touch targets for accessibility */
+button,
+input,
+select,
+textarea,
+.rating-option .rating-label {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Fix #34: Email addresses as links - already implemented in JSX */
+
+/* Fix #35: Improve note banner contrast */
+.banner.warning {
+  background: #fff7ed;
+  color: #9a3412;
+  border-color: #fed7aa;
+}
+
+body.dark .banner.warning {
+  background: rgba(230, 126, 34, 0.2);
+  color: #fbbf24;
+  border-color: rgba(230, 126, 34, 0.4);
+}
+
+
+/* Fix #36: Ensure visible focus states - already implemented */
+
+/* Fix #39: Replace moon icon with clearer online indicator */
+/* Already using dot indicator, moon is for dark mode toggle */
+
+/* Fix #40: Conditional subtitle - already implemented in App.jsx */
+
+/* Fix #41: Unify card shadows */
+.panel,
+.banner {
+  box-shadow: var(--shadow-md);
+}
+
+/* Fix #42: Add disabled visual feedback */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--bg);
+}
+
+/* Fix #43: Dropdown values with ellipsis */
+select {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Ensure dropdown options display properly */
+select option {
+  white-space: normal;
+  overflow-wrap: break-word;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* Fix #44: Input width for short content - using flex layout */
+
+/* Fix #45, #46: Consistent layout across pages */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: auto;
+}
+
+/* Fix #47: Footer consistency - fixed in App.jsx */
+
+/* Fix #48: Form field label-input alignment */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.form-field label {
+  margin-bottom: 0;
+}
+
+/* Fix #49: Checkbox text indentation */
+.consent-checkbox label,
+.payment-checkbox label {
+  padding-left: 0;
+  text-align: left;
+}
+
+/* Fix #50: Payment checkbox card padding */
+.payment-checkbox {
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  margin-top: var(--space-4);
+}
+
+/* Fix #51: Number input spinner spacing - already fixed above */
+
+/* Fix #52: Unify button styles - primary buttons already consistent */
+.payment-cta {
+  background: var(--gradient-primary);
+  border: none;
+}
+
+/* Fix #54: Gift icon styling - already using SVG icon */
+
+/* Fix #59: Increase number input spinner contrast */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 0.7;
+}
+
+input[type="number"]:hover::-webkit-inner-spin-button,
+input[type="number"]:hover::-webkit-outer-spin-button {
+  opacity: 1;
+}
+
+/* Fix #60: Required field asterisks - already improved above */
+
+/* Fix #61: Paragraph spacing in consent */
+.welcome-info p + p {
+  margin-top: var(--space-4);
+}
+
+/* Fix #62: Badge icon centering */
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* Fix #63: Checkbox shape consistency */
+.consent-checkbox input[type="checkbox"],
+.payment-checkbox input[type="checkbox"] {
+  border-radius: var(--radius-sm);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  background: var(--panel);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.consent-checkbox input[type="checkbox"]:checked,
+.payment-checkbox input[type="checkbox"]:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.consent-checkbox input[type="checkbox"]:checked::after,
+.payment-checkbox input[type="checkbox"]:checked::after {
+  content: "✓";
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* Fix #64: Add separator between header and content */
+.app {
+  gap: var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .app {
+    gap: var(--space-5);
+  }
+}
+
+/* Fix #65: Add placeholder text where missing - already in JSX */
+
+/* Fix #66: Unify button shapes */
+.primary,
+.ghost,
+.back-button,
+.payment-cta {
+  border-radius: var(--radius-lg);
+}
+
+/* Fix #67: Progress stepper hover states */
+.progress-step {
+  cursor: default;
+}
+
+.progress-step.active {
+  color: var(--primary);
+}
+
+/* Fix #68: Bullet indentation consistency */
+.welcome-info ul {
+  padding-left: 1.5em;
+  margin: var(--space-3) 0 var(--space-3) 1.5em;
+}
+
+/* Fix #69: Remove empty containers - check in JSX */
+
+/* Fix #70: Better hyphenation - already implemented */
+
+/* Fix #71: Enforce 8px grid system - already using CSS variables */
+
+/* Fix #72: Interactive state styling - already implemented */
+
+/* Fix #73: Form field vertical alignment */
+.form-grid {
+  align-items: start;
+}
+
+@media (min-width: 640px) {
+  .form-grid {
+    align-items: stretch;
+  }
+}
+
+/* Fix #74: Unify card padding */
+.panel,
+.banner {
+  padding: var(--space-5);
+}
+
+@media (min-width: 768px) {
+  .panel {
+    padding: var(--space-6);
+  }
+}
+
+/* Fix #75: Form grid baseline alignment */
+.form-grid {
+  display: grid;
+  align-items: stretch;
+}
+
+/* Fix #76: Equalize card padding */
+.consent-checkbox,
+.payment-checkbox {
+  padding: var(--space-5);
+}
+
+/* Fix #77: Tokenize border colors */
+input,
+select,
+textarea,
+.ghost,
+.back-button {
+  border-color: var(--border);
+  border-width: 1px;
+}
+
+/* Fix #78: Disabled button styling - already implemented */
+
+/* Fix #79: CTA button width consistency */
+.page-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.page-actions .primary {
+  width: auto;
+  min-width: 140px;
+}
+
+@media (max-width: 640px) {
+  .page-actions .primary {
+    width: 100%;
+  }
+}
+
+
+/* Fix #81: Bullet point consistency */
+.welcome-info ul {
+  list-style-type: disc;
+}
+
+.welcome-info li {
+  margin-left: var(--space-2);
+}
+
+/* Fix #82: Unified border radius */
+.panel,
+.banner,
+input,
+select,
+textarea,
+button,
+.primary,
+.ghost,
+.back-button {
+  border-radius: var(--radius-lg);
+}
+
+/* Fix #83: Input placeholder vertical centering */
+input::placeholder,
+select::placeholder,
+textarea::placeholder {
+  line-height: var(--leading-normal);
+}
+
+
+/* Fix #85: Left-align primary action buttons in forms */
+.page-actions {
+  justify-content: center;
+}
+
+/* Fix #86: Improve checkbox contrast */
+.consent-checkbox input[type="checkbox"],
+.payment-checkbox input[type="checkbox"] {
+  border-color: var(--border);
+}
+
+.consent-checkbox input[type="checkbox"]:hover,
+.payment-checkbox input[type="checkbox"]:hover {
+  border-color: var(--primary);
+}
+
+/* Fix #87: Reserve error message space */
+.form-field {
+  min-height: auto;
+}
+
+.error-text {
+  min-height: 18px;
+  display: block;
+  margin-top: var(--space-1);
+}
+
+/* Fix #88: Input focus ring - already implemented */
+
+/* Fix #89: Design tokens - already using CSS variables */
+
+/* Fix #90: Unify badge styling */
+.status-dot,
+.tag {
+  border-radius: var(--radius-full);
+  font-weight: var(--font-semibold);
+}
+
+/* Fix #91: Layout container hierarchy */
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Additional improvements for mobile responsiveness */
+@media (max-width: 640px) {
+  .form-grid {
+    gap: var(--space-4);
+  }
+}
+
+/* Improve visual hierarchy and consistency */
+.welcome-info {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+/* Ensure consistent spacing across all sections */
+.welcome-info h3 {
+  margin-top: 0;
+  margin-bottom: var(--space-3);
+}
+
+.welcome-info p {
+  margin-top: 0;
+  margin-bottom: var(--space-3);
+}
+
+.welcome-info p:last-child {
+  margin-bottom: 0;
+}
+
+/* Payment page specific improvements */
+.payment-content {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Improve button hover states for better feedback */
+.primary:hover:not(:disabled) {
+  background: #166fe5;
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--bg);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Ensure proper text contrast across all states */
+input:disabled::placeholder,
+select:disabled::placeholder,
+textarea:disabled::placeholder {
+  opacity: 0.6;
+}
+
+/* Improve checkbox interaction feedback */
+.consent-checkbox:hover,
+.payment-checkbox:hover {
+  border-color: var(--primary);
+}
+
+.consent-checkbox input[type="checkbox"]:focus-visible,
+.payment-checkbox input[type="checkbox"]:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}

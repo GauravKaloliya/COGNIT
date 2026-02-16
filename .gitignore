@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Node
+node_modules/
+/dist/
+
+# Env
+.env
+.env.local
+
+# Data
+/backend/data/*.csv
+/backend/*.db
+/backend/*.db-*
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PostgreSQL backup files
+*.sql.backup
+*.dump

@@ -1,0 +1,133 @@
+import React, { useEffect, useState } from "react";
+import { getApiUrl } from "../utils/apiBase";
+
+export default function FinishedPage({ surveyCompleted, participantId }) {
+  const [rewardStatus, setRewardStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    document.title = "Thank You - C.O.G.N.I.T.";
+    if (participantId) {
+      checkRewardWinner();
+    } else {
+      setLoading(false);
+    }
+  }, [participantId]);
+
+  const checkRewardWinner = async () => {
+    try {
+      // First check current status
+      const statusResponse = await fetch(getApiUrl(`/api/reward/${participantId}`));
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+
+        // If not already a winner, try to select
+        if (!statusData.is_winner) {
+          const selectResponse = await fetch(getApiUrl(`/api/reward/select/${participantId}`), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          });
+          if (selectResponse.ok) {
+            const selectData = await selectResponse.json();
+            if (selectData.selected) {
+              setRewardStatus({ is_winner: true, reward_amount: selectData.reward_amount });
+            } else {
+              setRewardStatus({ ...statusData, was_checked: true });
+            }
+          } else {
+            setRewardStatus(statusData);
+          }
+        } else {
+          setRewardStatus(statusData);
+        }
+      }
+    } catch (err) {
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFinish = () => {
+    // Preserve dark mode setting before clearing
+    const darkMode = sessionStorage.getItem("darkMode");
+    // Clear session storage and reload
+    sessionStorage.clear();
+    // Restore dark mode setting
+    if (darkMode !== null) {
+      sessionStorage.setItem("darkMode", darkMode);
+    }
+    window.location.href = "/";
+  };
+
+  const isWinner = rewardStatus?.is_winner;
+  const totalWords = rewardStatus?.total_words || 0;
+  const priorityEligible = rewardStatus?.priority_eligible;
+
+  return (
+    <div className="panel">
+      <div className="finish-wrapper">
+        <h2>Thank you for completing the C.O.G.N.I.T. survey</h2>
+        <p className="page-subtitle">
+          You have completed {surveyCompleted} survey{surveyCompleted !== 1 ? 's' : ''}!
+          Your responses have been recorded.
+        </p>
+        
+        {!loading && (
+          <div className={`finish-reward ${isWinner ? "winner" : "default"}`}>
+            {isWinner ? (
+              <>
+                <div className="finish-reward-icon">🎉</div>
+                <h3 className="finish-reward-title">Congratulations!</h3>
+                <p className="finish-reward-lead">
+                  You've been selected as a reward winner!
+                </p>
+                <p className="finish-reward-body">
+                  Thank you for your valuable participation. Your reward will be processed shortly.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="finish-reward-icon">🎁</div>
+                <h3 className="finish-reward-title">Thank You for Participating!</h3>
+                <p className="finish-reward-body">
+                  Your responses are valuable to our research and contribute to advancing language understanding models.
+                </p>
+                {totalWords > 0 && (
+                  <p className="finish-reward-body">
+                    You wrote <strong>{totalWords} words</strong> across your responses.
+                    {priorityEligible
+                      ? " Your detailed participation puts you in the priority pool for future opportunities!"
+                      : " Keep participating in future studies for more chances to win!"}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="finish-reminder">
+          <h4>💰 About the Reward Program</h4>
+          <ul>
+            <li>Participants are <strong>randomly selected</strong> to receive <strong>₹10 rewards</strong></li>
+            <li>Active participants who write detailed descriptions get added to a <strong>priority list</strong></li>
+            <li>Priority participants have <strong>higher chances</strong> of being selected</li>
+            <li>Rewards are sent via <strong>UPI transfer</strong> within 24-48 hours</li>
+            <li>If you're selected, you'll receive an email/SMS with payment confirmation</li>
+          </ul>
+        </div>
+
+        <p className="debrief">
+          Debrief: C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling)
+          advances our understanding of how humans describe visual content and how AI can better model this cognitive process. Your responses
+          contribute to improving image-text understanding and generation systems.
+        </p>
+
+        <div className="page-actions">
+          <button className="primary large" onClick={handleFinish}>
+            Finish
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

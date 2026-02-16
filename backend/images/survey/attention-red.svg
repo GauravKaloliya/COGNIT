@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Pastel background -->
+  <rect width="400" height="400" fill="#fff5f7"/>
+  
+  <!-- Big RED heart as focal point -->
+  <path d="M 200,320 C 200,280 120,240 120,180 C 120,140 160,120 200,150 C 240,120 280,140 280,180 C 280,240 200,280 200,320" fill="#ff4757"/>
+  <path d="M 200,300 C 200,265 130,230 130,180 C 130,150 165,135 200,160 C 235,135 270,150 270,180 C 270,230 200,265 200,300" fill="#ff6b7a"/>
+  <path d="M 190,280 Q 170,260 175,240" fill="#ff8fa3" opacity="0.7"/>
+  
+  <!-- Sparkles around heart -->
+  <polygon points="100,150 102,155 107,155 103,158 105,163 100,160 95,163 97,158 93,155 98,155" fill="#ffd93d"/>
+  <polygon points="300,150 302,155 307,155 303,158 305,163 300,160 295,163 297,158 293,155 298,155" fill="#ffd93d"/>
+  <polygon points="200,100 202,105 207,105 203,108 205,113 200,110 195,113 197,108 193,105 198,105" fill="#ffd93d"/>
+  <polygon points="150,280 152,285 157,285 153,288 155,293 150,290 145,293 147,288 143,285 148,285" fill="#ffd93d"/>
+  <polygon points="250,280 252,285 257,285 253,288 255,293 250,290 245,293 247,288 243,285 248,285" fill="#ffd93d"/>
+  
+  <!-- Additional red decorative elements -->
+  <circle cx="100" cy="200" r="15" fill="#ff8fa3" opacity="0.5"/>
+  <circle cx="300" cy="200" r="15" fill="#ff8fa3" opacity="0.5"/>
+  <circle cx="200" cy="80" r="12" fill="#ff8fa3" opacity="0.5"/>
+  <circle cx="200" cy="350" r="10" fill="#ff8fa3" opacity="0.5"/>
+  
+  <!-- Red bow on top of heart -->
+  <ellipse cx="185" cy="120" rx="20" ry="15" fill="#ff4757"/>
+  <ellipse cx="215" cy="120" rx="20" ry="15" fill="#ff4757"/>
+  <circle cx="200" cy="130" r="10" fill="#ff6b7a"/>
+  <path d="M 185,105 Q 200,95 215,105" stroke="#ff4757" stroke-width="3" fill="none"/>
+  
+  <!-- Small red flowers -->
+  <g transform="translate(80, 280)">
+    <circle cx="0" cy="0" r="6" fill="#ff8fa3"/>
+    <circle cx="8" cy="0" r="6" fill="#ff8fa3"/>
+    <circle cx="4" cy="-7" r="6" fill="#ff8fa3"/>
+    <circle cx="4" cy="7" r="6" fill="#ff8fa3"/>
+    <circle cx="4" cy="0" r="4" fill="#ffd93d"/>
+  </g>
+  <g transform="translate(320, 280)">
+    <circle cx="0" cy="0" r="5" fill="#ff8fa3"/>
+    <circle cx="6" cy="0" r="5" fill="#ff8fa3"/>
+    <circle cx="3" cy="-5" r="5" fill="#ff8fa3"/>
+    <circle cx="3" cy="5" r="5" fill="#ff8fa3"/>
+    <circle cx="3" cy="0" r="3" fill="#ffd93d"/>
+  </g>
+  
+  <!-- Cute character pointing at RED heart -->
+  <g transform="translate(50, 50)">
+    <!-- Small creature -->
+    <circle cx="30" cy="30" r="25" fill="#a8e6cf"/>
+    <ellipse cx="22" cy="28" rx="6" ry="8" fill="#4a4a4a"/>
+    <ellipse cx="38" cy="28" rx="6" ry="8" fill="#4a4a4a"/>
+    <circle cx="24" cy="26" r="2" fill="white"/>
+    <circle cx="40" cy="26" r="2" fill="white"/>
+    <ellipse cx="30" cy="38" rx="4" ry="3" fill="#ffb5c5"/>
+    <path d="M 25,42 Q 30,46 35,42" stroke="#4a4a4a" stroke-width="1.5" fill="none"/>
+    <!-- Pointing arm -->
+    <ellipse cx="50" cy="40" rx="10" ry="6" fill="#a8e6cf"/>
+    <line x1="60" y1="40" x2="85" y2="60" stroke="#a8e6cf" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Floating text elements about red -->
+  <text x="320" y="50" font-size="16" fill="#ff4757" font-weight="bold">RED</text>
+  <text x="30" y="320" font-size="14" fill="#ff6b7a">❤️</text>
+  
+  <!-- Hearts decoration -->
+  <text x="350" y="250" font-size="20" fill="#ff8fa3">💕</text>
+  <text x="40" y="100" font-size="18" fill="#ff8fa3">💗</text>
+</svg>

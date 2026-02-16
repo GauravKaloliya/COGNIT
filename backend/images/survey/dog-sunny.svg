@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Background with gradient -->
+  <rect width="400" height="400" fill="#f0f4ff"/>
+  
+  <!-- Sun -->
+  <circle cx="320" cy="80" r="40" fill="#ffd93d"/>
+  <g stroke="#ffd93d" stroke-width="4">
+    <line x1="320" y1="20" x2="320" y2="35"/>
+    <line x1="320" y1="125" x2="320" y2="140"/>
+    <line x1="260" y1="80" x2="275" y2="80"/>
+    <line x1="365" y1="80" x2="380" y2="80"/>
+    <line x1="278" y1="38" x2="288" y2="48"/>
+    <line x1="352" y1="112" x2="362" y2="122"/>
+    <line x1="278" y1="122" x2="288" y2="112"/>
+    <line x1="352" y1="48" x2="362" y2="38"/>
+  </g>
+  
+  <!-- Clouds -->
+  <ellipse cx="100" cy="70" rx="35" ry="20" fill="#e8f4ff"/>
+  <ellipse cx="130" cy="65" rx="30" ry="22" fill="#e8f4ff"/>
+  <ellipse cx="115" cy="55" rx="25" ry="18" fill="#e8f4ff"/>
+  
+  <!-- Dog Body -->
+  <ellipse cx="200" cy="290" rx="90" ry="70" fill="#ffd4a3"/>
+  
+  <!-- Dog Head -->
+  <circle cx="200" cy="170" r="75" fill="#ffd4a3"/>
+  
+  <!-- Ears -->
+  <ellipse cx="130" cy="140" rx="30" ry="45" fill="#c9a075"/>
+  <ellipse cx="270" cy="140" rx="30" ry="45" fill="#c9a075"/>
+  
+  <!-- Face patch -->
+  <ellipse cx="200" cy="190" rx="40" ry="35" fill="#fff5e6"/>
+  
+  <!-- Eyes -->
+  <ellipse cx="170" cy="165" rx="18" ry="22" fill="white"/>
+  <ellipse cx="230" cy="165" rx="18" ry="22" fill="white"/>
+  <circle cx="172" cy="168" r="12" fill="#5a3d2b"/>
+  <circle cx="232" cy="168" r="12" fill="#5a3d2b"/>
+  <circle cx="175" cy="164" r="5" fill="white"/>
+  <circle cx="235" cy="164" r="5" fill="white"/>
+  
+  <!-- Eyebrows -->
+  <path d="M 155,140 Q 170,135 185,142" stroke="#5a3d2b" stroke-width="3" fill="none"/>
+  <path d="M 215,142 Q 230,135 245,140" stroke="#5a3d2b" stroke-width="3" fill="none"/>
+  
+  <!-- Nose -->
+  <ellipse cx="200" cy="195" rx="15" ry="12" fill="#5a3d2b"/>
+  <ellipse cx="200" cy="192" rx="6" ry="4" fill="#8b6b4a"/>
+  
+  <!-- Mouth -->
+  <path d="M 200,207 Q 200,220 200,220" stroke="#5a3d2b" stroke-width="3" fill="none"/>
+  <path d="M 185,215 Q 200,230 215,215" stroke="#5a3d2b" stroke-width="3" fill="none"/>
+  
+  <!-- Tongue -->
+  <ellipse cx="200" cy="240" rx="12" ry="18" fill="#ff8fa3"/>
+  <line x1="200" y1="225" x2="200" y2="252" stroke="#ff6b8a" stroke-width="2"/>
+  
+  <!-- Cheeks -->
+  <ellipse cx="145" cy="185" rx="15" ry="10" fill="#ffb5c5" opacity="0.6"/>
+  <ellipse cx="255" cy="185" rx="15" ry="10" fill="#ffb5c5" opacity="0.6"/>
+  
+  <!-- Front paws -->
+  <ellipse cx="130" cy="340" rx="30" ry="22" fill="#ffd4a3"/>
+  <ellipse cx="270" cy="340" rx="30" ry="22" fill="#ffd4a3"/>
+  <ellipse cx="130" cy="342" rx="20" ry="15" fill="#c9a075"/>
+  <ellipse cx="270" cy="342" rx="20" ry="15" fill="#c9a075"/>
+  
+  <!-- Tail wagging -->
+  <path d="M 290,280 Q 350,250 360,200" stroke="#ffd4a3" stroke-width="20" fill="none" stroke-linecap="round"/>
+  
+  <!-- Grass patches -->
+  <ellipse cx="50" cy="360" rx="40" ry="15" fill="#a8e6cf" opacity="0.5"/>
+  <ellipse cx="350" cy="370" rx="35" ry="12" fill="#a8e6cf" opacity="0.5"/>
+  
+  <!-- Bone -->
+  <rect x="60" y="280" width="50" height="15" rx="5" fill="#fff5e6"/>
+  <circle cx="55" cy="287" r="10" fill="#fff5e6"/>
+  <circle cx="115" cy="287" r="10" fill="#fff5e6"/>
+  
+  <!-- Decorative elements -->
+  <text x="50" y="50" font-size="22" fill="#ffd93d">☀️</text>
+  <text x="330" y="300" font-size="20" fill="#ff8fa3">🐾</text>
+</svg>

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Soft pastel background -->
+  <rect width="400" height="400" fill="#f0f4ff"/>
+  
+  <!-- Yarn ball -->
+  <g transform="translate(300, 280)">
+    <circle cx="0" cy="0" r="45" fill="#ff8fa3"/>
+    <path d="M -40,-10 Q 0,10 -40,30" stroke="#ff6b8a" stroke-width="5" fill="none"/>
+    <path d="M 40,-15 Q 0,5 40,25" stroke="#ff6b8a" stroke-width="5" fill="none"/>
+    <ellipse cx="0" cy="-20" rx="30" ry="12" fill="#ffb5c5"/>
+    <path d="M -35,-5 Q 0,15 35,-5" stroke="#ff6b8a" stroke-width="4" fill="none"/>
+  </g>
+  
+  <!-- Yarn string going out -->
+  <path d="M 300,335 Q 280,360 220,370 Q 180,375 150,365" stroke="#ff8fa3" stroke-width="6" fill="none"/>
+  <path d="M 150,365 Q 120,355 100,360 Q 80,365 70,350" stroke="#ff8fa3" stroke-width="6" fill="none"/>
+  <path d="M 70,350 Q 60,340 65,320" stroke="#ff8fa3" stroke-width="5" fill="none"/>
+  
+  <!-- Kitten Body -->
+  <ellipse cx="150" cy="290" rx="60" ry="45" fill="#c7b8ff"/>
+  
+  <!-- Stripes on body -->
+  <path d="M 130,250 Q 150,260 170,250" stroke="#a890e0" stroke-width="8" fill="none"/>
+  <path d="M 125,290 Q 150,300 175,290" stroke="#a890e0" stroke-width="8" fill="none"/>
+  
+  <!-- Kitten Head -->
+  <circle cx="150" cy="190" r="55" fill="#c7b8ff"/>
+  
+  <!-- Kitten Ears -->
+  <polygon points="110,150 125,100 140,150" fill="#c7b8ff"/>
+  <polygon points="160,150 175,100 190,150" fill="#c7b8ff"/>
+  <polygon points="115,145 125,110 135,145" fill="#ff8fa3"/>
+  <polygon points="165,145 175,110 185,145" fill="#ff8fa3"/>
+  
+  <!-- Stripes on head -->
+  <path d="M 135,155 Q 150,160 165,155" stroke="#a890e0" stroke-width="5" fill="none"/>
+  <path d="M 130,165 Q 150,170 170,165" stroke="#a890e0" stroke-width="4" fill="none"/>
+  
+  <!-- Eyes -->
+  <ellipse cx="130" cy="185" rx="14" ry="16" fill="white"/>
+  <ellipse cx="170" cy="185" rx="14" ry="16" fill="white"/>
+  <ellipse cx="130" cy="187" rx="8" ry="10" fill="#5a3d2b"/>
+  <ellipse cx="170" cy="187" rx="8" ry="10" fill="#5a3d2b"/>
+  <ellipse cx="132" cy="184" r="3" fill="white"/>
+  <ellipse cx="172" cy="184" r="3" fill="white"/>
+  
+  <!-- Nose -->
+  <ellipse cx="150" cy="205" rx="7" ry="5" fill="#ffb5c5"/>
+  
+  <!-- Curious mouth -->
+  <path d="M 150,210 Q 145,218 140,215" stroke="#4a4a4a" stroke-width="2" fill="none"/>
+  <path d="M 150,210 Q 155,218 160,215" stroke="#4a4a4a" stroke-width="2" fill="none"/>
+  
+  <!-- Whiskers -->
+  <line x1="120" y1="200" x2="85" y2="190" stroke="#a890e0" stroke-width="2"/>
+  <line x1="120" y1="205" x2="85" y2="205" stroke="#a890e0" stroke-width="2"/>
+  <line x1="120" y1="210" x2="85" y2="220" stroke="#a890e0" stroke-width="2"/>
+  <line x1="180" y1="200" x2="215" y2="190" stroke="#a890e0" stroke-width="2"/>
+  <line x1="180" y1="205" x2="215" y2="205" stroke="#a890e0" stroke-width="2"/>
+  <line x1="180" y1="210" x2="215" y2="220" stroke="#a890e0" stroke-width="2"/>
+  
+  <!-- Cheeks -->
+  <ellipse cx="110" cy="200" rx="10" ry="8" fill="#ffccd5" opacity="0.7"/>
+  <ellipse cx="190" cy="200" rx="10" ry="8" fill="#ffccd5" opacity="0.7"/>
+  
+  <!-- Front paws playing with yarn -->
+  <ellipse cx="100" cy="335" rx="22" ry="16" fill="#c7b8ff"/>
+  <ellipse cx="180" cy="335" rx="22" ry="16" fill="#c7b8ff"/>
+  <ellipse cx="100" cy="335" rx="10" ry="8" fill="#a890e0"/>
+  <ellipse cx="180" cy="335" rx="10" ry="8" fill="#a890e0"/>
+  
+  <!-- Tail -->
+  <path d="M 210,300 Q 250,280 260,230 Q 265,210 250,200" stroke="#c7b8ff" stroke-width="18" fill="none" stroke-linecap="round"/>
+  
+  <!-- Decorative elements -->
+  <text x="50" y="80" font-size="22" fill="#c7b8ff">🧶</text>
+  <text x="320" y="80" font-size="20" fill="#ff8fa3">💜</text>
+  <text x="40" y="350" font-size="18" fill="#a8e6cf">✨</text>
+  
+  <!-- Paw prints -->
+  <ellipse cx="70" cy="380" rx="8" ry="6" fill="#c7b8ff" opacity="0.4"/>
+  <circle cx="58" cy="370" r="4" fill="#c7b8ff" opacity="0.4"/>
+  <circle cx="68" cy="365" r="4" fill="#c7b8ff" opacity="0.4"/>
+  <circle cx="78" cy="368" r="4" fill="#c7b8ff" opacity="0.4"/>
+  <circle cx="85" cy="375" r="4" fill="#c7b8ff" opacity="0.4"/>
+</svg>
