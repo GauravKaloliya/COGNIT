@@ -3,8 +3,8 @@ import { getApiUrl } from "../utils/apiBase";
 
 const MIN_WORDS = 60;
 
-export default function TrialPage({
-  trial,
+export default function SurveyPage({
+  survey,
   participantId,
   sessionId,
   onSubmit,
@@ -29,7 +29,7 @@ export default function TrialPage({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  const trialStartTime = useRef(Date.now());
+  const surveyStartTime = useRef(Date.now());
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
   const charCount = description.length;
   const commentsValid = comments.trim().length >= 5;
@@ -52,12 +52,12 @@ export default function TrialPage({
     setImageError(false);
     setIsZoomed(false);
     setSubmitError("");
-    trialStartTime.current = Date.now();
+    surveyStartTime.current = Date.now();
     const interval = setInterval(() => {
       setElapsed((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(interval);
-  }, [trial?.image_id]);
+  }, [survey?.image_id]);
 
   useEffect(() => {
     if (submitError) {
@@ -72,14 +72,14 @@ export default function TrialPage({
     }
 
     // Additional validation before submit
-    if (!trial || !trial.image_id) {
+    if (!survey || !survey.image_id) {
       setSubmitError("Image not loaded properly. Please wait or refresh.");
       return;
     }
 
     setSubmitting(true);
     setSubmitError("");
-    const timeSpentSeconds = Math.round((Date.now() - trialStartTime.current) / 1000);
+    const timeSpentSeconds = Math.round((Date.now() - surveyStartTime.current) / 1000);
 
     try {
       await onSubmit({
@@ -118,12 +118,12 @@ export default function TrialPage({
     return "Submit your response";
   };
 
-  const imageSrc = trial?.image_url
-    ? (trial.image_url.startsWith('http') ? trial.image_url : getApiUrl(trial.image_url))
+  const imageSrc = survey?.image_url
+    ? (survey.image_url.startsWith('http') ? survey.image_url : getApiUrl(survey.image_url))
     : "";
 
-  // Show loading state if we're waiting for trial data
-  if (!trial || !trial.image_id) {
+  // Show loading state if we're waiting for survey data
+  if (!survey || !survey.image_id) {
     return (
       <div className="panel status-panel">
         {fetchError ? (
