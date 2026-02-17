@@ -4,9 +4,11 @@ import random
 import re
 import time
 import functools
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from contextlib import contextmanager
+
+import requests
 
 from flask import Flask, jsonify, request, send_from_directory, send_file, abort, g, render_template
 from flask_cors import CORS
@@ -51,6 +53,17 @@ RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
 
 razorpay_client = None
+
+# MessageCentral OTP Configuration
+MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID")
+MC_KEY = os.getenv("MC_KEY")
+MC_BASE_URL = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
+
+# Token cache for MessageCentral auth token
+_token_cache = {
+    "token": None,
+    "expires_at": None
+}
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -977,7 +990,10 @@ def security_info():
                 "consent_recording": "20 per minute",
                 "submission": "60 per minute",
                 "api_docs": "30 per minute",
-                "reward_selection": "10 per minute per IP, 60 seconds cooldown per participant"
+                "reward_selection": "10 per minute per IP, 60 seconds cooldown per participant",
+                "otp_send": "5 per 10 minutes per IP",
+                "otp_verify": "10 per minute per IP",
+                "otp_status": "20 per minute per IP"
             },
             "rate_limit_storage": {
                 "configured_backend": "redis" if actual_storage_uri != "memory://" else "memory",
@@ -1070,7 +1086,10 @@ def _get_api_documentation():
                     "consent_recording": "20 per minute",
                     "submission": "60 per minute",
                     "api_docs": "30 per minute",
-                    "reward_selection": "10 per minute per IP, 60 seconds cooldown per participant"
+                    "reward_selection": "10 per minute per IP, 60 seconds cooldown per participant",
+                    "otp_send": "5 per 10 minutes per IP",
+                    "otp_verify": "10 per minute per IP",
+                    "otp_status": "20 per minute per IP"
                 }
             },
             "content_length_limit": "1 MB (1048576 bytes)",
@@ -1103,7 +1122,10 @@ def _get_api_documentation():
             "reward_entries": {"path": "/reward/entries", "method": "GET", "auth_required": False},
             "get_reward_status": {"path": "/reward/<participant_id>", "method": "GET", "auth_required": False},
             "select_reward_winner": {"path": "/reward/select/<participant_id>", "method": "POST", "auth_required": False},
-            "get_submissions": {"path": "/submissions/<participant_id>", "method": "GET", "auth_required": False}
+            "get_submissions": {"path": "/submissions/<participant_id>", "method": "GET", "auth_required": False},
+            "send_otp": {"path": "/otp/send", "method": "POST", "auth_required": False},
+            "verify_otp": {"path": "/otp/verify", "method": "POST", "auth_required": False},
+            "get_otp_status": {"path": "/otp/status/<verification_id>", "method": "GET", "auth_required": False}
         }
     }
 
@@ -1116,3 +1138,321 @@ def serve_api_docs():
 @track_performance
 def get_api_docs():
     return jsonify(_get_api_documentation())
+
+
+# =====================================================
+# OTP Verification Endpoints
+# =====================================================
+
+@app.route("/otp/send", methods=["POST"])
+@limiter.limit("5 per 10 minutes")
+@track_performance
+def send_otp():
+    """
+    Send OTP to a mobile number for verification.
+    
+    Request Body:
+    {
+        "mobile": "9876543210",  // 10-digit Indian mobile number
+        "participant_id": "optional",  // Optional: link to participant
+        "participant_id": "optional"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "verificationId": "...",
+        "message": "OTP sent successfully"
+    }
+    """
+    from otp_service import send_otp as send_otp_service
+    
+    data = request.get_json(silent=True) or {}
+    mobile = data.get("mobile", "").strip()
+    participant_id = data.get("participant_id")
+
+    # Validate mobile number
+    if not mobile:
+        return jsonify({"error": "Mobile number is required"}), 400
+    
+    if not re.match(r'^[6-9]\d{9}$', mobile):
+        return jsonify({"error": "Invalid Indian mobile number format. Must be 10 digits starting with 6-9"}), 400
+
+    try:
+        # Send OTP via MessageCentral
+        otp_response = send_otp_service(mobile)
+        
+        verification_id = otp_response.get("verificationId")
+        if not verification_id:
+            return jsonify({"error": "Failed to get verification ID from OTP service", "details": otp_response}), 500
+
+        # Get participant_fk if participant_id is provided
+        participant_fk = None
+        if participant_id:
+            try:
+                db = get_db()
+                result = db.execute(
+                    text("SELECT id FROM participants WHERE participant_id = :participant_id"),
+                    {"participant_id": participant_id}
+                )
+                row = result.fetchone()
+                if row:
+                    participant_fk = row[0]
+            except Exception as e:
+                app.logger.warning(f"Failed to lookup participant {participant_id}: {e}")
+
+        # Log OTP send attempt to database
+        try:
+            db = get_db()
+            
+            # Check for recent OTP attempts to prevent abuse
+            recent_attempts = db.execute(text('''
+                SELECT COUNT(*) FROM otp_verifications
+                WHERE mobile = :mobile
+                AND created_at > NOW() - INTERVAL '10 minutes'
+            '''), {"mobile": mobile}).fetchone()[0]
+            
+            if recent_attempts >= 5:
+                _log_audit_event(db, event_type='otp_rate_limited', participant_id=participant_id,
+                                endpoint='/otp/send', method='POST', status_code=429,
+                                details=f'Too many OTP attempts for mobile {mobile}')
+                return jsonify({"error": "Too many OTP attempts. Please wait 10 minutes before trying again."}), 429
+
+            # Store OTP verification record
+            db.execute(text('''
+                INSERT INTO otp_verifications
+                (participant_fk, participant_id, mobile, verification_id, otp_sent_at, verification_status, ip_hash, user_agent)
+                VALUES (:participant_fk, :participant_id, :mobile, :verification_id, CURRENT_TIMESTAMP, 'pending', :ip_hash, :user_agent)
+            '''), {
+                "participant_fk": participant_fk,
+                "participant_id": participant_id,
+                "mobile": mobile,
+                "verification_id": verification_id,
+                "ip_hash": get_ip_hash(),
+                "user_agent": request.headers.get('User-Agent', '')
+            })
+            db.commit()
+
+            _log_audit_event(db, event_type='otp_sent', participant_fk=participant_fk, participant_id=participant_id,
+                            endpoint='/otp/send', method='POST', status_code=200,
+                            details=f'OTP sent to mobile {mobile}, verificationId: {verification_id}')
+
+        except Exception as e:
+            app.logger.error(f"Failed to log OTP verification: {e}")
+            # Don't fail the request if logging fails
+
+        return jsonify({
+            "status": "success",
+            "verificationId": verification_id,
+            "message": "OTP sent successfully"
+        }), 200
+
+    except ValueError as e:
+        app.logger.error(f"Validation error sending OTP: {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        app.logger.error(f"Error sending OTP: {e}")
+        return jsonify({"error": "Failed to send OTP. Please try again later.", "details": str(e)}), 500
+
+
+@app.route("/otp/verify", methods=["POST"])
+@limiter.limit("10 per minute")
+@track_performance
+def verify_otp():
+    """
+    Verify OTP code.
+    
+    Request Body:
+    {
+        "verificationId": "...",  // verificationId from send_otp response
+        "otp": "123456",  // 6-digit OTP code
+        "mobile": "9876543210",  // Optional: mobile number for validation
+        "participant_id": "optional"  // Optional: link to participant
+    }
+    
+    Response:
+    {
+        "status": "verified",
+        "message": "OTP verified successfully"
+    }
+    """
+    from otp_service import verify_otp as verify_otp_service
+
+    data = request.get_json(silent=True) or {}
+    verification_id = data.get("verificationId", "").strip()
+    otp_code = data.get("otp", "").strip()
+    mobile = data.get("mobile", "").strip()
+    participant_id = data.get("participant_id")
+
+    # Validate required fields
+    if not verification_id:
+        return jsonify({"error": "verificationId is required"}), 400
+    
+    if not otp_code:
+        return jsonify({"error": "OTP code is required"}), 400
+
+    # Validate OTP format (6 digits)
+    if not re.match(r'^\d{6}$', otp_code):
+        return jsonify({"error": "Invalid OTP format. Must be 6 digits"}), 400
+
+    try:
+        # Verify OTP via MessageCentral
+        otp_response = verify_otp_service(verification_id, otp_code)
+        
+        # Check if verification was successful
+        # MessageCentral returns different response formats, check common success indicators
+        is_verified = False
+        response_data = otp_response.get("data", {})
+        
+        # Check various possible success indicators from MessageCentral
+        if isinstance(response_data, dict):
+            is_verified = response_data.get("verificationStatus") == "SUCCESS" or \
+                         response_data.get("status") == "verified" or \
+                         response_data.get("verified") is True
+        elif isinstance(response_data, str):
+            is_verified = response_data.upper() == "VERIFIED" or response_data.upper() == "SUCCESS"
+        
+        if not is_verified:
+            # Update database with failed attempt
+            try:
+                db = get_db()
+                db.execute(text('''
+                    UPDATE otp_verifications
+                    SET attempt_count = attempt_count + 1,
+                        verification_status = 'failed'
+                    WHERE verification_id = :verification_id
+                '''), {"verification_id": verification_id})
+                db.commit()
+
+                _log_audit_event(db, event_type='otp_verification_failed', participant_id=participant_id,
+                                endpoint='/otp/verify', method='POST', status_code=400,
+                                details=f'OTP verification failed for verificationId {verification_id}')
+            except Exception as e:
+                app.logger.error(f"Failed to log failed OTP verification: {e}")
+
+            return jsonify({
+                "status": "failed",
+                "message": "Invalid OTP code. Please try again.",
+                "details": otp_response
+            }), 400
+
+        # OTP verified successfully - update database
+        try:
+            db = get_db()
+            
+            # Get participant_fk if participant_id is provided
+            participant_fk = None
+            if participant_id:
+                try:
+                    result = db.execute(
+                        text("SELECT id FROM participants WHERE participant_id = :participant_id"),
+                        {"participant_id": participant_id}
+                    )
+                    row = result.fetchone()
+                    if row:
+                        participant_fk = row[0]
+                except Exception as e:
+                    app.logger.warning(f"Failed to lookup participant {participant_id}: {e}")
+
+            # Update verification record
+            db.execute(text('''
+                UPDATE otp_verifications
+                SET otp_verified_at = CURRENT_TIMESTAMP,
+                    verification_status = 'verified',
+                    attempt_count = attempt_count + 1,
+                    participant_fk = COALESCE(:participant_fk, participant_fk)
+                WHERE verification_id = :verification_id
+                RETURNING mobile
+            '''), {
+                "verification_id": verification_id,
+                "participant_fk": participant_fk
+            })
+            
+            verified_mobile = db.execute(text("SELECT mobile FROM otp_verifications WHERE verification_id = :verification_id"),
+                                        {"verification_id": verification_id}).fetchone()
+            
+            # Update participant's phone if linked
+            if participant_fk and verified_mobile:
+                db.execute(text('''
+                    UPDATE participants
+                    SET phone = :phone
+                    WHERE id = :participant_fk
+                '''), {
+                    "participant_fk": participant_fk,
+                    "phone": verified_mobile[0]
+                })
+
+            db.commit()
+
+            _log_audit_event(db, event_type='otp_verified', participant_fk=participant_fk, participant_id=participant_id,
+                            endpoint='/otp/verify', method='POST', status_code=200,
+                            details=f'OTP verified for mobile {verified_mobile[0] if verified_mobile else mobile}, verificationId: {verification_id}')
+
+        except Exception as e:
+            app.logger.error(f"Failed to update OTP verification record: {e}")
+            # Don't fail the request if database update fails
+
+        return jsonify({
+            "status": "verified",
+            "message": "OTP verified successfully"
+        }), 200
+
+    except ValueError as e:
+        app.logger.error(f"Validation error verifying OTP: {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        app.logger.error(f"Error verifying OTP: {e}")
+        return jsonify({"error": "Failed to verify OTP. Please try again later.", "details": str(e)}), 500
+
+
+@app.route("/otp/status/<verification_id>", methods=["GET"])
+@limiter.limit("20 per minute")
+@track_performance
+def get_otp_status(verification_id):
+    """
+    Get the status of an OTP verification.
+    
+    Path Parameters:
+    - verification_id: The verification ID from send_otp response
+    
+    Response:
+    {
+        "verification_id": "...",
+        "status": "pending|verified|failed",
+        "mobile": "9876543210",
+        "otp_sent_at": "2024-01-01T00:00:00Z",
+        "otp_verified_at": "2024-01-01T00:05:00Z",
+        "attempt_count": 1
+    }
+    """
+    if not verification_id:
+        return jsonify({"error": "verificationId is required"}), 400
+
+    try:
+        db = get_db()
+        result = db.execute(text('''
+            SELECT verification_id, mobile, otp_sent_at, otp_verified_at,
+                   verification_status, attempt_count, participant_id
+            FROM otp_verifications
+            WHERE verification_id = :verification_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        '''), {"verification_id": verification_id})
+
+        row = result.fetchone()
+        if not row:
+            return jsonify({"error": "Verification ID not found"}), 404
+
+        return jsonify({
+            "verification_id": row[0],
+            "mobile": row[1],
+            "otp_sent_at": row[2].isoformat() if row[2] else None,
+            "otp_verified_at": row[3].isoformat() if row[3] else None,
+            "status": row[4],
+            "attempt_count": row[5],
+            "participant_id": row[6]
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Error getting OTP status: {e}")
+        return jsonify({"error": "Failed to get OTP status", "details": str(e)}), 500
