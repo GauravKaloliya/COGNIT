@@ -418,23 +418,6 @@ export default function App() {
     setStage("finished");
   };
 
-  // Progress steps configuration
-  const getProgressSteps = () => {
-    const steps = [
-      { id: "consent", label: "Consent" },
-      { id: "user-details", label: "Details" },
-      { id: "payment", label: "Payment" },
-      { id: "survey", label: "Practice" },
-      { id: "finished", label: "Complete" }
-    ];
-    return steps;
-  };
-
-  const getCurrentStepIndex = () => {
-    const steps = getProgressSteps();
-    return steps.findIndex(s => s.id === stage);
-  };
-
   // Render progress bar for multi-step flows
   const renderProgressBar = () => {
     // Only show progress bar for consent -> details -> payment flow
