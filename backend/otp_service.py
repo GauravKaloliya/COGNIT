@@ -4,10 +4,9 @@ import time
 from datetime import datetime, timedelta
 
 # MessageCentral Configuration
-# Using environment variables with fallback to default values
-MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID", "C-6B2BB17B77EB486")
-MC_KEY = os.getenv("MC_KEY", "R2F1cmF2QDA4MDk")
-MC_BASE_URL = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
+MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID")
+MC_KEY = os.getenv("MC_KEY")
+MC_BASE_URL = os.getenv("MC_BASE_URL")
 
 # In-memory token cache
 _token_cache = {
