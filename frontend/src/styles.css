@@ -161,23 +161,23 @@ body {
   width: 100%;
   max-width: var(--container-max);
   margin: 0 auto;
-  padding: var(--space-4) var(--space-4) var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 @media (min-width: 768px) {
   .app {
-    padding: var(--space-6) var(--space-6) var(--space-4);
-    gap: var(--space-5);
+    padding: var(--space-5) var(--space-5) var(--space-3);
+    gap: var(--space-4);
   }
 }
 
 @media (min-width: 1024px) {
   .app {
-    padding: var(--space-6) var(--space-8) var(--space-4);
+    padding: var(--space-5) var(--space-6) var(--space-3);
   }
 }
 
@@ -245,11 +245,11 @@ body {
 }
 
 .app-logo {
-  height: clamp(64px, 9vw, 100px);
+  height: clamp(48px, 7vw, 72px);
   width: auto;
   display: block;
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-light);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
   image-rendering: -webkit-optimize-contrast;
   box-shadow: var(--shadow-sm);
   transition: all var(--transition-base);
@@ -393,7 +393,7 @@ body.dark .status-dot.offline {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  padding: var(--space-5);
+  padding: var(--space-4);
   box-shadow: var(--shadow-md);
   flex: 1;
   display: flex;
@@ -405,7 +405,7 @@ body.dark .status-dot.offline {
 
 @media (min-width: 768px) {
   .panel {
-    padding: var(--space-6);
+    padding: var(--space-5);
   }
 }
 
@@ -450,9 +450,9 @@ body.dark .status-dot.offline {
    Banner
    -------------------------------------------------------------------------- */
 .banner {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   border: 1px solid transparent;
@@ -492,21 +492,21 @@ body.dark .banner.info {
    -------------------------------------------------------------------------- */
 .form-grid {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-4);
   grid-template-columns: 1fr;
-  margin: var(--space-5) 0;
+  margin: var(--space-4) 0;
 }
 
 @media (min-width: 640px) {
   .form-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-5) var(--space-6);
+    gap: var(--space-4) var(--space-5);
   }
 }
 
 @media (min-width: 1024px) {
   .form-grid {
-    gap: var(--space-6) var(--space-8);
+    gap: var(--space-5) var(--space-6);
   }
 }
 
@@ -516,7 +516,7 @@ body.dark .banner.info {
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin-bottom: 0;
 }
 
@@ -548,8 +548,8 @@ body.dark .banner.info {
    Welcome Info / Consent Content
    -------------------------------------------------------------------------- */
 .welcome-info {
-  margin: var(--space-5) 0;
-  padding: var(--space-5);
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
   background: var(--accent-bg);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
@@ -557,7 +557,7 @@ body.dark .banner.info {
 
 .welcome-info h3 {
   color: var(--primary);
-  margin: var(--space-6) 0 var(--space-3);
+  margin: var(--space-4) 0 var(--space-2);
   font-size: var(--text-lg);
   font-weight: var(--font-bold);
   line-height: var(--leading-tight);
@@ -568,18 +568,18 @@ body.dark .banner.info {
 }
 
 .welcome-info ul {
-  margin: var(--space-3) 0;
+  margin: var(--space-2) 0;
   padding-left: 1.5em;
 }
 
 .welcome-info li {
-  margin: var(--space-2) 0;
+  margin: var(--space-1) 0;
   color: var(--text);
   line-height: var(--leading-relaxed);
 }
 
 .welcome-info p {
-  margin: var(--space-3) 0;
+  margin: var(--space-2) 0;
   line-height: var(--leading-relaxed);
   color: var(--text);
 }
@@ -602,14 +602,14 @@ select,
 textarea {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   background: var(--panel);
   color: inherit;
   font-size: var(--text-base);
   font-family: inherit;
   line-height: var(--leading-normal);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  min-height: 44px;
+  min-height: 40px;
   width: 100%;
 }
 
@@ -705,9 +705,9 @@ textarea {
 .consent-checkbox {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin: 0;
-  padding: var(--space-4);
+  padding: var(--space-3);
   background: var(--accent-bg);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
@@ -758,7 +758,7 @@ textarea {
 /* Payment checkbox specific */
 .payment-checkbox {
   background-color: var(--panel);
-  padding: var(--space-5);
+  padding: var(--space-4);
   border-radius: var(--radius-lg);
   margin: 0;
 }
@@ -772,7 +772,7 @@ textarea {
    Buttons
    -------------------------------------------------------------------------- */
 .primary {
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-lg);
   border: none;
   cursor: pointer;
@@ -787,8 +787,8 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 48px;
-  min-width: 140px;
+  min-height: 44px;
+  min-width: 120px;
   line-height: 1;
 }
 
@@ -832,7 +832,7 @@ textarea {
 }
 
 .ghost {
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   cursor: pointer;
@@ -846,8 +846,8 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 44px;
-  min-width: 100px;
+  min-height: 40px;
+  min-width: 88px;
 }
 
 .ghost:hover:not(:disabled) {
@@ -1340,7 +1340,7 @@ body.dark .toast.warning {
 .page-subtitle {
   color: var(--muted);
   font-size: var(--text-base);
-  margin: var(--space-2) 0;
+  margin: var(--space-1) 0;
   text-align: center;
   line-height: var(--leading-relaxed);
 }
