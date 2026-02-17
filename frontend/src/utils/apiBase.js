@@ -23,9 +23,6 @@ export const getApiUrl = (endpoint) => {
   const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
   if (API_BASE) {
-    if (API_BASE.endsWith("/api") && normalizedEndpoint.startsWith("/api/")) {
-      return `${API_BASE}${normalizedEndpoint.slice(4)}`;
-    }
     return `${API_BASE}${normalizedEndpoint}`;
   }
   // If API_BASE is empty, use relative URL (same origin - works in production)
@@ -35,7 +32,7 @@ export const getApiUrl = (endpoint) => {
 // Health check helper
 export const checkApiHealth = async () => {
   try {
-    const response = await fetch(getApiUrl('/api/health'));
+    const response = await fetch(getApiUrl('/health'));
     if (response.ok) {
       const data = await response.json();
       return { ok: true, data };

@@ -19,7 +19,6 @@ from sqlalchemy.pool import QueuePool, NullPool
 BASE_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = BASE_DIR / "images"
 DATA_DIR = BASE_DIR / "data"
-LOGO_DIR = BASE_DIR.parent / "images"
 ENV_FILE = BASE_DIR / "cognit-api.env"
 
 
@@ -462,7 +461,7 @@ def track_performance(f):
             raise e
     return wrapper
 
-@app.route("/api/health")
+@app.route("/health")
 @limiter.exempt
 @track_performance
 def health_check():
@@ -489,17 +488,7 @@ def health_check():
         status["status"] = "degraded"
     return jsonify(status)
 
-@app.route("/test-db")
-def test_db():
-    try:
-        db = get_db()
-        db.execute(text("SELECT 1"))
-        return jsonify({"status": "Database working"})
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
-@app.route("/api/participants", methods=["POST"])
+@app.route("/participants", methods=["POST"])
 @limiter.limit("30 per minute")
 @track_performance
 def create_participant():
@@ -542,7 +531,7 @@ def create_participant():
     try:
         db = get_db()
         _log_audit_event(db, event_type='participant_creation_attempt', participant_id=data['participant_id'],
-                        endpoint='/api/participants', method='POST', status_code=201, details='Participant creation attempt')
+                        endpoint='/participants', method='POST', status_code=201, details='Participant creation attempt')
         
         result = db.execute(text('''
             INSERT INTO participants 
@@ -568,24 +557,24 @@ def create_participant():
                 UPDATE participants SET consent_given = TRUE, consent_timestamp = :consent_timestamp
                 WHERE id = :participant_fk
             '''), {"consent_timestamp": consent_row[1], "participant_fk": participant_fk})
-        
+
         db.commit()
         _log_audit_event(db, event_type='participant_created', participant_fk=participant_fk, participant_id=data['participant_id'],
-                        endpoint='/api/participants', method='POST', status_code=201, details='Participant created successfully')
-        
+                        endpoint='/participants', method='POST', status_code=201, details='Participant created successfully')
+
         return jsonify({"status": "success", "participant_id": data['participant_id'], "participant_fk": participant_fk,
                        "message": "Participant created successfully"}), 201
     except Exception as e:
         error_msg = str(e)
         if "duplicate" in error_msg.lower() or "unique" in error_msg.lower():
             _log_audit_event(db, event_type='participant_creation_failed', participant_id=data['participant_id'],
-                           endpoint='/api/participants', method='POST', status_code=409, details=f'Duplicate participant ID: {error_msg}')
+                           endpoint='/participants', method='POST', status_code=409, details=f'Duplicate participant ID: {error_msg}')
             return jsonify({"error": "Participant ID already exists"}), 409
         _log_audit_event(db, event_type='participant_creation_failed', participant_id=data['participant_id'],
-                       endpoint='/api/participants', method='POST', status_code=500, details=f'Database error: {error_msg}')
+                       endpoint='/participants', method='POST', status_code=500, details=f'Database error: {error_msg}')
         return jsonify({"error": "Database error", "details": error_msg}), 500
 
-@app.route("/api/participants/<participant_id>")
+@app.route("/participants/<participant_id>")
 def get_participant(participant_id):
     db = get_db()
     result = db.execute(text('''
@@ -601,7 +590,7 @@ def get_participant(participant_id):
         "consent_given": bool(row[9]), "created_at": str(row[10])
     })
 
-@app.route("/api/consent", methods=["POST"])
+@app.route("/consent", methods=["POST"])
 @limiter.limit("20 per minute")
 @track_performance
 def record_consent():
@@ -642,19 +631,8 @@ def record_consent():
     
     return jsonify({"status": "success", "message": "Consent recorded successfully", "timestamp": timestamp})
 
-@app.route("/api/consent/<participant_id>")
-def get_consent(participant_id):
-    db = get_db()
-    result = db.execute(text('''
-        SELECT consent_given, consent_timestamp FROM consent_records WHERE participant_id = :participant_id
-    '''), {"participant_id": participant_id})
-    row = result.fetchone()
-    if not row:
-        return jsonify({"participant_id": participant_id, "consent_given": False, "consent_timestamp": None})
-    return jsonify({"participant_id": participant_id, "consent_given": bool(row[0]), "consent_timestamp": str(row[1]) if row[1] else None})
 
-
-@app.route("/api/payment/create-order", methods=["POST"])
+@app.route("/payment/create-order", methods=["POST"])
 @limiter.limit("30 per minute")
 @track_performance
 def create_order():
@@ -698,7 +676,7 @@ def create_order():
     db.commit()
     return jsonify({"order_id": order["id"], "key": RAZORPAY_KEY_ID, "amount": amount, "currency": "INR"})
 
-@app.route("/api/payment/verify", methods=["POST"])
+@app.route("/payment/verify", methods=["POST"])
 @limiter.limit("60 per minute")
 @track_performance
 def verify_payment():
@@ -730,7 +708,7 @@ def verify_payment():
     db.commit()
     return jsonify({"status": "verified"})
 
-@app.route("/api/payment/webhook", methods=["POST"])
+@app.route("/payment/webhook", methods=["POST"])
 @track_performance
 def payment_webhook():
     if not RAZORPAY_WEBHOOK_SECRET:
@@ -781,7 +759,7 @@ def get_images_from_db():
 def build_image_payload(image_data: dict):
     return {"image_id": image_data["image_id"], "image_url": image_data["image_url"]}
 
-@app.route("/api/images/random")
+@app.route("/images/random")
 def random_image():
     images = get_images_from_db()
     if not images:
@@ -794,18 +772,32 @@ def random_image():
     image_data = random.choice(available_images)
     return jsonify(build_image_payload(image_data))
 
-@app.route("/api/images/<path:image_id>")
+@app.route("/images/<path:image_id>")
 def serve_image(image_id):
     if image_id.endswith('.svg'):
         return send_from_directory(IMAGES_DIR, image_id, mimetype='image/svg+xml')
     return send_from_directory(IMAGES_DIR, image_id)
 
-@app.route("/api/logo")
+@app.route("/logo")
 def serve_logo():
-    return send_file(LOGO_DIR / "cognit_logo.png", mimetype='image/png')
+    # Serve logo directly from GitHub
+    import requests
+    github_logo_url = "https://github.com/GauravKaloliya/COGNIT/raw/main/images/cognit_logo.png"
+    try:
+        response = requests.get(github_logo_url, stream=True, timeout=5)
+        if response.status_code == 200:
+            return response.content, 200, {'Content-Type': 'image/png'}
+    except Exception as e:
+        app.logger.error(f"Failed to fetch logo from GitHub: {e}")
+    # Fallback to local file if available
+    logo_path = IMAGES_DIR / "cognit_logo.png"
+    if logo_path.exists():
+        return send_file(logo_path, mimetype='image/png')
+    # If no logo available, return 404
+    return jsonify({"error": "Logo not found"}), 404
 
 
-@app.route("/api/submit", methods=["POST"])
+@app.route("/submit", methods=["POST"])
 @limiter.limit("60 per minute")
 @track_performance
 def submit():
@@ -894,7 +886,7 @@ def submit():
             '''), {"image_id": image_id})
     except Exception as e:
         _log_audit_event(db, event_type='image_insert_failed', participant_fk=participant_fk, participant_id=participant_id,
-                        endpoint='/api/submit', method='POST', status_code=200, details=f'Failed to insert image {image_id}: {str(e)}')
+                        endpoint='/submit', method='POST', status_code=200, details=f'Failed to insert image {image_id}: {str(e)}')
     
     try:
         survey_index = payload.get("survey_index", 0)
@@ -967,64 +959,11 @@ def submit():
         db.rollback()
         return jsonify({"error": "Failed to save submission", "details": str(e)}), 500
 
-@app.route("/api/reward/entries")
-@limiter.limit("60 per minute")
-def get_reward_entries():
-    db = get_db()
-    result = db.execute(text("SELECT COUNT(*) FROM participants"))
-    row = result.fetchone()
-    count = int(row[0]) if row else 0
-    return jsonify({"count": count})
-
-
-@app.route("/api/reward/<participant_id>")
-def get_reward_status(participant_id):
-    db = get_db()
-    participant_fk = _get_or_create_participant_fk(db, participant_id)
-    if not participant_fk:
-        return jsonify({"error": "Participant not found"}), 404
-    status = get_reward_eligibility(participant_fk)
-    return jsonify(status)
-
-@app.route("/api/reward/select/<participant_id>", methods=["POST"])
-@limiter.limit("10 per minute")
-def check_reward_winner(participant_id):
-    result = select_reward_winner(participant_id)
-    return jsonify(result)
-
-@app.route("/api/submissions/<participant_id>")
-def get_participant_submissions(participant_id):
-    db = get_db()
-    participant_fk = _get_or_create_participant_fk(db, participant_id)
-    if not participant_fk:
-        return jsonify({"error": "Participant not found"}), 404
-    
-    result = db.execute(text('''
-        SELECT id, image_id, survey_index, description, word_count, rating, feedback, 
-               time_spent_seconds, is_survey, is_attention, attention_passed, 
-               attention_score_at_submission, quality_score, ai_suspected, created_at
-        FROM submissions WHERE participant_fk = :participant_fk ORDER BY created_at DESC
-    '''), {"participant_fk": participant_fk})
-    
-    rows = result.fetchall()
-    submissions = []
-    for row in rows:
-        submissions.append({
-            "id": row[0], "image_id": row[1], "survey_index": row[2], "description": row[3], "word_count": row[4],
-            "rating": row[5], "feedback": row[6], "time_spent_seconds": row[7], "is_survey": bool(row[8]),
-            "is_attention": bool(row[9]), "attention_passed": row[10], "attention_score_at_submission": row[11],
-            "quality_score": row[12], "ai_suspected": bool(row[13]) if row[13] is not None else False, "created_at": str(row[14])
-        })
-    return jsonify(submissions)
-
-
-@app.route("/api/security/info")
 @track_performance
 def security_info():
     cors_origins = _get_cors_origins()
     return jsonify({
         "security": {
-            "version": "4.0.0",
             "last_updated": datetime.now(timezone.utc).isoformat(),
             "rate_limits": {
                 "default": "200 per day, 50 per hour",
@@ -1115,9 +1054,8 @@ def security_info():
 def _get_api_documentation():
     return {
         "title": "C.O.G.N.I.T. API Documentation",
-        "version": "4.0.0",
-        "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API. Version 4.0.0 introduces surrogate key architecture for improved data integrity.",
-        "base_url": "/api",
+        "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API.",
+        "base_url": "",
         "security": {
             "rate_limiting": {
                 "default": "200 per day, 50 per hour",
@@ -1144,39 +1082,30 @@ def _get_api_documentation():
             }
         },
         "endpoints": {
-            "health": {"path": "/api/health", "method": "GET", "auth_required": False},
-            "security_info": {"path": "/api/security/info", "method": "GET", "auth_required": False},
-            "create_participant": {"path": "/api/participants", "method": "POST", "auth_required": False},
-            "get_participant": {"path": "/api/participants/<participant_id>", "method": "GET", "auth_required": False},
-            "record_consent": {"path": "/api/consent", "method": "POST", "auth_required": False},
-            "get_consent": {"path": "/api/consent/<participant_id>", "method": "GET", "auth_required": False},
-            "create_order": {"path": "/api/payment/create-order", "method": "POST", "auth_required": False},
-            "verify_payment": {"path": "/api/payment/verify", "method": "POST", "auth_required": False},
-            "payment_webhook": {"path": "/api/payment/webhook", "method": "POST", "auth_required": False},
-            "random_image": {"path": "/api/images/random", "method": "GET", "auth_required": False},
-            "serve_image": {"path": "/api/images/<image_id>", "method": "GET", "auth_required": False},
-            "submit": {"path": "/api/submit", "method": "POST", "auth_required": False},
-            "reward_entries": {"path": "/api/reward/entries", "method": "GET", "auth_required": False},
-            "get_reward_status": {"path": "/api/reward/<participant_id>", "method": "GET", "auth_required": False},
-            "select_reward_winner": {"path": "/api/reward/select/<participant_id>", "method": "POST", "auth_required": False},
-            "get_submissions": {"path": "/api/submissions/<participant_id>", "method": "GET", "auth_required": False}
-        },
-        "changelog": {
-            "4.0.0": "Surrogate key migration: All foreign keys now use BIGINT participant_fk referencing participants(id). Standardized ID types to VARCHAR(100). Added range constraints on scores (0-1).",
-            "3.6.0": "Added quality_score, attention_score_at_submission, ai_suspected columns; reward_winners table; quality score calculation.",
-            "3.5.0": "Migrated from SQLite to PostgreSQL.",
-            "3.4.0": "Updated application name to C.O.G.N.I.T.",
-            "3.3.0": "Added reward system with participant_stats and reward_winners tables.",
-            "3.2.0": "Added images table and survey_index column.",
-            "3.1.0": "Updated documentation and improved error handling."
+            "health": {"path": "/health", "method": "GET", "auth_required": False},
+            "security_info": {"path": "/security/info", "method": "GET", "auth_required": False},
+            "create_participant": {"path": "/participants", "method": "POST", "auth_required": False},
+            "get_participant": {"path": "/participants/<participant_id>", "method": "GET", "auth_required": False},
+            "record_consent": {"path": "/consent", "method": "POST", "auth_required": False},
+            "get_consent": {"path": "/consent/<participant_id>", "method": "GET", "auth_required": False},
+            "create_order": {"path": "/payment/create-order", "method": "POST", "auth_required": False},
+            "verify_payment": {"path": "/payment/verify", "method": "POST", "auth_required": False},
+            "payment_webhook": {"path": "/payment/webhook", "method": "POST", "auth_required": False},
+            "random_image": {"path": "/images/random", "method": "GET", "auth_required": False},
+            "serve_image": {"path": "/images/<image_id>", "method": "GET", "auth_required": False},
+            "submit": {"path": "/submit", "method": "POST", "auth_required": False},
+            "reward_entries": {"path": "/reward/entries", "method": "GET", "auth_required": False},
+            "get_reward_status": {"path": "/reward/<participant_id>", "method": "GET", "auth_required": False},
+            "select_reward_winner": {"path": "/reward/select/<participant_id>", "method": "POST", "auth_required": False},
+            "get_submissions": {"path": "/submissions/<participant_id>", "method": "GET", "auth_required": False}
         }
     }
 
 @app.route("/")
 def serve_api_docs():
-    return render_template("api_docs.html", version="4.0.0", base_url="/api")
+    return render_template("api_docs.html", base_url="")
 
-@app.route("/api/docs")
+@app.route("/docs")
 @limiter.limit("30 per minute")
 @track_performance
 def get_api_docs():

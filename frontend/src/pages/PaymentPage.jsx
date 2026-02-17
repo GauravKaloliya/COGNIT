@@ -35,7 +35,7 @@ export default function PaymentPage({
     setSubmitting(true);
 
     try {
-      const response = await fetch(getApiUrl("/api/payment/create-order"), {
+      const response = await fetch(getApiUrl("/payment/create-order"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ participant_id: participantId })
@@ -77,7 +77,7 @@ export default function PaymentPage({
         },
         handler: async function (paymentResponse) {
           try {
-            const verifyResponse = await fetch(getApiUrl("/api/payment/verify"), {
+            const verifyResponse = await fetch(getApiUrl("/payment/verify"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(paymentResponse)
