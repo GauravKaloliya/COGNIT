@@ -156,7 +156,7 @@ export default function App() {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const response = await fetch(getApiUrl('/api/health'));
+        const response = await fetch(getApiUrl('/health'));
         if (response.ok) {
           const data = await response.json();
           if (data.status === 'healthy' && data.services.database === 'connected') {
@@ -191,7 +191,7 @@ export default function App() {
 
   // Create participant in database
   const createParticipant = async () => {
-    const response = await fetch(getApiUrl('/api/participants'), {
+    const response = await fetch(getApiUrl('/participants'), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -219,7 +219,7 @@ export default function App() {
 
   // Record consent in database
   const recordConsent = async () => {
-    const response = await fetch(getApiUrl('/api/consent'), {
+    const response = await fetch(getApiUrl('/consent'), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -294,7 +294,7 @@ export default function App() {
 
     try {
       // Build URL with excluded images to prevent duplicates
-      let url = getApiUrl(`/api/images/random?session_id=${sessionId}`);
+      let url = getApiUrl(`/images/random?session_id=${sessionId}`);
       if (shownImages.length > 0) {
         url += `&exclude=${encodeURIComponent(shownImages.join(','))}`;
       }
@@ -339,7 +339,7 @@ export default function App() {
       is_survey: trial.is_survey || false
     };
 
-    const response = await fetch(getApiUrl('/api/submit'), {
+    const response = await fetch(getApiUrl('/submit'), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -586,7 +586,7 @@ export default function App() {
       <div className="app">
         <header className="header">
           <div className="brand">
-            <img src={getApiUrl('/api/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
+            <img src={getApiUrl('/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
             <h1>C.O.G.N.I.T.</h1>
             {isTaskPage && (
               <p className="subtitle">Describe each image with as much detail as possible</p>
