@@ -33,10 +33,10 @@ def generate_token():
     }
 
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, data=payload, headers=headers)
 
     if response.status_code != 200:
         raise Exception(f"Token generation failed: {response.status_code} - {response.text}")
