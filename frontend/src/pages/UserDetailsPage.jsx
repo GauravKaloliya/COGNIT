@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import OTPVerification from "../components/OTPVerification";
+import { getApiUrl } from "../utils/apiBase";
 
 export default function UserDetailsPage({ 
   demographics, 
@@ -9,6 +11,8 @@ export default function UserDetailsPage({
 }) {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [showOtpVerification, setShowOtpVerification] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
 
   useEffect(() => {
     document.title = "User Details - C.O.G.N.I.T.";
@@ -86,7 +90,7 @@ export default function UserDetailsPage({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async () => {
+  const handleVerifyPhone = () => {
     if (!systemReady) {
       return;
     }
@@ -95,6 +99,22 @@ export default function UserDetailsPage({
       return;
     }
     
+    // Show OTP verification modal
+    setShowOtpVerification(true);
+  };
+
+  const handleOtpVerified = () => {
+    setPhoneVerified(true);
+    setShowOtpVerification(false);
+    // Automatically proceed to submit after OTP verification
+    handleSubmit();
+  };
+
+  const handleOtpCancel = () => {
+    setShowOtpVerification(false);
+  };
+
+  const handleSubmit = async () => {
     setSubmitting(true);
     
     try {
@@ -108,6 +128,10 @@ export default function UserDetailsPage({
     setDemographics(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: null }));
+    }
+    // Reset phone verification if phone number changes
+    if (field === 'phone' && phoneVerified) {
+      setPhoneVerified(false);
     }
   };
 
@@ -174,13 +198,18 @@ export default function UserDetailsPage({
 
         <div className={`form-field ${errors.phone ? 'error' : ''}`}>
           <label>Phone Number <span className="required" aria-label="required">*</span></label>
-          <input
-            type="tel"
-            className={errors.phone ? 'error-input' : ''}
-            placeholder="10-digit Indian mobile number"
-            value={demographics.phone || ''}
-            onChange={(e) => updateField('phone', e.target.value)}
-          />
+          <div className="phone-verification-group">
+            <input
+              type="tel"
+              className={errors.phone ? 'error-input' : ''}
+              placeholder="10-digit Indian mobile number"
+              value={demographics.phone || ''}
+              onChange={(e) => updateField('phone', e.target.value)}
+            />
+            {phoneVerified && (
+              <span className="verification-badge">✓ Verified</span>
+            )}
+          </div>
           {errors.phone && <span className="error-text">{errors.phone}</span>}
         </div>
 
@@ -287,12 +316,21 @@ export default function UserDetailsPage({
       <div className="page-actions">
         <button
           className="primary"
-          onClick={handleSubmit}
+          onClick={handleVerifyPhone}
           disabled={!systemReady || submitting || !isFormComplete}
         >
-          {submitting ? "Submitting..." : "Continue to Payment"}
+          {submitting ? "Submitting..." : "Verify & Continue"}
         </button>
       </div>
+
+      {showOtpVerification && (
+        <OTPVerification
+          mobile={demographics.phone?.replace(/\D/g, '').slice(-10)}
+          onVerified={handleOtpVerified}
+          onCancel={handleOtpCancel}
+          apiUrl={getApiUrl('')}
+        />
+      )}
     </div>
   );
 }

@@ -2479,3 +2479,183 @@ select option {
     padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
   }
 }
+
+/* ==========================================================================
+   OTP Verification Modal Styles
+   ========================================================================== */
+
+.otp-verification-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+  animation: fadeIn 0.2s ease;
+}
+
+.otp-verification-content {
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  max-width: 480px;
+  width: 100%;
+  box-shadow: var(--shadow-xl);
+  animation: slideUp 0.3s ease;
+}
+
+.otp-verification-content h3 {
+  margin: 0 0 var(--space-3) 0;
+  color: var(--text);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  text-align: center;
+}
+
+.otp-subtitle {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  margin-bottom: var(--space-6);
+  line-height: var(--leading-relaxed);
+}
+
+.otp-input-container {
+  margin: var(--space-6) 0;
+}
+
+.otp-input {
+  width: 100%;
+  padding: var(--space-4);
+  font-size: var(--text-2xl);
+  text-align: center;
+  letter-spacing: 0.5em;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  transition: all var(--transition-base);
+}
+
+.otp-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
+.otp-input:disabled {
+  background: var(--bg);
+  cursor: not-allowed;
+}
+
+.otp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.otp-actions button {
+  width: 100%;
+}
+
+.resend-timer {
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.loading-spinner {
+  text-align: center;
+  color: var(--primary);
+  font-size: var(--text-base);
+  padding: var(--space-4) 0;
+}
+
+.success-message {
+  text-align: center;
+  color: var(--success);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  padding: var(--space-4) 0;
+}
+
+/* Phone Verification Badge */
+.phone-verification-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.verification-badge {
+  color: var(--success);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Dark mode support */
+body.dark .otp-verification-modal {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+body.dark .otp-verification-content {
+  background: var(--panel);
+}
+
+body.dark .otp-input {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+body.dark .otp-input:focus {
+  border-color: var(--primary);
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .otp-verification-modal {
+    padding: var(--space-3);
+  }
+
+  .otp-verification-content {
+    padding: var(--space-6);
+  }
+
+  .otp-input {
+    font-size: var(--text-xl);
+    letter-spacing: 0.4em;
+  }
+}
+
