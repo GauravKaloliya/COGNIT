@@ -78,21 +78,20 @@ def get_mc_auth_token():
         if response.status_code == 200:
             token_data = response.json()
 
-            # MessageCentral returns responseCode to indicate success/failure
-            response_code = str(token_data.get("responseCode", ""))
-            message = token_data.get("message", "")
-            auth_token = token_data.get("authToken")
+            # MessageCentral returns status to indicate success/failure
+            response_status = token_data.get("status")
+            auth_token = token_data.get("token")
 
-            # Check responseCode - "200" means success
-            if response_code != "200":
-                error_msg = f"MessageCentral Error (responseCode: {response_code}): {message}"
+            # Check status - 200 means success
+            if response_status != 200:
+                error_msg = f"MessageCentral Error (status: {response_status})"
                 logger.error(error_msg)
                 logger.error(f"Full response: {token_data}")
                 raise Exception(error_msg)
 
             if not auth_token:
-                logger.error(f"No authToken in response. Full response: {token_data}")
-                raise Exception(f"No authToken in response. responseCode={response_code}, message={message}")
+                logger.error(f"No token in response. Full response: {token_data}")
+                raise Exception(f"No token in response. status={response_status}")
 
             # Cache token with expiry (tokens typically last 24 hours, we'll use 23 hours for safety)
             _token_cache["token"] = auth_token
