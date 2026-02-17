@@ -19,6 +19,10 @@ export const API_BASE = normalizeApiBase(
 
 // Helper to get full API URL
 export const getApiUrl = (endpoint) => {
+  // If endpoint is empty, return API_BASE directly (no trailing slash added)
+  if (!endpoint) {
+    return API_BASE;
+  }
   // Ensure endpoint starts with /
   const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
