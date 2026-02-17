@@ -211,11 +211,11 @@ export default function PaymentPage({
         </label>
       </div>
 
-      <div className="page-actions">
+      <div className="page-actions payment-actions">
         <button
           className="primary payment-cta"
           onClick={handleSubmit}
-          disabled={!systemReady || submitting}
+          disabled={!systemReady || submitting || !paymentChecked}
         >
           {submitting ? "Processing..." : "💰 Pay ₹1 & Start"}
         </button>
