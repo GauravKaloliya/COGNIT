@@ -300,14 +300,12 @@
 <body>
     <div class="app">
         <div class="panel">
-            <!-- Header -->
             <div class="doc-header">
                 <div>
                     <h1>C.O.G.N.I.T. API Documentation</h1>
                 </div>
             </div>
 
-            <!-- Navigation Tabs -->
             <div class="tabs">
                 <button class="tab active" data-tab="overview">Overview</button>
                 <button class="tab" data-tab="endpoints">Endpoints</button>
@@ -315,43 +313,56 @@
                 <button class="tab" data-tab="errors">Errors</button>
             </div>
 
-            <!-- Overview Section -->
             <div id="overview" class="tab-content active">
                 <h2>Overview</h2>
-                <p>The C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) API provides programmatic access to the research platform. This RESTful API allows you to integrate image description tasks into your applications and manage submissions.</p>
+                <p>The C.O.G.N.I.T. (Cognitive Network for Image &amp; Text Modeling) API powers a human-subjects image description study. The service coordinates consent, participant records, payments, image delivery, and submission storage with built-in quality, attention, and audit tracking.</p>
 
                 <h3>Base URL</h3>
                 <div class="code-box block">{{ base_url }}</div>
 
-                <h3>Security</h3>
-                <ul>
-                    <li><strong>Rate Limiting:</strong> Default: 200 requests per day, 50 per hour</li>
-                    <li><strong>Authentication:</strong> None required for participant endpoints - participants are identified by participant_id and session_id</li>
-                    <li><strong>Data Protection:</strong> IP addresses are hashed (SHA-256) for privacy</li>
-                </ul>
-
-                <h3>Features</h3>
-                <ul>
-                    <li><strong>Image Management:</strong> Fetch random images for normal, survey, and attention tasks</li>
-                    <li><strong>Data Submission:</strong> Submit participant responses with descriptions, ratings, and feedback</li>
-                    <li><strong>Health Monitoring:</strong> Check system connectivity and service status</li>
-                    <li><strong>Security:</strong> Rate limiting and hardened security headers</li>
-                </ul>
-
-                <h3>Quick Start</h3>
+                <h3>Core Workflow</h3>
                 <ol>
-                    <li>Make your first request to <code>/images/random</code></li>
-                    <li>Submit participant data via <code>/submit</code></li>
+                    <li>Create a participant profile using <code>/participants</code>.</li>
+                    <li>Record consent using <code>/consent</code> before collecting data.</li>
+                    <li>Collect the entry fee with Razorpay using <code>/payment/create-order</code> and <code>/payment/verify</code>.</li>
+                    <li>Fetch images via <code>/images/random</code> (optionally exclude previously used images).</li>
+                    <li>Submit descriptions with ratings and feedback using <code>/submit</code>.</li>
                 </ol>
+
+                <h3>Request/Response Conventions</h3>
+                <ul>
+                    <li>All JSON requests must include <code>Content-Type: application/json</code>.</li>
+                    <li>Responses are JSON unless noted (images and logo are binary responses).</li>
+                    <li>Timestamps are ISO 8601 strings in UTC.</li>
+                    <li>Maximum request body size is 1 MB.</li>
+                </ul>
+
+                <h3>Security &amp; Privacy Mechanisms</h3>
+                <ul>
+                    <li><strong>Rate Limiting:</strong> Default 200/day and 50/hour per IP, with tighter limits on sensitive routes.</li>
+                    <li><strong>Strict CORS:</strong> Only configured origins are allowed, no wildcard origins.</li>
+                    <li><strong>Security Headers:</strong> HSTS, CSP, Referrer-Policy, and clickjacking protections are enforced.</li>
+                    <li><strong>IP Hashing:</strong> IP addresses are irreversibly hashed with SHA-256 and a configurable salt before storage.</li>
+                    <li><strong>Input Validation:</strong> Server-side checks enforce email domains, phone formats, age bounds, rating ranges, and minimum word counts.</li>
+                    <li><strong>Audit &amp; Performance Logs:</strong> Participant operations and response times are recorded in dedicated tables.</li>
+                </ul>
+
+                <h3>Rate Limit Summary</h3>
+                <ul>
+                    <li><strong>/participants:</strong> 30 requests per minute</li>
+                    <li><strong>/consent:</strong> 20 requests per minute</li>
+                    <li><strong>/submit:</strong> 60 requests per minute</li>
+                    <li><strong>/payment/create-order:</strong> 30 requests per minute</li>
+                    <li><strong>/payment/verify:</strong> 60 requests per minute</li>
+                    <li><strong>/docs:</strong> 30 requests per minute</li>
+                </ul>
             </div>
 
-            <!-- Endpoints Section -->
             <div id="endpoints" class="tab-content">
                 <h2>API Endpoints</h2>
 
-                <h3 style="margin-top: 24px;">Public Endpoints</h3>
+                <h3 style="margin-top: 24px;">System &amp; Documentation</h3>
 
-                <!-- Health Check -->
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
@@ -359,19 +370,60 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Check system health and connectivity status</p>
+                        <p class="endpoint-desc">Performs a health check across the database and image storage layer. This endpoint is exempt from rate limiting to support uptime monitoring.</p>
+                        <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "status": "healthy",
-  "timestamp": "2024-01-01T00:00:00Z",
+  "timestamp": "2024-01-01T00:00:00+00:00",
   "services": {
     "database": "connected",
     "images": "accessible"
   }
 }</pre></div>
+                        <p class="endpoint-desc">If a dependency is unavailable the status becomes <code>degraded</code> and the relevant service contains an error message.</p>
                     </div>
                 </div>
 
-                <!-- Create Participant -->
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/docs</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Returns a JSON representation of the API catalog used for automation and integration tooling.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
+                        </div>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "title": "C.O.G.N.I.T. API Documentation",
+  "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API.",
+  "base_url": "https://api.cognit.online",
+  "security": { ... },
+  "endpoints": {
+    "health": { "path": "/health", "method": "GET", "auth_required": false },
+    "submit": { "path": "/submit", "method": "POST", "auth_required": false }
+  }
+}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Serves the HTML API documentation (this page). Useful for browser-based access without requiring authentication.</p>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>HTML document</pre></div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 32px;">Participants &amp; Consent</h3>
+
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
@@ -379,33 +431,93 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Create a new participant record with user details</p>
+                        <p class="endpoint-desc">Creates a participant record. The API validates username format, email domain, Indian phone numbers, and an age range of 13-100.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
                         </div>
                         <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "string (required)",
-  "session_id": "string (required)",
-  "username": "string (required)",
-  "email": "string (optional)",
-  "phone": "string (optional)",
-  "gender": "string (required)",
-  "age": "integer (required)",
-  "place": "string (required)",
-  "native_language": "string (required)",
-  "prior_experience": "string (required)"
+  "participant_id": "uuid-or-custom-id",
+  "session_id": "session-token",
+  "username": "letters_numbers_underscores",
+  "email": "name@gmail.com",
+  "phone": "+91XXXXXXXXXX",
+  "gender": "female",
+  "age": 24,
+  "place": "Hyderabad",
+  "native_language": "Telugu",
+  "prior_experience": "No"
 }</pre></div>
-                        <h4>Response</h4>
+                        <h4>Response (201)</h4>
                         <div class="code-block small"><pre>{
   "status": "success",
-  "participant_id": "uuid-string",
+  "participant_id": "user-123",
+  "participant_fk": 42,
   "message": "Participant created successfully"
+}</pre></div>
+                        <h4>Validation Errors (400)</h4>
+                        <div class="code-block small"><pre>{
+  "error": "Validation failed",
+  "details": {
+    "age": "Age is required",
+    "gender": "Gender is required"
+  }
+}</pre></div>
+                        <h4>Duplicate Participant (409)</h4>
+                        <div class="code-block small"><pre>{
+  "error": "Participant ID already exists"
 }</pre></div>
                     </div>
                 </div>
 
-                <!-- Record Consent -->
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/participants/&lt;participant_id&gt;</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Fetches participant metadata, including consent status. This endpoint is useful for resuming sessions or admin checks.</p>
+                        <h4>Path Parameters</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Required</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>participant_id</code></td>
+                                    <td>string</td>
+                                    <td>Yes</td>
+                                    <td>Participant identifier used during registration</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "participant_id": "user-123",
+  "username": "ava",
+  "email": "ava@gmail.com",
+  "phone": "+919876543210",
+  "gender": "female",
+  "age": 24,
+  "place": "Hyderabad",
+  "native_language": "Telugu",
+  "prior_experience": "No",
+  "consent_given": true,
+  "created_at": "2024-01-01 00:00:00"
+}</pre></div>
+                        <h4>Not Found (404)</h4>
+                        <div class="code-block small"><pre>{
+  "error": "Participant not found"
+}</pre></div>
+                    </div>
+                </div>
+
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
@@ -413,25 +525,110 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Record participant consent</p>
+                        <p class="endpoint-desc">Records consent for an existing participant and stamps the consent time. Consent must be <code>true</code> to proceed.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 20 per minute</span>
                         </div>
                         <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "string (required)",
-  "consent_given": "boolean (required)"
+  "participant_id": "user-123",
+  "consent_given": true
 }</pre></div>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "status": "success",
   "message": "Consent recorded successfully",
-  "timestamp": "2024-01-01T00:00:00Z"
+  "timestamp": "2024-01-01T00:00:00+00:00"
+}</pre></div>
+                        <h4>Errors</h4>
+                        <div class="code-block small"><pre>{
+  "error": "Consent must be given to proceed"
 }</pre></div>
                     </div>
                 </div>
 
-                <!-- Get Random Image -->
+                <h3 style="margin-top: 32px;">Payments</h3>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payment/create-order</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Creates (or reuses) a Razorpay order for the entry fee. If a recent unpaid order exists, the API returns the existing order ID.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
+                        </div>
+                        <h4>Request Body</h4>
+                        <div class="code-block small"><pre>{
+  "participant_id": "user-123"
+}</pre></div>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "order_id": "order_N7k9p0n123",
+  "key": "rzp_live_...",
+  "amount": 100,
+  "currency": "INR"
+}</pre></div>
+                        <h4>Errors</h4>
+                        <div class="code-block small"><pre>{
+  "error": "Payment gateway not configured"
+}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payment/verify</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Validates Razorpay payment signatures after checkout and updates participant payment status to <code>paid</code>.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
+                        </div>
+                        <h4>Request Body</h4>
+                        <div class="code-block small"><pre>{
+  "razorpay_order_id": "order_N7k9p0n123",
+  "razorpay_payment_id": "pay_N7k9p0n123",
+  "razorpay_signature": "generated_signature"
+}</pre></div>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "status": "verified"
+}</pre></div>
+                        <h4>Invalid Signature (400)</h4>
+                        <div class="code-block small"><pre>{
+  "error": "Invalid signature"
+}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payment/webhook</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Processes Razorpay webhook events (typically <code>payment.captured</code>). Use the raw request body and include the <code>X-Razorpay-Signature</code> header.</p>
+                        <h4>Headers</h4>
+                        <div class="code-block small"><pre>X-Razorpay-Signature: &lt;signature&gt;</pre></div>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "status": "ok"
+}</pre></div>
+                        <h4>Errors</h4>
+                        <div class="code-block small"><pre>{
+  "error": "Missing webhook signature"
+}</pre></div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 32px;">Images &amp; Assets</h3>
+
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
@@ -439,25 +636,47 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Retrieve a random image for study</p>
+                        <p class="endpoint-desc">Returns a random image available for annotation. Use <code>exclude</code> to avoid already-seen image IDs.</p>
+                        <h4>Query Parameters</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Required</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>exclude</code></td>
+                                    <td>string</td>
+                                    <td>No</td>
+                                    <td>Comma-separated list of image IDs to skip</td>
+                                </tr>
+                            </tbody>
+                        </table>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "image_id": "aurora-lake.svg",
   "image_url": "/images/aurora-lake.svg"
 }</pre></div>
+                        <h4>No Images Available (404)</h4>
+                        <div class="code-block small"><pre>{
+  "error": "No images available"
+}</pre></div>
                     </div>
                 </div>
 
-                <!-- Get Image -->
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/images/{image_id}</code>
+                        <code class="endpoint-path">/images/&lt;image_id&gt;</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Serve a specific image file</p>
-                        <h4>Parameters</h4>
+                        <p class="endpoint-desc">Serves image binaries from the image store. SVG images are returned with the correct MIME type.</p>
+                        <h4>Path Parameters</h4>
                         <table>
                             <thead>
                                 <tr>
@@ -472,7 +691,7 @@
                                     <td><code>image_id</code></td>
                                     <td>string</td>
                                     <td>Yes</td>
-                                    <td>ID of image to retrieve</td>
+                                    <td>The file name of the image</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -481,7 +700,21 @@
                     </div>
                 </div>
 
-                <!-- Submit Data -->
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/logo</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Fetches the C.O.G.N.I.T. logo. The API attempts to serve the image from GitHub and falls back to local storage.</p>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>Binary image data (PNG)</pre></div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 32px;">Submissions</h3>
+
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
@@ -489,122 +722,99 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Submit participant response data (requires prior consent)</p>
+                        <p class="endpoint-desc">Submits a participant response. The API enforces consent, paid status, and attention-quality checks before storing the submission.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
                         </div>
                         <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "string (required)",
-  "session_id": "string (required)",
-  "image_id": "string (required)",
-  "description": "string (required, min 60 words)",
-  "rating": "integer (required, 1-10)",
-  "feedback": "string (required, min 5 chars)",
-  "time_spent_seconds": "number (required)",
-  "is_survey": "boolean"
+  "participant_id": "user-123",
+  "session_id": "session-456",
+  "image_id": "aurora-lake.svg",
+  "image_url": "/images/aurora-lake.svg",
+  "survey_index": 0,
+  "description": "At least 60 words describing the image...",
+  "rating": 8,
+  "feedback": "Interesting scene with depth",
+  "time_spent_seconds": 45,
+  "is_survey": false
 }</pre></div>
-                        <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">
-                          Attention checks are determined server-side based on image ID. The response only includes
-                          <code>attention_passed</code> when applicable.
-                        </p>
+                        <h4>Behavior &amp; Validation</h4>
+                        <ul>
+                            <li>Participant must exist, have consent recorded, and have <code>payment_status = paid</code>.</li>
+                            <li><code>image_url</code>, <code>survey_index</code>, <code>is_survey</code>, and <code>time_spent_seconds</code> are optional.</li>
+                            <li><code>description</code> must meet the minimum word count (default 60 words).</li>
+                            <li><code>rating</code> must be an integer between 1 and 10.</li>
+                            <li><code>feedback</code> must be at least 5 characters.</li>
+                            <li>Attention check images are evaluated automatically and update attention stats.</li>
+                            <li>Submissions record quality scores and attention flags for downstream analysis.</li>
+                        </ul>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "status": "ok",
-  "word_count": 45,
-  "attention_passed": true
+  "word_count": 78,
+  "attention_passed": true,
+  "quality_score": 0.84
 }</pre></div>
-                    </div>
-                </div>
-
-                <!-- Create Payment Order -->
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payment/create-order</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Create a payment order via Razorpay</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
+                        <h4>Errors</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "string (required)"
+  "error": "Payment required"
 }</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "order_id": "rzp_order_id",
-  "key": "rzp_key_id",
-  "amount": 100,
-  "currency": "INR"
-}</pre></div>
-                    </div>
-                </div>
-
-                <!-- Verify Payment -->
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payment/verify</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Verify payment with Razorpay</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "razorpay_order_id": "string (required)",
-  "razorpay_payment_id": "string (required)",
-  "razorpay_signature": "string (required)"
-}</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "verified"
-}</pre></div>
-                    </div>
-                </div>
-
-                <!-- Payment Webhook -->
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payment/webhook</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Handle Razorpay payment webhooks (for payment confirmation)</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Examples Section -->
             <div id="examples" class="tab-content">
                 <h2>Code Examples</h2>
 
                 <h3 style="margin-top: 24px;">JavaScript / Fetch</h3>
-                <div class="code-block"><pre>// Check system health
-const healthResponse = await fetch('/health');
-const health = await healthResponse.json();
-console.log(health.status); // 'healthy' or 'degraded'
+                <div class="code-block"><pre>// Create participant
+const participantResponse = await fetch('/participants', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    participant_id: 'user-123',
+    session_id: 'session-456',
+    username: 'ava_1',
+    email: 'ava@gmail.com',
+    gender: 'female',
+    age: 24,
+    place: 'Hyderabad',
+    native_language: 'Telugu',
+    prior_experience: 'No'
+  })
+});
+
+// Record consent
+await fetch('/consent', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ participant_id: 'user-123', consent_given: true })
+});
+
+// Create payment order (Razorpay checkout follows client-side)
+const orderResponse = await fetch('/payment/create-order', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ participant_id: 'user-123' })
+});
+const order = await orderResponse.json();
 
 // Get a random image
-const response = await fetch('/images/random');
-const image = await response.json();
-console.log(image.image_url);
+const imageResponse = await fetch('/images/random');
+const image = await imageResponse.json();
 
 // Submit participant data
 const submission = {
   participant_id: 'user-123',
   session_id: 'session-456',
-  image_id: 'aurora-lake.svg',
-  description: 'The image shows a beautiful sunset...',
+  image_id: image.image_id,
+  image_url: image.image_url,
+  description: 'A detailed description that exceeds the minimum word count...',
   rating: 8,
-  feedback: 'Interesting image',
-  time_spent_seconds: 45
+  feedback: 'Clear contrast and composition.',
+  time_spent_seconds: 48,
+  is_survey: false
 };
 
 const submitResponse = await fetch('/submit', {
@@ -612,61 +822,73 @@ const submitResponse = await fetch('/submit', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(submission)
 });
-
 const result = await submitResponse.json();
-console.log(result.status); // 'ok'</pre></div>
+console.log(result);</pre></div>
 
                 <h3 style="margin-top: 32px;">Python / Requests</h3>
                 <div class="code-block"><pre>import requests
 
-# Check system health
-health_response = requests.get('http://localhost:5000/health')
-health = health_response.json()
-print(health['status'])  # 'healthy' or 'degraded'
+base_url = "http://localhost:5000"
 
-# Get a random image
-response = requests.get('http://localhost:5000/images/random')
-image = response.json()
-print(image['image_url'])
-
-# Submit participant data
-submission = {
-    'participant_id': 'user-123',
-    'session_id': 'session-456',
-    'image_id': 'aurora-lake.svg',
-    'description': 'The image shows a beautiful sunset...',
-    'rating': 8,
-    'feedback': 'Interesting image',
-    'time_spent_seconds': 45
+participant_payload = {
+    "participant_id": "user-123",
+    "session_id": "session-456",
+    "username": "ava_1",
+    "gender": "female",
+    "age": 24,
+    "place": "Hyderabad",
+    "native_language": "Telugu",
+    "prior_experience": "No"
 }
 
-response = requests.post(
-    'http://localhost:5000/submit',
-    json=submission
+requests.post(f"{base_url}/participants", json=participant_payload)
+
+requests.post(
+    f"{base_url}/consent",
+    json={"participant_id": "user-123", "consent_given": True}
 )
-result = response.json()
-print(result['status'])  # 'ok'</pre></div>
+
+image = requests.get(f"{base_url}/images/random").json()
+
+submission_payload = {
+    "participant_id": "user-123",
+    "session_id": "session-456",
+    "image_id": image["image_id"],
+    "image_url": image["image_url"],
+    "description": "A detailed description that exceeds the minimum word count...",
+    "rating": 7,
+    "feedback": "Good lighting and composition.",
+    "time_spent_seconds": 42
+}
+
+submission = requests.post(f"{base_url}/submit", json=submission_payload)
+print(submission.json())</pre></div>
 
                 <h3 style="margin-top: 32px;">cURL</h3>
-                <div class="code-block"><pre># Check system health
-curl -X GET "http://localhost:5000/health"
-
-# Get a random image
-curl -X GET "http://localhost:5000/images/random"
-
-# Create participant
+                <div class="code-block"><pre># Create participant
 curl -X POST "http://localhost:5000/participants" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
     "session_id": "session-456",
-    "username": "john_doe",
-    "gender": "male",
-    "age": 25,
-    "place": "New York",
-    "native_language": "English",
-    "prior_experience": "Photography"
+    "username": "ava_1",
+    "gender": "female",
+    "age": 24,
+    "place": "Hyderabad",
+    "native_language": "Telugu",
+    "prior_experience": "No"
   }'
+
+# Record consent
+curl -X POST "http://localhost:5000/consent" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participant_id": "user-123",
+    "consent_given": true
+  }'
+
+# Get a random image excluding previous ones
+curl -X GET "http://localhost:5000/images/random?exclude=aurora-lake.svg"
 
 # Submit data
 curl -X POST "http://localhost:5000/submit" \
@@ -675,17 +897,17 @@ curl -X POST "http://localhost:5000/submit" \
     "participant_id": "user-123",
     "session_id": "session-456",
     "image_id": "aurora-lake.svg",
-    "description": "The image shows a beautiful sunset...",
+    "image_url": "/images/aurora-lake.svg",
+    "description": "A detailed description that exceeds the minimum word count...",
     "rating": 8,
-    "feedback": "Great image",
+    "feedback": "Great sense of depth.",
     "time_spent_seconds": 45
   }'</pre></div>
             </div>
 
-            <!-- Errors Section -->
             <div id="errors" class="tab-content">
                 <h2>Error Handling</h2>
-                <p>The API uses standard HTTP response codes to indicate success or failure of requests.</p>
+                <p>The API returns consistent JSON error responses. Clients should use HTTP status codes to drive retry logic and UX messaging.</p>
 
                 <h3 style="margin-top: 24px;">HTTP Status Codes</h3>
                 <table>
@@ -700,27 +922,32 @@ curl -X POST "http://localhost:5000/submit" \
                         <tr>
                             <td><code>200</code></td>
                             <td>OK</td>
-                            <td>Request succeeded</td>
+                            <td>Successful read, update, or verification</td>
+                        </tr>
+                        <tr>
+                            <td><code>201</code></td>
+                            <td>Created</td>
+                            <td>Participant record created</td>
                         </tr>
                         <tr>
                             <td><code>400</code></td>
                             <td>Bad Request</td>
-                            <td>Invalid parameters or missing required fields</td>
+                            <td>Validation failures or missing fields</td>
                         </tr>
                         <tr>
-                            <td><code>401</code></td>
-                            <td>Unauthorized</td>
-                            <td>Authentication required</td>
+                            <td><code>403</code></td>
+                            <td>Forbidden</td>
+                            <td>Consent or payment requirements unmet; flagged attention status</td>
                         </tr>
                         <tr>
                             <td><code>404</code></td>
                             <td>Not Found</td>
-                            <td>Resource not found</td>
+                            <td>Resource is missing (participant or image)</td>
                         </tr>
                         <tr>
-                            <td><code>415</code></td>
-                            <td>Unsupported Media Type</td>
-                            <td>Request must use application/json</td>
+                            <td><code>409</code></td>
+                            <td>Conflict</td>
+                            <td>Duplicate participant record</td>
                         </tr>
                         <tr>
                             <td><code>429</code></td>
@@ -730,30 +957,37 @@ curl -X POST "http://localhost:5000/submit" \
                         <tr>
                             <td><code>500</code></td>
                             <td>Internal Server Error</td>
-                            <td>Server-side error</td>
+                            <td>Unexpected database or configuration failure</td>
                         </tr>
                     </tbody>
                 </table>
 
                 <h3 style="margin-top: 32px;">Error Response Format</h3>
                 <div class="code-block"><pre>{
-  "error": "Description of what went wrong"
+  "error": "Description of what went wrong",
+  "details": "Optional additional information"
 }</pre></div>
 
-                <h3 style="margin-top: 32px;">Common Errors</h3>
+                <h3 style="margin-top: 32px;">Common Validation Errors</h3>
                 <ul>
-                    <li><code>Minimum 60 words required</code> - Description is too short</li>
-                    <li><code>rating must be an integer between 1-10</code> - Invalid rating value</li>
-                    <li><code>comments must be at least 5 characters</code> - Feedback is too short</li>
-                    <li><code>image_id is required</code> - Missing required field</li>
-                    <li><code>participant_id is required</code> - Missing participant ID</li>
-                    <li><code>Participant not found</code> - Participant record not found</li>
-                    <li><code>Payment required</code> - Payment not completed</li>
-                    <li><code>Consent required</code> - Consent not given</li>
+                    <li><code>Minimum 60 words required</code> — Description is too short.</li>
+                    <li><code>rating must be an integer between 1-10</code> — Rating is outside the accepted range.</li>
+                    <li><code>comments must be at least 5 characters</code> — Feedback is too short.</li>
+                    <li><code>Participant ID already exists</code> — The participant_id is not unique.</li>
+                    <li><code>Participant not found. Please complete registration first.</code> — Participant ID missing from the database.</li>
+                    <li><code>Payment required</code> — Payment status is not marked as paid.</li>
+                    <li><code>Consent required. Please complete the consent process.</code> — Consent not recorded.</li>
+                    <li><code>Payment gateway not configured</code> — Razorpay credentials missing in the environment.</li>
+                    <li><code>Invalid signature</code> — Razorpay signature verification failed.</li>
+                    <li><code>Account flagged for low attention quality</code> — Participant failed attention checks.</li>
                 </ul>
+
+                <h3 style="margin-top: 32px;">Rate Limit Error (429)</h3>
+                <div class="code-block"><pre>{
+  "message": "Rate limit exceeded"
+}</pre></div>
             </div>
 
-            <!-- Footer -->
             <div class="footer">
                 <p>C.O.G.N.I.T. API Documentation • Created by Gaurav Kaloliya</p>
             </div>
@@ -761,26 +995,20 @@ curl -X POST "http://localhost:5000/submit" \
     </div>
 
     <script>
-        // Tab switching functionality
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
-                // Remove active class from all tabs
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                // Add active class to clicked tab
                 tab.classList.add('active');
 
-                // Hide all tab content
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.classList.remove('active');
                 });
 
-                // Show the selected tab content
                 const tabId = tab.getAttribute('data-tab');
                 document.getElementById(tabId).classList.add('active');
             });
         });
 
-        // Endpoint card toggle functionality
         function toggleEndpoint(header) {
             const card = header.parentElement;
             card.classList.toggle('expanded');
