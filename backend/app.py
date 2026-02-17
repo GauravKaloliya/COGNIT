@@ -5,12 +5,11 @@ import re
 import time
 import functools
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from contextlib import contextmanager
 
 import requests
 
-from flask import Flask, jsonify, request, send_from_directory, send_file, abort, g, render_template
+from flask import Flask, jsonify, request, abort, g, render_template
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -18,31 +17,6 @@ from sqlalchemy import create_engine, text, event, Column, Integer, String, Bool
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 from sqlalchemy.pool import QueuePool, NullPool
 
-BASE_DIR = Path(__file__).resolve().parent
-IMAGES_DIR = BASE_DIR / "images"
-DATA_DIR = BASE_DIR / "data"
-ENV_FILE = BASE_DIR / "cognit-api.env"
-
-
-def _load_env_file(env_path: Path) -> None:
-    if not env_path.exists():
-        return
-
-    with env_path.open() as env_file:
-        for line in env_file:
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-
-            key, separator, value = stripped.partition("=")
-            if not separator:
-                continue
-
-            cleaned_value = value.strip().strip("\"").strip("'")
-            os.environ.setdefault(key.strip(), cleaned_value)
-
-
-_load_env_file(ENV_FILE)
 
 MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
@@ -57,13 +31,7 @@ razorpay_client = None
 # MessageCentral OTP Configuration
 MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID")
 MC_KEY = os.getenv("MC_KEY")
-MC_BASE_URL = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
-
-# Token cache for MessageCentral auth token
-_token_cache = {
-    "token": None,
-    "expires_at": None
-}
+MC_BASE_URL = os.getenv("MC_BASE_URL")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -500,15 +468,6 @@ def health_check():
         status["services"]["database"] = "connected"
     except Exception as e:
         status["services"]["database"] = f"error: {str(e)}"
-        status["status"] = "degraded"
-    try:
-        if IMAGES_DIR.exists():
-            status["services"]["images"] = "accessible"
-        else:
-            status["services"]["images"] = "not found"
-            status["status"] = "degraded"
-    except Exception as e:
-        status["services"]["images"] = f"error: {str(e)}"
         status["status"] = "degraded"
     return jsonify(status)
 
