@@ -205,22 +205,6 @@ body {
   }
 }
 
-.header h1 {
-  margin: 0;
-  font-weight: var(--font-bold);
-  color: var(--primary);
-  font-size: clamp(1.375rem, 4vw, 1.75rem);
-  line-height: var(--leading-tight);
-}
-
-.subtitle {
-  margin: 0;
-  color: var(--muted);
-  font-weight: var(--font-medium);
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-}
-
 /* Show subtitle on all pages */
 .header .subtitle {
   display: block;
@@ -237,6 +221,58 @@ body {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-1);
+  padding: var(--space-1) 0;
+  min-width: 0;
+}
+
+.brand h1 {
+  margin: 0;
+  font-weight: var(--font-bold);
+  color: var(--primary);
+  font-size: clamp(1.375rem, 4vw, 1.75rem);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.025em;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary) 60%, #667eea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand .subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  opacity: 0.9;
+  transition: opacity var(--transition-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.brand:hover .subtitle {
+  opacity: 1;
+}
+
+/* Responsive stacking on mobile */
+@media (max-width: 480px) {
+  .brand {
+    gap: 2px;
+  }
+  
+  .brand h1 {
+    font-size: clamp(1.25rem, 6vw, 1.5rem);
+  }
+  
+  .brand .subtitle {
+    font-size: var(--text-xs);
+  }
 }
 
 /* Status Dot / Badge */
