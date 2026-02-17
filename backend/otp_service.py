@@ -3,9 +3,11 @@ import requests
 import time
 from datetime import datetime, timedelta
 
-MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID")
-MC_KEY = os.getenv("MC_KEY")
-MC_BASE_URL = os.getenv("MC_BASE_URL")
+# MessageCentral Configuration
+# Using environment variables with fallback to default values
+MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID", "C-6B2BB17B77EB486")
+MC_KEY = os.getenv("MC_KEY", "R2F1cmF2QDA4MDk")
+MC_BASE_URL = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
 
 # In-memory token cache
 _token_cache = {
@@ -96,17 +98,17 @@ def verify_otp(verification_id, otp_code):
 
     url = f"{MC_BASE_URL}/verification/v3/validateOtp"
 
+    headers = {
+        "authToken": auth_token
+    }
+
     params = {
         "verificationId": verification_id,
         "code": otp_code,
         "flowType": "SMS"
     }
 
-    headers = {
-        "authToken": auth_token
-    }
-
-    response = requests.post(url, headers=headers, params=params)
+    response = requests.get(url, headers=headers, params=params)
 
     if response.status_code != 200:
         raise Exception(f"OTP verify failed: {response.status_code} - {response.text}")

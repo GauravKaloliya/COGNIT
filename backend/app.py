@@ -29,9 +29,10 @@ RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
 razorpay_client = None
 
 # MessageCentral OTP Configuration
-MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID")
-MC_KEY = os.getenv("MC_KEY")
-MC_BASE_URL = os.getenv("MC_BASE_URL")
+# Using environment variables with fallback to default values
+MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID", "C-6B2BB17B77EB486")
+MC_KEY = os.getenv("MC_KEY", "R2F1cmF2QDA4MDk")
+MC_BASE_URL = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
