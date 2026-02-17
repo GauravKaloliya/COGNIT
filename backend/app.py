@@ -77,6 +77,9 @@ IS_VERCEL = os.getenv("VERCEL_ENV") is not None
 
 app = Flask(__name__)
 
+# Disable strict slashes to prevent 308 redirects (fixes CORS preflight issues)
+app.url_map.strict_slashes = False
+
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'local-secret-key')
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -118,7 +121,8 @@ CORS(app, resources={
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         "supports_credentials": False,
-        "max_age": 86400
+        "max_age": 86400,
+        "automatic_options": True  # Automatically handle OPTIONS requests
     }
 })
 
@@ -172,6 +176,15 @@ except Exception as e:
 
 @app.after_request
 def add_security_headers(response):
+    # Add CORS headers to all responses (including errors and redirects)
+    origin = request.headers.get('Origin')
+    allowed_origins = _get_cors_origins()
+    if origin and origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+        response.headers['Access-Control-Max-Age'] = '86400'
+
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'

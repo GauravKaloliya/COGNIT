@@ -1,6 +1,14 @@
 const normalizeApiBase = (baseValue) => {
-  const trimmed = (baseValue || "").trim().replace(/\/+$/, "");
+  let trimmed = (baseValue || "").trim();
   if (!trimmed) return ""; // Empty string means use relative URLs (same origin)
+
+  // Remove all trailing slashes
+  trimmed = trimmed.replace(/\/+$/, "");
+
+  // Remove any trailing whitespace that might have been hidden
+  trimmed = trimmed.trim();
+
+  if (!trimmed) return "";
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith("/")) return trimmed;
   return `${window.location.protocol}//${trimmed}`;
@@ -19,10 +27,12 @@ export const API_BASE = normalizeApiBase(
 
 // Helper to get full API URL
 export const getApiUrl = (endpoint) => {
-  // Ensure endpoint starts with /
-  const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  // Ensure endpoint starts with / and remove any leading slashes to avoid doubles
+  const cleanEndpoint = (endpoint || "").trim().replace(/^\/+/, "");
+  const normalizedEndpoint = `/${cleanEndpoint}`;
 
   if (API_BASE) {
+    // API_BASE already has trailing slashes removed by normalizeApiBase
     return `${API_BASE}${normalizedEndpoint}`;
   }
   // If API_BASE is empty, use relative URL (same origin - works in production)
