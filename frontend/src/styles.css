@@ -245,21 +245,22 @@ body {
 }
 
 .app-logo {
-  height: clamp(48px, 7vw, 72px);
-  width: auto;
+  height: 50px;
+  width: 50px;
   display: block;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-light);
   image-rendering: -webkit-optimize-contrast;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   transition: all var(--transition-base);
   object-fit: contain;
   background: var(--panel);
+  padding: 4px;
 }
 
 .app-logo:hover {
-  transform: scale(1.02);
-  box-shadow: var(--shadow-md);
+  transform: scale(1.05);
+  box-shadow: var(--shadow-lg);
   border-color: var(--primary);
 }
 
@@ -392,20 +393,27 @@ body.dark .status-dot.offline {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-xl);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-md);
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
+  margin-bottom: var(--space-3);
 }
 
 @media (min-width: 768px) {
   .panel {
-    padding: var(--space-4);
+    padding: var(--space-6);
+  }
+}
+
+@media (min-width: 1024px) {
+  .panel {
+    padding: var(--space-8);
   }
 }
 
@@ -493,21 +501,21 @@ body.dark .banner.info {
    -------------------------------------------------------------------------- */
 .form-grid {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   grid-template-columns: 1fr;
-  margin: var(--space-3) 0;
+  margin: var(--space-5) 0;
 }
 
 @media (min-width: 640px) {
   .form-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-3) var(--space-4);
+    gap: var(--space-4) var(--space-6);
   }
 }
 
 @media (min-width: 1024px) {
   .form-grid {
-    gap: var(--space-4) var(--space-5);
+    gap: var(--space-5) var(--space-8);
   }
 }
 
@@ -517,8 +525,8 @@ body.dark .banner.info {
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  margin-bottom: 0;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 
 .form-field label {
@@ -549,10 +557,10 @@ body.dark .banner.info {
    Welcome Info / Consent Content
    -------------------------------------------------------------------------- */
 .welcome-info {
-  margin: var(--space-3) 0;
-  padding: var(--space-3);
+  margin: var(--space-5) 0;
+  padding: var(--space-5);
   background: var(--accent-bg);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
 }
 
@@ -893,16 +901,18 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
   color: var(--muted);
   font-weight: var(--font-semibold);
   font-size: var(--text-base);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .trial {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .image-container {
@@ -1023,14 +1033,15 @@ body.dark .tag.attention {
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  margin-bottom: var(--space-3);
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
 }
 
 .field label {
   font-weight: var(--font-semibold);
   color: var(--primary);
   font-size: var(--text-sm);
+  margin-bottom: var(--space-1);
 }
 
 /* --------------------------------------------------------------------------
@@ -1127,11 +1138,12 @@ body.dark .counts {
    -------------------------------------------------------------------------- */
 .actions {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-4);
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  margin-top: var(--space-4);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
 }
 
 .survey-button {

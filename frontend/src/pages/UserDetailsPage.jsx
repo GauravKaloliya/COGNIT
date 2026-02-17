@@ -144,7 +144,7 @@ export default function UserDetailsPage({
       </div>
       <h2>Participant Information</h2>
       <p className="page-subtitle left">
-        Please provide your details to participate in the C.O.G.N.I.T. research study.
+        Provide your details to participate in the C.O.G.N.I.T. research survey.
       </p>
       
       <div className="form-grid">
