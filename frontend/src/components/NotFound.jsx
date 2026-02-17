@@ -1,6 +1,5 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getApiUrl } from '../utils/apiBase';
 
 export default function NotFound() {
   const navigate = useNavigate();
@@ -9,7 +8,6 @@ export default function NotFound() {
     <div className="app">
       <header className="header">
         <div className="brand">
-          <img src={getApiUrl('/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
           <h1>C.O.G.N.I.T.</h1>
         </div>
       </header>
