@@ -96,15 +96,10 @@ def _get_cors_origins():
         if "*" in origins:
             raise ValueError("Wildcard CORS origins ('*') are not allowed. Use specific domains only.")
         return origins
-    
-    # Default origins - no wildcards allowed
+
+    # Default origins - only localhost, no wildcards allowed
     origins = ["http://localhost:5173", "http://localhost:3000"]
-    
-    # Add production domain if configured
-    if WEBSITE_URL:
-        if WEBSITE_URL not in origins:
-            origins.append(WEBSITE_URL)
-    
+
     return origins
 
 CORS(app, resources={
