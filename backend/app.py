@@ -96,13 +96,18 @@ def _get_cors_origins():
             raise ValueError("Wildcard CORS origins ('*') are not allowed. Use specific domains only.")
         return origins
 
-    # Default origins - only localhost, no wildcards allowed
-    origins = ["http://localhost:5173", "http://localhost:3000"]
+    # Default origins - only localhost plus production domains, no wildcards allowed
+    origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://www.cognit.online",
+        "https://cognit.online"
+    ]
 
     return origins
 
 CORS(app, resources={
-    r"/api/*": {
+    r"/*": {
         "origins": _get_cors_origins(),
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
@@ -1055,7 +1060,7 @@ def _get_api_documentation():
     return {
         "title": "C.O.G.N.I.T. API Documentation",
         "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API.",
-        "base_url": "",
+        "base_url": "https://api.cognit.online",
         "security": {
             "rate_limiting": {
                 "default": "200 per day, 50 per hour",
@@ -1103,7 +1108,7 @@ def _get_api_documentation():
 
 @app.route("/")
 def serve_api_docs():
-    return render_template("api_docs.html", base_url="")
+    return render_template("api_docs.html", base_url="https://api.cognit.online")
 
 @app.route("/docs")
 @limiter.limit("30 per minute")
