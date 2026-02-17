@@ -89,21 +89,14 @@ else:
 
 def _get_cors_origins():
     env_origins = os.getenv("CORS_ORIGINS", "").strip()
-    if env_origins:
-        origins = [origin.strip() for origin in env_origins.split(",") if origin.strip()]
-        # Security: Never allow wildcard origins
-        if "*" in origins:
-            raise ValueError("Wildcard CORS origins ('*') are not allowed. Use specific domains only.")
-        return origins
+    if not env_origins:
+        app.logger.warning("CORS_ORIGINS is not set. CORS will be disabled for all origins.")
+        return []
 
-    # Default origins - only localhost plus production domains, no wildcards allowed
-    origins = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "https://www.cognit.online",
-        "https://cognit.online"
-    ]
-
+    origins = [origin.strip() for origin in env_origins.split(",") if origin.strip()]
+    # Security: Never allow wildcard origins
+    if "*" in origins:
+        raise ValueError("Wildcard CORS origins ('*') are not allowed. Use specific domains only.")
     return origins
 
 CORS(app, resources={
@@ -533,6 +526,7 @@ def create_participant():
     except (ValueError, TypeError):
         return jsonify({"error": "Age must be a valid number between 13 and 100"}), 400
     
+    db = None
     try:
         db = get_db()
         _log_audit_event(db, event_type='participant_creation_attempt', participant_id=data['participant_id'],
@@ -551,17 +545,20 @@ def create_participant():
         })
         participant_fk = result.fetchone()[0]
         
-        consent_result = db.execute(text('''
-            SELECT consent_given, consent_timestamp FROM consent_records
-            WHERE participant_id = :participant_id AND consent_given = TRUE
-        '''), {"participant_id": data['participant_id']})
-        consent_row = consent_result.fetchone()
-        
-        if consent_row:
-            db.execute(text('''
-                UPDATE participants SET consent_given = TRUE, consent_timestamp = :consent_timestamp
-                WHERE id = :participant_fk
-            '''), {"consent_timestamp": consent_row[1], "participant_fk": participant_fk})
+        try:
+            consent_result = db.execute(text('''
+                SELECT consent_given, consent_timestamp FROM consent_records
+                WHERE participant_id = :participant_id AND consent_given = TRUE
+            '''), {"participant_id": data['participant_id']})
+            consent_row = consent_result.fetchone()
+            
+            if consent_row:
+                db.execute(text('''
+                    UPDATE participants SET consent_given = TRUE, consent_timestamp = :consent_timestamp
+                    WHERE id = :participant_fk
+                '''), {"consent_timestamp": consent_row[1], "participant_fk": participant_fk})
+        except Exception as consent_error:
+            app.logger.warning(f"Consent lookup failed for participant {data['participant_id']}: {consent_error}")
 
         db.commit()
         _log_audit_event(db, event_type='participant_created', participant_fk=participant_fk, participant_id=data['participant_id'],
@@ -571,12 +568,16 @@ def create_participant():
                        "message": "Participant created successfully"}), 201
     except Exception as e:
         error_msg = str(e)
+        if db is not None:
+            db.rollback()
         if "duplicate" in error_msg.lower() or "unique" in error_msg.lower():
-            _log_audit_event(db, event_type='participant_creation_failed', participant_id=data['participant_id'],
-                           endpoint='/participants', method='POST', status_code=409, details=f'Duplicate participant ID: {error_msg}')
+            if db is not None:
+                _log_audit_event(db, event_type='participant_creation_failed', participant_id=data['participant_id'],
+                               endpoint='/participants', method='POST', status_code=409, details=f'Duplicate participant ID: {error_msg}')
             return jsonify({"error": "Participant ID already exists"}), 409
-        _log_audit_event(db, event_type='participant_creation_failed', participant_id=data['participant_id'],
-                       endpoint='/participants', method='POST', status_code=500, details=f'Database error: {error_msg}')
+        if db is not None:
+            _log_audit_event(db, event_type='participant_creation_failed', participant_id=data['participant_id'],
+                           endpoint='/participants', method='POST', status_code=500, details=f'Database error: {error_msg}')
         return jsonify({"error": "Database error", "details": error_msg}), 500
 
 @app.route("/participants/<participant_id>")

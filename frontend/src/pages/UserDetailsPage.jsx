@@ -111,6 +111,25 @@ export default function UserDetailsPage({
     }
   };
 
+  const requiredFields = [
+    "username",
+    "email",
+    "phone",
+    "gender",
+    "age",
+    "place",
+    "native_language",
+    "prior_experience"
+  ];
+
+  const isFormComplete = requiredFields.every((field) => {
+    const value = demographics[field];
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    return value !== null && value !== undefined && value !== "";
+  });
+
   return (
     <div className="panel">
       <div className="page-top-actions">
@@ -269,7 +288,7 @@ export default function UserDetailsPage({
         <button
           className="primary"
           onClick={handleSubmit}
-          disabled={!systemReady || submitting}
+          disabled={!systemReady || submitting || !isFormComplete}
         >
           {submitting ? "Submitting..." : "Continue to Payment"}
         </button>
