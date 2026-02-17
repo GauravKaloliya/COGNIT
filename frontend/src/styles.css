@@ -2585,6 +2585,38 @@ select option {
   padding: var(--space-4) 0;
 }
 
+.demo-mode-info {
+  background: rgba(230, 126, 34, 0.1);
+  border-left: 4px solid var(--warning);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  margin: var(--space-4) 0 var(--space-6) 0;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.demo-mode-info strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.demo-mode-badge {
+  display: inline-block;
+  background: rgba(230, 126, 34, 0.15);
+  color: var(--warning);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+
+body.dark .demo-mode-info {
+  background: rgba(243, 156, 18, 0.15);
+  color: var(--text);
+}
+
 /* Phone Verification Badge */
 .phone-verification-group {
   position: relative;
