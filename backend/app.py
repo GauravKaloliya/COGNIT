@@ -1323,15 +1323,31 @@ def verify_otp():
         # MessageCentral returns different response formats, check common success indicators
         is_verified = False
         response_data = otp_response.get("data", {})
-        
-        # Check various possible success indicators from MessageCentral
+
+        def _status_is_success(value):
+            if not value:
+                return False
+            if isinstance(value, str):
+                normalized = value.strip().upper()
+                return normalized in {"SUCCESS", "VERIFIED", "VERIFICATION_SUCCESS"} or "SUCCESS" in normalized or "VERIFIED" in normalized
+            return False
+
         if isinstance(response_data, dict):
-            is_verified = response_data.get("verificationStatus") == "SUCCESS" or \
-                         response_data.get("status") == "verified" or \
-                         response_data.get("verified") is True
+            is_verified = (
+                _status_is_success(response_data.get("verificationStatus"))
+                or _status_is_success(response_data.get("status"))
+                or response_data.get("verified") is True
+            )
         elif isinstance(response_data, str):
-            is_verified = response_data.upper() == "VERIFIED" or response_data.upper() == "SUCCESS"
-        
+            is_verified = _status_is_success(response_data)
+
+        if not is_verified:
+            is_verified = (
+                _status_is_success(otp_response.get("status"))
+                or _status_is_success(otp_response.get("verificationStatus"))
+                or _status_is_success(otp_response.get("message"))
+            )
+
         if not is_verified:
             # Update database with failed attempt
             try:
