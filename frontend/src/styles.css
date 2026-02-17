@@ -909,7 +909,7 @@ textarea {
   border-bottom: 1px solid var(--border-light);
 }
 
-.trial {
+.survey {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
