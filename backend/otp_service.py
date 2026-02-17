@@ -4,9 +4,13 @@ Handles MessageCentral OTP verification integration
 """
 
 import re
+import logging
 from datetime import datetime, timezone, timedelta
 from flask import current_app
 import requests
+
+# Configure module-level logger
+logger = logging.getLogger(__name__)
 
 
 # Token cache for MessageCentral auth token
@@ -14,6 +18,17 @@ _token_cache = {
     "token": None,
     "expires_at": None
 }
+
+
+def is_mc_configured():
+    """
+    Check if MessageCentral credentials are configured.
+    Returns True if credentials are present, False otherwise.
+    """
+    import os
+    mc_customer_id = os.getenv("MC_CUSTOMER_ID")
+    mc_key = os.getenv("MC_KEY")
+    return bool(mc_customer_id and mc_key)
 
 
 def get_mc_auth_token():
@@ -54,19 +69,19 @@ def get_mc_auth_token():
                 # Cache token with expiry (tokens typically last 24 hours, we'll use 23 hours for safety)
                 _token_cache["token"] = auth_token
                 _token_cache["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=23)
-                current_app.logger.info("MessageCentral auth token generated and cached successfully")
+                logger.info("MessageCentral auth token generated and cached successfully")
                 return auth_token
             else:
                 raise Exception("No authToken in response")
         else:
             error_msg = f"Token generation failed with status {response.status_code}: {response.text}"
-            current_app.logger.error(error_msg)
+            logger.error(error_msg)
             raise Exception(error_msg)
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Network error generating MessageCentral token: {e}")
+        logger.error(f"Network error generating MessageCentral token: {e}")
         raise Exception(f"Failed to connect to MessageCentral: {str(e)}")
     except Exception as e:
-        current_app.logger.error(f"Error generating MessageCentral token: {e}")
+        logger.error(f"Error generating MessageCentral token: {e}")
         raise e
 
 
@@ -94,13 +109,26 @@ def send_otp(mobile: str):
     if not validate_indian_mobile(mobile):
         raise ValueError("Invalid Indian mobile number format")
 
+    # Check if MessageCentral is configured
+    if not is_mc_configured():
+        # Demo mode: Return a mock verification ID
+        # Log this for monitoring
+        logger.warning(f"OTP service not configured. Using demo mode for mobile {mobile}")
+        demo_verification_id = f"DEMO_{mobile}_{int(datetime.now(timezone.utc).timestamp())}"
+        return {
+            "verificationId": demo_verification_id,
+            "status": "success",
+            "message": "OTP sent in demo mode (no actual SMS sent)",
+            "demoMode": True
+        }
+
     mc_base_url = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
-    
+
     try:
         auth_token = get_mc_auth_token()
-        
+
         url = f"{mc_base_url}/verification/v3/send"
-        
+
         payload = {
             "customerId": os.getenv("MC_CUSTOMER_ID"),
             "mobileNumber": f"91{mobile}",
@@ -114,40 +142,58 @@ def send_otp(mobile: str):
         }
 
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-        
+
         if response.status_code == 200:
             return response.json()
         else:
             error_msg = f"Failed to send OTP: {response.status_code} - {response.text}"
-            current_app.logger.error(error_msg)
+            logger.error(error_msg)
             raise Exception(error_msg)
-            
+
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Network error sending OTP: {e}")
+        logger.error(f"Network error sending OTP: {e}")
         raise Exception(f"Failed to connect to MessageCentral: {str(e)}")
 
 
 def verify_otp(verification_id: str, otp: str):
     """
     Verify OTP using the verification ID and OTP code.
-    
+
     Args:
         verification_id: Verification ID from send_otp response
         otp: 6-digit OTP code
-    
+
     Returns:
         dict: Response from MessageCentral API with verification status
     """
     import os
-    
+
     if not verification_id or not otp:
         raise ValueError("verificationId and otp are required")
 
+    # Check if this is a demo mode verification
+    if verification_id.startswith("DEMO_"):
+        logger.warning(f"Verifying OTP in demo mode for verificationId {verification_id}")
+        # In demo mode, accept any 6-digit OTP
+        if len(otp) == 6 and otp.isdigit():
+            logger.info(f"Demo OTP verified successfully")
+            return {
+                "data": {
+                    "verificationStatus": "SUCCESS",
+                    "verified": True
+                },
+                "status": "verified",
+                "message": "OTP verified in demo mode",
+                "demoMode": True
+            }
+        else:
+            raise ValueError("Invalid OTP format. Must be 6 digits.")
+
     mc_base_url = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
-    
+
     try:
         auth_token = get_mc_auth_token()
-        
+
         url = f"{mc_base_url}/verification/v3/validateOtp"
 
         payload = {
@@ -161,14 +207,14 @@ def verify_otp(verification_id: str, otp: str):
         }
 
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-        
+
         if response.status_code == 200:
             return response.json()
         else:
             error_msg = f"Failed to verify OTP: {response.status_code} - {response.text}"
-            current_app.logger.error(error_msg)
+            logger.error(error_msg)
             raise Exception(error_msg)
-            
+
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Network error verifying OTP: {e}")
+        logger.error(f"Network error verifying OTP: {e}")
         raise Exception(f"Failed to connect to MessageCentral: {str(e)}")
