@@ -545,19 +545,13 @@ export default function App() {
     }
   };
 
-  // Check if we're on a survey page
-  const isTaskPage = stage === "survey";
-
   return (
     <ErrorBoundary onError={() => addToast("Unexpected error occurred.", "error")}>
       <div className="app">
         <header className="header">
           <div className="brand">
-            <img src={getApiUrl('/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
             <h1>C.O.G.N.I.T.</h1>
-            {isTaskPage && (
-              <p className="subtitle">Describe each image with as much detail as possible</p>
-            )}
+            <p className="subtitle">Describe each image with as much detail as possible</p>
           </div>
           <div className="header-actions">
             <button
