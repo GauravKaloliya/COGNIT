@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "set -a && . ./cognit-2.env && set +a && npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": "vite",
