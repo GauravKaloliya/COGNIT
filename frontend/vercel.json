@@ -1,8 +1,8 @@
 {
-  "buildCommand": "set -a && . ./cognit-2.env && set +a && npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "framework": "vite",
+      "buildCommand": "npm run build",
+      "outputDirectory": "dist",
+      "installCommand": "npm install",
+      "framework": "vite",
   "rewrites": [
     {
       "source": "/(.*)",
