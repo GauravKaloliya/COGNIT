@@ -488,16 +488,6 @@ def health_check():
         status["status"] = "degraded"
     return jsonify(status)
 
-@app.route("/test-db")
-def test_db():
-    try:
-        db = get_db()
-        db.execute(text("SELECT 1"))
-        return jsonify({"status": "Database working"})
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
 @app.route("/participants", methods=["POST"])
 @limiter.limit("30 per minute")
 @track_performance
@@ -640,17 +630,6 @@ def record_consent():
     db.commit()
     
     return jsonify({"status": "success", "message": "Consent recorded successfully", "timestamp": timestamp})
-
-@app.route("/consent/<participant_id>")
-def get_consent(participant_id):
-    db = get_db()
-    result = db.execute(text('''
-        SELECT consent_given, consent_timestamp FROM consent_records WHERE participant_id = :participant_id
-    '''), {"participant_id": participant_id})
-    row = result.fetchone()
-    if not row:
-        return jsonify({"participant_id": participant_id, "consent_given": False, "consent_timestamp": None})
-    return jsonify({"participant_id": participant_id, "consent_given": bool(row[0]), "consent_timestamp": str(row[1]) if row[1] else None})
 
 
 @app.route("/payment/create-order", methods=["POST"])
@@ -980,58 +959,6 @@ def submit():
         db.rollback()
         return jsonify({"error": "Failed to save submission", "details": str(e)}), 500
 
-@app.route("/reward/entries")
-@limiter.limit("60 per minute")
-def get_reward_entries():
-    db = get_db()
-    result = db.execute(text("SELECT COUNT(*) FROM participants"))
-    row = result.fetchone()
-    count = int(row[0]) if row else 0
-    return jsonify({"count": count})
-
-
-@app.route("/reward/<participant_id>")
-def get_reward_status(participant_id):
-    db = get_db()
-    participant_fk = _get_or_create_participant_fk(db, participant_id)
-    if not participant_fk:
-        return jsonify({"error": "Participant not found"}), 404
-    status = get_reward_eligibility(participant_fk)
-    return jsonify(status)
-
-@app.route("/reward/select/<participant_id>", methods=["POST"])
-@limiter.limit("10 per minute")
-def check_reward_winner(participant_id):
-    result = select_reward_winner(participant_id)
-    return jsonify(result)
-
-@app.route("/submissions/<participant_id>")
-def get_participant_submissions(participant_id):
-    db = get_db()
-    participant_fk = _get_or_create_participant_fk(db, participant_id)
-    if not participant_fk:
-        return jsonify({"error": "Participant not found"}), 404
-    
-    result = db.execute(text('''
-        SELECT id, image_id, survey_index, description, word_count, rating, feedback, 
-               time_spent_seconds, is_survey, is_attention, attention_passed, 
-               attention_score_at_submission, quality_score, ai_suspected, created_at
-        FROM submissions WHERE participant_fk = :participant_fk ORDER BY created_at DESC
-    '''), {"participant_fk": participant_fk})
-    
-    rows = result.fetchall()
-    submissions = []
-    for row in rows:
-        submissions.append({
-            "id": row[0], "image_id": row[1], "survey_index": row[2], "description": row[3], "word_count": row[4],
-            "rating": row[5], "feedback": row[6], "time_spent_seconds": row[7], "is_survey": bool(row[8]),
-            "is_attention": bool(row[9]), "attention_passed": row[10], "attention_score_at_submission": row[11],
-            "quality_score": row[12], "ai_suspected": bool(row[13]) if row[13] is not None else False, "created_at": str(row[14])
-        })
-    return jsonify(submissions)
-
-
-@app.route("/security/info")
 @track_performance
 def security_info():
     cors_origins = _get_cors_origins()
