@@ -473,9 +473,9 @@
 
                 <h3>Quick Start</h3>
                 <ol>
-                    <li>Make your first request to <code>/api/images/random</code></li>
-                    <li>Submit participant data via <code>/api/submit</code></li>
-                    <li>Retrieve submissions via <code>/api/submissions/&lt;participant_id&gt;</code></li>
+                    <li>Make your first request to <code>/images/random</code></li>
+                    <li>Submit participant data via <code>/submit</code></li>
+                    <li>Retrieve submissions via <code>/submissions/&lt;participant_id&gt;</code></li>
                 </ol>
             </div>
 
@@ -489,7 +489,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/health</code>
+                        <code class="endpoint-path">/health</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -509,7 +509,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/api/participants</code>
+                        <code class="endpoint-path">/participants</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -542,7 +542,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/participants/{participant_id}</code>
+                        <code class="endpoint-path">/participants/{participant_id}</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -567,7 +567,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/api/consent</code>
+                        <code class="endpoint-path">/consent</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -592,7 +592,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/consent/{participant_id}</code>
+                        <code class="endpoint-path">/consent/{participant_id}</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -609,7 +609,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/images/random</code>
+                        <code class="endpoint-path">/images/random</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -617,7 +617,7 @@
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "image_id": "aurora-lake.svg",
-  "image_url": "/api/images/aurora-lake.svg"
+  "image_url": "/images/aurora-lake.svg"
 }</pre></div>
                     </div>
                 </div>
@@ -626,7 +626,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/images/{image_id}</code>
+                        <code class="endpoint-path">/images/{image_id}</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -659,7 +659,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/api/submit</code>
+                        <code class="endpoint-path">/submit</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -695,7 +695,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/submissions/{participant_id}</code>
+                        <code class="endpoint-path">/submissions/{participant_id}</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -709,7 +709,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/security/info</code>
+                        <code class="endpoint-path">/security/info</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -728,7 +728,7 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/api/docs</code>
+                        <code class="endpoint-path">/docs</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
@@ -745,12 +745,12 @@
 
                 <h3 style="margin-top: 24px;">JavaScript / Fetch</h3>
                 <div class="code-block"><pre>// Check system health
-const healthResponse = await fetch('/api/health');
+const healthResponse = await fetch('/health');
 const health = await healthResponse.json();
 console.log(health.status); // 'healthy' or 'degraded'
 
 // Get a random image
-const response = await fetch('/api/images/random');
+const response = await fetch('/images/random');
 const image = await response.json();
 console.log(image.image_url);
 
@@ -765,7 +765,7 @@ const submission = {
   time_spent_seconds: 45
 };
 
-const submitResponse = await fetch('/api/submit', {
+const submitResponse = await fetch('/submit', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(submission)
@@ -778,12 +778,12 @@ console.log(result.status); // 'ok'</pre></div>
                 <div class="code-block"><pre>import requests
 
 # Check system health
-health_response = requests.get('http://localhost:5000/api/health')
+health_response = requests.get('http://localhost:5000/health')
 health = health_response.json()
 print(health['status'])  # 'healthy' or 'degraded'
 
 # Get a random image
-response = requests.get('http://localhost:5000/api/images/random')
+response = requests.get('http://localhost:5000/images/random')
 image = response.json()
 print(image['image_url'])
 
@@ -799,7 +799,7 @@ submission = {
 }
 
 response = requests.post(
-    'http://localhost:5000/api/submit',
+    'http://localhost:5000/submit',
     json=submission
 )
 result = response.json()
@@ -807,13 +807,13 @@ print(result['status'])  # 'ok'</pre></div>
 
                 <h3 style="margin-top: 32px;">cURL</h3>
                 <div class="code-block"><pre># Check system health
-curl -X GET "http://localhost:5000/api/health"
+curl -X GET "http://localhost:5000/health"
 
 # Get a random image
-curl -X GET "http://localhost:5000/api/images/random"
+curl -X GET "http://localhost:5000/images/random"
 
 # Submit participant data
-curl -X POST "http://localhost:5000/api/submit" \
+curl -X POST "http://localhost:5000/submit" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
