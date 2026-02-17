@@ -135,7 +135,7 @@ export default function PaymentPage({
       </div>
 
       <div className="payment-content">
-        <section className="payment-card">
+        <section className="payment-card payment-card-first">
           <h3>
             <span className="payment-card-emoji" aria-hidden="true">💰</span>
             Entry Fee: ₹1
@@ -166,7 +166,7 @@ export default function PaymentPage({
             <span className="payment-card-emoji" aria-hidden="true">🔥</span>
             Increase Your Odds
           </h3>
-          <p>Participants who engage more receive higher selection weight.</p>
+          <p>Participants who engage more receive higher selection priority.</p>
           <p className="payment-callout">Unlock Priority Status by:</p>
           <ul className="payment-checklist">
             <li><span aria-hidden="true">✔</span> Writing 120+ total words</li>

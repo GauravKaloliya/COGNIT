@@ -784,25 +784,6 @@ def serve_image(image_id):
         return send_from_directory(IMAGES_DIR, image_id, mimetype='image/svg+xml')
     return send_from_directory(IMAGES_DIR, image_id)
 
-@app.route("/logo")
-def serve_logo():
-    # Serve logo directly from GitHub
-    import requests
-    github_logo_url = "https://github.com/GauravKaloliya/COGNIT/raw/main/images/cognit_logo.png"
-    try:
-        response = requests.get(github_logo_url, stream=True, timeout=5)
-        if response.status_code == 200:
-            return response.content, 200, {'Content-Type': 'image/png'}
-    except Exception as e:
-        app.logger.error(f"Failed to fetch logo from GitHub: {e}")
-    # Fallback to local file if available
-    logo_path = IMAGES_DIR / "cognit_logo.png"
-    if logo_path.exists():
-        return send_file(logo_path, mimetype='image/png')
-    # If no logo available, return 404
-    return jsonify({"error": "Logo not found"}), 404
-
-
 @app.route("/submit", methods=["POST"])
 @limiter.limit("60 per minute")
 @track_performance

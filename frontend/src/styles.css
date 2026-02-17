@@ -244,36 +244,6 @@ body {
   gap: var(--space-3);
 }
 
-.app-logo {
-  height: 50px;
-  width: 50px;
-  display: block;
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-light);
-  image-rendering: -webkit-optimize-contrast;
-  box-shadow: var(--shadow-md);
-  transition: all var(--transition-base);
-  object-fit: contain;
-  background: var(--panel);
-  padding: 4px;
-}
-
-.app-logo:hover {
-  transform: scale(1.05);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--primary);
-}
-
-body.dark .app-logo {
-  border-color: var(--border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-body.dark .app-logo:hover {
-  border-color: var(--primary);
-  box-shadow: 0 4px 16px rgba(24, 119, 242, 0.25);
-}
-
 /* Status Dot / Badge */
 .status-dot {
   display: inline-flex;
@@ -334,7 +304,7 @@ body.dark .status-dot.offline {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--panel);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
@@ -1457,6 +1427,11 @@ body.dark .toast.warning {
   border-color: var(--accent);
 }
 
+.payment-card-first {
+  padding: var(--space-4) var(--space-5);
+  min-height: 120px;
+}
+
 .payment-card h3 {
   margin: 0;
   font-size: var(--text-base);
@@ -1542,13 +1517,13 @@ body.dark .toast.warning {
 
 /* Separate box for non-refundable note */
 .payment-note-box {
-  background: rgba(231, 76, 60, 0.05);
-  border: 1px solid rgba(231, 76, 60, 0.2);
+  background: rgba(230, 126, 34, 0.1);
+  border: 1px solid rgba(230, 126, 34, 0.4);
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3);
   margin-top: var(--space-2);
   font-size: var(--text-sm);
-  color: var(--error);
+  color: #e67e22;
   font-weight: var(--font-medium);
 }
 
@@ -1568,8 +1543,13 @@ body.dark .toast.warning {
   background: var(--muted);
 }
 
-.payment-cta:not(:disabled):hover {
-  filter: brightness(1.1);
+.payment-cta:hover {
+  filter: none;
+}
+
+.payment-cta:active:not(:disabled) {
+  background: var(--primary);
+  filter: brightness(0.95);
 }
 
 .payment-actions {
