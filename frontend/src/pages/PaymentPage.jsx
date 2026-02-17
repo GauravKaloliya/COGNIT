@@ -186,7 +186,9 @@ export default function PaymentPage({
             <li>Processed within 24–48 hours</li>
             <li>No minimum withdrawal</li>
           </ul>
-          <p className="payment-note">Note: ₹1 entry fee is non-refundable.</p>
+          <div className="payment-note-box">
+            Note: ₹1 entry fee is non-refundable.
+          </div>
         </section>
       </div>
 

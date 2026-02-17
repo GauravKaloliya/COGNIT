@@ -116,7 +116,6 @@ export default function App() {
   // Survey state
   const [survey, setSurvey] = useState(getStoredValue("survey", null));
   const [surveyCompleted, setSurveyCompleted] = useState(getStoredValue("surveyCompleted", 0));
-  const [mainCompleted, setMainCompleted] = useState(getStoredValue("mainCompleted", 0));
   const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(getStoredValue("surveyFeedbackReady", false));
   const [readyForNext, setReadyForNext] = useState(false);
   const [fetchingImage, setFetchingImage] = useState(false);
@@ -135,7 +134,6 @@ export default function App() {
   useEffect(() => { saveStoredValue("stage", stage); }, [stage]);
   useEffect(() => { saveStoredValue("survey", survey); }, [survey]);
   useEffect(() => { saveStoredValue("surveyCompleted", surveyCompleted); }, [surveyCompleted]);
-  useEffect(() => { saveStoredValue("mainCompleted", mainCompleted); }, [mainCompleted]);
   useEffect(() => { saveStoredValue("surveyFeedbackReady", surveyFeedbackReady); }, [surveyFeedbackReady]);
   useEffect(() => { saveStoredValue("shownImages", shownImages); }, [shownImages]);
   useEffect(() => { saveStoredValue("darkMode", darkMode); document.body.classList.toggle("dark", darkMode); }, [darkMode]);
@@ -306,15 +304,9 @@ export default function App() {
       }
       const data = await response.json();
 
-      // Add survey flag based on current stage
-      const surveyData = {
-        ...data,
-        is_survey: stage === "survey"
-      };
-
       // Track this image as shown
       setShownImages(prev => [...prev, data.image_id]);
-      setSurvey(surveyData);
+      setSurvey(data);
     } catch (error) {
       const errorMessage = error.message || "Failed to load image";
       addToast(errorMessage, "error");
@@ -336,7 +328,7 @@ export default function App() {
       rating: formData.rating,
       feedback: formData.comments,
       time_spent_seconds: formData.timeSpentSeconds,
-      is_survey: survey.is_survey || false
+      is_survey: surveyCompleted === 0
     };
 
     const response = await fetch(getApiUrl('/submit'), {
@@ -386,13 +378,13 @@ export default function App() {
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 1200);
 
-    if (survey.is_survey) {
-      // Update survey completed count
-      setSurveyCompleted((prev) => prev + 1);
-      // Show feedback screen after survey submission
+    // Update survey completed count
+    setSurveyCompleted((prev) => prev + 1);
+
+    // Show feedback screen after first practice survey
+    if (surveyCompleted === 0) {
       setSurveyFeedbackReady(true);
     } else {
-      setMainCompleted((prev) => prev + 1);
       setReadyForNext(true);
     }
   };
@@ -401,15 +393,7 @@ export default function App() {
   const handleNext = async () => {
     setReadyForNext(false);
 
-    if (stage === "survey") {
-      // Transition from survey to main surveys
-      addToast("Starting main surveys...", "success");
-      await fetchImage();
-      setStage("trial");
-      return;
-    }
-
-    if (mainCompleted >= 15) {
+    if (surveyCompleted >= 15) {
       setStage("finished");
       return;
     }
@@ -441,7 +425,6 @@ export default function App() {
       { id: "user-details", label: "Details" },
       { id: "payment", label: "Payment" },
       { id: "survey", label: "Practice" },
-      { id: "trial", label: "Task" },
       { id: "finished", label: "Complete" }
     ];
     return steps;
@@ -554,22 +537,6 @@ export default function App() {
           />
         );
       
-      case "trial":
-        return (
-          <SurveyPage
-            survey={survey}
-            participantId={participantId}
-            sessionId={sessionId}
-            onSubmit={handleSubmit}
-            onNext={handleNext}
-            onFinish={handleFinish}
-            showNext={readyForNext}
-            isSurvey={false}
-            fetchError={imageError}
-            onRetry={fetchImage}
-          />
-        );
-      
       case "finished":
         return <FinishedPage surveyCompleted={surveyCompleted} participantId={participantId} />;
       
@@ -578,8 +545,8 @@ export default function App() {
     }
   };
 
-  // Check if we're on a task page (practice survey or main survey)
-  const isTaskPage = stage === "survey" || stage === "trial";
+  // Check if we're on a survey page
+  const isTaskPage = stage === "survey";
 
   return (
     <ErrorBoundary onError={() => addToast("Unexpected error occurred.", "error")}>
