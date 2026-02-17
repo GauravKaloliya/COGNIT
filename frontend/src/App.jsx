@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
 import PaymentPage from "./pages/PaymentPage.jsx";
-import TrialPage from "./pages/TrialPage.jsx";
+import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
 
@@ -536,7 +536,7 @@ export default function App() {
       
       case "survey":
         return (
-          <TrialPage
+          <SurveyPage
             trial={trial}
             participantId={participantId}
             sessionId={sessionId}
@@ -556,7 +556,7 @@ export default function App() {
       
       case "trial":
         return (
-          <TrialPage
+          <SurveyPage
             trial={trial}
             participantId={participantId}
             sessionId={sessionId}
