@@ -19,7 +19,6 @@ from sqlalchemy.pool import QueuePool, NullPool
 BASE_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = BASE_DIR / "images"
 DATA_DIR = BASE_DIR / "data"
-LOGO_DIR = BASE_DIR.parent / "images"
 ENV_FILE = BASE_DIR / "cognit-api.env"
 
 
@@ -802,7 +801,21 @@ def serve_image(image_id):
 
 @app.route("/api/logo")
 def serve_logo():
-    return send_file(LOGO_DIR / "cognit_logo.png", mimetype='image/png')
+    # Serve logo directly from GitHub
+    import requests
+    github_logo_url = "https://github.com/GauravKaloliya/COGNIT/raw/main/images/cognit_logo.png"
+    try:
+        response = requests.get(github_logo_url, stream=True, timeout=5)
+        if response.status_code == 200:
+            return response.content, 200, {'Content-Type': 'image/png'}
+    except Exception as e:
+        app.logger.error(f"Failed to fetch logo from GitHub: {e}")
+    # Fallback to local file if available
+    logo_path = IMAGES_DIR / "cognit_logo.png"
+    if logo_path.exists():
+        return send_file(logo_path, mimetype='image/png')
+    # If no logo available, return 404
+    return jsonify({"error": "Logo not found"}), 404
 
 
 @app.route("/api/submit", methods=["POST"])
@@ -1024,7 +1037,6 @@ def security_info():
     cors_origins = _get_cors_origins()
     return jsonify({
         "security": {
-            "version": "4.0.0",
             "last_updated": datetime.now(timezone.utc).isoformat(),
             "rate_limits": {
                 "default": "200 per day, 50 per hour",
@@ -1115,8 +1127,7 @@ def security_info():
 def _get_api_documentation():
     return {
         "title": "C.O.G.N.I.T. API Documentation",
-        "version": "4.0.0",
-        "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API. Version 4.0.0 introduces surrogate key architecture for improved data integrity.",
+        "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API.",
         "base_url": "/api",
         "security": {
             "rate_limiting": {
@@ -1160,21 +1171,12 @@ def _get_api_documentation():
             "get_reward_status": {"path": "/api/reward/<participant_id>", "method": "GET", "auth_required": False},
             "select_reward_winner": {"path": "/api/reward/select/<participant_id>", "method": "POST", "auth_required": False},
             "get_submissions": {"path": "/api/submissions/<participant_id>", "method": "GET", "auth_required": False}
-        },
-        "changelog": {
-            "4.0.0": "Surrogate key migration: All foreign keys now use BIGINT participant_fk referencing participants(id). Standardized ID types to VARCHAR(100). Added range constraints on scores (0-1).",
-            "3.6.0": "Added quality_score, attention_score_at_submission, ai_suspected columns; reward_winners table; quality score calculation.",
-            "3.5.0": "Migrated from SQLite to PostgreSQL.",
-            "3.4.0": "Updated application name to C.O.G.N.I.T.",
-            "3.3.0": "Added reward system with participant_stats and reward_winners tables.",
-            "3.2.0": "Added images table and survey_index column.",
-            "3.1.0": "Updated documentation and improved error handling."
         }
     }
 
 @app.route("/")
 def serve_api_docs():
-    return render_template("api_docs.html", version="4.0.0", base_url="/api")
+    return render_template("api_docs.html", base_url="/api")
 
 @app.route("/api/docs")
 @limiter.limit("30 per minute")
