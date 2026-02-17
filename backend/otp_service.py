@@ -3,11 +3,20 @@ OTP Service Module
 Handles MessageCentral OTP verification integration
 """
 
+import base64
 import re
 import logging
 from datetime import datetime, timezone, timedelta
 from flask import current_app
 import requests
+
+
+def encode_mc_key(password: str) -> str:
+    """
+    Base64 encode the MessageCentral password.
+    MessageCentral requires the key to be Base64 encoded.
+    """
+    return base64.b64encode(password.encode()).decode()
 
 # Configure module-level logger
 logger = logging.getLogger(__name__)
@@ -60,28 +69,38 @@ def get_mc_auth_token():
             "scope": "NEW"
         }
 
+        logger.info(f"Requesting auth token for customerId: {mc_customer_id}")
         response = requests.get(url, params=params, timeout=10)
+
+        logger.info(f"Token API Status Code: {response.status_code}")
+        logger.info(f"Token API Response: {response.text}")
 
         if response.status_code == 200:
             token_data = response.json()
-            # Check for API error messages even with 200 status
-            if token_data.get("status") == "ERROR" or token_data.get("error"):
-                error_msg = f"MessageCentral API error: {token_data.get('message', token_data.get('error', 'Unknown error'))}"
+
+            # MessageCentral returns responseCode to indicate success/failure
+            response_code = str(token_data.get("responseCode", ""))
+            message = token_data.get("message", "")
+            auth_token = token_data.get("authToken")
+
+            # Check responseCode - "200" means success
+            if response_code != "200":
+                error_msg = f"MessageCentral Error (responseCode: {response_code}): {message}"
                 logger.error(error_msg)
+                logger.error(f"Full response: {token_data}")
                 raise Exception(error_msg)
-            # MessageCentral may return token in different fields
-            auth_token = token_data.get("authToken") or token_data.get("token") or token_data.get("access_token")
-            if auth_token:
-                # Cache token with expiry (tokens typically last 24 hours, we'll use 23 hours for safety)
-                _token_cache["token"] = auth_token
-                _token_cache["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=23)
-                logger.info("MessageCentral auth token generated and cached successfully")
-                return auth_token
-            else:
-                logger.error(f"No authToken in response. Response data: {token_data}")
-                raise Exception(f"No authToken in response. Available keys: {list(token_data.keys())}")
+
+            if not auth_token:
+                logger.error(f"No authToken in response. Full response: {token_data}")
+                raise Exception(f"No authToken in response. responseCode={response_code}, message={message}")
+
+            # Cache token with expiry (tokens typically last 24 hours, we'll use 23 hours for safety)
+            _token_cache["token"] = auth_token
+            _token_cache["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=23)
+            logger.info("MessageCentral auth token generated and cached successfully")
+            return auth_token
         else:
-            error_msg = f"Token generation failed with status {response.status_code}: {response.text}"
+            error_msg = f"Token generation failed with HTTP status {response.status_code}: {response.text}"
             logger.error(error_msg)
             raise Exception(error_msg)
     except requests.exceptions.RequestException as e:
