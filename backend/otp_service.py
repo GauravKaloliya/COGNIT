@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 MC_CUSTOMER_ID = os.getenv("MC_CUSTOMER_ID")
 MC_KEY = os.getenv("MC_KEY")
-MC_BASE_URL = os.getenv("MC_BASE_URL", "https://cpaas.messagecentral.com")
+MC_BASE_URL = os.getenv("MC_BASE_URL")
 
 # In-memory token cache
 _token_cache = {
