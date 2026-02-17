@@ -763,7 +763,12 @@ def get_images_from_db():
         return []
 
 def build_image_payload(image_data: dict):
-    return {"image_id": image_data["image_id"], "image_url": image_data["image_url"]}
+    # Use local API endpoint to serve images instead of external URLs
+    # This ensures images work regardless of external GitHub availability
+    image_id = image_data["image_id"]
+    # Include /api prefix for compatibility with Vercel deployment routing
+    local_url = f"/api/images/{image_id}"
+    return {"image_id": image_id, "image_url": local_url}
 
 @app.route("/images/random")
 def random_image():
@@ -779,6 +784,7 @@ def random_image():
     return jsonify(build_image_payload(image_data))
 
 @app.route("/images/<path:image_id>")
+@app.route("/api/images/<path:image_id>")
 def serve_image(image_id):
     if image_id.endswith('.svg'):
         return send_from_directory(IMAGES_DIR, image_id, mimetype='image/svg+xml')
