@@ -406,22 +406,3 @@ CREATE TRIGGER trg_submission_insert_audit
 AFTER INSERT ON submissions
 FOR EACH ROW
 EXECUTE FUNCTION fn_submission_insert_audit();
-
--- =====================================================
--- Metadata Table
--- =====================================================
-
-CREATE TABLE IF NOT EXISTS database_metadata (
-    key VARCHAR(100) PRIMARY KEY,
-    value TEXT,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO database_metadata (key, value)
-VALUES
-    ('version', '4.0.0'),
-    ('schema_updated', CURRENT_TIMESTAMP::text),
-    ('description', 'C.O.G.N.I.T. Research Platform Database - Surrogate key migration with standardized ID types and score constraints')
-ON CONFLICT (key) DO UPDATE SET
-    value = EXCLUDED.value,
-    updated_at = CURRENT_TIMESTAMP;
