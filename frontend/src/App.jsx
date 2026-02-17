@@ -553,7 +553,6 @@ export default function App() {
       <div className="app">
         <header className="header">
           <div className="brand">
-            <img src={getApiUrl('/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
             <h1>C.O.G.N.I.T.</h1>
             {isTaskPage && (
               <p className="subtitle">Describe each image with as much detail as possible</p>
