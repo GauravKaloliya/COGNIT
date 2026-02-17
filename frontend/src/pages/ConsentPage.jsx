@@ -46,7 +46,7 @@ export default function ConsentPage({
   return (
     <div className="panel">
       <h2>C.O.G.N.I.T. Consent Form for Research Participation</h2>
-      <p className="page-subtitle left">
+      <p className="page-subtitle left no-bottom-margin">
         We sincerely appreciate you considering being part of this work.
       </p>
       
