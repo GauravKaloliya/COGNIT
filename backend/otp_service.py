@@ -157,11 +157,12 @@ def send_otp(mobile: str):
         payload = {
             "customerId": os.getenv("MC_CUSTOMER_ID"),
             "mobileNumber": f"91{mobile}",
-            "flowType": "SMS"
+            "flowType": "SMS",
+            "otpLength": 6
         }
 
         headers = {
-            "authToken": auth_token,
+            "Authorization": f"Bearer {auth_token}",
             "Content-Type": "application/json"
         }
 
@@ -227,7 +228,7 @@ def verify_otp(verification_id: str, otp: str):
         }
 
         headers = {
-            "authToken": auth_token,
+            "Authorization": f"Bearer {auth_token}",
             "Content-Type": "application/json"
         }
 
