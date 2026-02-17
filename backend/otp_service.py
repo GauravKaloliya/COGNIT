@@ -152,13 +152,12 @@ def send_otp(mobile: str):
     try:
         auth_token = get_mc_auth_token()
 
-        url = f"{mc_base_url}/verification/v3/send"
+        url = f"{mc_base_url}/verification/v2/verification/send"
 
         payload = {
             "customerId": os.getenv("MC_CUSTOMER_ID"),
             "mobileNumber": f"91{mobile}",
-            "flowType": "SMS",
-            "otpLength": 6
+            "flowType": "SMS"
         }
 
         headers = {
@@ -220,7 +219,7 @@ def verify_otp(verification_id: str, otp: str):
     try:
         auth_token = get_mc_auth_token()
 
-        url = f"{mc_base_url}/verification/v3/validateOtp"
+        url = f"{mc_base_url}/verification/v2/verification/validateOtp"
 
         payload = {
             "verificationId": verification_id,
