@@ -362,6 +362,7 @@ body.dark .status-dot.offline {
   font-size: var(--text-xs);
   font-weight: var(--font-bold);
   transition: all var(--transition-base);
+  padding: 4px;
 }
 
 .progress-step.active .progress-step-number {
@@ -770,11 +771,19 @@ textarea {
   padding: var(--space-3);
   border-radius: var(--radius-md);
   margin: var(--space-2) 0 0;
+  align-items: center;
+}
+
+.payment-checkbox input[type="checkbox"] {
+  margin-top: 0;
+  margin-right: var(--space-2);
 }
 
 .payment-checkbox .consent-text {
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
+  margin: 0;
+  padding: 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -1366,6 +1375,11 @@ body.dark .toast.warning {
   text-align: left;
 }
 
+.page-subtitle.no-bottom-margin {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
 .payment-panel {
   position: relative;
   border: 1px solid var(--border);
@@ -1385,6 +1399,16 @@ body.dark .toast.warning {
 .payment-header-emoji {
   font-size: clamp(1.75rem, 5vw, 2.5rem);
   margin-bottom: var(--space-1);
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
 }
 
 .payment-header .payment-title {
@@ -1447,7 +1471,7 @@ body.dark .toast.warning {
 }
 
 .payment-list {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   padding-left: 1.25rem;
   display: flex;
   flex-direction: column;
@@ -1456,6 +1480,17 @@ body.dark .toast.warning {
 
 .payment-list li {
   line-height: var(--leading-normal);
+}
+
+/* Remove margin and padding from payment card paragraphs */
+.payment-card > p {
+  margin: 0;
+  padding: 0;
+}
+
+.payment-card .payment-callout {
+  margin: 0;
+  padding: 0;
 }
 
 .payment-checklist {
@@ -1501,9 +1536,20 @@ body.dark .toast.warning {
 }
 
 .payment-note {
-  margin-top: var(--space-1);
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+/* Separate box for non-refundable note */
+.payment-note-box {
+  background: rgba(231, 76, 60, 0.05);
+  border: 1px solid rgba(231, 76, 60, 0.2);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--error);
+  font-weight: var(--font-medium);
 }
 
 .payment-panel .consent-checkbox:hover {

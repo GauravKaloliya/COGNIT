@@ -89,14 +89,14 @@ export default function NotFound() {
             Oops! The page you're looking for doesn't exist.
           </p>
           <div className="page-actions">
-            <button className="primary" onClick={() => navigate('/')}>
+            <button className="ghost" onClick={() => navigate('/')}>
               Go Home
             </button>
           </div>
-          <div className="hero-caption">
-            Created by Gaurav Kaloliya
-          </div>
         </div>
+      </div>
+      <div className="branding-footer">
+        Created by Gaurav Kaloliya
       </div>
     </div>
   );
