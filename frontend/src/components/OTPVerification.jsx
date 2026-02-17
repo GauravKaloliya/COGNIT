@@ -12,6 +12,7 @@ export default function OTPVerification({
   const [error, setError] = useState(null);
   const [canResend, setCanResend] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {
     // Start countdown timer after OTP is sent
@@ -29,7 +30,7 @@ export default function OTPVerification({
     setStatus("sending");
     setError(null);
     setCanResend(false);
-    
+
     try {
       const response = await fetch(`${apiUrl}/otp/send`, {
         method: "POST",
@@ -43,6 +44,13 @@ export default function OTPVerification({
         setVerificationId(data.verificationId);
         setStatus("sent");
         setCountdown(60); // 60 seconds countdown before resend
+
+        // Check if in demo mode
+        if (data.demoMode) {
+          setIsDemoMode(true);
+          setError("Demo mode: Enter any 6-digit OTP (e.g., 123456)");
+          // Keep the demo message visible
+        }
       } else {
         throw new Error(data.error || "Failed to send OTP");
       }
@@ -102,7 +110,10 @@ export default function OTPVerification({
   const handleOtpChange = (e) => {
     const value = e.target.value.replace(/\D/g, "").slice(0, 6);
     setOtp(value);
-    if (error) setError(null);
+    // Don't clear demo mode message
+    if (error && !isDemoMode) {
+      setError(null);
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -117,11 +128,24 @@ export default function OTPVerification({
         <h3>Verify Your Phone Number</h3>
         <p className="otp-subtitle">
           {status === "sending" && "Sending OTP..."}
-          {status === "sent" && `Enter the 6-digit OTP sent to +91 ${mobile}`}
+          {status === "sent" && (
+            <>
+              Enter the 6-digit OTP sent to +91 {mobile}
+              {isDemoMode && (
+                <span className="demo-mode-badge"> Demo Mode Active</span>
+              )}
+            </>
+          )}
           {status === "verifying" && "Verifying OTP..."}
           {status === "verified" && "Phone number verified successfully!"}
           {status === "error" && "Failed to send OTP"}
         </p>
+
+        {isDemoMode && (status === "sent" || status === "verifying") && (
+          <div className="demo-mode-info">
+            <strong>💡 Demo Mode:</strong> Enter any 6-digit number (e.g., 123456) to verify
+          </div>
+        )}
 
         {(status === "sent" || status === "verifying") && (
           <div className="otp-input-container">
