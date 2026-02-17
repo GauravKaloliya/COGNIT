@@ -101,7 +101,7 @@ export default function ConsentPage({
           <li><strong>Reward draw:</strong> Randomly selected participants receive ₹10 via UPI (typically within 24–48 hours)</li>
         </ul>
         <p>
-          Participants demonstrating consistent, attentive, and high-quality engagement may receive priority weighting in reward allocation. Quality is assessed using objective behavioral metrics such as response completeness, instruction compliance, and engagement consistency. Receipt of any reward is not guaranteed.
+          Participants demonstrating consistent, attentive, and high-quality engagement may receive priority in reward allocation. Quality is assessed using objective behavioral metrics such as response completeness, instruction compliance, and engagement consistency. Receipt of any reward is not guaranteed.
         </p>
 
         <h3>Data Protection and Confidentiality</h3>
