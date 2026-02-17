@@ -267,36 +267,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 -- =====================================================
--- OTP Verifications Table
--- =====================================================
-
-CREATE TABLE IF NOT EXISTS otp_verifications (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    participant_fk BIGINT,
-    participant_id VARCHAR(100),
-    mobile VARCHAR(15) NOT NULL,
-    verification_id VARCHAR(100),
-    otp_sent_at TIMESTAMPTZ,
-    otp_verified_at TIMESTAMPTZ,
-    verification_status VARCHAR(50) DEFAULT 'pending',
-    attempt_count INTEGER DEFAULT 0 CHECK (attempt_count >= 0),
-    ip_hash CHAR(64),
-    user_agent VARCHAR(500),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT fk_otp_participant
-        FOREIGN KEY (participant_fk)
-        REFERENCES participants(id)
-        ON DELETE SET NULL,
-
-    CONSTRAINT valid_otp_status
-        CHECK (verification_status IN ('pending', 'verified', 'failed', 'expired')),
-
-    CONSTRAINT unique_pending_otp
-        UNIQUE (mobile, verification_status)
-);
-
--- =====================================================
 -- Performance Metrics
 -- =====================================================
 
@@ -367,13 +337,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_endpoint ON audit_log(endpoint);
 
 CREATE INDEX IF NOT EXISTS idx_performance_timestamp ON performance_metrics(timestamp);
 CREATE INDEX IF NOT EXISTS idx_performance_endpoint ON performance_metrics(endpoint);
-
-CREATE INDEX IF NOT EXISTS idx_otp_participant_fk ON otp_verifications(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_otp_participant_id ON otp_verifications(participant_id);
-CREATE INDEX IF NOT EXISTS idx_otp_mobile ON otp_verifications(mobile);
-CREATE INDEX IF NOT EXISTS idx_otp_verification_id ON otp_verifications(verification_id);
-CREATE INDEX IF NOT EXISTS idx_otp_status ON otp_verifications(verification_status);
-CREATE INDEX IF NOT EXISTS idx_otp_created_at ON otp_verifications(created_at);
 
 -- =====================================================
 -- TRIGGERS (PostgreSQL Version)
