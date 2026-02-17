@@ -3,7 +3,7 @@ import { getApiUrl } from "../utils/apiBase";
 
 const MIN_WORDS = 60;
 
-export default function TrialPage({
+export default function SurveyPage({
   trial,
   participantId,
   sessionId,
