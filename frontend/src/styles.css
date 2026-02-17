@@ -161,23 +161,23 @@ body {
   width: 100%;
   max-width: var(--container-max);
   margin: 0 auto;
-  padding: var(--space-3) var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 @media (min-width: 768px) {
   .app {
-    padding: var(--space-5) var(--space-5) var(--space-3);
-    gap: var(--space-4);
+    padding: var(--space-3) var(--space-3) var(--space-2);
+    gap: var(--space-3);
   }
 }
 
 @media (min-width: 1024px) {
   .app {
-    padding: var(--space-5) var(--space-6) var(--space-3);
+    padding: var(--space-3) var(--space-4) var(--space-2);
   }
 }
 
@@ -188,20 +188,20 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex-wrap: wrap;
   background: var(--panel);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-md);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   border-bottom: 1px solid var(--border-light);
   flex-shrink: 0;
 }
 
 @media (min-width: 768px) {
   .header {
-    padding: var(--space-4) var(--space-5);
-    min-height: 64px;
+    padding: var(--space-3) var(--space-4);
+    min-height: 56px;
   }
 }
 
@@ -214,7 +214,7 @@ body {
 }
 
 .subtitle {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   color: var(--muted);
   font-weight: var(--font-medium);
   font-size: var(--text-sm);
@@ -333,11 +333,11 @@ body.dark .status-dot.offline {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   background: var(--panel);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 
 .progress-step {
@@ -392,9 +392,9 @@ body.dark .status-dot.offline {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  padding: var(--space-4);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-sm);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -405,7 +405,7 @@ body.dark .status-dot.offline {
 
 @media (min-width: 768px) {
   .panel {
-    padding: var(--space-5);
+    padding: var(--space-4);
   }
 }
 
@@ -433,7 +433,7 @@ body.dark .status-dot.offline {
 }
 
 .panel h2 {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-3);
   color: var(--primary);
   font-weight: var(--font-bold);
   font-size: var(--text-xl);
@@ -443,6 +443,7 @@ body.dark .status-dot.offline {
 @media (min-width: 768px) {
   .panel h2 {
     font-size: var(--text-2xl);
+    margin: 0 0 var(--space-4);
   }
 }
 
@@ -450,9 +451,9 @@ body.dark .status-dot.offline {
    Banner
    -------------------------------------------------------------------------- */
 .banner {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  margin: var(--space-2) 0;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   border: 1px solid transparent;
@@ -484,7 +485,7 @@ body.dark .banner.info {
 }
 
 .banner.spaced {
-  margin-top: var(--space-5);
+  margin-top: var(--space-3);
 }
 
 /* --------------------------------------------------------------------------
@@ -492,21 +493,21 @@ body.dark .banner.info {
    -------------------------------------------------------------------------- */
 .form-grid {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
   grid-template-columns: 1fr;
-  margin: var(--space-4) 0;
+  margin: var(--space-3) 0;
 }
 
 @media (min-width: 640px) {
   .form-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-4) var(--space-5);
+    gap: var(--space-3) var(--space-4);
   }
 }
 
 @media (min-width: 1024px) {
   .form-grid {
-    gap: var(--space-5) var(--space-6);
+    gap: var(--space-4) var(--space-5);
   }
 }
 
@@ -548,17 +549,17 @@ body.dark .banner.info {
    Welcome Info / Consent Content
    -------------------------------------------------------------------------- */
 .welcome-info {
-  margin: var(--space-4) 0;
-  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
   background: var(--accent-bg);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
 }
 
 .welcome-info h3 {
   color: var(--primary);
-  margin: var(--space-4) 0 var(--space-2);
-  font-size: var(--text-lg);
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text-base);
   font-weight: var(--font-bold);
   line-height: var(--leading-tight);
 }
@@ -568,19 +569,19 @@ body.dark .banner.info {
 }
 
 .welcome-info ul {
-  margin: var(--space-2) 0;
-  padding-left: 1.5em;
+  margin: var(--space-1) 0;
+  padding-left: 1.25em;
 }
 
 .welcome-info li {
   margin: var(--space-1) 0;
   color: var(--text);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .welcome-info p {
-  margin: var(--space-2) 0;
-  line-height: var(--leading-relaxed);
+  margin: var(--space-1) 0;
+  line-height: var(--leading-normal);
   color: var(--text);
 }
 
@@ -706,10 +707,10 @@ textarea {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
   background: var(--accent-bg);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   transition: border-color var(--transition-fast);
 }
@@ -724,10 +725,10 @@ textarea {
 }
 
 .consent-checkbox input[type="checkbox"] {
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  min-height: 22px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
   accent-color: var(--primary);
   margin: 2px 0 0;
   cursor: pointer;
@@ -738,12 +739,12 @@ textarea {
   font-weight: var(--font-medium);
   color: var(--text);
   cursor: pointer;
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
   font-size: var(--text-sm);
 }
 
 .consent-note {
-  margin: var(--space-3) 0 0;
+  margin: var(--space-1) 0 0;
   font-size: var(--text-xs);
   color: var(--muted);
   font-weight: var(--font-normal);
@@ -752,28 +753,28 @@ textarea {
   background: transparent;
   border-radius: 0;
   border: none;
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 /* Payment checkbox specific */
 .payment-checkbox {
   background-color: var(--panel);
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-2) 0 0;
 }
 
 .payment-checkbox .consent-text {
   font-size: var(--text-sm);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 /* --------------------------------------------------------------------------
    Buttons
    -------------------------------------------------------------------------- */
 .primary {
-  padding: var(--space-2) var(--space-5);
-  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
   font-weight: var(--font-semibold);
@@ -787,20 +788,22 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 44px;
-  min-width: 120px;
+  min-height: 40px;
+  min-width: 100px;
   line-height: 1;
 }
 
 .primary:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: none;
   box-shadow: var(--shadow-md);
-  background: #166fe5;
+  background: var(--primary);
+  filter: brightness(1.1);
 }
 
 .primary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: none;
   box-shadow: var(--shadow-sm);
+  filter: brightness(0.95);
 }
 
 .primary:focus-visible {
@@ -832,8 +835,8 @@ textarea {
 }
 
 .ghost {
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   cursor: pointer;
   font-weight: var(--font-semibold);
@@ -846,8 +849,8 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 40px;
-  min-width: 88px;
+  min-height: 36px;
+  min-width: 80px;
 }
 
 .ghost:hover:not(:disabled) {
@@ -890,7 +893,7 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
   color: var(--muted);
   font-weight: var(--font-semibold);
   font-size: var(--text-base);
@@ -899,12 +902,12 @@ textarea {
 .trial {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .image-container {
   position: relative;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--panel);
@@ -1020,8 +1023,8 @@ body.dark .tag.attention {
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
 }
 
 .field label {
@@ -1035,15 +1038,15 @@ body.dark .tag.attention {
    -------------------------------------------------------------------------- */
 .counts {
   display: flex;
-  gap: var(--space-6);
+  gap: var(--space-4);
   font-size: var(--text-sm);
   color: var(--muted);
   font-weight: var(--font-medium);
   flex-wrap: wrap;
-  margin-bottom: var(--space-5);
-  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-3);
   background: var(--accent);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 
 body.dark .counts {
@@ -1116,7 +1119,7 @@ body.dark .counts {
 }
 
 .effort-rating {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 /* --------------------------------------------------------------------------
@@ -1124,11 +1127,11 @@ body.dark .counts {
    -------------------------------------------------------------------------- */
 .actions {
   display: flex;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  margin-top: var(--space-6);
+  margin-top: var(--space-4);
 }
 
 .survey-button {
@@ -1140,6 +1143,7 @@ body.dark .counts {
   color: var(--muted);
   font-style: italic;
   text-align: center;
+  margin: var(--space-2) 0 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -1147,7 +1151,7 @@ body.dark .counts {
    -------------------------------------------------------------------------- */
 .guidance {
   text-align: center;
-  padding: var(--space-6);
+  padding: var(--space-4);
 }
 
 .guidance h2 {
@@ -1157,7 +1161,8 @@ body.dark .counts {
 .debrief {
   color: var(--muted);
   font-size: var(--text-sm);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
+  margin: var(--space-3) 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -1324,8 +1329,8 @@ body.dark .toast.warning {
   text-align: center;
   color: var(--muted);
   font-size: var(--text-sm);
-  padding: var(--space-3) 0;
-  margin-top: var(--space-4);
+  padding: var(--space-2) 0;
+  margin-top: var(--space-3);
   flex-shrink: 0;
 }
 
@@ -1334,15 +1339,15 @@ body.dark .toast.warning {
    -------------------------------------------------------------------------- */
 .page-hero {
   text-align: center;
-  padding: var(--space-6) var(--space-4);
+  padding: var(--space-4) var(--space-3);
 }
 
 .page-subtitle {
   color: var(--muted);
   font-size: var(--text-base);
-  margin: var(--space-1) 0;
+  margin: var(--space-1) 0 var(--space-3);
   text-align: center;
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .page-subtitle.left {
@@ -1352,63 +1357,63 @@ body.dark .toast.warning {
 .payment-panel {
   position: relative;
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-md);
-  gap: var(--space-5);
+  box-shadow: var(--shadow-sm);
+  gap: var(--space-3);
 }
 
 .payment-header {
   text-align: center;
-  padding: var(--space-5) var(--space-4);
-  border-radius: var(--radius-xl);
+  padding: var(--space-4) var(--space-3);
+  border-radius: var(--radius-lg);
   background: var(--gradient-primary);
   color: #fff;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .payment-header-emoji {
-  font-size: clamp(2rem, 6vw, 2.75rem);
-  margin-bottom: var(--space-2);
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  margin-bottom: var(--space-1);
 }
 
 .payment-header .payment-title {
   margin: 0 0 var(--space-1);
-  font-size: clamp(1.5rem, 5vw, 2.25rem);
+  font-size: clamp(1.375rem, 4vw, 2rem);
   font-weight: var(--font-bold);
   color: inherit;
 }
 
 .payment-subtitle {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
   font-weight: var(--font-semibold);
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
 }
 
 .payment-tagline {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   opacity: 0.9;
 }
 
 .payment-content {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 @media (min-width: 768px) {
   .payment-content {
-    gap: var(--space-5);
+    gap: var(--space-4);
   }
 }
 
 .payment-card {
   background: var(--panel);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  box-shadow: var(--shadow-sm);
+  gap: var(--space-1);
+  box-shadow: none;
 }
 
 .payment-card.highlight {
@@ -1418,7 +1423,7 @@ body.dark .toast.warning {
 
 .payment-card h3 {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   font-weight: var(--font-semibold);
   display: flex;
   align-items: center;
@@ -1426,71 +1431,67 @@ body.dark .toast.warning {
 }
 
 .payment-card-emoji {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
 }
 
 .payment-list {
-  margin: var(--space-2) 0 0;
+  margin: var(--space-1) 0 0;
   padding-left: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .payment-list li {
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .payment-checklist {
   list-style: none;
   padding: 0;
-  margin: var(--space-2) 0 0;
+  margin: var(--space-1) 0 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .payment-checklist li {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .payment-steps {
   list-style: none;
   padding: 0;
-  margin: var(--space-2) 0 0;
+  margin: var(--space-1) 0 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .payment-steps li {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .payment-step-emoji {
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1.2;
 }
 
 .payment-callout {
-  margin: var(--space-2) 0 0;
+  margin: var(--space-1) 0 0;
   font-weight: var(--font-semibold);
 }
 
 .payment-note {
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
   color: var(--muted);
   font-size: var(--text-sm);
-}
-
-.payment-checkbox {
-  margin-top: var(--space-2);
 }
 
 .payment-panel .consent-checkbox:hover {
@@ -1498,14 +1499,28 @@ body.dark .toast.warning {
 }
 
 .payment-cta {
-  min-width: 180px;
-  padding: var(--space-4) var(--space-8);
-  font-size: var(--text-lg);
+  min-width: 160px;
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-base);
+}
+
+.payment-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--muted);
+}
+
+.payment-cta:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+.payment-actions {
+  margin-top: var(--space-4);
 }
 
 .hero-title {
   font-size: clamp(1.75rem, 6vw, 2.5rem);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
   font-weight: var(--font-bold);
 }
 
@@ -1518,21 +1533,21 @@ body.dark .toast.warning {
 }
 
 .hero-subtitle {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
   font-size: clamp(1.125rem, 3vw, 1.5rem);
   font-weight: var(--font-semibold);
 }
 
 .hero-message {
   color: var(--muted);
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
   font-size: var(--text-base);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .hero-caption {
   text-align: center;
-  margin-top: var(--space-6);
+  margin-top: var(--space-4);
   color: var(--muted);
   font-size: var(--text-sm);
 }
@@ -1541,9 +1556,9 @@ body.dark .toast.warning {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex-wrap: wrap;
-  margin-top: var(--space-6);
+  margin-top: var(--space-4);
   width: 100%;
 }
 
@@ -1556,7 +1571,7 @@ body.dark .toast.warning {
 }
 
 .page-top-actions {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 
@@ -1572,16 +1587,16 @@ body.dark .toast.warning {
 }
 
 .finish-reward {
-  padding: var(--space-5);
-  border-radius: var(--radius-xl);
-  margin: var(--space-6) 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  margin: var(--space-4) 0;
   color: white;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 @media (min-width: 640px) {
   .finish-reward {
-    padding: var(--space-6) var(--space-8);
+    padding: var(--space-5) var(--space-6);
   }
 }
 
@@ -1594,12 +1609,12 @@ body.dark .toast.warning {
 }
 
 .finish-reward-icon {
-  font-size: clamp(2rem, 6vw, 3rem);
-  margin-bottom: var(--space-3);
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  margin-bottom: var(--space-2);
 }
 
 .finish-reward-title {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-2);
   color: white;
   font-size: clamp(1.125rem, 3vw, 1.375rem);
   font-weight: var(--font-bold);
@@ -1608,21 +1623,21 @@ body.dark .toast.warning {
 .finish-reward-lead {
   font-size: clamp(1rem, 2.5vw, 1.25rem);
   font-weight: var(--font-semibold);
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
 }
 
 .finish-reward-body {
   margin: 0;
   opacity: 0.9;
   font-size: var(--text-sm);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .finish-reminder {
   background-color: var(--panel);
-  padding: var(--space-5);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
   border: 2px dashed var(--primary);
   text-align: left;
 }
@@ -1634,10 +1649,10 @@ body.dark .toast.warning {
 }
 
 .finish-reminder ul {
-  padding-left: 1.5em;
+  padding-left: 1.25em;
   margin-bottom: 0;
   font-size: var(--text-sm);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-normal);
 }
 
 .soft-panel {
@@ -1950,32 +1965,8 @@ img {
 }
 
 
-/* Fix #9: Increase form grid gaps for better spacing */
-@media (min-width: 640px) {
-  .form-grid {
-    gap: var(--space-5) var(--space-8);
-  }
-}
-
-/* Fix #10: Improve checkbox size and alignment */
-.consent-checkbox input[type="checkbox"] {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.consent-checkbox {
-  align-items: flex-start;
-}
-
-.consent-checkbox label {
-  display: flex;
-  flex-direction: column;
-  line-height: var(--leading-relaxed);
-}
+/* Fix #9: Form grid spacing - now handled above */
+/* Fix #10: Checkbox sizing - now handled above */
 
 /* Fix #11: Number input alignment */
 input[type="number"] {
@@ -1992,21 +1983,13 @@ input[type="number"]::-webkit-outer-spin-button {
   cursor: pointer;
 }
 
-/* Fix #13: Badge padding and alignment */
-.status-dot {
-  padding: 6px 12px;
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-}
+/* Fix #13: Badge padding and alignment - handled above */
 
 /* Fix #15, #16: Unify button border-radius and shadows */
 .primary,
 .ghost,
 .back-button {
-  border-radius: var(--radius-lg) !important;
+  border-radius: var(--radius-md);
 }
 
 .primary {
@@ -2024,20 +2007,10 @@ input[type="number"]::-webkit-outer-spin-button {
 .ghost,
 .back-button,
 .payment-cta {
-  border-radius: var(--radius-lg) !important;
+  border-radius: var(--radius-md);
 }
 
-/* Fix #20: Improve bullet list spacing and readability */
-.welcome-info ul {
-  padding-left: 1.5em;
-  margin: var(--space-3) 0;
-}
-
-.welcome-info li {
-  margin: var(--space-2) 0;
-  line-height: var(--leading-relaxed);
-  color: var(--text);
-}
+/* Fix #20: Improve bullet list spacing and readability - handled above */
 
 
 /* Fix #23: Increase dropdown arrow contrast */
@@ -2065,22 +2038,12 @@ body.dark select {
   color: var(--primary);
 }
 
-/* Fix #25: Better footer positioning */
-.branding-footer {
-  padding: var(--space-3) 0;
-  margin-top: var(--space-4);
-}
+/* Fix #25: Better footer positioning - handled above */
 
 /* Fix #28, #29, #55, #58: Hide debug artifacts (if any) */
 /* These appear to be PDF export artifacts, not part of the live app */
 
-/* Fix #30: Checkbox label text wrapping */
-.consent-checkbox label,
-.payment-checkbox label {
-  line-height: var(--leading-relaxed);
-  word-break: break-word;
-  overflow-wrap: break-word;
-}
+/* Fix #30: Checkbox label text wrapping - handled above */
 
 /* Fix #31: Improve placeholder contrast */
 input::placeholder,
@@ -2098,15 +2061,7 @@ select:invalid {
   margin-left: 2px;
 }
 
-/* Fix #33: Ensure minimum touch targets for accessibility */
-button,
-input,
-select,
-textarea,
-.rating-option .rating-label {
-  min-height: 44px;
-  min-width: 44px;
-}
+/* Fix #33: Ensure minimum touch targets for accessibility - handled above */
 
 /* Fix #34: Email addresses as links - already implemented in JSX */
 
@@ -2131,11 +2086,7 @@ body.dark .banner.warning {
 
 /* Fix #40: Conditional subtitle - already implemented in App.jsx */
 
-/* Fix #41: Unify card shadows */
-.panel,
-.banner {
-  box-shadow: var(--shadow-md);
-}
+/* Fix #41: Unify card shadows - handled above */
 
 /* Fix #42: Add disabled visual feedback */
 button:disabled,
@@ -2172,16 +2123,7 @@ select option {
 
 /* Fix #47: Footer consistency - fixed in App.jsx */
 
-/* Fix #48: Form field label-input alignment */
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.form-field label {
-  margin-bottom: 0;
-}
+/* Fix #48: Form field label-input alignment - handled above */
 
 /* Fix #49: Checkbox text indentation */
 .consent-checkbox label,
@@ -2190,12 +2132,7 @@ select option {
   text-align: left;
 }
 
-/* Fix #50: Payment checkbox card padding */
-.payment-checkbox {
-  padding: var(--space-5);
-  border-radius: var(--radius-lg);
-  margin-top: var(--space-4);
-}
+/* Fix #50: Payment checkbox card padding - handled above */
 
 /* Fix #51: Number input spinner spacing - already fixed above */
 
@@ -2220,18 +2157,9 @@ input[type="number"]:hover::-webkit-outer-spin-button {
 
 /* Fix #60: Required field asterisks - already improved above */
 
-/* Fix #61: Paragraph spacing in consent */
-.welcome-info p + p {
-  margin-top: var(--space-4);
-}
+/* Fix #61: Paragraph spacing in consent - handled above */
 
-/* Fix #62: Badge icon centering */
-.status-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-}
+/* Fix #62: Badge icon centering - handled above */
 
 /* Fix #63: Checkbox shape consistency */
 .consent-checkbox input[type="checkbox"],
@@ -2263,26 +2191,11 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   font-size: 14px;
 }
 
-/* Fix #64: Add separator between header and content */
-.app {
-  gap: var(--space-4);
-}
-
-@media (min-width: 768px) {
-  .app {
-    gap: var(--space-5);
-  }
-}
+/* Fix #64: Add separator between header and content - handled above */
 
 /* Fix #65: Add placeholder text where missing - already in JSX */
 
-/* Fix #66: Unify button shapes */
-.primary,
-.ghost,
-.back-button,
-.payment-cta {
-  border-radius: var(--radius-lg);
-}
+/* Fix #66: Unify button shapes - handled above */
 
 /* Fix #67: Progress stepper hover states */
 .progress-step {
@@ -2293,11 +2206,7 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   color: var(--primary);
 }
 
-/* Fix #68: Bullet indentation consistency */
-.welcome-info ul {
-  padding-left: 1.5em;
-  margin: var(--space-3) 0 var(--space-3) 1.5em;
-}
+/* Fix #68: Bullet indentation consistency - handled above */
 
 /* Fix #69: Remove empty containers - check in JSX */
 
@@ -2318,17 +2227,7 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   }
 }
 
-/* Fix #74: Unify card padding */
-.panel,
-.banner {
-  padding: var(--space-5);
-}
-
-@media (min-width: 768px) {
-  .panel {
-    padding: var(--space-6);
-  }
-}
+/* Fix #74: Unify card padding - handled above */
 
 /* Fix #75: Form grid baseline alignment */
 .form-grid {
@@ -2336,11 +2235,7 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   align-items: stretch;
 }
 
-/* Fix #76: Equalize card padding */
-.consent-checkbox,
-.payment-checkbox {
-  padding: var(--space-5);
-}
+/* Fix #76: Equalize card padding - handled above */
 
 /* Fix #77: Tokenize border colors */
 input,
@@ -2354,25 +2249,7 @@ textarea,
 
 /* Fix #78: Disabled button styling - already implemented */
 
-/* Fix #79: CTA button width consistency */
-.page-actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.page-actions .primary {
-  width: auto;
-  min-width: 140px;
-}
-
-@media (max-width: 640px) {
-  .page-actions .primary {
-    width: 100%;
-  }
-}
+/* Fix #79: CTA button width consistency - handled above */
 
 
 /* Fix #81: Bullet point consistency */
@@ -2384,18 +2261,7 @@ textarea,
   margin-left: var(--space-2);
 }
 
-/* Fix #82: Unified border radius */
-.panel,
-.banner,
-input,
-select,
-textarea,
-button,
-.primary,
-.ghost,
-.back-button {
-  border-radius: var(--radius-lg);
-}
+/* Fix #82: Unified border radius - handled above */
 
 /* Fix #83: Input placeholder vertical centering */
 input::placeholder,
@@ -2405,10 +2271,7 @@ textarea::placeholder {
 }
 
 
-/* Fix #85: Left-align primary action buttons in forms */
-.page-actions {
-  justify-content: center;
-}
+/* Fix #85: Left-align primary action buttons in forms - handled above */
 
 /* Fix #86: Improve checkbox contrast */
 .consent-checkbox input[type="checkbox"],
@@ -2421,16 +2284,7 @@ textarea::placeholder {
   border-color: var(--primary);
 }
 
-/* Fix #87: Reserve error message space */
-.form-field {
-  min-height: auto;
-}
-
-.error-text {
-  min-height: 18px;
-  display: block;
-  margin-top: var(--space-1);
-}
+/* Fix #87: Reserve error message space - handled above */
 
 /* Fix #88: Input focus ring - already implemented */
 
@@ -2443,58 +2297,22 @@ textarea::placeholder {
   font-weight: var(--font-semibold);
 }
 
-/* Fix #91: Layout container hierarchy */
-.app {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
+/* Fix #91: Layout container hierarchy - handled above */
 
 /* Additional improvements for mobile responsiveness */
 @media (max-width: 640px) {
   .form-grid {
-    gap: var(--space-4);
+    gap: var(--space-3);
   }
 }
 
-/* Improve visual hierarchy and consistency */
-.welcome-info {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-}
+/* Improve visual hierarchy and consistency - handled above */
 
-/* Ensure consistent spacing across all sections */
-.welcome-info h3 {
-  margin-top: 0;
-  margin-bottom: var(--space-3);
-}
+/* Ensure consistent spacing across all sections - handled above */
 
-.welcome-info p {
-  margin-top: 0;
-  margin-bottom: var(--space-3);
-}
+/* Payment page specific improvements - handled above */
 
-.welcome-info p:last-child {
-  margin-bottom: 0;
-}
-
-/* Payment page specific improvements */
-.payment-content {
-  display: grid;
-  gap: var(--space-4);
-}
-
-/* Improve button hover states for better feedback */
-.primary:hover:not(:disabled) {
-  background: #166fe5;
-}
-
-.ghost:hover:not(:disabled) {
-  background: var(--bg);
-  border-color: var(--primary);
-  color: var(--primary);
-}
+/* Improve button hover states for better feedback - handled above */
 
 /* Ensure proper text contrast across all states */
 input:disabled::placeholder,
