@@ -221,15 +221,9 @@ body {
   line-height: var(--leading-normal);
 }
 
-/* Hide subtitle on non-task pages */
+/* Show subtitle on all pages */
 .header .subtitle {
-  display: none;
-}
-
-@media (min-width: 640px) {
-  .header .subtitle {
-    display: block;
-  }
+  display: block;
 }
 
 .header-actions {
