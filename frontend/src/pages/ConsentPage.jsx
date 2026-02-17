@@ -64,7 +64,7 @@ export default function ConsentPage({
         <ul>
           <li>Create an account using a valid Indian mobile number and supported email provider</li>
           <li>Provide minimal demographic information (age group, gender, state/UT, primary language)</li>
-          <li>Complete a brief practice trial</li>
+          <li>Complete a brief practice survey</li>
           <li>View a sequence of everyday and abstract images</li>
           <li>Write detailed, natural descriptions for each image (minimum 60 words)</li>
           <li>Indicate perceived image complexity on a 1–10 scale</li>
@@ -77,7 +77,7 @@ export default function ConsentPage({
         <p>To maintain scientific validity:</p>
         <ul>
           <li>The platform uses automated systems to evaluate response completeness, instruction compliance, timing consistency, and engagement patterns.</li>
-          <li>Some trials are designed to verify that instructions are being carefully followed.</li>
+          <li>Some surveys are designed to verify that instructions are being carefully followed.</li>
           <li>Repeated failure to follow instructions or patterns indicating inattentive participation may result in temporary or permanent restriction from continuing the task.</li>
           <li>These quality assessments are conducted algorithmically and are applied uniformly to all participants.</li>
           <li>The exact validation thresholds are not disclosed in order to preserve research integrity.</li>

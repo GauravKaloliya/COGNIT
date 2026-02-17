@@ -113,8 +113,8 @@ export default function App() {
     })
   );
   
-  // Trial state
-  const [trial, setTrial] = useState(getStoredValue("trial", null));
+  // Survey state
+  const [survey, setSurvey] = useState(getStoredValue("survey", null));
   const [surveyCompleted, setSurveyCompleted] = useState(getStoredValue("surveyCompleted", 0));
   const [mainCompleted, setMainCompleted] = useState(getStoredValue("mainCompleted", 0));
   const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(getStoredValue("surveyFeedbackReady", false));
@@ -133,7 +133,7 @@ export default function App() {
   useEffect(() => { saveStoredValue("consentGiven", consentGiven); }, [consentGiven]);
   useEffect(() => { saveStoredValue("demographics", demographics); }, [demographics]);
   useEffect(() => { saveStoredValue("stage", stage); }, [stage]);
-  useEffect(() => { saveStoredValue("trial", trial); }, [trial]);
+  useEffect(() => { saveStoredValue("survey", survey); }, [survey]);
   useEffect(() => { saveStoredValue("surveyCompleted", surveyCompleted); }, [surveyCompleted]);
   useEffect(() => { saveStoredValue("mainCompleted", mainCompleted); }, [mainCompleted]);
   useEffect(() => { saveStoredValue("surveyFeedbackReady", surveyFeedbackReady); }, [surveyFeedbackReady]);
@@ -307,19 +307,19 @@ export default function App() {
       const data = await response.json();
 
       // Add survey flag based on current stage
-      const trialData = {
+      const surveyData = {
         ...data,
         is_survey: stage === "survey"
       };
 
       // Track this image as shown
       setShownImages(prev => [...prev, data.image_id]);
-      setTrial(trialData);
+      setSurvey(surveyData);
     } catch (error) {
       const errorMessage = error.message || "Failed to load image";
       addToast(errorMessage, "error");
       setImageError(errorMessage);
-      setTrial(null);
+      setSurvey(null);
     } finally {
       setFetchingImage(false);
     }
@@ -330,13 +330,13 @@ export default function App() {
     const payload = {
       participant_id: participantId,
       session_id: sessionId,
-      image_id: trial.image_id,
-      image_url: trial.image_url,
+      image_id: survey.image_id,
+      image_url: survey.image_url,
       description: formData.description,
       rating: formData.rating,
       feedback: formData.comments,
       time_spent_seconds: formData.timeSpentSeconds,
-      is_survey: trial.is_survey || false
+      is_survey: survey.is_survey || false
     };
 
     const response = await fetch(getApiUrl('/submit'), {
@@ -386,7 +386,7 @@ export default function App() {
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 1200);
 
-    if (trial.is_survey) {
+    if (survey.is_survey) {
       // Update survey completed count
       setSurveyCompleted((prev) => prev + 1);
       // Show feedback screen after survey submission
@@ -397,13 +397,13 @@ export default function App() {
     }
   };
 
-  // Handle next trial
+  // Handle next survey
   const handleNext = async () => {
     setReadyForNext(false);
 
     if (stage === "survey") {
-      // Transition from survey to main trials
-      addToast("Starting main trials...", "success");
+      // Transition from survey to main surveys
+      addToast("Starting main surveys...", "success");
       await fetchImage();
       setStage("trial");
       return;
@@ -537,7 +537,7 @@ export default function App() {
       case "survey":
         return (
           <SurveyPage
-            trial={trial}
+            survey={survey}
             participantId={participantId}
             sessionId={sessionId}
             onSubmit={handleSubmit}
@@ -557,7 +557,7 @@ export default function App() {
       case "trial":
         return (
           <SurveyPage
-            trial={trial}
+            survey={survey}
             participantId={participantId}
             sessionId={sessionId}
             onSubmit={handleSubmit}
@@ -578,7 +578,7 @@ export default function App() {
     }
   };
 
-  // Check if we're on a task page (survey or trial)
+  // Check if we're on a task page (practice survey or main survey)
   const isTaskPage = stage === "survey" || stage === "trial";
 
   return (
