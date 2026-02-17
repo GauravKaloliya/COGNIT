@@ -20,6 +20,28 @@ BASE_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = BASE_DIR / "images"
 DATA_DIR = BASE_DIR / "data"
 LOGO_DIR = BASE_DIR.parent / "images"
+ENV_FILE = BASE_DIR / "cognit-api.env"
+
+
+def _load_env_file(env_path: Path) -> None:
+    if not env_path.exists():
+        return
+
+    with env_path.open() as env_file:
+        for line in env_file:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+
+            key, separator, value = stripped.partition("=")
+            if not separator:
+                continue
+
+            cleaned_value = value.strip().strip("\"").strip("'")
+            os.environ.setdefault(key.strip(), cleaned_value)
+
+
+_load_env_file(ENV_FILE)
 
 MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
