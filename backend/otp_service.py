@@ -168,12 +168,13 @@ def send_otp(mobile: str):
 
         response = requests.post(url, json=payload, headers=headers, timeout=10)
 
-        if response.status_code == 200:
-            return response.json()
-        else:
-            error_msg = f"Failed to send OTP: {response.status_code} - {response.text}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+        print("OTP Send Status:", response.status_code)
+        print("OTP Send Response:", response.text)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to send OTP: {response.status_code} - {response.text}")
+
+        return response.json()
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Network error sending OTP: {e}")
