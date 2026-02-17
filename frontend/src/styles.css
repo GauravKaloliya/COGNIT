@@ -245,16 +245,32 @@ body {
 }
 
 .app-logo {
-  height: clamp(56px, 8vw, 96px);
+  height: clamp(64px, 9vw, 100px);
   width: auto;
   display: block;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-light);
   image-rendering: -webkit-optimize-contrast;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-base);
+  object-fit: contain;
+  background: var(--panel);
+}
+
+.app-logo:hover {
+  transform: scale(1.02);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary);
 }
 
 body.dark .app-logo {
   border-color: var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+body.dark .app-logo:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px rgba(24, 119, 242, 0.25);
 }
 
 /* Status Dot / Badge */
