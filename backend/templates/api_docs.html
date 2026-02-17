@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>C.O.G.N.I.T.</title>
+    <title>C.O.G.N.I.T. API Documentation</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap');
 
         :root {
             color-scheme: light;
+
             --bg: #f0f2f5;
             --panel: #ffffff;
             --text: #1c1e21;
@@ -23,7 +24,6 @@
             --border: #ccd0d5;
             --shadow: 0 8px 32px rgba(24, 119, 242, 0.15);
             --gradient: linear-gradient(135deg, #f0f2f5 0%, #e7f3ff 100%);
-            --soft-panel: rgba(255, 255, 255, 0.75);
         }
 
         * {
@@ -51,7 +51,6 @@
             gap: clamp(16px, 3vw, 24px);
         }
 
-        /* Panel */
         .panel {
             background: var(--panel);
             border: 2px solid var(--border);
@@ -91,11 +90,6 @@
             color: var(--text);
         }
 
-        .panel h4 {
-            margin-bottom: 8px;
-            color: var(--text);
-        }
-
         .panel p {
             line-height: 1.6;
             font-size: clamp(14px, 2.6vw, 16px);
@@ -110,38 +104,6 @@
             margin: 8px 0;
         }
 
-        /* Header actions */
-        .header-actions {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .ghost {
-            padding: 14px 28px;
-            border-radius: 50px;
-            border: 2px solid var(--border);
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            font-family: inherit;
-            background: transparent;
-            color: var(--text);
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            text-decoration: none;
-        }
-
-        .ghost:hover {
-            background: var(--panel);
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        /* Tabs */
         .tabs {
             display: flex;
             gap: 8px;
@@ -175,7 +137,6 @@
             color: var(--text);
         }
 
-        /* Tab content */
         .tab-content {
             display: none;
         }
@@ -184,7 +145,6 @@
             display: block;
         }
 
-        /* Code boxes */
         .code-box {
             background: var(--bg);
             padding: 12px 16px;
@@ -209,30 +169,6 @@
             font-size: 14px;
         }
 
-        .code-block {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 16px;
-            border-radius: 8px;
-            overflow: auto;
-            font-family: Consolas, Monaco, "Courier New", monospace;
-            font-size: 14px;
-            line-height: 1.5;
-            margin: 10px 0;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        .code-block pre {
-            margin: 0;
-        }
-
-        .code-block.small {
-            padding: 12px;
-            font-size: 12px;
-        }
-
-        /* Endpoint cards */
         .endpoint-card {
             border: 2px solid var(--border);
             border-radius: 12px;
@@ -308,7 +244,6 @@
             color: var(--text);
         }
 
-        /* Tables */
         table {
             width: 100%;
             border-collapse: collapse;
@@ -334,7 +269,6 @@
             background: var(--bg);
         }
 
-        /* Footer */
         .footer {
             margin-top: 48px;
             padding-top: 24px;
@@ -343,90 +277,23 @@
             color: var(--muted);
         }
 
-        /* Loading and error states */
-        .loading, .error {
-            text-align: center;
-            padding: 40px;
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            overflow: auto;
+            font-family: Consolas, Monaco, "Courier New", monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
-        .loading {
-            color: var(--muted);
-            font-style: italic;
-        }
-
-        .error {
-            color: var(--error);
-        }
-
-        .page-actions {
-            display: flex;
-            justify-content: center;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin-top: 24px;
-        }
-
-        .page-actions.left {
-            justify-content: flex-start;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .app {
-                padding: 16px;
-            }
-
-            .panel {
-                padding: 20px;
-            }
-
-            .doc-header {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .header-actions {
-                width: 100%;
-                justify-content: space-between;
-            }
-
-            .tabs {
-                flex-wrap: nowrap;
-                overflow-x: auto;
-            }
-
-            .tab {
-                white-space: nowrap;
-            }
-
-            table {
-                font-size: 12px;
-                display: block;
-                overflow-x: auto;
-            }
-
-            th, td {
-                padding: 8px;
-            }
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--primary);
-            border-radius: 999px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #166fe5;
+        .code-block small {
+            padding: 12px;
+            font-size: 12px;
         }
     </style>
 </head>
@@ -436,7 +303,7 @@
             <!-- Header -->
             <div class="doc-header">
                 <div>
-                    <h1>C.O.G.N.I.T.</h1>
+                    <h1>C.O.G.N.I.T. API Documentation</h1>
                 </div>
             </div>
 
@@ -475,7 +342,6 @@
                 <ol>
                     <li>Make your first request to <code>/images/random</code></li>
                     <li>Submit participant data via <code>/submit</code></li>
-                    <li>Retrieve submissions via <code>/submissions/&lt;participant_id&gt;</code></li>
                 </ol>
             </div>
 
@@ -505,7 +371,7 @@
                     </div>
                 </div>
 
-                <!-- Participants -->
+                <!-- Create Participant -->
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
@@ -539,31 +405,7 @@
                     </div>
                 </div>
 
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/participants/{participant_id}</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Get participant details</p>
-                        <div class="code-block small"><pre>{
-  "participant_id": "uuid-string",
-  "username": "john_doe",
-  "email": "john@example.com",
-  "phone": "+1234567890",
-  "gender": "male",
-  "age": 25,
-  "place": "New York",
-  "native_language": "English",
-  "prior_experience": "Photography",
-  "consent_given": true,
-  "created_at": "2024-01-01T00:00:00Z"
-}</pre></div>
-                    </div>
-                </div>
-
-                <!-- Consent -->
+                <!-- Record Consent -->
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
@@ -589,22 +431,6 @@
                     </div>
                 </div>
 
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/consent/{participant_id}</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Get consent status for a participant</p>
-                        <div class="code-block small"><pre>{
-  "participant_id": "uuid-string",
-  "consent_given": true,
-  "consent_timestamp": "2024-01-01T00:00:00Z"
-}</pre></div>
-                    </div>
-                </div>
-
                 <!-- Get Random Image -->
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
@@ -613,7 +439,7 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Retrieve a random image for the study</p>
+                        <p class="endpoint-desc">Retrieve a random image for study</p>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "image_id": "aurora-lake.svg",
@@ -646,7 +472,7 @@
                                     <td><code>image_id</code></td>
                                     <td>string</td>
                                     <td>Yes</td>
-                                    <td>ID of the image to retrieve</td>
+                                    <td>ID of image to retrieve</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -679,7 +505,7 @@
   "is_survey": "boolean"
 }</pre></div>
                         <p style="color: var(--muted); font-size: 14px; margin-top: 8px;">
-                          Attention checks are determined server-side based on the image ID. The response only includes
+                          Attention checks are determined server-side based on image ID. The response only includes
                           <code>attention_passed</code> when applicable.
                         </p>
                         <h4>Response</h4>
@@ -691,51 +517,68 @@
                     </div>
                 </div>
 
-                <!-- Get Submissions -->
+                <!-- Create Payment Order -->
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/submissions/{participant_id}</code>
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payment/create-order</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Get all submissions for a participant</p>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>[{...submission objects...}]</pre></div>
-                    </div>
-                </div>
-
-                <!-- Security Info -->
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/security/info</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Get security configuration details</p>
+                        <p class="endpoint-desc">Create a payment order via Razorpay</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
+                        </div>
+                        <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "security": {
-    "rate_limits": "object",
-    "cors_allowed_origins": "array",
-    "security_headers": "array"
-  }
+  "participant_id": "string (required)"
+}</pre></div>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "order_id": "rzp_order_id",
+  "key": "rzp_key_id",
+  "amount": 100,
+  "currency": "INR"
 }</pre></div>
                     </div>
                 </div>
 
-                <!-- API Docs -->
+                <!-- Verify Payment -->
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/docs</code>
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payment/verify</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Retrieve the API documentation</p>
+                        <p class="endpoint-desc">Verify payment with Razorpay</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
+                        </div>
+                        <h4>Request Body</h4>
+                        <div class="code-block small"><pre>{
+  "razorpay_order_id": "string (required)",
+  "razorpay_payment_id": "string (required)",
+  "razorpay_signature": "string (required)"
+}</pre></div>
                         <h4>Response</h4>
-                        <div class="code-block small"><pre>Documentation payload</pre></div>
+                        <div class="code-block small"><pre>{
+  "status": "verified"
+}</pre></div>
                     </div>
+                </div>
+
+                <!-- Payment Webhook -->
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payment/webhook</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Handle Razorpay payment webhooks (for payment confirmation)</p>
+                    </div>
+                </div>
                 </div>
             </div>
 
@@ -759,7 +602,7 @@ const submission = {
   participant_id: 'user-123',
   session_id: 'session-456',
   image_id: 'aurora-lake.svg',
-  description: 'The image shows a beautiful sunset over mountains...',
+  description: 'The image shows a beautiful sunset...',
   rating: 8,
   feedback: 'Interesting image',
   time_spent_seconds: 45
@@ -812,14 +655,28 @@ curl -X GET "http://localhost:5000/health"
 # Get a random image
 curl -X GET "http://localhost:5000/images/random"
 
-# Submit participant data
+# Create participant
+curl -X POST "http://localhost:5000/participants" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participant_id": "user-123",
+    "session_id": "session-456",
+    "username": "john_doe",
+    "gender": "male",
+    "age": 25,
+    "place": "New York",
+    "native_language": "English",
+    "prior_experience": "Photography"
+  }'
+
+# Submit data
 curl -X POST "http://localhost:5000/submit" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
     "session_id": "session-456",
     "image_id": "aurora-lake.svg",
-    "description": "The image shows...",
+    "description": "The image shows a beautiful sunset...",
     "rating": 8,
     "feedback": "Great image",
     "time_spent_seconds": 45
@@ -829,7 +686,7 @@ curl -X POST "http://localhost:5000/submit" \
             <!-- Errors Section -->
             <div id="errors" class="tab-content">
                 <h2>Error Handling</h2>
-                <p>The API uses standard HTTP response codes to indicate the success or failure of requests.</p>
+                <p>The API uses standard HTTP response codes to indicate success or failure of requests.</p>
 
                 <h3 style="margin-top: 24px;">HTTP Status Codes</h3>
                 <table>
@@ -890,6 +747,10 @@ curl -X POST "http://localhost:5000/submit" \
                     <li><code>rating must be an integer between 1-10</code> - Invalid rating value</li>
                     <li><code>comments must be at least 5 characters</code> - Feedback is too short</li>
                     <li><code>image_id is required</code> - Missing required field</li>
+                    <li><code>participant_id is required</code> - Missing participant ID</li>
+                    <li><code>Participant not found</code> - Participant record not found</li>
+                    <li><code>Payment required</code> - Payment not completed</li>
+                    <li><code>Consent required</code> - Consent not given</li>
                 </ul>
             </div>
 
@@ -908,12 +769,12 @@ curl -X POST "http://localhost:5000/submit" \
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
                 // Add active class to clicked tab
                 tab.classList.add('active');
-                
+
                 // Hide all tab content
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.classList.remove('active');
                 });
-                
+
                 // Show the selected tab content
                 const tabId = tab.getAttribute('data-tab');
                 document.getElementById(tabId).classList.add('active');
