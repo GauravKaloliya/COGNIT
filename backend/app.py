@@ -1264,8 +1264,15 @@ def send_otp():
         app.logger.error(f"Validation error sending OTP: {e}")
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        app.logger.error(f"Error sending OTP: {e}")
-        return jsonify({"error": "Failed to send OTP. Please try again later.", "details": str(e)}), 500
+        error_msg = str(e)
+        app.logger.error(f"Error sending OTP: {error_msg}")
+        # Check if it's a configuration issue
+        if "authToken" in error_msg or "token" in error_msg.lower():
+            return jsonify({
+                "error": "OTP service configuration error. Please contact support.",
+                "details": error_msg
+            }), 500
+        return jsonify({"error": "Failed to send OTP. Please try again later.", "details": error_msg}), 500
 
 
 @app.route("/otp/verify", methods=["POST"])

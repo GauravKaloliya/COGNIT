@@ -64,7 +64,13 @@ def get_mc_auth_token():
 
         if response.status_code == 200:
             token_data = response.json()
-            auth_token = token_data.get("authToken")
+            # Check for API error messages even with 200 status
+            if token_data.get("status") == "ERROR" or token_data.get("error"):
+                error_msg = f"MessageCentral API error: {token_data.get('message', token_data.get('error', 'Unknown error'))}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            # MessageCentral may return token in different fields
+            auth_token = token_data.get("authToken") or token_data.get("token") or token_data.get("access_token")
             if auth_token:
                 # Cache token with expiry (tokens typically last 24 hours, we'll use 23 hours for safety)
                 _token_cache["token"] = auth_token
@@ -72,7 +78,8 @@ def get_mc_auth_token():
                 logger.info("MessageCentral auth token generated and cached successfully")
                 return auth_token
             else:
-                raise Exception("No authToken in response")
+                logger.error(f"No authToken in response. Response data: {token_data}")
+                raise Exception(f"No authToken in response. Available keys: {list(token_data.keys())}")
         else:
             error_msg = f"Token generation failed with status {response.status_code}: {response.text}"
             logger.error(error_msg)
