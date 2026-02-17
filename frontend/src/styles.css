@@ -608,23 +608,10 @@ textarea::placeholder {
   opacity: 0.8;
 }
 
-/* Number input - center aligned */
-input[type="number"] {
-  text-align: center;
-  padding-right: var(--space-8);
-}
-
+/* Number input - left aligned for form fields */
 input[type="number"].number-left {
   text-align: left;
   padding-right: var(--space-4);
-}
-
-/* Remove spinner arrows for cleaner look */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  opacity: 1;
-  height: 24px;
-  margin-right: 4px;
 }
 
 /* Select dropdown with SVG icon */
@@ -775,14 +762,11 @@ textarea {
 }
 
 .primary:hover:not(:disabled) {
-  transform: none;
   box-shadow: var(--shadow-md);
-  background: var(--primary);
   filter: brightness(1.1);
 }
 
 .primary:active:not(:disabled) {
-  transform: none;
   box-shadow: var(--shadow-sm);
   filter: brightness(0.95);
 }
@@ -799,7 +783,6 @@ textarea {
 }
 
 .primary.compact {
-  padding: var(--space-2) var(--space-4);
   min-height: 36px;
   font-size: var(--text-sm);
   min-width: auto;
@@ -853,11 +836,6 @@ textarea {
 .back-button {
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-sm);
-  border-color: var(--border);
-}
-
-.back-button:hover {
-  background: var(--accent-bg);
 }
 
 .dark-mode-toggle {
@@ -1673,10 +1651,6 @@ body.dark .toast.warning {
   line-height: var(--leading-normal);
 }
 
-.soft-panel {
-  background: var(--soft-panel);
-}
-
 .not-found-dog {
   width: 180px;
   margin: 0 auto var(--space-6);
@@ -1828,17 +1802,9 @@ input[type="number"] {
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: inner-spin-button !important;
-  opacity: 1;
   width: 20px;
   height: 100%;
   cursor: pointer;
-}
-
-/* Dropdown text overflow with ellipsis */
-select {
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow: hidden;
 }
 
 /* Ensure proper input sizing for short content */
@@ -1848,28 +1814,10 @@ select {
   min-width: 0;
 }
 
-/* Consent page link styling */
-.welcome-info a {
-  color: var(--primary);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  font-weight: var(--font-semibold);
-}
-
-.welcome-info a:hover {
-  text-decoration: none;
-}
-
-/* Footer link styling - consistent across pages */
+/* Footer link styling */
 .branding-footer a {
   color: inherit;
   text-decoration: none;
-}
-
-/* Ensure consistent section spacing */
-.welcome-info h3 + p,
-.welcome-info h3 + ul {
-  margin-top: var(--space-2);
 }
 
 /* Paragraph spacing for readability */
@@ -1878,46 +1826,14 @@ select {
 }
 
 /* Improve checkbox card internal spacing */
-.consent-checkbox {
-  align-items: flex-start;
-}
-
 .consent-checkbox input[type="checkbox"] {
   margin-top: 2px;
   flex-shrink: 0;
 }
 
-/* Fix back button border visibility */
-.back-button {
-  border-width: 1px;
-  border-color: var(--border);
-}
-
-.back-button:hover {
-  border-color: var(--primary);
-}
-
-/* Ensure buttons have consistent border-radius */
-.primary,
-.ghost {
-  border-radius: var(--radius-lg);
-}
-
-/* Consent page checkbox label improvements */
-.consent-checkbox label {
-  line-height: var(--leading-relaxed);
-}
-
 /* Payment page specific improvements */
 .payment-panel .page-actions {
   margin-top: var(--space-6);
-}
-
-/* Highlight heading improvements */
-.highlight-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 
@@ -1956,20 +1872,19 @@ img {
 }
 
 /* ==========================================================================
-   COMPREHENSIVE UI/UX FIXES
+   UTILITY FIXES
    ========================================================================== */
 
-/* Fix #5: Reduce bottom whitespace on short-content pages */
+/* Panel minimum height */
 .panel {
   min-height: 0;
 }
 
-/* Fix #6, #7: Improve text truncation and line breaks */
+/* Text truncation and line breaks */
 .welcome-info,
 .payment-card,
 .consent-checkbox label {
   overflow-wrap: break-word;
-  word-wrap: break-word;
   word-break: break-word;
   hyphens: auto;
 }
@@ -1979,14 +1894,9 @@ img {
 .payment-card p,
 .payment-card li {
   line-height: var(--leading-relaxed);
-  overflow-wrap: break-word;
 }
 
-
-/* Fix #9: Form grid spacing - now handled above */
-/* Fix #10: Checkbox sizing - now handled above */
-
-/* Fix #11: Number input alignment */
+/* Number input alignment */
 input[type="number"] {
   text-align: center;
   padding-right: var(--space-8);
@@ -1995,95 +1905,36 @@ input[type="number"] {
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: inner-spin-button !important;
-  opacity: 1;
   width: 20px;
   height: 100%;
   cursor: pointer;
 }
 
-/* Fix #13: Badge padding and alignment - handled above */
-
-/* Fix #15, #16: Unify button border-radius and shadows */
-.primary,
-.ghost,
-.back-button {
-  border-radius: var(--radius-md);
-}
-
-.primary {
-  box-shadow: var(--shadow-sm);
-}
-
-.primary:hover:not(:disabled) {
-  box-shadow: var(--shadow-md);
-}
-
-/* Fix #17: Dropdown arrow styling - already using SVG icon */
-
-/* Fix #18: Ensure uniform button corners */
-.primary,
-.ghost,
-.back-button,
+/* Payment CTA specific styling */
 .payment-cta {
   border-radius: var(--radius-md);
 }
 
-/* Fix #20: Improve bullet list spacing and readability - handled above */
 
-
-/* Fix #23: Increase dropdown arrow contrast */
-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%234a5568' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-}
-
-select:focus {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%231877f2' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-}
-
-body.dark select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23e4e6eb' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-}
-
-/* Fix #24: Improve back button visibility */
+/* Improve back button visibility */
 .back-button {
   border-width: 1.5px;
-  border-color: var(--border);
 }
 
-.back-button:hover {
-  border-color: var(--primary);
-  background: var(--accent-bg);
-  color: var(--primary);
-}
-
-/* Fix #25: Better footer positioning - handled above */
-
-/* Fix #28, #29, #55, #58: Hide debug artifacts (if any) */
-/* These appear to be PDF export artifacts, not part of the live app */
-
-/* Fix #30: Checkbox label text wrapping - handled above */
-
-/* Fix #31: Improve placeholder contrast */
+/* Improve placeholder contrast */
 input::placeholder,
 textarea::placeholder,
 select:invalid {
-  color: var(--muted);
   opacity: 0.9;
 }
 
-/* Fix #32: Make required asterisks more visible */
+/* Make required asterisks more visible */
 .form-field label .required {
-  color: var(--error);
-  font-weight: var(--font-bold);
   font-size: 1.1em;
   margin-left: 2px;
 }
 
-/* Fix #33: Ensure minimum touch targets for accessibility - handled above */
-
-/* Fix #34: Email addresses as links - already implemented in JSX */
-
-/* Fix #35: Improve note banner contrast */
+/* Improve note banner contrast */
 .banner.warning {
   background: #fff7ed;
   color: #9a3412;
@@ -2096,17 +1947,7 @@ body.dark .banner.warning {
   border-color: rgba(230, 126, 34, 0.4);
 }
 
-
-/* Fix #36: Ensure visible focus states - already implemented */
-
-/* Fix #39: Replace moon icon with clearer online indicator */
-/* Already using dot indicator, moon is for dark mode toggle */
-
-/* Fix #40: Conditional subtitle - already implemented in App.jsx */
-
-/* Fix #41: Unify card shadows - handled above */
-
-/* Fix #42: Add disabled visual feedback */
+/* Disabled visual feedback */
 button:disabled,
 input:disabled,
 select:disabled,
@@ -2116,13 +1957,6 @@ textarea:disabled {
   background: var(--bg);
 }
 
-/* Fix #43: Dropdown values with ellipsis */
-select {
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
 /* Ensure dropdown options display properly */
 select option {
   white-space: normal;
@@ -2130,36 +1964,18 @@ select option {
   padding: var(--space-2) var(--space-3);
 }
 
-/* Fix #44: Input width for short content - using flex layout */
-
-/* Fix #45, #46: Consistent layout across pages */
+/* Consistent layout across pages */
 .panel {
-  display: flex;
-  flex-direction: column;
   min-height: auto;
 }
 
-/* Fix #47: Footer consistency - fixed in App.jsx */
-
-/* Fix #48: Form field label-input alignment - handled above */
-
-/* Fix #49: Checkbox text indentation */
+/* Checkbox text alignment */
 .consent-checkbox label,
 .payment-checkbox label {
   padding-left: 0;
-  text-align: left;
 }
 
-/* Fix #50: Payment checkbox card padding - handled above */
-
-/* Fix #51: Number input spinner spacing - already fixed above */
-
-/* Fix #52: Unify button styles - primary buttons already consistent */
-.payment-cta {
-  background: var(--primary);
-  border: none;
-}
-
+/* Payment CTA button states */
 .payment-cta:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -2167,13 +1983,10 @@ select option {
 }
 
 .payment-cta:active:not(:disabled) {
-  background: var(--primary);
   filter: brightness(0.9);
 }
 
-/* Fix #54: Gift icon styling - already using SVG icon */
-
-/* Fix #59: Increase number input spinner contrast */
+/* Number input spinner contrast */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   opacity: 0.7;
@@ -2184,13 +1997,7 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   opacity: 1;
 }
 
-/* Fix #60: Required field asterisks - already improved above */
-
-/* Fix #61: Paragraph spacing in consent - handled above */
-
-/* Fix #62: Badge icon centering - handled above */
-
-/* Fix #63: Checkbox shape consistency */
+/* Checkbox styling */
 .consent-checkbox input[type="checkbox"],
 .payment-checkbox input[type="checkbox"] {
   border-radius: var(--radius-sm);
@@ -2220,13 +2027,7 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   font-size: 14px;
 }
 
-/* Fix #64: Add separator between header and content - handled above */
-
-/* Fix #65: Add placeholder text where missing - already in JSX */
-
-/* Fix #66: Unify button shapes - handled above */
-
-/* Fix #67: Progress stepper hover states */
+/* Progress stepper styling */
 .progress-step {
   cursor: default;
 }
@@ -2235,53 +2036,12 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   color: var(--primary);
 }
 
-/* Fix #68: Bullet indentation consistency - handled above */
-
-/* Fix #69: Remove empty containers - check in JSX */
-
-/* Fix #70: Better hyphenation - already implemented */
-
-/* Fix #71: Enforce 8px grid system - already using CSS variables */
-
-/* Fix #72: Interactive state styling - already implemented */
-
-/* Fix #73: Form field vertical alignment */
+/* Form grid alignment */
 .form-grid {
-  align-items: start;
-}
-
-@media (min-width: 640px) {
-  .form-grid {
-    align-items: stretch;
-  }
-}
-
-/* Fix #74: Unify card padding - handled above */
-
-/* Fix #75: Form grid baseline alignment */
-.form-grid {
-  display: grid;
   align-items: stretch;
 }
 
-/* Fix #76: Equalize card padding - handled above */
-
-/* Fix #77: Tokenize border colors */
-input,
-select,
-textarea,
-.ghost,
-.back-button {
-  border-color: var(--border);
-  border-width: 1px;
-}
-
-/* Fix #78: Disabled button styling - already implemented */
-
-/* Fix #79: CTA button width consistency - handled above */
-
-
-/* Fix #81: Bullet point consistency */
+/* Bullet point consistency */
 .welcome-info ul {
   list-style-type: disc;
 }
@@ -2290,60 +2050,27 @@ textarea,
   margin-left: var(--space-2);
 }
 
-/* Fix #82: Unified border radius - handled above */
-
-/* Fix #83: Input placeholder vertical centering */
-input::placeholder,
-select::placeholder,
-textarea::placeholder {
-  line-height: var(--leading-normal);
-}
-
-
-/* Fix #85: Left-align primary action buttons in forms - handled above */
-
-/* Fix #86: Improve checkbox contrast */
-.consent-checkbox input[type="checkbox"],
-.payment-checkbox input[type="checkbox"] {
-  border-color: var(--border);
-}
-
+/* Checkbox hover states */
 .consent-checkbox input[type="checkbox"]:hover,
 .payment-checkbox input[type="checkbox"]:hover {
   border-color: var(--primary);
 }
 
-/* Fix #87: Reserve error message space - handled above */
-
-/* Fix #88: Input focus ring - already implemented */
-
-/* Fix #89: Design tokens - already using CSS variables */
-
-/* Fix #90: Unify badge styling */
+/* Badge styling consistency */
 .status-dot,
 .tag {
   border-radius: var(--radius-full);
   font-weight: var(--font-semibold);
 }
 
-/* Fix #91: Layout container hierarchy - handled above */
-
-/* Additional improvements for mobile responsiveness */
+/* Mobile responsiveness */
 @media (max-width: 640px) {
   .form-grid {
     gap: var(--space-3);
   }
 }
 
-/* Improve visual hierarchy and consistency - handled above */
-
-/* Ensure consistent spacing across all sections - handled above */
-
-/* Payment page specific improvements - handled above */
-
-/* Improve button hover states for better feedback - handled above */
-
-/* Ensure proper text contrast across all states */
+/* Disabled input placeholder */
 input:disabled::placeholder,
 select:disabled::placeholder,
 textarea:disabled::placeholder {
