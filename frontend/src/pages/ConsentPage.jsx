@@ -91,7 +91,7 @@ export default function ConsentPage({
           <li>Withdraw at any time without penalty</li>
           <li>Request deletion of your data after participation</li>
         </ul>
-        <p>To withdraw or request deletion, contact: <a href="mailto:research@cognit.org"><strong>research@cognit.org</strong></a></p>
+        <p>To withdraw or request deletion, contact: <a href="mailto:research@cognit.online"><strong>research@cognit.online</strong></a></p>
         <p>We aim to respond within 48 hours.</p>
         <p>Early withdrawal before task completion means you will not be entered into the reward draw.</p>
 
@@ -146,7 +146,7 @@ export default function ConsentPage({
 
         <h3>Contact Information</h3>
         <p>For questions, concerns, complaints, or data deletion requests:</p>
-        <p><strong>Email:</strong> <a href="mailto:research@cognit.org">research@cognit.org</a></p>
+        <p><strong>Email:</strong> <a href="mailto:research@cognit.online">research@cognit.online</a></p>
 
         <h3>Statement of Consent</h3>
         <p>By selecting "I Consent & Proceed", you confirm that you:</p>
