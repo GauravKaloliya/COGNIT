@@ -9,7 +9,7 @@ export default function NotFound() {
     <div className="app">
       <header className="header">
         <div className="brand">
-          <img src={getApiUrl('/api/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
+          <img src={getApiUrl('/logo')} alt="C.O.G.N.I.T. logo" className="app-logo" />
           <h1>C.O.G.N.I.T.</h1>
         </div>
       </header>
