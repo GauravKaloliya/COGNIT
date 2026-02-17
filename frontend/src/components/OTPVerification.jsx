@@ -32,7 +32,9 @@ export default function OTPVerification({
     setCanResend(false);
 
     try {
-      const response = await fetch(`${apiUrl}/otp/send`, {
+      // Ensure no double slashes by normalizing the URL
+      const baseUrl = apiUrl?.replace(/\/+$/, '') || '';
+      const response = await fetch(`${baseUrl}/otp/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mobile })
@@ -70,7 +72,9 @@ export default function OTPVerification({
     setError(null);
 
     try {
-      const response = await fetch(`${apiUrl}/otp/verify`, {
+      // Ensure no double slashes by normalizing the URL
+      const baseUrl = apiUrl?.replace(/\/+$/, '') || '';
+      const response = await fetch(`${baseUrl}/otp/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
