@@ -149,7 +149,7 @@ html {
 
 body {
   margin: 0;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-base);
