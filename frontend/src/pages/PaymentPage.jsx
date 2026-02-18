@@ -22,7 +22,7 @@ export default function PaymentPage({
     }
 
     if (!paymentChecked) {
-      setError("You must agree to the payment terms to continue");
+      setError("You must agree to the terms to continue");
       return;
     }
 
@@ -34,6 +34,16 @@ export default function PaymentPage({
     setError(null);
     setSubmitting(true);
 
+    // Razorpay payment disabled - skipping to completion
+    try {
+      await onPaymentComplete();
+    } catch (err) {
+      setError(err.message || "Processing failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+
+    /* Original Razorpay payment code - commented out
     try {
       const response = await fetch(getApiUrl("/payment/create-order"), {
         method: "POST",
@@ -112,6 +122,7 @@ export default function PaymentPage({
       setError(err.message || "Payment processing failed. Please try again.");
       setSubmitting(false);
     }
+    */
   };
 
   return (
@@ -130,20 +141,20 @@ export default function PaymentPage({
       <div className="payment-header">
         <div className="payment-header-emoji" aria-hidden="true">🎁</div>
         <h2 className="payment-title">Win ₹10</h2>
-        <p className="payment-subtitle">Pay ₹1 → Get a chance to receive ₹10</p>
-        <p className="payment-tagline">10X return. Minimal entry.</p>
+        <p className="payment-subtitle">Get a chance to receive ₹10</p>
+        <p className="payment-tagline">Free entry. Maximum reward.</p>
       </div>
 
       <div className="payment-content">
         <section className="payment-card">
           <h3>
             <span className="payment-card-emoji" aria-hidden="true">💰</span>
-            Entry Fee: ₹1
+            Entry: Free
           </h3>
-          <p>₹1 enters you into the reward pool.</p>
+          <p>Free entry into the reward pool.</p>
           <ul className="payment-list">
             <li>Instant participation</li>
-            <li>Secure UPI checkout</li>
+            <li>No payment required</li>
           </ul>
         </section>
 
@@ -153,7 +164,7 @@ export default function PaymentPage({
             How It Works
           </h3>
           <ol className="payment-steps">
-            <li><span className="payment-step-emoji" aria-hidden="true">1️⃣</span> Pay ₹1</li>
+            <li><span className="payment-step-emoji" aria-hidden="true">1️⃣</span> Join for free</li>
             <li><span className="payment-step-emoji" aria-hidden="true">2️⃣</span> Your entry is added to the active pool</li>
             <li><span className="payment-step-emoji" aria-hidden="true">3️⃣</span> Winners are selected</li>
             <li><span className="payment-step-emoji" aria-hidden="true">4️⃣</span> ₹10 is sent via UPI (24–48 hours)</li>
@@ -187,7 +198,7 @@ export default function PaymentPage({
             <li>No minimum withdrawal</li>
           </ul>
           <div className="payment-note-box">
-            Note: ₹1 entry fee is non-refundable.
+            Note: Participation is completely free.
           </div>
         </section>
       </div>
@@ -209,7 +220,7 @@ export default function PaymentPage({
           id="payment-check"
         />
         <label htmlFor="payment-check" className="consent-text">
-          I understand the ₹1 entry fee is non-refundable and gives me a chance to receive ₹10 via UPI.
+          I understand that participation is free and gives me a chance to receive ₹10 via UPI.
         </label>
       </div>
 
@@ -219,7 +230,7 @@ export default function PaymentPage({
           onClick={handleSubmit}
           disabled={!systemReady || submitting || !paymentChecked}
         >
-          {submitting ? "Processing..." : "💰 Pay ₹1 & Start"}
+          {submitting ? "Processing..." : "🚀 Start"}
         </button>
       </div>
     </div>

@@ -22,11 +22,11 @@ MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
 IP_HASH_SALT = os.getenv("IP_HASH_SALT", "local-salt")
 
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
-RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+# RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+# RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+# RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
 
-razorpay_client = None
+# razorpay_client = None
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -194,17 +194,17 @@ def close_db(exception):
         db.close()
         SessionLocal.remove()
 
-def get_razorpay_client():
-    global razorpay_client
-    if razorpay_client is None:
-        if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
-            try:
-                import razorpay
-                razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-            except Exception as e:
-                app.logger.error(f"Failed to initialize Razorpay client: {e}")
-                return None
-    return razorpay_client
+# def get_razorpay_client():
+#     global razorpay_client
+#     if razorpay_client is None:
+#         if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
+#             try:
+#                 import razorpay
+#                 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+#             except Exception as e:
+#                 app.logger.error(f"Failed to initialize Razorpay client: {e}")
+#                 return None
+#     return razorpay_client
 
 def get_ip_hash():
     ip_address = request.headers.get("X-Forwarded-For", request.remote_addr) or "unknown"
@@ -618,120 +618,120 @@ def record_consent():
     return jsonify({"status": "success", "message": "Consent recorded successfully", "timestamp": timestamp})
 
 
-@app.route("/payment/create-order", methods=["POST"])
-@limiter.limit("30 per minute")
-@track_performance
-def create_order():
-    data = request.get_json(silent=True) or {}
-    participant_id = data.get("participant_id")
-    if not participant_id:
-        return jsonify({"error": "participant_id required"}), 400
-    if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    client = get_razorpay_client()
-    if not client:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    
-    amount = 100
-    db = get_db()
-    participant_row = db.execute(text("SELECT id FROM participants WHERE participant_id = :participant_id"),
-                                  {"participant_id": participant_id}).fetchone()
-    if not participant_row:
-        return jsonify({"error": "Participant not found"}), 400
-    participant_fk = participant_row[0]
-    
-    existing_order = db.execute(text("""
-        SELECT razorpay_order_id, status FROM payments
-        WHERE participant_fk = :participant_fk ORDER BY created_at DESC LIMIT 1
-    """), {"participant_fk": participant_fk}).fetchone()
-    
-    if existing_order and existing_order[1] != 'paid':
-        return jsonify({"order_id": existing_order[0], "key": RAZORPAY_KEY_ID, "amount": amount, "currency": "INR"})
-    
-    try:
-        receipt_value = generate_receipt(participant_id)
-        order = client.order.create({"amount": amount, "currency": "INR", "receipt": receipt_value, "payment_capture": 1})
-    except Exception as e:
-        app.logger.error(f"Razorpay order creation failed: {e}")
-        return jsonify({"error": "Failed to create payment order", "details": str(e)}), 500
-    
-    db.execute(text("""
-        INSERT INTO payments (participant_fk, participant_id, razorpay_order_id, amount, status)
-        VALUES (:participant_fk, :participant_id, :order_id, :amount, 'created')
-    """), {"participant_fk": participant_fk, "participant_id": participant_id, "order_id": order["id"], "amount": amount})
-    db.commit()
-    return jsonify({"order_id": order["id"], "key": RAZORPAY_KEY_ID, "amount": amount, "currency": "INR"})
+# @app.route("/payment/create-order", methods=["POST"])
+# @limiter.limit("30 per minute")
+# @track_performance
+# def create_order():
+#     data = request.get_json(silent=True) or {}
+#     participant_id = data.get("participant_id")
+#     if not participant_id:
+#         return jsonify({"error": "participant_id required"}), 400
+#     if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
+#         return jsonify({"error": "Payment gateway not configured"}), 500
+#     client = get_razorpay_client()
+#     if not client:
+#         return jsonify({"error": "Payment gateway not configured"}), 500
+#     
+#     amount = 100
+#     db = get_db()
+#     participant_row = db.execute(text("SELECT id FROM participants WHERE participant_id = :participant_id"),
+#                                   {"participant_id": participant_id}).fetchone()
+#     if not participant_row:
+#         return jsonify({"error": "Participant not found"}), 400
+#     participant_fk = participant_row[0]
+#     
+#     existing_order = db.execute(text("""
+#         SELECT razorpay_order_id, status FROM payments
+#         WHERE participant_fk = :participant_fk ORDER BY created_at DESC LIMIT 1
+#     """), {"participant_fk": participant_fk}).fetchone()
+#     
+#     if existing_order and existing_order[1] != 'paid':
+#         return jsonify({"order_id": existing_order[0], "key": RAZORPAY_KEY_ID, "amount": amount, "currency": "INR"})
+#     
+#     try:
+#         receipt_value = generate_receipt(participant_id)
+#         order = client.order.create({"amount": amount, "currency": "INR", "receipt": receipt_value, "payment_capture": 1})
+#     except Exception as e:
+#         app.logger.error(f"Razorpay order creation failed: {e}")
+#         return jsonify({"error": "Failed to create payment order", "details": str(e)}), 500
+#     
+#     db.execute(text("""
+#         INSERT INTO payments (participant_fk, participant_id, razorpay_order_id, amount, status)
+#         VALUES (:participant_fk, :participant_id, :order_id, :amount, 'created')
+#     """), {"participant_fk": participant_fk, "participant_id": participant_id, "order_id": order["id"], "amount": amount})
+#     db.commit()
+#     return jsonify({"order_id": order["id"], "key": RAZORPAY_KEY_ID, "amount": amount, "currency": "INR"})
 
-@app.route("/payment/verify", methods=["POST"])
-@limiter.limit("60 per minute")
-@track_performance
-def verify_payment():
-    data = request.get_json(silent=True) or {}
-    required_fields = ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature"]
-    missing_fields = [field for field in required_fields if not data.get(field)]
-    if missing_fields:
-        return jsonify({"error": "Missing payment fields", "fields": missing_fields}), 400
-    
-    client = get_razorpay_client()
-    if not client:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    try:
-        import razorpay
-        client.utility.verify_payment_signature(data)
-    except razorpay.errors.SignatureVerificationError:
-        return jsonify({"error": "Invalid signature"}), 400
-    
-    db = get_db()
-    db.execute(text("""
-        UPDATE payments SET razorpay_payment_id = :payment_id, razorpay_signature = :signature,
-        status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE razorpay_order_id = :order_id
-    """), {"payment_id": data["razorpay_payment_id"], "signature": data["razorpay_signature"], "order_id": data["razorpay_order_id"]})
-    
-    db.execute(text("""
-        UPDATE participants SET payment_status = 'paid'
-        WHERE id = (SELECT participant_fk FROM payments WHERE razorpay_order_id = :order_id)
-    """), {"order_id": data["razorpay_order_id"]})
-    db.commit()
-    return jsonify({"status": "verified"})
+# @app.route("/payment/verify", methods=["POST"])
+# @limiter.limit("60 per minute")
+# @track_performance
+# def verify_payment():
+#     data = request.get_json(silent=True) or {}
+#     required_fields = ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature"]
+#     missing_fields = [field for field in required_fields if not data.get(field)]
+#     if missing_fields:
+#         return jsonify({"error": "Missing payment fields", "fields": missing_fields}), 400
+#     
+#     client = get_razorpay_client()
+#     if not client:
+#         return jsonify({"error": "Payment gateway not configured"}), 500
+#     try:
+#         import razorpay
+#         client.utility.verify_payment_signature(data)
+#     except razorpay.errors.SignatureVerificationError:
+#         return jsonify({"error": "Invalid signature"}), 400
+#     
+#     db = get_db()
+#     db.execute(text("""
+#         UPDATE payments SET razorpay_payment_id = :payment_id, razorpay_signature = :signature,
+#         status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE razorpay_order_id = :order_id
+#     """), {"payment_id": data["razorpay_payment_id"], "signature": data["razorpay_signature"], "order_id": data["razorpay_order_id"]})
+#     
+#     db.execute(text("""
+#         UPDATE participants SET payment_status = 'paid'
+#         WHERE id = (SELECT participant_fk FROM payments WHERE razorpay_order_id = :order_id)
+#     """), {"order_id": data["razorpay_order_id"]})
+#     db.commit()
+#     return jsonify({"status": "verified"})
 
-@app.route("/payment/webhook", methods=["POST"])
-@track_performance
-def payment_webhook():
-    if not RAZORPAY_WEBHOOK_SECRET:
-        return jsonify({"error": "Payment webhook not configured"}), 500
-    client = get_razorpay_client()
-    if not client:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    
-    payload = request.get_data()
-    signature = request.headers.get("X-Razorpay-Signature")
-    if not signature:
-        return jsonify({"error": "Missing webhook signature"}), 400
-    
-    try:
-        import razorpay
-        client.utility.verify_webhook_signature(payload, signature, RAZORPAY_WEBHOOK_SECRET)
-    except razorpay.errors.SignatureVerificationError:
-        return jsonify({"error": "Invalid webhook signature"}), 400
-    
-    event = request.get_json(silent=True) or {}
-    if event.get("event") == "payment.captured":
-        payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
-        order_id = payment_entity.get("order_id")
-        payment_id = payment_entity.get("id")
-        if order_id and payment_id:
-            db = get_db()
-            result = db.execute(text("""
-                UPDATE payments SET status = 'paid', razorpay_payment_id = :payment_id, paid_at = CURRENT_TIMESTAMP
-                WHERE razorpay_order_id = :order_id AND status != 'paid'
-            """), {"payment_id": payment_id, "order_id": order_id})
-            if result.rowcount > 0:
-                db.execute(text("""
-                    UPDATE participants SET payment_status = 'paid'
-                    WHERE id = (SELECT participant_fk FROM payments WHERE razorpay_order_id = :order_id)
-                """), {"order_id": order_id})
-                db.commit()
-    return jsonify({"status": "ok"})
+# @app.route("/payment/webhook", methods=["POST"])
+# @track_performance
+# def payment_webhook():
+#     if not RAZORPAY_WEBHOOK_SECRET:
+#         return jsonify({"error": "Payment webhook not configured"}), 500
+#     client = get_razorpay_client()
+#     if not client:
+#         return jsonify({"error": "Payment gateway not configured"}), 500
+#     
+#     payload = request.get_data()
+#     signature = request.headers.get("X-Razorpay-Signature")
+#     if not signature:
+#         return jsonify({"error": "Missing webhook signature"}), 400
+#     
+#     try:
+#         import razorpay
+#         client.utility.verify_webhook_signature(payload, signature, RAZORPAY_WEBHOOK_SECRET)
+#     except razorpay.errors.SignatureVerificationError:
+#         return jsonify({"error": "Invalid webhook signature"}), 400
+#     
+#     event = request.get_json(silent=True) or {}
+#     if event.get("event") == "payment.captured":
+#         payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
+#         order_id = payment_entity.get("order_id")
+#         payment_id = payment_entity.get("id")
+#         if order_id and payment_id:
+#             db = get_db()
+#             result = db.execute(text("""
+#                 UPDATE payments SET status = 'paid', razorpay_payment_id = :payment_id, paid_at = CURRENT_TIMESTAMP
+#                 WHERE razorpay_order_id = :order_id AND status != 'paid'
+#             """), {"payment_id": payment_id, "order_id": order_id})
+#             if result.rowcount > 0:
+#                 db.execute(text("""
+#                     UPDATE participants SET payment_status = 'paid'
+#                     WHERE id = (SELECT participant_fk FROM payments WHERE razorpay_order_id = :order_id)
+#                 """), {"order_id": order_id})
+#                 db.commit()
+#     return jsonify({"status": "ok"})
 
 def get_images_from_db():
     db = get_db()
@@ -807,8 +807,9 @@ def submit():
     db_result = result.fetchone()
     if not db_result:
         return jsonify({"error": "Participant not found. Please complete registration first."}), 400
-    if db_result[1] != 'paid':
-        return jsonify({"error": "Payment required"}), 403
+    # Payment check disabled - Razorpay commented out
+    # if db_result[1] != 'paid':
+    #     return jsonify({"error": "Payment required"}), 403
     if not db_result[0]:
         return jsonify({"error": "Consent required. Please complete the consent process."}), 403
     
