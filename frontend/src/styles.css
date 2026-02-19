@@ -2501,3 +2501,393 @@ select option {
   }
 }
 
+
+/* --------------------------------------------------------------------------
+   UPI Payment Styles
+   -------------------------------------------------------------------------- */
+
+/* UPI Payment Container */
+.upi-payment-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* UPI ID Section */
+.upi-id-section,
+.upi-amount-section,
+.upi-reference-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.upi-id-section label,
+.upi-amount-section label,
+.upi-reference-section label,
+.upi-qr-section label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--muted);
+}
+
+.upi-id-box,
+.upi-reference-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.upi-id-box code,
+.upi-reference-box code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: var(--font-bold);
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+}
+
+.copy-button {
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-base);
+  transition: all var(--transition-fast);
+  min-width: 40px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.copy-button:hover {
+  background: var(--text);
+  transform: scale(1.05);
+}
+
+.upi-reference-section small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+/* UPI Amount */
+.upi-amount {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--success);
+}
+
+/* UPI QR Section */
+.upi-qr-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.qr-placeholder {
+  background: var(--bg);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upi-pay-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: var(--success);
+  color: white;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-semibold);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+  min-height: var(--mobile-touch-target);
+}
+
+.upi-pay-button:hover {
+  background: #1e8449;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* UPI Instructions */
+.upi-instructions {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.upi-instructions h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--primary);
+}
+
+.upi-instructions ol {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.upi-instructions li {
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+/* Screenshot Upload Section */
+.screenshot-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.file-input-wrapper {
+  position: relative;
+}
+
+.file-input-wrapper input[type="file"] {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.file-input-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: var(--secondary);
+  border: 2px dashed var(--primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  font-weight: var(--font-semibold);
+  color: var(--primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-height: var(--mobile-touch-target);
+}
+
+.file-input-label:hover {
+  background: var(--accent);
+  border-style: solid;
+}
+
+.screenshot-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.screenshot-preview img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.file-help {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  text-align: center;
+}
+
+/* UTR Input */
+.utr-help {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin: 0 0 var(--space-2);
+}
+
+.utr-input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-family: var(--font-mono);
+  transition: border-color var(--transition-fast);
+  min-height: var(--mobile-touch-target);
+}
+
+.utr-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
+/* Payment Status Badge */
+.payment-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.payment-status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.payment-status-badge.verified {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.payment-status-badge.rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+body.dark .payment-status-badge.pending {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+body.dark .payment-status-badge.verified {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+body.dark .payment-status-badge.rejected {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Payment Detail Row */
+.payment-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.payment-detail-row:last-child {
+  border-bottom: none;
+}
+
+.payment-detail-row span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.payment-detail-row strong {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+/* Loading Container */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.loading-container p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.spinner-container {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+/* Error Container */
+.error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.error-container p {
+  color: var(--error);
+  margin: 0;
+}
+
+/* Secondary Button */
+.secondary {
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-base);
+  font-family: inherit;
+  background: var(--panel);
+  color: var(--text);
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--mobile-touch-target);
+  min-width: 120px;
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--bg);
+  border-color: var(--primary);
+}
+
+.secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Desktop optimizations for UPI */
+@media (min-width: 768px) {
+  .upi-payment-container {
+    gap: var(--space-3);
+  }
+
+  .upi-id-box,
+  .upi-reference-box {
+    padding: var(--space-3);
+  }
+
+  .upi-id-box code,
+  .upi-reference-box code {
+    font-size: var(--text-lg);
+  }
+
+  .upi-pay-button {
+    padding: var(--space-3) var(--space-6);
+  }
+
+  .file-input-label {
+    padding: var(--space-5);
+  }
+
+  .screenshot-preview {
+    max-width: 400px;
+    margin: 0 auto;
+  }
+}

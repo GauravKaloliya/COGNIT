@@ -9,24 +9,27 @@ from contextlib import contextmanager
 
 import requests
 
-from flask import Flask, jsonify, request, abort, g, render_template
+from flask import Flask, jsonify, request, abort, g, render_template, send_from_directory, send_file
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import create_engine, text, event, Column, Integer, String, Boolean, Float, TIMESTAMP, CheckConstraint, ForeignKey
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 from sqlalchemy.pool import QueuePool, NullPool
+from pathlib import Path
 
+
+# Image directory configuration
+IMAGES_DIR = Path(__file__).parent / "images"
 
 MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
 IP_HASH_SALT = os.getenv("IP_HASH_SALT", "local-salt")
 
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
-RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
-
-razorpay_client = None
+# UPI Payment Configuration
+UPI_ID = os.getenv("UPI_ID", "example@upi")
+UPI_PAYEE_NAME = os.getenv("UPI_PAYEE_NAME", "C.O.G.N.I.T.")
+PAYMENT_AMOUNT = int(os.getenv("PAYMENT_AMOUNT", "100"))  # Amount in paise (₹1 = 100)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -194,27 +197,89 @@ def close_db(exception):
         db.close()
         SessionLocal.remove()
 
-def get_razorpay_client():
-    global razorpay_client
-    if razorpay_client is None:
-        if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
-            try:
-                import razorpay
-                razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-            except Exception as e:
-                app.logger.error(f"Failed to initialize Razorpay client: {e}")
-                return None
-    return razorpay_client
-
 def get_ip_hash():
     ip_address = request.headers.get("X-Forwarded-For", request.remote_addr) or "unknown"
     digest = hashlib.sha256(f"{ip_address}{IP_HASH_SALT}".encode("utf-8")).hexdigest()
     return digest
 
-def generate_receipt(participant_id: str) -> str:
+def generate_payment_reference(participant_id: str) -> str:
     base = f"{participant_id}_{int(time.time())}"
-    short_hash = hashlib.sha256(base.encode()).hexdigest()[:24]
-    return f"rcpt_{short_hash}"
+    short_hash = hashlib.sha256(base.encode()).hexdigest()[:12]
+    return f"COGNIT_{short_hash.upper()}"
+
+
+def generate_upi_qr_url(upi_id: str, payee_name: str, amount: int, transaction_note: str) -> str:
+    """Generate UPI QR code URL using the UPI protocol."""
+    # UPI URL format: upi://pay?pa=UPI_ID&pn=PAYEE_NAME&am=AMOUNT&tn=TRANSACTION_NOTE
+    import urllib.parse
+    params = {
+        'pa': upi_id,
+        'pn': payee_name,
+        'am': f"{amount / 100:.2f}",
+        'tn': transaction_note
+    }
+    query = urllib.parse.urlencode(params)
+    return f"upi://pay?{query}"
+
+
+def extract_utr_from_image(image_data: bytes) -> dict:
+    """
+    Extract UTR (Unique Transaction Reference) from payment screenshot using OCR.
+    Returns dict with 'utr' (str or None), 'confidence' (float), and 'raw_text' (str).
+    """
+    try:
+        from PIL import Image
+        import pytesseract
+        import io
+        import re
+
+        # Load image from bytes
+        image = Image.open(io.BytesIO(image_data))
+        
+        # Convert to RGB if necessary
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Perform OCR
+        raw_text = pytesseract.image_to_string(image)
+        
+        # Common UTR patterns in Indian UPI apps
+        utr_patterns = [
+            r'UTR[\s:]*([A-Z0-9]{12,22})',
+            r'UPI[\s-]*REF[\s:]*([A-Z0-9]{12,22})',
+            r'Reference[\s:]*([A-Z0-9]{12,22})',
+            r'Transaction[\s-]*ID[\s:]*([A-Z0-9]{12,22})',
+            r'Txn[\s-]*ID[\s:]*([A-Z0-9]{12,22})',
+            r'Order[\s-]*ID[\s:]*([A-Z0-9]{12,22})',
+            r'([A-Z0-9]{16,20})',  # Generic long alphanumeric pattern (fallback)
+        ]
+        
+        for pattern in utr_patterns:
+            match = re.search(pattern, raw_text, re.IGNORECASE)
+            if match:
+                utr = match.group(1).strip()
+                # Validate UTR length (typically 12-22 characters)
+                if 12 <= len(utr) <= 22:
+                    return {
+                        'utr': utr,
+                        'confidence': 0.85,
+                        'raw_text': raw_text[:500]  # First 500 chars for debugging
+                    }
+        
+        # No UTR found
+        return {
+            'utr': None,
+            'confidence': 0.0,
+            'raw_text': raw_text[:500]
+        }
+        
+    except Exception as e:
+        app.logger.error(f"OCR extraction failed: {e}")
+        return {
+            'utr': None,
+            'confidence': 0.0,
+            'raw_text': f"Error: {str(e)}"
+        }
 
 def _get_or_create_participant_fk(db, participant_id):
     result = db.execute(text("SELECT id FROM participants WHERE participant_id = :participant_id"), 
@@ -618,120 +683,259 @@ def record_consent():
     return jsonify({"status": "success", "message": "Consent recorded successfully", "timestamp": timestamp})
 
 
-@app.route("/payment/create-order", methods=["POST"])
+@app.route("/payment/upi-details", methods=["POST"])
 @limiter.limit("30 per minute")
 @track_performance
-def create_order():
+def get_upi_details():
+    """Get UPI payment details including UPI ID, QR code URL, and payment reference."""
     data = request.get_json(silent=True) or {}
     participant_id = data.get("participant_id")
     if not participant_id:
         return jsonify({"error": "participant_id required"}), 400
-    if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    client = get_razorpay_client()
-    if not client:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    
-    amount = 100
+
     db = get_db()
-    participant_row = db.execute(text("SELECT id FROM participants WHERE participant_id = :participant_id"),
-                                  {"participant_id": participant_id}).fetchone()
+    participant_row = db.execute(
+        text("SELECT id FROM participants WHERE participant_id = :participant_id"),
+        {"participant_id": participant_id}
+    ).fetchone()
     if not participant_row:
         return jsonify({"error": "Participant not found"}), 400
     participant_fk = participant_row[0]
-    
-    existing_order = db.execute(text("""
-        SELECT razorpay_order_id, status FROM payments
+
+    # Check for existing pending payment
+    existing_payment = db.execute(text("""
+        SELECT payment_reference, status FROM payments
         WHERE participant_fk = :participant_fk ORDER BY created_at DESC LIMIT 1
     """), {"participant_fk": participant_fk}).fetchone()
-    
-    if existing_order and existing_order[1] != 'paid':
-        return jsonify({"order_id": existing_order[0], "key": RAZORPAY_KEY_ID, "amount": amount, "currency": "INR"})
-    
-    try:
-        receipt_value = generate_receipt(participant_id)
-        order = client.order.create({"amount": amount, "currency": "INR", "receipt": receipt_value, "payment_capture": 1})
-    except Exception as e:
-        app.logger.error(f"Razorpay order creation failed: {e}")
-        return jsonify({"error": "Failed to create payment order", "details": str(e)}), 500
-    
-    db.execute(text("""
-        INSERT INTO payments (participant_fk, participant_id, razorpay_order_id, amount, status)
-        VALUES (:participant_fk, :participant_id, :order_id, :amount, 'created')
-    """), {"participant_fk": participant_fk, "participant_id": participant_id, "order_id": order["id"], "amount": amount})
-    db.commit()
-    return jsonify({"order_id": order["id"], "key": RAZORPAY_KEY_ID, "amount": amount, "currency": "INR"})
 
-@app.route("/payment/verify", methods=["POST"])
+    if existing_payment and existing_payment[1] not in ['verified', 'rejected']:
+        payment_reference = existing_payment[0]
+    else:
+        payment_reference = generate_payment_reference(participant_id)
+        # Create new payment record
+        db.execute(text("""
+            INSERT INTO payments (participant_fk, participant_id, payment_reference, amount, status)
+            VALUES (:participant_fk, :participant_id, :payment_reference, :amount, 'pending')
+        """), {
+            "participant_fk": participant_fk,
+            "participant_id": participant_id,
+            "payment_reference": payment_reference,
+            "amount": PAYMENT_AMOUNT
+        })
+        db.commit()
+
+    # Generate UPI QR URL
+    qr_url = generate_upi_qr_url(UPI_ID, UPI_PAYEE_NAME, PAYMENT_AMOUNT, payment_reference)
+
+    return jsonify({
+        "upi_id": UPI_ID,
+        "payee_name": UPI_PAYEE_NAME,
+        "amount": PAYMENT_AMOUNT,
+        "amount_display": f"₹{PAYMENT_AMOUNT / 100:.2f}",
+        "payment_reference": payment_reference,
+        "qr_url": qr_url,
+        "instructions": [
+            f"Open your UPI app (GPay, PhonePe, Paytm, etc.)",
+            f"Send ₹{PAYMENT_AMOUNT / 100:.0f} to: {UPI_ID}",
+            f"Add reference: {payment_reference}",
+            f"Take a screenshot of the payment success screen",
+            f"Upload the screenshot below"
+        ]
+    })
+
+
+@app.route("/payment/submit", methods=["POST"])
+@limiter.limit("30 per minute")
+@track_performance
+def submit_payment_proof():
+    """Submit payment screenshot and UTR for verification."""
+    participant_id = request.form.get("participant_id")
+    manual_utr = request.form.get("utr", "").strip()
+
+    if not participant_id:
+        return jsonify({"error": "participant_id required"}), 400
+
+    # Check if screenshot is provided
+    if 'screenshot' not in request.files:
+        return jsonify({"error": "Payment screenshot is required"}), 400
+
+    screenshot = request.files['screenshot']
+    if screenshot.filename == '':
+        return jsonify({"error": "No screenshot selected"}), 400
+
+    # Validate file type
+    allowed_extensions = {'.png', '.jpg', '.jpeg'}
+    file_ext = os.path.splitext(screenshot.filename.lower())[1]
+    if file_ext not in allowed_extensions:
+        return jsonify({"error": "Invalid file type. Please upload PNG or JPG image"}), 400
+
+    # Read image data
+    image_data = screenshot.read()
+    if len(image_data) > 5 * 1024 * 1024:  # 5MB limit
+        return jsonify({"error": "Image too large. Maximum size is 5MB"}), 400
+
+    db = get_db()
+    participant_row = db.execute(
+        text("SELECT id FROM participants WHERE participant_id = :participant_id"),
+        {"participant_id": participant_id}
+    ).fetchone()
+    if not participant_row:
+        return jsonify({"error": "Participant not found"}), 400
+    participant_fk = participant_row[0]
+
+    # Get the pending payment record
+    payment_row = db.execute(text("""
+        SELECT id, payment_reference FROM payments
+        WHERE participant_fk = :participant_fk AND status = 'pending'
+        ORDER BY created_at DESC LIMIT 1
+    """), {"participant_fk": participant_fk}).fetchone()
+
+    if not payment_row:
+        return jsonify({"error": "No pending payment found. Please initiate payment first"}), 400
+
+    payment_id = payment_row[0]
+    payment_reference = payment_row[1]
+
+    # Extract UTR using OCR
+    ocr_result = extract_utr_from_image(image_data)
+    extracted_utr = ocr_result.get('utr')
+    confidence = ocr_result.get('confidence', 0)
+
+    # Use manual UTR if provided, otherwise use extracted
+    final_utr = manual_utr if manual_utr else extracted_utr
+
+    # Store screenshot (in production, upload to cloud storage)
+    # For now, we'll store a placeholder or base64 (not recommended for production)
+    screenshot_base64 = hashlib.sha256(image_data).hexdigest()[:32]  # Store hash as identifier
+
+    # Update payment record
+    db.execute(text("""
+        UPDATE payments SET
+            status = 'submitted',
+            utr_number = :utr,
+            utr_extracted = :utr_extracted,
+            ocr_confidence = :confidence,
+            screenshot_hash = :screenshot_hash,
+            submitted_at = CURRENT_TIMESTAMP
+        WHERE id = :payment_id
+    """), {
+        "utr": final_utr,
+        "utr_extracted": extracted_utr,
+        "confidence": confidence,
+        "screenshot_hash": screenshot_base64,
+        "payment_id": payment_id
+    })
+
+    # Update participant payment status to 'pending_verification'
+    db.execute(text("""
+        UPDATE participants SET payment_status = 'pending_verification'
+        WHERE id = :participant_fk
+    """), {"participant_fk": participant_fk})
+
+    db.commit()
+
+    # Log the submission
+    _log_audit_event(db, event_type='payment_submitted', participant_fk=participant_fk,
+                    participant_id=participant_id, endpoint='/payment/submit',
+                    method='POST', status_code=200,
+                    details=f'Payment proof submitted. UTR: {final_utr}, OCR confidence: {confidence}')
+
+    return jsonify({
+        "status": "submitted",
+        "message": "Payment proof submitted successfully. It will be verified shortly.",
+        "utr": final_utr,
+        "utr_extracted": extracted_utr,
+        "utr_manual": manual_utr if manual_utr else None,
+        "ocr_confidence": confidence,
+        "payment_reference": payment_reference
+    })
+
+
+@app.route("/payment/status/<participant_id>", methods=["GET"])
 @limiter.limit("60 per minute")
 @track_performance
-def verify_payment():
-    data = request.get_json(silent=True) or {}
-    required_fields = ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature"]
-    missing_fields = [field for field in required_fields if not data.get(field)]
-    if missing_fields:
-        return jsonify({"error": "Missing payment fields", "fields": missing_fields}), 400
-    
-    client = get_razorpay_client()
-    if not client:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    try:
-        import razorpay
-        client.utility.verify_payment_signature(data)
-    except razorpay.errors.SignatureVerificationError:
-        return jsonify({"error": "Invalid signature"}), 400
-    
+def get_payment_status(participant_id):
+    """Get the current payment status for a participant."""
     db = get_db()
-    db.execute(text("""
-        UPDATE payments SET razorpay_payment_id = :payment_id, razorpay_signature = :signature,
-        status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE razorpay_order_id = :order_id
-    """), {"payment_id": data["razorpay_payment_id"], "signature": data["razorpay_signature"], "order_id": data["razorpay_order_id"]})
-    
-    db.execute(text("""
-        UPDATE participants SET payment_status = 'paid'
-        WHERE id = (SELECT participant_fk FROM payments WHERE razorpay_order_id = :order_id)
-    """), {"order_id": data["razorpay_order_id"]})
-    db.commit()
-    return jsonify({"status": "verified"})
+    result = db.execute(text("""
+        SELECT p.status, p.utr_number, p.submitted_at, p.verified_at,
+               p.payment_reference, p.ocr_confidence,
+               part.payment_status as participant_payment_status
+        FROM payments p
+        JOIN participants part ON p.participant_fk = part.id
+        WHERE p.participant_id = :participant_id
+        ORDER BY p.created_at DESC LIMIT 1
+    """), {"participant_id": participant_id}).fetchone()
 
-@app.route("/payment/webhook", methods=["POST"])
+    if not result:
+        return jsonify({
+            "status": "not_initiated",
+            "message": "Payment not initiated"
+        })
+
+    return jsonify({
+        "status": result[0],
+        "participant_status": result[6],
+        "utr": result[1],
+        "payment_reference": result[4],
+        "submitted_at": result[2].isoformat() if result[2] else None,
+        "verified_at": result[3].isoformat() if result[3] else None,
+        "ocr_confidence": result[5]
+    })
+
+
+@app.route("/payment/verify-admin", methods=["POST"])
+@limiter.limit("60 per minute")
 @track_performance
-def payment_webhook():
-    if not RAZORPAY_WEBHOOK_SECRET:
-        return jsonify({"error": "Payment webhook not configured"}), 500
-    client = get_razorpay_client()
-    if not client:
-        return jsonify({"error": "Payment gateway not configured"}), 500
-    
-    payload = request.get_data()
-    signature = request.headers.get("X-Razorpay-Signature")
-    if not signature:
-        return jsonify({"error": "Missing webhook signature"}), 400
-    
-    try:
-        import razorpay
-        client.utility.verify_webhook_signature(payload, signature, RAZORPAY_WEBHOOK_SECRET)
-    except razorpay.errors.SignatureVerificationError:
-        return jsonify({"error": "Invalid webhook signature"}), 400
-    
-    event = request.get_json(silent=True) or {}
-    if event.get("event") == "payment.captured":
-        payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
-        order_id = payment_entity.get("order_id")
-        payment_id = payment_entity.get("id")
-        if order_id and payment_id:
-            db = get_db()
-            result = db.execute(text("""
-                UPDATE payments SET status = 'paid', razorpay_payment_id = :payment_id, paid_at = CURRENT_TIMESTAMP
-                WHERE razorpay_order_id = :order_id AND status != 'paid'
-            """), {"payment_id": payment_id, "order_id": order_id})
-            if result.rowcount > 0:
-                db.execute(text("""
-                    UPDATE participants SET payment_status = 'paid'
-                    WHERE id = (SELECT participant_fk FROM payments WHERE razorpay_order_id = :order_id)
-                """), {"order_id": order_id})
-                db.commit()
-    return jsonify({"status": "ok"})
+def verify_payment_admin():
+    """Admin endpoint to verify a payment submission."""
+    data = request.get_json(silent=True) or {}
+    participant_id = data.get("participant_id")
+    action = data.get("action")  # 'approve' or 'reject'
+    admin_notes = data.get("notes", "")
+
+    if not participant_id or action not in ['approve', 'reject']:
+        return jsonify({"error": "Invalid request"}), 400
+
+    db = get_db()
+    participant_row = db.execute(
+        text("SELECT id FROM participants WHERE participant_id = :participant_id"),
+        {"participant_id": participant_id}
+    ).fetchone()
+    if not participant_row:
+        return jsonify({"error": "Participant not found"}), 404
+    participant_fk = participant_row[0]
+
+    new_status = 'verified' if action == 'approve' else 'rejected'
+    participant_payment_status = 'paid' if action == 'approve' else 'rejected'
+
+    db.execute(text("""
+        UPDATE payments SET
+            status = :status,
+            verified_at = CURRENT_TIMESTAMP,
+            admin_notes = :notes
+        WHERE participant_fk = :participant_fk AND status = 'submitted'
+    """), {
+        "status": new_status,
+        "notes": admin_notes,
+        "participant_fk": participant_fk
+    })
+
+    db.execute(text("""
+        UPDATE participants SET payment_status = :status
+        WHERE id = :participant_fk
+    """), {
+        "status": participant_payment_status,
+        "participant_fk": participant_fk
+    })
+
+    db.commit()
+
+    return jsonify({
+        "status": "success",
+        "action": action,
+        "participant_payment_status": participant_payment_status
+    })
 
 def get_images_from_db():
     db = get_db()
@@ -1074,9 +1278,10 @@ def _get_api_documentation():
             "get_participant": {"path": "/participants/<participant_id>", "method": "GET", "auth_required": False},
             "record_consent": {"path": "/consent", "method": "POST", "auth_required": False},
             "get_consent": {"path": "/consent/<participant_id>", "method": "GET", "auth_required": False},
-            "create_order": {"path": "/payment/create-order", "method": "POST", "auth_required": False},
-            "verify_payment": {"path": "/payment/verify", "method": "POST", "auth_required": False},
-            "payment_webhook": {"path": "/payment/webhook", "method": "POST", "auth_required": False},
+            "get_upi_details": {"path": "/payment/upi-details", "method": "POST", "auth_required": False, "description": "Get UPI payment details and QR code"},
+            "submit_payment": {"path": "/payment/submit", "method": "POST", "auth_required": False, "description": "Submit payment screenshot with UTR"},
+            "get_payment_status": {"path": "/payment/status/<participant_id>", "method": "GET", "auth_required": False, "description": "Check payment status"},
+            "verify_payment_admin": {"path": "/payment/verify-admin", "method": "POST", "auth_required": False, "description": "Admin endpoint to verify payments"},
             "random_image": {"path": "/images/random", "method": "GET", "auth_required": False},
             "serve_image": {"path": "/images/<image_id>", "method": "GET", "auth_required": False},
             "submit": {"path": "/submit", "method": "POST", "auth_required": False},
