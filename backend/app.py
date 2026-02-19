@@ -26,10 +26,17 @@ MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
 IP_HASH_SALT = os.getenv("IP_HASH_SALT", "local-salt")
 
-# UPI Payment Configuration
-UPI_ID = os.getenv("UPI_ID", "example@upi")
-UPI_PAYEE_NAME = os.getenv("UPI_PAYEE_NAME", "C.O.G.N.I.T.")
+# UPI Payment Configuration (required)
+UPI_ID = os.getenv("UPI_ID")
+UPI_PAYEE_NAME = os.getenv("UPI_PAYEE_NAME")
 PAYMENT_AMOUNT = int(os.getenv("PAYMENT_AMOUNT", "100"))  # Amount in paise (₹1 = 100)
+
+# AWS S3 Configuration (required for image uploads)
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_PAYMENT_PROOFS_PREFIX = os.getenv("S3_PAYMENT_PROOFS_PREFIX", "payment-proofs/")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -280,6 +287,84 @@ def extract_utr_from_image(image_data: bytes) -> dict:
             'confidence': 0.0,
             'raw_text': f"Error: {str(e)}"
         }
+
+
+def upload_to_s3(image_data: bytes, participant_id: str, payment_reference: str) -> dict:
+    """
+    Upload payment screenshot to AWS S3.
+    Returns dict with 'success' (bool), 'url' (str), and 'key' (str).
+    """
+    if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME]):
+        return {
+            'success': False,
+            'error': 'S3 not configured',
+            'url': None,
+            'key': None
+        }
+
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION
+        )
+
+        # Generate unique file key
+        timestamp = int(time.time())
+        file_extension = 'png'  # Default, will be detected from image
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(image_data))
+            file_extension = img.format.lower() if img.format else 'png'
+        except:
+            file_extension = 'png'
+
+        file_key = f"{S3_PAYMENT_PROOFS_PREFIX}{participant_id}/{payment_reference}_{timestamp}.{file_extension}"
+
+        # Upload to S3
+        s3_client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=file_key,
+            Body=image_data,
+            ContentType=f'image/{file_extension}',
+            Metadata={
+                'participant-id': participant_id,
+                'payment-reference': payment_reference,
+                'upload-timestamp': str(timestamp)
+            }
+        )
+
+        # Generate URL (not presigned - assumes bucket policy allows read)
+        s3_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+
+        return {
+            'success': True,
+            'url': s3_url,
+            'key': file_key
+        }
+
+    except ClientError as e:
+        app.logger.error(f"S3 upload failed: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'url': None,
+            'key': None
+        }
+    except Exception as e:
+        app.logger.error(f"S3 upload unexpected error: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'url': None,
+            'key': None
+        }
+
 
 def _get_or_create_participant_fk(db, participant_id):
     result = db.execute(text("SELECT id FROM participants WHERE participant_id = :participant_id"), 
@@ -688,6 +773,10 @@ def record_consent():
 @track_performance
 def get_upi_details():
     """Get UPI payment details including UPI ID, QR code URL, and payment reference."""
+    # Validate UPI configuration
+    if not UPI_ID:
+        return jsonify({"error": "UPI payment not configured"}), 500
+
     data = request.get_json(silent=True) or {}
     participant_id = data.get("participant_id")
     if not participant_id:
@@ -804,9 +893,10 @@ def submit_payment_proof():
     # Use manual UTR if provided, otherwise use extracted
     final_utr = manual_utr if manual_utr else extracted_utr
 
-    # Store screenshot (in production, upload to cloud storage)
-    # For now, we'll store a placeholder or base64 (not recommended for production)
-    screenshot_base64 = hashlib.sha256(image_data).hexdigest()[:32]  # Store hash as identifier
+    # Upload screenshot to S3
+    s3_result = upload_to_s3(image_data, participant_id, payment_reference)
+    screenshot_url = s3_result.get('url') if s3_result.get('success') else None
+    screenshot_hash = hashlib.sha256(image_data).hexdigest()[:32]
 
     # Update payment record
     db.execute(text("""
@@ -815,6 +905,7 @@ def submit_payment_proof():
             utr_number = :utr,
             utr_extracted = :utr_extracted,
             ocr_confidence = :confidence,
+            screenshot_url = :screenshot_url,
             screenshot_hash = :screenshot_hash,
             submitted_at = CURRENT_TIMESTAMP
         WHERE id = :payment_id
@@ -822,7 +913,8 @@ def submit_payment_proof():
         "utr": final_utr,
         "utr_extracted": extracted_utr,
         "confidence": confidence,
-        "screenshot_hash": screenshot_base64,
+        "screenshot_url": screenshot_url,
+        "screenshot_hash": screenshot_hash,
         "payment_id": payment_id
     })
 
@@ -859,7 +951,7 @@ def get_payment_status(participant_id):
     db = get_db()
     result = db.execute(text("""
         SELECT p.status, p.utr_number, p.submitted_at, p.verified_at,
-               p.payment_reference, p.ocr_confidence,
+               p.payment_reference, p.ocr_confidence, p.screenshot_url,
                part.payment_status as participant_payment_status
         FROM payments p
         JOIN participants part ON p.participant_fk = part.id
@@ -875,9 +967,10 @@ def get_payment_status(participant_id):
 
     return jsonify({
         "status": result[0],
-        "participant_status": result[6],
+        "participant_status": result[7],
         "utr": result[1],
         "payment_reference": result[4],
+        "screenshot_url": result[6],
         "submitted_at": result[2].isoformat() if result[2] else None,
         "verified_at": result[3].isoformat() if result[3] else None,
         "ocr_confidence": result[5]

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS payments (
     utr_number VARCHAR(100),
     utr_extracted VARCHAR(100),
     ocr_confidence FLOAT DEFAULT 0.0,
+    screenshot_url TEXT,
     screenshot_hash VARCHAR(64),
     admin_notes TEXT,
     -- Legacy fields (kept for backward compatibility, nullable)
