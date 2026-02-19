@@ -44,14 +44,28 @@ CREATE TABLE IF NOT EXISTS payments (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     participant_fk BIGINT NOT NULL,
     participant_id VARCHAR(100) NOT NULL,
-    razorpay_order_id VARCHAR(100) UNIQUE NOT NULL,
+    -- UPI Payment Fields
+    payment_reference VARCHAR(100) UNIQUE,
+    utr_number VARCHAR(100),
+    utr_extracted VARCHAR(100),
+    ocr_confidence FLOAT DEFAULT 0.0,
+    screenshot_url TEXT,
+    screenshot_hash VARCHAR(64),
+    admin_notes TEXT,
+    -- Legacy fields (kept for backward compatibility, nullable)
+    razorpay_order_id VARCHAR(100) UNIQUE,
     razorpay_payment_id VARCHAR(100) UNIQUE,
     razorpay_signature VARCHAR(200),
+    -- Amount and Status
     amount INTEGER NOT NULL,
     currency VARCHAR(10) DEFAULT 'INR',
-    status VARCHAR(50) DEFAULT 'created',
+    status VARCHAR(50) DEFAULT 'pending',  -- pending, submitted, verified, rejected
+    -- Timestamps
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    submitted_at TIMESTAMPTZ,
+    verified_at TIMESTAMPTZ,
     paid_at TIMESTAMPTZ,
+    -- Constraints
     FOREIGN KEY (participant_fk)
         REFERENCES participants(id)
         ON DELETE CASCADE
