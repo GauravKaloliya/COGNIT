@@ -39,10 +39,6 @@ S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 S3_IMAGES_PREFIX = os.getenv("S3_IMAGES_PREFIX", "survey-images/")
 S3_PAYMENT_PROOFS_PREFIX = os.getenv("S3_PAYMENT_PROOFS_PREFIX", "payment-proofs/")
 
-# UPI Verification Configuration
-UPI_VERIFICATION_API_URL = os.getenv("UPI_VERIFICATION_API_URL")
-UPI_VERIFICATION_API_KEY = os.getenv("UPI_VERIFICATION_API_KEY")
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
@@ -1108,8 +1104,15 @@ def get_attention_check_images():
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
-    """Serve images from local directory (deprecated - use S3 URLs instead)."""
-    return send_from_directory(IMAGES_DIR, filename)
+    """Serve images from local directory (deprecated - use S3 URLs instead).
+    
+    This route is deprecated. Images should be served from AWS S3 using the 
+    s3_url field from the images database table.
+    """
+    return jsonify({
+        "error": "This endpoint is deprecated. Images are now served from AWS S3.",
+        "message": "Please use the s3_url field from the database to access images."
+    }), 410
 
 
 # =====================================================
