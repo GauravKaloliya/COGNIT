@@ -85,6 +85,7 @@ def populate_images(engine):
 
         image_files.append({
             "image_id": image_id,
+            "image_url": f"/images/{image_id}",
             "difficulty_score": 5.0,
             "object_count": 1,
             "width": 800,
@@ -106,8 +107,8 @@ def populate_images(engine):
             try:
                 conn.execute(text('''
                     INSERT INTO images
-                    (image_id, difficulty_score, object_count, width, height)
-                    VALUES (:image_id, :difficulty_score, :object_count, :width, :height)
+                    (image_id, image_url, difficulty_score, object_count, width, height)
+                    VALUES (:image_id, :image_url, :difficulty_score, :object_count, :width, :height)
                     ON CONFLICT (image_id) DO NOTHING
                 '''), image_data)
                 inserted += 1

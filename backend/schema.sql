@@ -97,13 +97,14 @@ CREATE TABLE IF NOT EXISTS upi_transactions (
 );
 
 -- =====================================================
--- Images Table (AWS S3 based)
+-- Images Table
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS images (
     image_id VARCHAR(100) PRIMARY KEY,
-    s3_key VARCHAR(500) NOT NULL,
-    s3_url TEXT NOT NULL,
+    image_url TEXT,
+    s3_key VARCHAR(500),
+    s3_url TEXT,
     difficulty_score DOUBLE PRECISION DEFAULT 5.0,
     object_count INTEGER DEFAULT 1,
     width INTEGER DEFAULT 800,
