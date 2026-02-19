@@ -1,6 +1,5 @@
 -- =====================================================
--- C.O.G.N.I.T. PostgreSQL Schema
--- Version: 4.0.0 (PostgreSQL Edition) - Surrogate Key Migration
+-- C.O.G.N.I.T. PostgreSQL Schema v2.0 - Redesigned Payment System
 -- =====================================================
 
 -- =====================================================
@@ -21,7 +20,7 @@ CREATE TABLE IF NOT EXISTS participants (
     prior_experience VARCHAR(100),
     consent_given BOOLEAN DEFAULT FALSE,
     consent_timestamp TIMESTAMPTZ,
-    payment_status VARCHAR(50) DEFAULT 'pending',
+    payment_status VARCHAR(50) DEFAULT 'pending',  -- pending, paid, failed
     ip_hash CHAR(64),
     user_agent VARCHAR(500),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -37,7 +36,7 @@ CREATE TABLE IF NOT EXISTS participants (
 );
 
 -- =====================================================
--- Payments Table
+-- Payments Table (Redesigned - No Razorpay)
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -45,43 +44,71 @@ CREATE TABLE IF NOT EXISTS payments (
     participant_fk BIGINT NOT NULL,
     participant_id VARCHAR(100) NOT NULL,
     -- UPI Payment Fields
-    payment_reference VARCHAR(100) UNIQUE,
+    payment_reference VARCHAR(100) UNIQUE NOT NULL,
     utr_number VARCHAR(100),
     utr_extracted VARCHAR(100),
+    utr_verified BOOLEAN DEFAULT FALSE,
     ocr_confidence FLOAT DEFAULT 0.0,
+    -- AWS S3 Payment Proof
     screenshot_url TEXT,
     screenshot_hash VARCHAR(64),
-    admin_notes TEXT,
-    -- Legacy fields (kept for backward compatibility, nullable)
-    razorpay_order_id VARCHAR(100) UNIQUE,
-    razorpay_payment_id VARCHAR(100) UNIQUE,
-    razorpay_signature VARCHAR(200),
+    s3_key VARCHAR(500),
+    -- Verification
+    auto_verified BOOLEAN DEFAULT FALSE,
+    verification_method VARCHAR(50),  -- 'automatic', 'manual'
+    verification_timestamp TIMESTAMPTZ,
+    verification_details TEXT,
     -- Amount and Status
-    amount INTEGER NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 100,
     currency VARCHAR(10) DEFAULT 'INR',
-    status VARCHAR(50) DEFAULT 'pending',  -- pending, submitted, verified, rejected
+    status VARCHAR(50) DEFAULT 'pending',  -- pending, submitted, verified, failed
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     submitted_at TIMESTAMPTZ,
     verified_at TIMESTAMPTZ,
-    paid_at TIMESTAMPTZ,
+    failed_at TIMESTAMPTZ,
     -- Constraints
     FOREIGN KEY (participant_fk)
         REFERENCES participants(id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    
+    CONSTRAINT payment_amount_positive CHECK (amount > 0),
+    CONSTRAINT payment_utr_format CHECK (utr_number IS NULL OR length(utr_number) >= 6),
+    CONSTRAINT payment_ocr_confidence_range CHECK (ocr_confidence BETWEEN 0 AND 1)
 );
 
 -- =====================================================
--- Images Table (Created before submissions due to FK)
+-- UPI Verification Library (For automatic verification)
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS upi_transactions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    utr_number VARCHAR(100) UNIQUE NOT NULL,
+    payment_reference VARCHAR(100),
+    amount INTEGER NOT NULL,
+    payee_vpa VARCHAR(255),  -- UPI ID
+    payer_vpa VARCHAR(255),
+    transaction_timestamp TIMESTAMPTZ NOT NULL,
+    status VARCHAR(50) NOT NULL,  -- success, failed, pending
+    bank_reference VARCHAR(255),
+    raw_data JSONB,
+    verified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- Images Table (AWS S3 based)
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS images (
     image_id VARCHAR(100) PRIMARY KEY,
-    image_url VARCHAR(500) NOT NULL,
-    difficulty_score DOUBLE PRECISION,
-    object_count INTEGER,
-    width INTEGER,
-    height INTEGER,
+    s3_key VARCHAR(500) NOT NULL,
+    s3_url TEXT NOT NULL,
+    difficulty_score DOUBLE PRECISION DEFAULT 5.0,
+    object_count INTEGER DEFAULT 1,
+    width INTEGER DEFAULT 800,
+    height INTEGER DEFAULT 600,
+    content_type VARCHAR(50) DEFAULT 'image/svg+xml',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -142,7 +169,8 @@ CREATE TABLE IF NOT EXISTS submissions (
     participant_id VARCHAR(100) NOT NULL,
     session_id VARCHAR(100) NOT NULL,
     image_id VARCHAR(100) NOT NULL,
-    image_url VARCHAR(500),
+    image_url TEXT,
+    s3_key VARCHAR(500),
     survey_index INTEGER NOT NULL,
     description TEXT NOT NULL CHECK (length(description) <= 10000),
     word_count INTEGER NOT NULL CHECK (word_count BETWEEN 0 AND 10000),
@@ -306,8 +334,17 @@ CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants(payme
 
 CREATE INDEX IF NOT EXISTS idx_payments_participant_fk ON payments(participant_fk);
 CREATE INDEX IF NOT EXISTS idx_payments_participant_id ON payments(participant_id);
-CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(razorpay_order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_reference ON payments(payment_reference);
+CREATE INDEX IF NOT EXISTS idx_payments_utr ON payments(utr_number);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_verified ON payments(auto_verified);
+
+CREATE INDEX IF NOT EXISTS idx_upi_transactions_utr ON upi_transactions(utr_number);
+CREATE INDEX IF NOT EXISTS idx_upi_transactions_reference ON upi_transactions(payment_reference);
+CREATE INDEX IF NOT EXISTS idx_upi_transactions_timestamp ON upi_transactions(transaction_timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_images_s3_key ON images(s3_key);
+CREATE INDEX IF NOT EXISTS idx_images_s3_url ON images(s3_url);
 
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_fk ON submissions(participant_fk);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_id ON submissions(participant_id);
