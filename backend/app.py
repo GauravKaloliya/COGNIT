@@ -241,171 +241,68 @@ def upload_to_s3(image_data: bytes, participant_id: str, prefix: str, file_exten
 
 def extract_utr_from_image(image_data: bytes) -> dict:
     """
-    Extract UTR (Unique Transaction Reference) from payment screenshot using EasyOCR.
-    Uses deep-learning OCR for better accuracy on UPI app screenshots.
+    Extract UTR (Unique Transaction Reference) from payment screenshot using Tesseract OCR.
     """
     try:
         import io
         import re
-        import numpy as np
         from PIL import Image
-        
-        # Try EasyOCR first (better for digital screenshots)
-        try:
-            import easyocr
-            
-            # Load image for EasyOCR
-            image = Image.open(io.BytesIO(image_data))
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # Convert to numpy array for EasyOCR
-            image_array = np.array(image)
-            
-            # Initialize EasyOCR reader (lazy load for performance)
-            # Use GPU=False if no GPU available, cache the reader
-            if not hasattr(extract_utr_from_image, 'easyocr_reader'):
-                extract_utr_from_image.easyocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
-            
-            reader = extract_utr_from_image.easyocr_reader
-            
-            # Perform OCR with detailed output
-            results = reader.readtext(image_array, detail=1)
-            
-            # Extract all text with confidence
-            all_text = []
-            for bbox, text, confidence in results:
-                cleaned_text = text.strip()
-                if cleaned_text:
-                    all_text.append({
-                        'text': cleaned_text,
-                        'confidence': confidence
-                    })
-            
-            # Combine all text for pattern matching
-            full_text = ' '.join([item['text'] for item in all_text])
-            
-            # Calculate average confidence
-            avg_confidence = sum(item['confidence'] for item in all_text) / len(all_text) if all_text else 0
-            
-            app.logger.info(f"EasyOCR extracted {len(all_text)} text elements with avg confidence {avg_confidence:.2f}")
-            
-        except ImportError:
-            # Fallback to Tesseract if EasyOCR not available
-            app.logger.warning("EasyOCR not available, falling back to Tesseract")
-            raise ImportError("EasyOCR not installed")
-        
-        # Search for UTR pattern in extracted text
-        # UTR is typically 12-16 digit number in Indian UPI transactions
+        import pytesseract
+
+        image = Image.open(io.BytesIO(image_data))
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        text = pytesseract.image_to_string(image)
+
         utr_patterns = [
             r'\b(?:UTR[:\s]*)?([0-9]{12,16})\b',
             r'\b(?:Ref|Reference|Transaction)[:\s#]*([0-9]{8,20})\b',
             r'\b(?:ID|Transaction ID)[:\s]*([A-Z0-9]{8,20})\b',
             r'\b([0-9]{12,16})\b'
         ]
-        
+
         utr_candidates = []
         for pattern in utr_patterns:
-            matches = re.findall(pattern, full_text, re.IGNORECASE)
+            matches = re.findall(pattern, text, re.IGNORECASE)
             utr_candidates.extend(matches)
-        
-        # Remove duplicates and validate
-        utr_candidates = list(set(utr_candidates))
-        
-        # Return the best valid UTR or None
-        for utr in utr_candidates:
-            # UTR should be 12-16 digits
-            if len(utr) >= 12 and len(utr) <= 16 and utr.isdigit():
-                app.logger.info(f"Found valid UTR: {utr[:4]}...{utr[-4:]} with confidence {avg_confidence:.2f}")
+
+        for utr in dict.fromkeys(utr_candidates):
+            if 12 <= len(utr) <= 16 and utr.isdigit():
+                app.logger.info(f"Found valid UTR: {utr[:4]}...{utr[-4:]}")
                 return {
                     'utr': utr,
-                    'confidence': avg_confidence,
-                    'raw_text': full_text,
-                    'ocr_method': 'easyocr'
+                    'confidence': 0.6,
+                    'raw_text': text,
+                    'ocr_method': 'tesseract'
                 }
-        
-        # If no UTR found, try to find any 12+ digit number that might be UTR
-        potential_utr = re.findall(r'\b[0-9]{12,16}\b', full_text)
+
+        potential_utr = re.findall(r'\b[0-9]{12,16}\b', text)
         if potential_utr:
-            # Return the first one found
             utr = potential_utr[0]
             app.logger.info(f"Found potential UTR: {utr[:4]}...{utr[-4:]}")
             return {
                 'utr': utr,
-                'confidence': avg_confidence * 0.5,  # Lower confidence for fuzzy match
-                'raw_text': full_text,
-                'ocr_method': 'easyocr'
-            }
-        
-        return {
-            'utr': None,
-            'confidence': avg_confidence,
-            'raw_text': full_text,
-            'ocr_method': 'easyocr'
-        }
-        
-    except ImportError as e:
-        app.logger.warning(f"OCR libraries not available: {e}")
-        
-        # Try Tesseract as fallback
-        try:
-            from PIL import Image
-            import pytesseract
-            import io
-            import re
-            
-            # Load image from bytes
-            image = Image.open(io.BytesIO(image_data))
-            image = image.convert('RGB')
-            
-            # Extract text using Tesseract
-            text = pytesseract.image_to_string(image)
-            
-            # Search for UTR pattern
-            utr_patterns = [
-                r'\b(?:UTR[:\s]*)?([0-9]{12,16})\b',
-                r'\b(?:Ref|Transaction)[:\s]*([0-9]{8,20})\b',
-                r'\b([0-9]{12,16})\b'
-            ]
-            
-            utr_candidates = []
-            for pattern in utr_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                utr_candidates.extend(matches)
-            
-            for utr in set(utr_candidates):
-                if len(utr) >= 12 and utr.isdigit():
-                    return {
-                        'utr': utr,
-                        'confidence': 0.6,  # Lower confidence for Tesseract
-                        'raw_text': text,
-                        'ocr_method': 'tesseract'
-                    }
-            
-            return {
-                'utr': None,
-                'confidence': 0.0,
+                'confidence': 0.3,
                 'raw_text': text,
                 'ocr_method': 'tesseract'
             }
-            
-        except ImportError:
-            app.logger.error("No OCR library available (tried EasyOCR and Tesseract)")
-            return {
-                'utr': None,
-                'confidence': 0.0,
-                'raw_text': '',
-                'ocr_method': 'none'
-            }
-        except Exception as e:
-            app.logger.error(f"Tesseract OCR failed: {e}")
-            return {
-                'utr': None,
-                'confidence': 0.0,
-                'raw_text': '',
-                'ocr_method': 'error'
-            }
-            
+
+        return {
+            'utr': None,
+            'confidence': 0.0,
+            'raw_text': text,
+            'ocr_method': 'tesseract'
+        }
+
+    except ImportError as e:
+        app.logger.error(f"Tesseract OCR not available: {e}")
+        return {
+            'utr': None,
+            'confidence': 0.0,
+            'raw_text': '',
+            'ocr_method': 'none'
+        }
     except Exception as e:
         app.logger.error(f"OCR extraction failed: {e}")
         return {

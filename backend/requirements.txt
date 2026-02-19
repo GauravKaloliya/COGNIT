@@ -10,5 +10,4 @@ setuptools==70.0.0
 Pillow==10.3.0
 boto3==1.34.0
 # OCR Libraries
-easyocr==1.7.0
-numpy>=1.21.0
+pytesseract==0.3.10
