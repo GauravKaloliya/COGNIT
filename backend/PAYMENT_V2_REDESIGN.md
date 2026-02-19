@@ -70,10 +70,19 @@ ALTER TABLE images ADD COLUMN content_type VARCHAR(50) DEFAULT 'image/svg+xml';
 ### 3. Key Features
 
 #### Automatic Payment Verification
-- OCR extracts UTR from payment screenshot
+- **EasyOCR** extracts UTR from payment screenshot (deep-learning based)
 - External API verifies transaction (if configured)
 - Automatic status updates
 - Manual review fallback if verification fails
+- Tesseract OCR available as fallback
+
+#### EasyOCR Integration
+- Uses deep-learning neural networks for better accuracy
+- Specifically optimized for digital text from UPI apps
+- Higher accuracy on messy UI screenshots than Tesseract
+- Lazy-loaded for performance (cached after first use)
+- Confidence scores for extracted text
+- Fallback to Tesseract if EasyOCR unavailable
 
 #### AWS S3 Integration
 - All payment screenshots stored in S3
@@ -115,6 +124,24 @@ S3_PAYMENT_PROOFS_PREFIX=payment-proofs/
 UPI_VERIFICATION_API_URL=https://api.example.com/verify
 UPI_VERIFICATION_API_KEY=your-api-key
 ```
+
+### 6. Python Dependencies
+
+```bash
+# Install required packages
+pip install easyocr numpy
+
+# Or use requirements.txt
+pip install -r requirements.txt
+```
+
+Required packages:
+- `easyocr==1.7.0` - Deep-learning OCR (primary)
+- `numpy>=1.21.0` - Required by EasyOCR
+- `Pillow` - Image processing
+- `boto3` - AWS S3 integration
+
+Note: EasyOCR will automatically fall back to Tesseract if not available.
 
 ### 6. Migration Guide
 

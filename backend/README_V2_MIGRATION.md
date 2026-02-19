@@ -60,7 +60,7 @@ mv schema_v2.sql schema.sql
 ✅ **No Razorpay** - Completely removed
 ✅ **Automatic Verification** - No admin intervention needed
 ✅ **AWS S3 Images** - All images (payment + survey) from S3
-✅ **OCR UTR Extraction** - Automatic UTR detection from screenshots
+✅ **EasyOCR UTR Extraction** - Deep-learning OCR for better accuracy
 ✅ **External Verification API** - Optional bank integration
 ✅ **Secured Routes** - Rate limiting and validation
 ✅ **Better Error Handling** - Clear error messages
@@ -96,6 +96,16 @@ S3_PAYMENT_PROOFS_PREFIX=payment-proofs/
 # Optional: Auto Verification
 UPI_VERIFICATION_API_URL=https://api.example.com/verify
 UPI_VERIFICATION_API_KEY=...
+```
+
+## Python Dependencies
+
+```bash
+# Install required packages
+pip install easyocr numpy
+
+# Or use requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Need Help?
