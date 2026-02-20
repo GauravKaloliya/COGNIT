@@ -324,7 +324,7 @@
                 <ol>
                     <li>Create a participant profile using <code>/participants</code>.</li>
                     <li>Record consent using <code>/consent</code> before collecting data.</li>
-                    <li>Collect the entry fee with Razorpay using <code>/payment/create-order</code> and <code>/payment/verify</code>.</li>
+                    <li>Confirm participation using <code>/payment/confirm</code>.</li>
                     <li>Fetch images via <code>/images/random</code> (optionally exclude previously used images).</li>
                     <li>Submit descriptions with ratings and feedback using <code>/submit</code>.</li>
                 </ol>
@@ -399,7 +399,7 @@
                         <div class="code-block small"><pre>{
   "title": "C.O.G.N.I.T. API Documentation",
   "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API.",
-  "base_url": "https://api.cognit.online",
+  "base_url": "{{ base_url }}",
   "security": { ... },
   "endpoints": {
     "health": { "path": "/health", "method": "GET", "auth_required": false },
@@ -547,16 +547,16 @@
                     </div>
                 </div>
 
-                <h3 style="margin-top: 32px;">Payments</h3>
+                <h3 style="margin-top: 32px;">Participation</h3>
 
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payment/create-order</code>
+                        <code class="endpoint-path">/payment/confirm</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Creates (or reuses) a Razorpay order for the entry fee. If a recent unpaid order exists, the API returns the existing order ID.</p>
+                        <p class="endpoint-desc">Confirms participant entry into the reward pool and marks their participation status as active.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
                         </div>
@@ -566,63 +566,11 @@
 }</pre></div>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
-  "order_id": "order_N7k9p0n123",
-  "key": "rzp_live_...",
-  "amount": 100,
-  "currency": "INR"
+  "status": "confirmed"
 }</pre></div>
                         <h4>Errors</h4>
                         <div class="code-block small"><pre>{
-  "error": "Payment gateway not configured"
-}</pre></div>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payment/verify</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Validates Razorpay payment signatures after checkout and updates participant payment status to <code>paid</code>.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "razorpay_order_id": "order_N7k9p0n123",
-  "razorpay_payment_id": "pay_N7k9p0n123",
-  "razorpay_signature": "generated_signature"
-}</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "verified"
-}</pre></div>
-                        <h4>Invalid Signature (400)</h4>
-                        <div class="code-block small"><pre>{
-  "error": "Invalid signature"
-}</pre></div>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payment/webhook</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Processes Razorpay webhook events (typically <code>payment.captured</code>). Use the raw request body and include the <code>X-Razorpay-Signature</code> header.</p>
-                        <h4>Headers</h4>
-                        <div class="code-block small"><pre>X-Razorpay-Signature: &lt;signature&gt;</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "ok"
-}</pre></div>
-                        <h4>Errors</h4>
-                        <div class="code-block small"><pre>{
-  "error": "Missing webhook signature"
+  "error": "Participant not found"
 }</pre></div>
                     </div>
                 </div>
@@ -792,13 +740,12 @@ await fetch('/consent', {
   body: JSON.stringify({ participant_id: 'user-123', consent_given: true })
 });
 
-// Create payment order (Razorpay checkout follows client-side)
-const orderResponse = await fetch('/payment/create-order', {
+// Confirm participation
+await fetch('/payment/confirm', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ participant_id: 'user-123' })
 });
-const order = await orderResponse.json();
 
 // Get a random image
 const imageResponse = await fetch('/images/random');
@@ -828,7 +775,7 @@ console.log(result);</pre></div>
                 <h3 style="margin-top: 32px;">Python / Requests</h3>
                 <div class="code-block"><pre>import requests
 
-base_url = "http://localhost:5000"
+base_url = "{{ base_url }}"
 
 participant_payload = {
     "participant_id": "user-123",
@@ -866,7 +813,7 @@ print(submission.json())</pre></div>
 
                 <h3 style="margin-top: 32px;">cURL</h3>
                 <div class="code-block"><pre># Create participant
-curl -X POST "http://localhost:5000/participants" \
+curl -X POST "{{ base_url }}/participants" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
@@ -880,7 +827,7 @@ curl -X POST "http://localhost:5000/participants" \
   }'
 
 # Record consent
-curl -X POST "http://localhost:5000/consent" \
+curl -X POST "{{ base_url }}/consent" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
@@ -888,10 +835,10 @@ curl -X POST "http://localhost:5000/consent" \
   }'
 
 # Get a random image excluding previous ones
-curl -X GET "http://localhost:5000/images/random?exclude=aurora-lake.svg"
+curl -X GET "{{ base_url }}/images/random?exclude=aurora-lake.svg"
 
 # Submit data
-curl -X POST "http://localhost:5000/submit" \
+curl -X POST "{{ base_url }}/submit" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
@@ -975,10 +922,7 @@ curl -X POST "http://localhost:5000/submit" \
                     <li><code>comments must be at least 5 characters</code> — Feedback is too short.</li>
                     <li><code>Participant ID already exists</code> — The participant_id is not unique.</li>
                     <li><code>Participant not found. Please complete registration first.</code> — Participant ID missing from the database.</li>
-                    <li><code>Payment required</code> — Payment status is not marked as paid.</li>
                     <li><code>Consent required. Please complete the consent process.</code> — Consent not recorded.</li>
-                    <li><code>Payment gateway not configured</code> — Razorpay credentials missing in the environment.</li>
-                    <li><code>Invalid signature</code> — Razorpay signature verification failed.</li>
                     <li><code>Account flagged for low attention quality</code> — Participant failed attention checks.</li>
                 </ul>
 

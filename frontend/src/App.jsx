@@ -118,7 +118,6 @@ export default function App() {
   const [surveyCompleted, setSurveyCompleted] = useState(getStoredValue("surveyCompleted", 0));
   const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(getStoredValue("surveyFeedbackReady", false));
   const [readyForNext, setReadyForNext] = useState(false);
-  const [fetchingImage, setFetchingImage] = useState(false);
   const [shownImages, setShownImages] = useState(getStoredValue("shownImages", []));
   const [imageError, setImageError] = useState(null);
   
@@ -276,7 +275,7 @@ export default function App() {
     setSurveyFeedbackReady(false); // Reset feedback state for new survey session
     try {
       await fetchImage();
-      addToast("Payment completed successfully", "success");
+      addToast("Participation confirmed successfully", "success");
     } catch (err) {
       addToast("Failed to load first survey image. Please try again.", "error");
       // Stay on survey page but show error
@@ -285,7 +284,6 @@ export default function App() {
 
   // Fetch image
   const fetchImage = async () => {
-    setFetchingImage(true);
     setReadyForNext(false);
     setSurveyFeedbackReady(false);
     setImageError(null);
@@ -312,8 +310,6 @@ export default function App() {
       addToast(errorMessage, "error");
       setImageError(errorMessage);
       setSurvey(null);
-    } finally {
-      setFetchingImage(false);
     }
   };
 
@@ -355,9 +351,7 @@ export default function App() {
           errorMessage = "Comments must be at least 5 characters long.";
         }
       } else if (response.status === 403) {
-        if (data.error && data.error.includes("Payment required")) {
-          errorMessage = "Payment is required before submitting responses.";
-        } else if (data.error && data.error.includes("consent")) {
+        if (data.error && data.error.includes("consent")) {
           errorMessage = "Consent is required. Please complete the consent process first.";
         }
       } else if (response.status === 409) {
@@ -416,23 +410,6 @@ export default function App() {
   const handleSurveyFinish = () => {
     setSurveyFeedbackReady(false); // Reset feedback state
     setStage("finished");
-  };
-
-  // Progress steps configuration
-  const getProgressSteps = () => {
-    const steps = [
-      { id: "consent", label: "Consent" },
-      { id: "user-details", label: "Details" },
-      { id: "payment", label: "Payment" },
-      { id: "survey", label: "Practice" },
-      { id: "finished", label: "Complete" }
-    ];
-    return steps;
-  };
-
-  const getCurrentStepIndex = () => {
-    const steps = getProgressSteps();
-    return steps.findIndex(s => s.id === stage);
   };
 
   // Render progress bar for multi-step flows

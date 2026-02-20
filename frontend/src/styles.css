@@ -1218,33 +1218,6 @@ textarea {
   color: var(--primary);
 }
 
-.tag {
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-}
-
-.tag.survey {
-  background: var(--accent);
-  color: #1c1e21;
-}
-
-body.dark .tag.survey {
-  background: var(--secondary);
-  color: #e4e6eb;
-}
-
-.tag.attention {
-  background: #fff5e6;
-  color: #92400e;
-}
-
-body.dark .tag.attention {
-  background: rgba(230, 126, 34, 0.15);
-  color: #f39c12;
-}
-
 /* --------------------------------------------------------------------------
    Mobile-First Field
    -------------------------------------------------------------------------- */
@@ -1422,10 +1395,6 @@ body.dark .counts {
     gap: var(--space-4);
     margin-top: var(--space-6);
   }
-}
-
-.survey-button {
-  margin-top: var(--space-3);
 }
 
 .hint {
@@ -1917,23 +1886,6 @@ body.dark .toast.warning {
   font-size: var(--text-sm);
 }
 
-.payment-note-box {
-  background: rgba(230, 126, 34, 0.1);
-  border: 1px solid rgba(230, 126, 34, 0.3);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  margin-top: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--warning);
-  font-weight: var(--font-medium);
-}
-
-@media (min-width: 768px) {
-  .payment-note-box {
-    padding: var(--space-2) var(--space-3);
-  }
-}
-
 .payment-panel .consent-checkbox:hover {
   border-color: var(--border);
 }
@@ -1998,13 +1950,6 @@ body.dark .toast.warning {
   margin-bottom: var(--space-6);
   font-size: var(--text-base);
   line-height: var(--leading-normal);
-}
-
-.hero-caption {
-  text-align: center;
-  margin-top: var(--space-4);
-  color: var(--muted);
-  font-size: var(--text-sm);
 }
 
 .page-actions {
@@ -2197,34 +2142,6 @@ body.dark .toast.warning {
    -------------------------------------------------------------------------- */
 .hidden {
   display: none;
-}
-
-.loading {
-  text-align: center;
-  padding: var(--space-8);
-  color: var(--muted);
-  font-style: italic;
-}
-
-@media (min-width: 768px) {
-  .loading {
-    padding: var(--space-10);
-  }
-}
-
-.no-data-message {
-  text-align: center;
-  padding: var(--space-8);
-  color: var(--muted);
-  background: var(--accent-bg);
-  border-radius: var(--radius-xl);
-  border: 2px dashed var(--border);
-}
-
-@media (min-width: 768px) {
-  .no-data-message {
-    padding: var(--space-10);
-  }
 }
 
 /* Text utilities */
