@@ -1,6 +1,6 @@
 -- =====================================================
 -- C.O.G.N.I.T. PostgreSQL Schema
--- Version: 4.0.0 (PostgreSQL Edition) - Razorpay Removed
+-- Version: 5.0.0 (PostgreSQL Edition) - Critical Security & Data Integrity Fixes
 -- =====================================================
 
 -- =====================================================
@@ -33,7 +33,10 @@ CREATE TABLE IF NOT EXISTS participants (
 
     CONSTRAINT valid_ip_hash CHECK (
         ip_hash IS NULL OR length(ip_hash) = 64
-    )
+    ),
+
+    CONSTRAINT valid_payment_status
+        CHECK (payment_status IN ('pending', 'paid', 'failed', 'refunded', 'cancelled'))
 );
 
 -- =====================================================
@@ -47,7 +50,22 @@ CREATE TABLE IF NOT EXISTS images (
     object_count INTEGER,
     width INTEGER,
     height INTEGER,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT unique_image_url
+        UNIQUE (image_url),
+
+    CONSTRAINT valid_difficulty_score
+        CHECK (difficulty_score IS NULL OR difficulty_score BETWEEN 0.0 AND 10.0),
+
+    CONSTRAINT valid_object_count
+        CHECK (object_count IS NULL OR object_count > 0),
+
+    CONSTRAINT valid_width
+        CHECK (width IS NULL OR width > 0),
+
+    CONSTRAINT valid_height
+        CHECK (height IS NULL OR height > 0)
 );
 
 -- =====================================================
@@ -76,7 +94,7 @@ CREATE TABLE IF NOT EXISTS attention_stats (
     total_checks INT DEFAULT 0 CHECK (total_checks >= 0),
     passed_checks INT DEFAULT 0 CHECK (passed_checks >= 0),
     failed_checks INT DEFAULT 0 CHECK (failed_checks >= 0),
-    attention_score FLOAT DEFAULT 1.0,
+    attention_score DOUBLE PRECISION DEFAULT 1.0,
     is_flagged BOOLEAN DEFAULT FALSE,
 
     CONSTRAINT fk_attention_stats_participant
@@ -85,9 +103,18 @@ CREATE TABLE IF NOT EXISTS attention_stats (
         ON DELETE CASCADE,
 
     CONSTRAINT valid_attention_counts
-        CHECK (total_checks >= passed_checks + failed_checks),
+        CHECK (total_checks = passed_checks + failed_checks),
 
-    CONSTRAINT attention_score_range
+    CONSTRAINT attention_checks_not_negative
+        CHECK (total_checks >= 0 AND passed_checks >= 0 AND failed_checks >= 0),
+
+    CONSTRAINT passed_checks_not_exceed_total
+        CHECK (passed_checks <= total_checks),
+
+    CONSTRAINT failed_checks_not_exceed_total
+        CHECK (failed_checks <= total_checks),
+
+    CONSTRAINT attention_stats_score_range
         CHECK (attention_score BETWEEN 0 AND 1),
 
     CONSTRAINT unique_attention_stats_participant
@@ -109,17 +136,17 @@ CREATE TABLE IF NOT EXISTS submissions (
     image_id VARCHAR(100) NOT NULL,
     image_url VARCHAR(500),
     survey_index INTEGER NOT NULL,
-    description TEXT NOT NULL CHECK (length(description) <= 10000),
+    description TEXT NOT NULL CHECK (length(description) BETWEEN 10 AND 10000),
     word_count INTEGER NOT NULL CHECK (word_count BETWEEN 0 AND 10000),
     rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 10),
-    feedback TEXT NOT NULL CHECK (length(feedback) <= 2000),
-    time_spent_seconds DOUBLE PRECISION CHECK (time_spent_seconds >= 0),
+    feedback TEXT NOT NULL CHECK (length(feedback) BETWEEN 5 AND 2000),
+    time_spent_seconds DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (time_spent_seconds >= 0),
     is_survey BOOLEAN DEFAULT FALSE,
     is_attention BOOLEAN DEFAULT FALSE,
     attention_passed BOOLEAN,
     too_fast_flag BOOLEAN DEFAULT FALSE,
-    attention_score_at_submission FLOAT,
-    quality_score FLOAT,
+    attention_score_at_submission DOUBLE PRECISION,
+    quality_score DOUBLE PRECISION,
     ai_suspected BOOLEAN DEFAULT FALSE,
     user_agent VARCHAR(500),
     ip_hash CHAR(64),
@@ -137,14 +164,14 @@ CREATE TABLE IF NOT EXISTS submissions (
     CONSTRAINT unique_participant_survey_index
         UNIQUE (participant_fk, survey_index),
 
-    CONSTRAINT attention_score_range
+    CONSTRAINT submissions_attention_score_range
         CHECK (attention_score_at_submission IS NULL OR attention_score_at_submission BETWEEN 0 AND 1),
 
     CONSTRAINT quality_score_range
         CHECK (quality_score IS NULL OR quality_score BETWEEN 0 AND 1),
 
     CONSTRAINT ai_suspected_requires_quality_score
-        CHECK (ai_suspected IS NULL OR ai_suspected = FALSE OR quality_score IS NOT NULL)
+        CHECK (ai_suspected = FALSE OR (ai_suspected = TRUE AND quality_score IS NOT NULL))
 );
 
 -- =====================================================
@@ -178,7 +205,7 @@ CREATE TABLE IF NOT EXISTS participant_stats (
     total_submissions INT DEFAULT 0,
     survey_rounds INT DEFAULT 0,
     priority_eligible BOOLEAN DEFAULT FALSE,
-    attention_score FLOAT DEFAULT 1.0,
+    attention_score DOUBLE PRECISION DEFAULT 1.0,
     last_reward_attempt_at TIMESTAMPTZ,
 
     CONSTRAINT fk_participant_stats_participant
@@ -186,7 +213,7 @@ CREATE TABLE IF NOT EXISTS participant_stats (
         REFERENCES participants(id)
         ON DELETE CASCADE,
 
-    CONSTRAINT attention_score_range
+    CONSTRAINT participant_stats_score_range
         CHECK (attention_score BETWEEN 0 AND 1),
 
     CONSTRAINT unique_participant_stats_participant
