@@ -28,17 +28,20 @@ export default function SurveyPage({
   const [elapsed, setElapsed] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [timerActive, setTimerActive] = useState(false);
 
   const surveyStartTime = useRef(Date.now());
+  const timerIntervalRef = useRef(null);
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
   const charCount = description.length;
   const commentsValid = comments.trim().length >= 5;
-  const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && !submitting;
+  const imageReady = imageLoaded && !imageError;
+  const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && !submitting && imageReady;
 
   const handleRetryImage = () => {
     setImageError(false);
     setImageLoaded(false);
-    // Force reload the image by adding a timestamp
+    setTimerActive(false);
     const img = document.querySelector('.image-container img');
     if (img && img.src) {
       const originalSrc = img.src;
@@ -52,12 +55,39 @@ export default function SurveyPage({
     setImageError(false);
     setIsZoomed(false);
     setSubmitError("");
+    setTimerActive(false);
     surveyStartTime.current = Date.now();
-    const interval = setInterval(() => {
-      setElapsed((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
+    
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
   }, [survey?.image_id]);
+
+  useEffect(() => {
+    if (timerActive) {
+      timerIntervalRef.current = setInterval(() => {
+        setElapsed((prev) => prev + 1);
+      }, 1000);
+    } else if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [timerActive]);
 
   useEffect(() => {
     if (submitError) {
@@ -103,14 +133,17 @@ export default function SurveyPage({
   const handleImageLoad = () => {
     setImageLoaded(true);
     setImageError(false);
+    setTimerActive(true);
   };
 
   const handleImageError = () => {
     setImageError(true);
     setImageLoaded(false);
+    setTimerActive(false);
   };
 
   const getSubmitTooltip = () => {
+    if (!imageReady) return "Waiting for image to load...";
     if (submitting) return "Submitting...";
     if (wordCount < MIN_WORDS) return `Need at least ${MIN_WORDS} words (currently ${wordCount})`;
     if (rating === 0) return "Please select a rating";
@@ -270,6 +303,7 @@ export default function SurveyPage({
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Describe what you see..."
           spellCheck
+          disabled={!imageReady}
         />
       </div>
 
@@ -292,6 +326,7 @@ export default function SurveyPage({
                 value={val}
                 checked={rating === val}
                 onChange={() => setRating(val)}
+                disabled={!imageReady}
               />
               <span className="rating-label">{val}</span>
             </label>
@@ -310,6 +345,7 @@ export default function SurveyPage({
           value={comments}
           onChange={(e) => setComments(e.target.value)}
           placeholder="Share any additional notes..."
+          disabled={!imageReady}
         />
       </div>
 
