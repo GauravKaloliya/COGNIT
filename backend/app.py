@@ -229,28 +229,61 @@ def create_participant():
     ua = request.headers.get("User-Agent", "")[:512]
 
     try:
-        db.execute(text("""
-            INSERT INTO participants (
-                public_id, session_id, username, email, phone,
-                gender_code, age, location, language_code, prior_experience,
-                ip_hash, user_agent, extra_metadata
-            ) VALUES (
-                :pub, :sid, :un, :em, :ph, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
-            )
-        """), {
-            "pub": public_id,
-            "sid": str(data["session_id"]).strip()[:128],
-            "un": str(data["username"]).strip()[:50],
-            "em": data.get("email", "").strip()[:255] or None,
-            "ph": data.get("phone", "").strip()[:20] or None,
-            "gc": str(data["gender_code"]).strip().lower()[:32],
-            "age": int(data["age"]),
-            "loc": str(data["location"]).strip()[:120],
-            "lc": str(data["language_code"]).strip().lower()[:20],
-            "pe": str(data.get("prior_experience", "")).strip()[:120],
-            "iph": iph,
-            "ua": ua
-        })
+        # Check if public_id column exists
+        col_check = db.execute(text("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'participants' AND column_name = 'public_id'
+        """)).fetchone()
+        
+        if col_check:
+            # Insert with public_id
+            db.execute(text("""
+                INSERT INTO participants (
+                    public_id, session_id, username, email, phone,
+                    gender_code, age, location, language_code, prior_experience,
+                    ip_hash, user_agent, extra_metadata
+                ) VALUES (
+                    :pub, :sid, :un, :em, :ph, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
+                )
+            """), {
+                "pub": public_id,
+                "sid": str(data["session_id"]).strip()[:128],
+                "un": str(data["username"]).strip()[:50],
+                "em": data.get("email", "").strip()[:255] or None,
+                "ph": data.get("phone", "").strip()[:20] or None,
+                "gc": str(data["gender_code"]).strip().lower()[:32],
+                "age": int(data["age"]),
+                "loc": str(data["location"]).strip()[:120],
+                "lc": str(data["language_code"]).strip().lower()[:20],
+                "pe": str(data.get("prior_experience", "")).strip()[:120],
+                "iph": iph,
+                "ua": ua
+            })
+        else:
+            # Fallback: Insert without public_id (schema needs migration)
+            db.execute(text("""
+                INSERT INTO participants (
+                    session_id, username, email, phone,
+                    gender_code, age, location, language_code, prior_experience,
+                    ip_hash, user_agent, extra_metadata
+                ) VALUES (
+                    :sid, :un, :em, :ph, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
+                )
+            """), {
+                "sid": str(data["session_id"]).strip()[:128],
+                "un": str(data["username"]).strip()[:50],
+                "em": data.get("email", "").strip()[:255] or None,
+                "ph": data.get("phone", "").strip()[:20] or None,
+                "gc": str(data["gender_code"]).strip().lower()[:32],
+                "age": int(data["age"]),
+                "loc": str(data["location"]).strip()[:120],
+                "lc": str(data["language_code"]).strip().lower()[:20],
+                "pe": str(data.get("prior_experience", "")).strip()[:120],
+                "iph": iph,
+                "ua": ua
+            })
+            current_app.logger.warning("public_id column missing - inserted without public_id")
+        
         db.commit()
         log_audit(db, "participant_created", details=f"public_id={public_id}")
         return jsonify({"status": "created", "public_id": public_id}), 201
@@ -258,6 +291,9 @@ def create_participant():
         db.rollback()
         if "unique" in str(e).lower():
             return jsonify({"error": "public_id or username conflict"}), 409
+        if "public_id" in str(e).lower() and "does not exist" in str(e).lower():
+            current_app.logger.error("Database schema missing public_id column. Run schema.sql migration.")
+            return jsonify({"error": "database schema needs migration - public_id column missing"}), 500
         current_app.logger.exception("create_participant failed")
         return jsonify({"error": "database error"}), 500
 
