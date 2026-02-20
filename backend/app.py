@@ -1,6 +1,5 @@
 import hashlib
 import os
-import random
 import re
 import time
 import functools
@@ -17,6 +16,7 @@ from sqlalchemy.pool import QueuePool, NullPool
 
 MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
+MAX_FEEDBACK_LENGTH = int(os.getenv("MAX_FEEDBACK_LENGTH", "2000"))
 
 IP_HASH_SALT = os.getenv("IP_HASH_SALT")
 if not IP_HASH_SALT:
@@ -152,17 +152,17 @@ def add_security_headers(response):
 
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["X-Download-Options"] = "noopen"
     response.headers["X-DNS-Prefetch-Control"] = "off"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "default-src 'self'; script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; "
         "font-src 'self'; connect-src 'self'; frame-src 'none'; "
         "object-src 'none'; base-uri 'self'; form-action 'self'"
     )
-    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    if not IS_VERCEL and os.getenv("FLASK_ENV") != "development":
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=(), payment=()"
     response.headers["Server"] = "Secure Server"
@@ -181,6 +181,7 @@ else:
         "pool_size": 10,
         "max_overflow": 20,
         "pool_recycle": 3600,
+        "pool_timeout": 30,
     })
 
 engine = create_engine(DATABASE_URL, **engine_options)
@@ -202,7 +203,11 @@ def close_db(exception):
 
 
 def get_ip_hash():
-    ip_address = request.headers.get("X-Forwarded-For", request.remote_addr) or "unknown"
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        ip_address = forwarded_for.split(",")[0].strip()
+    else:
+        ip_address = request.remote_addr or "unknown"
     digest = hashlib.sha256(f"{ip_address}{IP_HASH_SALT}".encode("utf-8")).hexdigest()
     return digest
 
@@ -223,6 +228,7 @@ def _update_participant_stats_internal(db, participant_fk, participant_id, word_
                 SELECT total_words, total_submissions, survey_rounds, attention_score
                 FROM participant_stats
                 WHERE participant_fk = :participant_fk
+                FOR UPDATE
             """),
             {"participant_fk": participant_fk},
         )
@@ -264,16 +270,17 @@ def _update_participant_stats_internal(db, participant_fk, participant_id, word_
             },
         )
     except Exception:
-        pass
+        app.logger.exception("Failed to update participant stats for participant_fk=%s", participant_fk)
+        raise
 
 
-def count_words(text: str):
-    return len([word for word in text.strip().split() if word])
+def count_words(text_input: str):
+    return len(re.findall(r"[^\s]+", text_input.strip()))
 
 
-def calculate_quality_score(word_count: int, attention_passed: bool, time_spent_seconds: float, feedback: str) -> float:
+def calculate_quality_score(word_count: int, attention_passed, time_spent_seconds: float, feedback: str) -> float:
     word_score = min(word_count / 150.0, 1.0)
-    attention_score = 1.0 if attention_passed is not False else 0.0
+    attention_score = 1.0 if attention_passed is True else (0.5 if attention_passed is None else 0.0)
     time_score = 0.5 if time_spent_seconds and time_spent_seconds < TOO_FAST_SECONDS else 1.0
     feedback_score = min(len(feedback) / 50.0, 1.0)
     quality_score = 0.4 * word_score + 0.3 * attention_score + 0.2 * time_score + 0.1 * feedback_score
@@ -302,9 +309,8 @@ def _log_audit_event(db, event_type, participant_fk=None, participant_id=None, u
                 "details": details,
             },
         )
-        db.commit()
     except Exception:
-        pass
+        app.logger.exception("Failed to log audit event: event_type=%s participant_id=%s", event_type, participant_id)
 
 
 def _log_performance_metric(endpoint, response_time_ms, status_code, request_size=0, response_size=0):
@@ -326,7 +332,7 @@ def _log_performance_metric(endpoint, response_time_ms, status_code, request_siz
         )
         db.commit()
     except Exception:
-        pass
+        app.logger.exception("Failed to log performance metric for endpoint=%s", endpoint)
 
 
 def track_performance(f):
@@ -334,18 +340,25 @@ def track_performance(f):
     def wrapper(*args, **kwargs):
         start_time = time.time()
         try:
-            response = f(*args, **kwargs)
+            result = f(*args, **kwargs)
             end_time = time.time()
             response_time_ms = int((end_time - start_time) * 1000)
+            if isinstance(result, tuple):
+                response_obj, status_code = result[0], result[1]
+                response_size = len(response_obj.get_data()) if hasattr(response_obj, "get_data") else 0
+            else:
+                response_obj = result
+                status_code = response_obj.status_code if hasattr(response_obj, "status_code") else 200
+                response_size = len(response_obj.get_data()) if hasattr(response_obj, "get_data") else 0
             _log_performance_metric(
                 endpoint=request.path,
                 response_time_ms=response_time_ms,
-                status_code=response.status_code if hasattr(response, "status_code") else 200,
+                status_code=status_code,
                 request_size=request.content_length or 0,
-                response_size=len(response.get_data()) if hasattr(response, "get_data") else 0,
+                response_size=response_size,
             )
-            return response
-        except Exception as e:
+            return result
+        except Exception:
             end_time = time.time()
             response_time_ms = int((end_time - start_time) * 1000)
             _log_performance_metric(
@@ -355,7 +368,7 @@ def track_performance(f):
                 request_size=request.content_length or 0,
                 response_size=0,
             )
-            raise e
+            raise
     return wrapper
 
 
@@ -402,7 +415,7 @@ def create_participant():
             return jsonify({"error": "Invalid email format"}), 400
         domain = email.split("@")[1]
         if domain not in allowed_email_domains:
-            return jsonify({"error": "Only Gmail, Outlook, Hotmail, and iCloud email addresses are allowed"}), 400
+            return jsonify({"error": "Only Gmail, Outlook, Hotmail, iCloud, Me, and Mac email addresses are allowed"}), 400
 
     phone = data.get("phone", "").strip()
     if phone:
@@ -420,18 +433,13 @@ def create_participant():
     except (ValueError, TypeError):
         return jsonify({"error": "Age must be a valid number between 13 and 100"}), 400
 
+    gender = data.get("gender", "").strip().lower()
+    place = data.get("place", "").strip().lower()
+    native_language = data.get("native_language", "").strip().lower()
+
     db = None
     try:
         db = get_db()
-        _log_audit_event(
-            db,
-            event_type="participant_creation_attempt",
-            participant_id=data["participant_id"],
-            endpoint="/participants",
-            method="POST",
-            status_code=201,
-            details="Participant creation attempt",
-        )
 
         result = db.execute(
             text("""
@@ -443,13 +451,13 @@ def create_participant():
             {
                 "participant_id": data["participant_id"],
                 "session_id": data["session_id"],
-                "username": data["username"],
+                "username": username,
                 "email": email or None,
                 "phone": phone or None,
-                "gender": data["gender"],
-                "age": int(data["age"]),
-                "place": data["place"],
-                "native_language": data["native_language"],
+                "gender": gender,
+                "age": age,
+                "place": place,
+                "native_language": native_language,
                 "prior_experience": data["prior_experience"],
                 "ip_hash": get_ip_hash(),
                 "user_agent": request.headers.get("User-Agent", ""),
@@ -457,27 +465,6 @@ def create_participant():
         )
         participant_fk = result.fetchone()[0]
 
-        try:
-            consent_result = db.execute(
-                text("""
-                    SELECT consent_given, consent_timestamp FROM consent_records
-                    WHERE participant_id = :participant_id AND consent_given = TRUE
-                """),
-                {"participant_id": data["participant_id"]},
-            )
-            consent_row = consent_result.fetchone()
-            if consent_row:
-                db.execute(
-                    text("""
-                        UPDATE participants SET consent_given = TRUE, consent_timestamp = :consent_timestamp
-                        WHERE id = :participant_fk
-                    """),
-                    {"consent_timestamp": consent_row[1], "participant_fk": participant_fk},
-                )
-        except Exception as consent_error:
-            app.logger.warning(f"Consent lookup failed for participant {data['participant_id']}: {consent_error}")
-
-        db.commit()
         _log_audit_event(
             db,
             event_type="participant_created",
@@ -488,6 +475,8 @@ def create_participant():
             status_code=201,
             details="Participant created successfully",
         )
+
+        db.commit()
 
         return jsonify({
             "status": "success",
@@ -501,31 +490,13 @@ def create_participant():
         if db is not None:
             db.rollback()
         if "duplicate" in error_msg.lower() or "unique" in error_msg.lower():
-            if db is not None:
-                _log_audit_event(
-                    db,
-                    event_type="participant_creation_failed",
-                    participant_id=data["participant_id"],
-                    endpoint="/participants",
-                    method="POST",
-                    status_code=409,
-                    details=f"Duplicate participant ID: {error_msg}",
-                )
             return jsonify({"error": "Participant ID already exists"}), 409
-        if db is not None:
-            _log_audit_event(
-                db,
-                event_type="participant_creation_failed",
-                participant_id=data["participant_id"],
-                endpoint="/participants",
-                method="POST",
-                status_code=500,
-                details=f"Database error: {error_msg}",
-            )
-        return jsonify({"error": "Database error", "details": error_msg}), 500
+        app.logger.exception("Participant creation failed for participant_id=%s", data.get("participant_id"))
+        return jsonify({"error": "Database error"}), 500
 
 
 @app.route("/participants/<participant_id>")
+@limiter.limit("60 per minute")
 def get_participant(participant_id):
     db = get_db()
     result = db.execute(
@@ -578,30 +549,35 @@ def record_consent():
     participant_fk = participant_row[0]
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    db.execute(
-        text("""
-            UPDATE participants SET consent_given = TRUE, consent_timestamp = :consent_timestamp
-            WHERE id = :participant_fk
-        """),
-        {"consent_timestamp": timestamp, "participant_fk": participant_fk},
-    )
-    db.execute(
-        text("""
-            INSERT INTO consent_records (participant_fk, participant_id, consent_given, consent_timestamp, ip_hash, user_agent)
-            VALUES (:participant_fk, :participant_id, TRUE, :consent_timestamp, :ip_hash, :user_agent)
-            ON CONFLICT(participant_id) DO UPDATE SET
-            consent_given = TRUE, consent_timestamp = EXCLUDED.consent_timestamp,
-            ip_hash = EXCLUDED.ip_hash, user_agent = EXCLUDED.user_agent
-        """),
-        {
-            "participant_fk": participant_fk,
-            "participant_id": participant_id,
-            "consent_timestamp": timestamp,
-            "ip_hash": get_ip_hash(),
-            "user_agent": request.headers.get("User-Agent", ""),
-        },
-    )
-    db.commit()
+    try:
+        db.execute(
+            text("""
+                UPDATE participants SET consent_given = TRUE, consent_timestamp = :consent_timestamp
+                WHERE id = :participant_fk
+            """),
+            {"consent_timestamp": timestamp, "participant_fk": participant_fk},
+        )
+        db.execute(
+            text("""
+                INSERT INTO consent_records (participant_fk, participant_id, consent_given, consent_timestamp, ip_hash, user_agent)
+                VALUES (:participant_fk, :participant_id, TRUE, :consent_timestamp, :ip_hash, :user_agent)
+                ON CONFLICT(participant_id) DO UPDATE SET
+                consent_given = TRUE, consent_timestamp = EXCLUDED.consent_timestamp,
+                ip_hash = EXCLUDED.ip_hash, user_agent = EXCLUDED.user_agent
+            """),
+            {
+                "participant_fk": participant_fk,
+                "participant_id": participant_id,
+                "consent_timestamp": timestamp,
+                "ip_hash": get_ip_hash(),
+                "user_agent": request.headers.get("User-Agent", ""),
+            },
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception("Failed to record consent for participant_id=%s", participant_id)
+        return jsonify({"error": "Failed to record consent"}), 500
 
     return jsonify({"status": "success", "message": "Consent recorded successfully", "timestamp": timestamp})
 
@@ -612,10 +588,24 @@ def record_consent():
 def confirm_payment():
     data = request.get_json(silent=True) or {}
     participant_id = data.get("participant_id")
+    transaction_id = data.get("transaction_id", "").strip()
+
     if not participant_id:
         return jsonify({"error": "participant_id required"}), 400
+    if not transaction_id:
+        return jsonify({"error": "transaction_id required"}), 400
+    if not re.match(r"^[a-zA-Z0-9_\-]{6,100}$", transaction_id):
+        return jsonify({"error": "Invalid transaction_id format"}), 400
 
     db = get_db()
+
+    existing = db.execute(
+        text("SELECT id FROM participants WHERE participant_id = :participant_id AND payment_status = 'paid'"),
+        {"participant_id": participant_id},
+    ).fetchone()
+    if existing:
+        return jsonify({"status": "already_confirmed"}), 200
+
     participant_row = db.execute(
         text("SELECT id FROM participants WHERE participant_id = :participant_id"),
         {"participant_id": participant_id},
@@ -624,35 +614,72 @@ def confirm_payment():
         return jsonify({"error": "Participant not found"}), 400
 
     participant_fk = participant_row[0]
-    db.execute(
-        text("UPDATE participants SET payment_status = 'paid' WHERE id = :participant_fk"),
-        {"participant_fk": participant_fk},
-    )
-    db.commit()
+
+    try:
+        db.execute(
+            text("""
+                UPDATE participants
+                SET payment_status = 'paid'
+                WHERE id = :participant_fk AND payment_status != 'paid'
+            """),
+            {"participant_fk": participant_fk},
+        )
+        _log_audit_event(
+            db,
+            event_type="payment_confirmed",
+            participant_fk=participant_fk,
+            participant_id=participant_id,
+            endpoint="/payment/confirm",
+            method="POST",
+            status_code=200,
+            details=f"Payment confirmed with transaction_id={transaction_id}",
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception("Failed to confirm payment for participant_id=%s", participant_id)
+        return jsonify({"error": "Failed to confirm payment"}), 500
+
     return jsonify({"status": "confirmed"})
 
 
-def get_images_from_db():
+def get_random_image_from_db(excluded_ids=None):
     db = get_db()
     try:
-        result = db.execute(text("SELECT image_id, image_url FROM images"))
-        return [{"image_id": row[0], "image_url": row[1]} for row in result.fetchall()]
-    except Exception as e:
-        app.logger.error(f"Error querying images: {e}")
-        return []
+        if excluded_ids:
+            result = db.execute(
+                text("""
+                    SELECT image_id, image_url FROM images
+                    WHERE image_id != ALL(:excluded_ids)
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                """),
+                {"excluded_ids": list(excluded_ids)},
+            )
+        else:
+            result = db.execute(
+                text("SELECT image_id, image_url FROM images ORDER BY RANDOM() LIMIT 1")
+            )
+        row = result.fetchone()
+        if row:
+            return {"image_id": row[0], "image_url": row[1]}
+        return None
+    except Exception:
+        app.logger.exception("Error querying random image from DB")
+        return None
 
 
 @app.route("/images/random")
 def random_image():
-    images = get_images_from_db()
-    if not images:
-        return jsonify({"error": "No images available"}), 404
     exclude_param = request.args.get("exclude", "")
-    excluded_ids = set(exclude_param.split(",")) if exclude_param else set()
-    available_images = [img for img in images if img["image_id"] not in excluded_ids]
-    if not available_images:
-        available_images = images
-    image_data = random.choice(available_images)
+    excluded_ids = set(x for x in exclude_param.split(",") if x) if exclude_param else set()
+
+    image_data = get_random_image_from_db(excluded_ids=excluded_ids if excluded_ids else None)
+    if not image_data and excluded_ids:
+        image_data = get_random_image_from_db()
+    if not image_data:
+        return jsonify({"error": "No images available"}), 404
+
     return jsonify({"image_id": image_data["image_id"], "image_url": image_data["image_url"]})
 
 
@@ -710,8 +737,35 @@ def submit():
     feedback = (payload.get("feedback") or "").strip()
     if len(feedback) < 5:
         return jsonify({"error": "comments must be at least 5 characters"}), 400
+    if len(feedback) > MAX_FEEDBACK_LENGTH:
+        return jsonify({"error": f"comments must not exceed {MAX_FEEDBACK_LENGTH} characters"}), 400
+
+    if time_spent_seconds is not None:
+        try:
+            time_spent_seconds = float(time_spent_seconds)
+            if time_spent_seconds < 0:
+                time_spent_seconds = None
+        except (TypeError, ValueError):
+            time_spent_seconds = None
 
     is_survey = bool(payload.get("is_survey"))
+
+    try:
+        survey_index = int(payload.get("survey_index", 0))
+    except (TypeError, ValueError):
+        survey_index = 0
+
+    try:
+        image_check = db.execute(
+            text("SELECT image_id FROM images WHERE image_id = :image_id"),
+            {"image_id": image_id},
+        ).fetchone()
+    except Exception:
+        app.logger.exception("Error verifying image_id=%s", image_id)
+        return jsonify({"error": "Failed to verify image"}), 500
+
+    if not image_check:
+        return jsonify({"error": "Invalid image_id"}), 400
 
     attention_result = db.execute(
         text("SELECT expected_word, strict FROM attention_checks WHERE image_id = :image_id AND is_active = TRUE"),
@@ -733,43 +787,19 @@ def submit():
             attention_passed = expected_word in description_lower
 
     too_fast_flag = False
-    try:
-        time_spent_seconds = float(time_spent_seconds)
+    if time_spent_seconds is not None:
         too_fast_flag = time_spent_seconds < TOO_FAST_SECONDS
-    except (TypeError, ValueError):
-        time_spent_seconds = None
 
     try:
-        image_result = db.execute(
-            text("SELECT image_id FROM images WHERE image_id = :image_id"),
-            {"image_id": image_id},
-        )
-        if not image_result.fetchone():
-            db.execute(
-                text("""
-                    INSERT INTO images (image_id, difficulty_score, object_count, width, height)
-                    VALUES (:image_id, 5.0, 1, 800, 600) ON CONFLICT (image_id) DO NOTHING
-                """),
-                {"image_id": image_id},
-            )
-    except Exception as e:
-        _log_audit_event(
-            db,
-            event_type="image_insert_failed",
-            participant_fk=participant_fk,
-            participant_id=participant_id,
-            endpoint="/submit",
-            method="POST",
-            status_code=200,
-            details=f"Failed to insert image {image_id}: {str(e)}",
-        )
-
-    try:
-        survey_index = payload.get("survey_index", 0)
-        try:
-            survey_index = int(survey_index)
-        except (TypeError, ValueError):
-            survey_index = 0
+        duplicate_check = db.execute(
+            text("""
+                SELECT id FROM submissions
+                WHERE participant_fk = :participant_fk AND survey_index = :survey_index
+            """),
+            {"participant_fk": participant_fk, "survey_index": survey_index},
+        ).fetchone()
+        if duplicate_check:
+            return jsonify({"error": "Submission already recorded for this survey index"}), 409
 
         quality_score = calculate_quality_score(word_count, attention_passed, time_spent_seconds, feedback)
 
@@ -780,6 +810,14 @@ def submit():
                 {"participant_fk": participant_fk},
             ).fetchone()
             attention_score_snapshot = stats_result[0] if stats_result else 1.0
+
+        image_url = payload.get("image_url")
+        if not image_url:
+            image_url_row = db.execute(
+                text("SELECT image_url FROM images WHERE image_id = :image_id"),
+                {"image_id": image_id},
+            ).fetchone()
+            image_url = image_url_row[0] if image_url_row else None
 
         db.execute(
             text("""
@@ -796,7 +834,7 @@ def submit():
                 "participant_id": participant_id,
                 "session_id": payload.get("session_id", ""),
                 "image_id": image_id,
-                "image_url": payload.get("image_url", f"/api/images/{image_id}"),
+                "image_url": image_url,
                 "survey_index": survey_index,
                 "description": description,
                 "word_count": word_count,
@@ -816,7 +854,11 @@ def submit():
 
         if is_attention:
             stats = db.execute(
-                text("SELECT total_checks, passed_checks, failed_checks FROM attention_stats WHERE participant_fk = :participant_fk"),
+                text("""
+                    SELECT total_checks, passed_checks, failed_checks FROM attention_stats
+                    WHERE participant_fk = :participant_fk
+                    FOR UPDATE
+                """),
                 {"participant_fk": participant_fk},
             ).fetchone()
 
@@ -856,13 +898,28 @@ def submit():
             db, participant_fk, participant_id, word_count, is_survey,
             current_attention_score if is_attention else None,
         )
+
+        _log_audit_event(
+            db,
+            event_type="submission_created",
+            participant_fk=participant_fk,
+            participant_id=participant_id,
+            endpoint="/submit",
+            method="POST",
+            status_code=200,
+            details=f"survey_index={survey_index} word_count={word_count} quality_score={quality_score}",
+        )
+
         db.commit()
 
         return jsonify({"status": "ok", "word_count": word_count, "attention_passed": attention_passed, "quality_score": quality_score})
 
     except Exception as e:
         db.rollback()
-        return jsonify({"error": "Failed to save submission", "details": str(e)}), 500
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            return jsonify({"error": "Submission already recorded for this survey index"}), 409
+        app.logger.exception("Failed to save submission for participant_id=%s", participant_id)
+        return jsonify({"error": "Failed to save submission"}), 500
 
 
 @app.route("/")
