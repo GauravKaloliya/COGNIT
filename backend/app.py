@@ -725,6 +725,15 @@ def create_payment():
     participant_id = row[0]
     set_rls_context(db, participant_id)
 
+    # Mark any existing pending/processing payments as failed to allow new payment creation
+    db.execute(text("""
+        UPDATE payments
+        SET status = 'failed',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE participant_id = :pid
+          AND status IN ('pending', 'processing')
+    """), {"pid": participant_id})
+
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)
     expires_str = expires_at.isoformat()
 
