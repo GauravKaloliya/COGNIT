@@ -76,11 +76,11 @@ INSERT INTO images (image_id, url, difficulty, object_count, width, height) VALU
 ('survey/violet-harbor.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/violet-harbor.svg', 5.0, 1, 800, 600),
 ('survey/whispering-glade.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/whispering-glade.svg', 5.0, 1, 800, 600)
 ON CONFLICT (image_id) DO UPDATE SET
-    url              = EXCLUDED.url,
-    difficulty       = EXCLUDED.difficulty,
-    object_count     = EXCLUDED.object_count,
-    width            = EXCLUDED.width,
-    height           = EXCLUDED.height;
+    url          = EXCLUDED.url,
+    difficulty   = EXCLUDED.difficulty,
+    object_count = EXCLUDED.object_count,
+    width        = EXCLUDED.width,
+    height       = EXCLUDED.height;
 
 -- =====================================================
 -- Attention Checks Seed Data
