@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { getApiUrl } from "../utils/apiBase";
 
 const USERNAME_MIN_LENGTH = parseInt(import.meta.env.VITE_USERNAME_MIN_LENGTH || "2", 10);
 const AGE_MIN = parseInt(import.meta.env.VITE_AGE_MIN || "13", 10);
@@ -14,6 +15,8 @@ export default function UserDetailsPage({
 }) {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [checking, setChecking] = useState({ username: false, email: false, phone: false });
+  const debounceTimerRef = useRef({ username: null, email: null, phone: null });
 
   useEffect(() => {
     document.title = "User Details - C.O.G.N.I.T.";
@@ -117,6 +120,51 @@ export default function UserDetailsPage({
     }
   };
 
+  const checkAvailability = useCallback(async (field, value) => {
+    if (!value || value.trim().length === 0) return;
+    
+    // Don't check if basic validation fails
+    if (field === "username" && value.trim().length < USERNAME_MIN_LENGTH) return;
+    if (field === "email") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value.trim())) return;
+    }
+    if (field === "phone") {
+      const phoneDigits = value.replace(/\D/g, '');
+      const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
+                            (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
+      if (!isValidIndian) return;
+    }
+
+    setChecking(prev => ({ ...prev, [field]: true }));
+    
+    try {
+      const endpoint = field === "username" ? "check-username" : field === "email" ? "check-email" : "check-phone";
+      const response = await fetch(`${getApiUrl(`/${endpoint}`)}?${field}=${encodeURIComponent(value.trim())}`);
+      const data = await response.json();
+      
+      if (!data.available) {
+        setErrors(prev => ({
+          ...prev,
+          [field]: `This ${field} is already registered`
+        }));
+      }
+    } catch (error) {
+      // Silently fail - don't block user on network errors
+    } finally {
+      setChecking(prev => ({ ...prev, [field]: false }));
+    }
+  }, []);
+
+  const debouncedCheck = useCallback((field, value) => {
+    if (debounceTimerRef.current[field]) {
+      clearTimeout(debounceTimerRef.current[field]);
+    }
+    debounceTimerRef.current[field] = setTimeout(() => {
+      checkAvailability(field, value);
+    }, 500);
+  }, [checkAvailability]);
+
   const requiredFields = [
     "username",
     "email",
@@ -162,7 +210,9 @@ export default function UserDetailsPage({
             placeholder="Enter your username"
             value={demographics.username || ''}
             onChange={(e) => updateField('username', e.target.value)}
+            onKeyUp={(e) => debouncedCheck('username', e.target.value)}
           />
+          {checking.username && <span className="checking-text">Checking...</span>}
           {errors.username && <span className="error-text">{errors.username}</span>}
         </div>
 
@@ -174,7 +224,9 @@ export default function UserDetailsPage({
             placeholder="yourname@gmail.com"
             value={demographics.email || ''}
             onChange={(e) => updateField('email', e.target.value)}
+            onKeyUp={(e) => debouncedCheck('email', e.target.value)}
           />
+          {checking.email && <span className="checking-text">Checking...</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
         </div>
 
@@ -191,7 +243,12 @@ export default function UserDetailsPage({
               const value = e.target.value.replace(/\D/g, '');
               updateField('phone', value);
             }}
+            onKeyUp={(e) => {
+              const value = e.target.value.replace(/\D/g, '');
+              debouncedCheck('phone', value);
+            }}
           />
+          {checking.phone && <span className="checking-text">Checking...</span>}
           {errors.phone && <span className="error-text">{errors.phone}</span>}
         </div>
 
