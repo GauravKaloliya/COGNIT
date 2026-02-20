@@ -17,6 +17,19 @@ from sqlalchemy.pool import QueuePool, NullPool
 MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5"))
 MAX_FEEDBACK_LENGTH = int(os.getenv("MAX_FEEDBACK_LENGTH", "2000"))
+MIN_FEEDBACK_LENGTH = 5
+MAX_DESCRIPTION_LENGTH = 10000
+MIN_RATING = 1
+MAX_RATING = 10
+MIN_AGE = 13
+MAX_AGE = 100
+MIN_PARTICIPANT_AGE = 1
+MAX_PARTICIPANT_AGE = 120
+ATTENTION_FLAG_THRESHOLD = 0.6
+ATTENTION_FLAG_MIN_CHECKS = 3
+PRIORITY_WORD_THRESHOLD = 500
+PRIORITY_ROUNDS_THRESHOLD = 3
+PRIORITY_ATTENTION_THRESHOLD = 0.75
 
 IP_HASH_SALT = os.getenv("IP_HASH_SALT")
 if not IP_HASH_SALT:
@@ -46,6 +59,7 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = 1800
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
+app.config["MAX_CONTENT_JSON_DEPTH"] = 20
 
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -155,12 +169,21 @@ def add_security_headers(response):
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["X-Download-Options"] = "noopen"
     response.headers["X-DNS-Prefetch-Control"] = "off"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; "
-        "font-src 'self'; connect-src 'self'; frame-src 'none'; "
-        "object-src 'none'; base-uri 'self'; form-action 'self'"
+    csp_policy = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self' data: https: http:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-src 'none'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
     )
+    if origin and origin in allowed_origins:
+        csp_policy += f" {origin}"
+    response.headers["Content-Security-Policy"] = csp_policy
     if not IS_VERCEL and os.getenv("FLASK_ENV") != "development":
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -208,6 +231,14 @@ def get_ip_hash():
         ip_address = forwarded_for.split(",")[0].strip()
     else:
         ip_address = request.remote_addr or "unknown"
+
+    ip_address = ip_address.strip()
+    if not ip_address or ip_address == "unknown":
+        return "0" * 64
+
+    if not re.match(r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$", ip_address):
+        return "0" * 64
+
     digest = hashlib.sha256(f"{ip_address}{IP_HASH_SALT}".encode("utf-8")).hexdigest()
     return digest
 
@@ -222,56 +253,52 @@ def _get_participant_fk(db, participant_id):
 
 
 def _update_participant_stats_internal(db, participant_fk, participant_id, word_count, is_survey, attention_score=None):
-    try:
-        result = db.execute(
-            text("""
-                SELECT total_words, total_submissions, survey_rounds, attention_score
-                FROM participant_stats
-                WHERE participant_fk = :participant_fk
-                FOR UPDATE
-            """),
-            {"participant_fk": participant_fk},
-        )
-        row = result.fetchone()
+    result = db.execute(
+        text("""
+            SELECT total_words, total_submissions, survey_rounds, attention_score
+            FROM participant_stats
+            WHERE participant_fk = :participant_fk
+            FOR UPDATE
+        """),
+        {"participant_fk": participant_fk},
+    )
+    row = result.fetchone()
 
-        if row:
-            new_words = row[0] + word_count
-            new_submissions = row[1] + 1
-            new_survey_rounds = row[2] + (1 if is_survey else 0)
-            current_attention_score = attention_score if attention_score is not None else row[3]
-        else:
-            new_words = word_count
-            new_submissions = 1
-            new_survey_rounds = 1 if is_survey else 0
-            current_attention_score = attention_score if attention_score is not None else 1.0
+    if row:
+        new_words = row[0] + word_count
+        new_submissions = row[1] + 1
+        new_survey_rounds = row[2] + (1 if is_survey else 0)
+        current_attention_score = attention_score if attention_score is not None else row[3]
+    else:
+        new_words = word_count
+        new_submissions = 1
+        new_survey_rounds = 1 if is_survey else 0
+        current_attention_score = attention_score if attention_score is not None else 1.0
 
-        priority_eligible = (new_words >= 500 or new_survey_rounds >= 3) and current_attention_score >= 0.75
+    priority_eligible = (new_words >= PRIORITY_WORD_THRESHOLD or new_survey_rounds >= PRIORITY_ROUNDS_THRESHOLD) and current_attention_score >= PRIORITY_ATTENTION_THRESHOLD
 
-        db.execute(
-            text("""
-                INSERT INTO participant_stats
-                (participant_fk, participant_id, total_words, total_submissions, survey_rounds, priority_eligible, attention_score)
-                VALUES (:participant_fk, :participant_id, :total_words, :total_submissions, :survey_rounds, :priority_eligible, :attention_score)
-                ON CONFLICT(participant_fk) DO UPDATE SET
-                total_words = EXCLUDED.total_words,
-                total_submissions = EXCLUDED.total_submissions,
-                survey_rounds = EXCLUDED.survey_rounds,
-                priority_eligible = EXCLUDED.priority_eligible,
-                attention_score = EXCLUDED.attention_score
-            """),
-            {
-                "participant_fk": participant_fk,
-                "participant_id": participant_id,
-                "total_words": new_words,
-                "total_submissions": new_submissions,
-                "survey_rounds": new_survey_rounds,
-                "priority_eligible": priority_eligible,
-                "attention_score": current_attention_score,
-            },
-        )
-    except Exception:
-        app.logger.exception("Failed to update participant stats for participant_fk=%s", participant_fk)
-        raise
+    db.execute(
+        text("""
+            INSERT INTO participant_stats
+            (participant_fk, participant_id, total_words, total_submissions, survey_rounds, priority_eligible, attention_score)
+            VALUES (:participant_fk, :participant_id, :total_words, :total_submissions, :survey_rounds, :priority_eligible, :attention_score)
+            ON CONFLICT(participant_fk) DO UPDATE SET
+            total_words = EXCLUDED.total_words,
+            total_submissions = EXCLUDED.total_submissions,
+            survey_rounds = EXCLUDED.survey_rounds,
+            priority_eligible = EXCLUDED.priority_eligible,
+            attention_score = EXCLUDED.attention_score
+        """),
+        {
+            "participant_fk": participant_fk,
+            "participant_id": participant_id,
+            "total_words": new_words,
+            "total_submissions": new_submissions,
+            "survey_rounds": new_survey_rounds,
+            "priority_eligible": priority_eligible,
+            "attention_score": current_attention_score,
+        },
+    )
 
 
 def count_words(text_input: str):
@@ -280,7 +307,7 @@ def count_words(text_input: str):
 
 def calculate_quality_score(word_count: int, attention_passed, time_spent_seconds: float, feedback: str) -> float:
     word_score = min(word_count / 150.0, 1.0)
-    attention_score = 1.0 if attention_passed is True else (0.5 if attention_passed is None else 0.0)
+    attention_score = 1.0 if attention_passed is True else 0.0
     time_score = 0.5 if time_spent_seconds and time_spent_seconds < TOO_FAST_SECONDS else 1.0
     feedback_score = min(len(feedback) / 50.0, 1.0)
     quality_score = 0.4 * word_score + 0.3 * attention_score + 0.2 * time_score + 0.1 * feedback_score
@@ -289,50 +316,43 @@ def calculate_quality_score(word_count: int, attention_passed, time_spent_second
 
 def _log_audit_event(db, event_type, participant_fk=None, participant_id=None, user_id=None,
                      endpoint=None, method=None, status_code=None, details=None):
-    try:
-        db.execute(
-            text("""
-                INSERT INTO audit_log
-                (event_type, user_id, participant_fk, participant_id, endpoint, method, status_code, ip_hash, user_agent, details)
-                VALUES (:event_type, :user_id, :participant_fk, :participant_id, :endpoint, :method, :status_code, :ip_hash, :user_agent, :details)
-            """),
-            {
-                "event_type": event_type,
-                "user_id": user_id,
-                "participant_fk": participant_fk,
-                "participant_id": participant_id,
-                "endpoint": endpoint,
-                "method": method,
-                "status_code": status_code,
-                "ip_hash": get_ip_hash(),
-                "user_agent": request.headers.get("User-Agent", ""),
-                "details": details,
-            },
-        )
-    except Exception:
-        app.logger.exception("Failed to log audit event: event_type=%s participant_id=%s", event_type, participant_id)
+    db.execute(
+        text("""
+            INSERT INTO audit_log
+            (event_type, user_id, participant_fk, participant_id, endpoint, method, status_code, ip_hash, user_agent, details)
+            VALUES (:event_type, :user_id, :participant_fk, :participant_id, :endpoint, :method, :status_code, :ip_hash, :user_agent, :details)
+        """),
+        {
+            "event_type": event_type,
+            "user_id": user_id,
+            "participant_fk": participant_fk,
+            "participant_id": participant_id,
+            "endpoint": endpoint,
+            "method": method,
+            "status_code": status_code,
+            "ip_hash": get_ip_hash(),
+            "user_agent": request.headers.get("User-Agent", ""),
+            "details": details,
+        },
+    )
 
 
 def _log_performance_metric(endpoint, response_time_ms, status_code, request_size=0, response_size=0):
-    try:
-        db = get_db()
-        db.execute(
-            text("""
-                INSERT INTO performance_metrics
-                (endpoint, response_time_ms, status_code, request_size_bytes, response_size_bytes)
-                VALUES (:endpoint, :response_time_ms, :status_code, :request_size_bytes, :response_size_bytes)
-            """),
-            {
-                "endpoint": endpoint,
-                "response_time_ms": response_time_ms,
-                "status_code": status_code,
-                "request_size_bytes": request_size,
-                "response_size_bytes": response_size,
-            },
-        )
-        db.commit()
-    except Exception:
-        app.logger.exception("Failed to log performance metric for endpoint=%s", endpoint)
+    db = get_db()
+    db.execute(
+        text("""
+            INSERT INTO performance_metrics
+            (endpoint, response_time_ms, status_code, request_size_bytes, response_size_bytes)
+            VALUES (:endpoint, :response_time_ms, :status_code, :request_size_bytes, :response_size_bytes)
+        """),
+        {
+            "endpoint": endpoint,
+            "response_time_ms": response_time_ms,
+            "status_code": status_code,
+            "request_size_bytes": request_size,
+            "response_size_bytes": response_size,
+        },
+    )
 
 
 def track_performance(f):
@@ -343,13 +363,40 @@ def track_performance(f):
             result = f(*args, **kwargs)
             end_time = time.time()
             response_time_ms = int((end_time - start_time) * 1000)
+
+            status_code = 200
+            response_size = 0
+
             if isinstance(result, tuple):
-                response_obj, status_code = result[0], result[1]
-                response_size = len(response_obj.get_data()) if hasattr(response_obj, "get_data") else 0
+                if len(result) >= 2:
+                    response_obj = result[0]
+                    status_code = result[1] if isinstance(result[1], int) else 200
+                    if hasattr(response_obj, "get_data"):
+                        try:
+                            response_size = len(response_obj.get_data())
+                        except Exception:
+                            response_size = 0
+                    elif hasattr(response_obj, "status_code"):
+                        status_code = response_obj.status_code
+                else:
+                    response_obj = result[0]
+                    if hasattr(response_obj, "status_code"):
+                        status_code = response_obj.status_code
+                    if hasattr(response_obj, "get_data"):
+                        try:
+                            response_size = len(response_obj.get_data())
+                        except Exception:
+                            response_size = 0
             else:
                 response_obj = result
-                status_code = response_obj.status_code if hasattr(response_obj, "status_code") else 200
-                response_size = len(response_obj.get_data()) if hasattr(response_obj, "get_data") else 0
+                if hasattr(response_obj, "status_code"):
+                    status_code = response_obj.status_code
+                if hasattr(response_obj, "get_data"):
+                    try:
+                        response_size = len(response_obj.get_data())
+                    except Exception:
+                        response_size = 0
+
             _log_performance_metric(
                 endpoint=request.path,
                 response_time_ms=response_time_ms,
@@ -370,6 +417,37 @@ def track_performance(f):
             )
             raise
     return wrapper
+
+
+@app.errorhandler(400)
+def bad_request(error):
+    return jsonify({"error": "Bad request", "message": str(error.description)}), 400
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Not found", "message": str(error.description)}), 404
+
+
+@app.errorhandler(409)
+def conflict(error):
+    return jsonify({"error": "Conflict", "message": str(error.description)}), 409
+
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({"error": "Request entity too large", "message": "Uploaded data exceeds maximum size limit"}), 413
+
+
+@app.errorhandler(429)
+def ratelimit_error(error):
+    return jsonify({"error": "Rate limit exceeded", "message": "Too many requests. Please try again later."}), 429
+
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    app.logger.exception("Internal server error")
+    return jsonify({"error": "Internal server error", "message": "An unexpected error occurred"}), 500
 
 
 @app.route("/health")
@@ -405,8 +483,10 @@ def create_participant():
         return jsonify({"error": "Validation failed", "details": errors}), 400
 
     username = data.get("username", "").strip()
-    if username and not re.match(r"^[a-zA-Z0-9_]+$", username):
-        return jsonify({"error": "Username can only contain letters, numbers, and underscores"}), 400
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    if not re.match(r"^[a-zA-Z0-9_]{3,50}$", username):
+        return jsonify({"error": "Username must be 3-50 characters and contain only letters, numbers, and underscores"}), 400
 
     allowed_email_domains = ["gmail.com", "outlook.com", "hotmail.com", "icloud.com", "me.com", "mac.com"]
     email = data.get("email", "").strip().lower()
@@ -415,7 +495,7 @@ def create_participant():
             return jsonify({"error": "Invalid email format"}), 400
         domain = email.split("@")[1]
         if domain not in allowed_email_domains:
-            return jsonify({"error": "Only Gmail, Outlook, Hotmail, iCloud, Me, and Mac email addresses are allowed"}), 400
+            return jsonify({"error": f"Only {', '.join(allowed_email_domains)} email addresses are allowed"}), 400
 
     phone = data.get("phone", "").strip()
     if phone:
@@ -428,19 +508,19 @@ def create_participant():
 
     try:
         age = int(data.get("age", 0))
-        if age < 13 or age > 100:
-            return jsonify({"error": "Age must be between 13 and 100"}), 400
+        if age < MIN_AGE or age > MAX_AGE:
+            return jsonify({"error": f"Age must be between {MIN_AGE} and {MAX_AGE}"}), 400
     except (ValueError, TypeError):
-        return jsonify({"error": "Age must be a valid number between 13 and 100"}), 400
+        return jsonify({"error": f"Age must be a valid number between {MIN_AGE} and {MAX_AGE}"}), 400
 
     gender = data.get("gender", "").strip().lower()
     place = data.get("place", "").strip().lower()
     native_language = data.get("native_language", "").strip().lower()
+    prior_experience = data.get("prior_experience", "").strip()
 
-    db = None
+    db = get_db()
+
     try:
-        db = get_db()
-
         result = db.execute(
             text("""
                 INSERT INTO participants
@@ -458,7 +538,7 @@ def create_participant():
                 "age": age,
                 "place": place,
                 "native_language": native_language,
-                "prior_experience": data["prior_experience"],
+                "prior_experience": prior_experience,
                 "ip_hash": get_ip_hash(),
                 "user_agent": request.headers.get("User-Agent", ""),
             },
@@ -486,9 +566,8 @@ def create_participant():
         }), 201
 
     except Exception as e:
+        db.rollback()
         error_msg = str(e)
-        if db is not None:
-            db.rollback()
         if "duplicate" in error_msg.lower() or "unique" in error_msg.lower():
             return jsonify({"error": "Participant ID already exists"}), 409
         app.logger.exception("Participant creation failed for participant_id=%s", data.get("participant_id"))
@@ -496,8 +575,11 @@ def create_participant():
 
 
 @app.route("/participants/<participant_id>")
-@limiter.limit("60 per minute")
+@limiter.limit("10 per minute")
 def get_participant(participant_id):
+    if not re.match(r"^[a-zA-Z0-9_\-]{10,100}$", participant_id):
+        return jsonify({"error": "Invalid participant_id format"}), 400
+
     db = get_db()
     result = db.execute(
         text("""
@@ -538,18 +620,20 @@ def record_consent():
         return jsonify({"error": "Consent must be given to proceed"}), 400
 
     db = get_db()
-    result = db.execute(
-        text("SELECT id FROM participants WHERE participant_id = :participant_id"),
-        {"participant_id": participant_id},
-    )
-    participant_row = result.fetchone()
-    if not participant_row:
-        return jsonify({"error": "Participant not found"}), 404
-
-    participant_fk = participant_row[0]
     timestamp = datetime.now(timezone.utc).isoformat()
 
     try:
+        result = db.execute(
+            text("SELECT id FROM participants WHERE participant_id = :participant_id FOR UPDATE"),
+            {"participant_id": participant_id},
+        )
+        participant_row = result.fetchone()
+        if not participant_row:
+            db.rollback()
+            return jsonify({"error": "Participant not found"}), 404
+
+        participant_fk = participant_row[0]
+
         db.execute(
             text("""
                 UPDATE participants SET consent_given = TRUE, consent_timestamp = :consent_timestamp
@@ -589,33 +673,46 @@ def confirm_payment():
     data = request.get_json(silent=True) or {}
     participant_id = data.get("participant_id")
     transaction_id = data.get("transaction_id", "").strip()
+    amount = data.get("amount")
+    gateway = data.get("gateway", "").strip()
 
     if not participant_id:
         return jsonify({"error": "participant_id required"}), 400
     if not transaction_id:
         return jsonify({"error": "transaction_id required"}), 400
-    if not re.match(r"^[a-zA-Z0-9_\-]{6,100}$", transaction_id):
+    if not re.match(r"^[a-zA-Z0-9_\-]{10,100}$", transaction_id):
         return jsonify({"error": "Invalid transaction_id format"}), 400
+    if amount is not None:
+        try:
+            amount = float(amount)
+            if amount <= 0:
+                return jsonify({"error": "amount must be greater than 0"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid amount format"}), 400
+    if gateway and len(gateway) > 50:
+        return jsonify({"error": "Invalid gateway format"}), 400
 
     db = get_db()
 
     existing = db.execute(
-        text("SELECT id FROM participants WHERE participant_id = :participant_id AND payment_status = 'paid'"),
+        text("SELECT id, payment_status FROM participants WHERE participant_id = :participant_id"),
         {"participant_id": participant_id},
     ).fetchone()
-    if existing:
+    if existing and existing[1] == 'paid':
         return jsonify({"status": "already_confirmed"}), 200
 
-    participant_row = db.execute(
-        text("SELECT id FROM participants WHERE participant_id = :participant_id"),
-        {"participant_id": participant_id},
-    ).fetchone()
-    if not participant_row:
-        return jsonify({"error": "Participant not found"}), 400
-
-    participant_fk = participant_row[0]
-
     try:
+        result = db.execute(
+            text("SELECT id FROM participants WHERE participant_id = :participant_id FOR UPDATE"),
+            {"participant_id": participant_id},
+        )
+        participant_row = result.fetchone()
+        if not participant_row:
+            db.rollback()
+            return jsonify({"error": "Participant not found"}), 400
+
+        participant_fk = participant_row[0]
+
         db.execute(
             text("""
                 UPDATE participants
@@ -632,7 +729,7 @@ def confirm_payment():
             endpoint="/payment/confirm",
             method="POST",
             status_code=200,
-            details=f"Payment confirmed with transaction_id={transaction_id}",
+            details=f"Payment confirmed with transaction_id={transaction_id}, gateway={gateway}, amount={amount}",
         )
         db.commit()
     except Exception:
@@ -645,28 +742,24 @@ def confirm_payment():
 
 def get_random_image_from_db(excluded_ids=None):
     db = get_db()
-    try:
-        if excluded_ids:
-            result = db.execute(
-                text("""
-                    SELECT image_id, image_url FROM images
-                    WHERE image_id != ALL(:excluded_ids)
-                    ORDER BY RANDOM()
-                    LIMIT 1
-                """),
-                {"excluded_ids": list(excluded_ids)},
-            )
-        else:
-            result = db.execute(
-                text("SELECT image_id, image_url FROM images ORDER BY RANDOM() LIMIT 1")
-            )
-        row = result.fetchone()
-        if row:
-            return {"image_id": row[0], "image_url": row[1]}
-        return None
-    except Exception:
-        app.logger.exception("Error querying random image from DB")
-        return None
+    if excluded_ids:
+        result = db.execute(
+            text("""
+                SELECT image_id, image_url FROM images
+                WHERE image_id != ALL(:excluded_ids)
+                ORDER BY RANDOM()
+                LIMIT 1
+            """),
+            {"excluded_ids": list(excluded_ids)},
+        )
+    else:
+        result = db.execute(
+            text("SELECT image_id, image_url FROM images ORDER BY RANDOM() LIMIT 1")
+        )
+    row = result.fetchone()
+    if row:
+        return {"image_id": row[0], "image_url": row[1]}
+    return None
 
 
 @app.route("/images/random")
@@ -719,6 +812,14 @@ def submit():
     if not image_id:
         return jsonify({"error": "image_id is required"}), 400
 
+    if not re.match(r"^[a-zA-Z0-9_\-]{5,50}$", image_id):
+        return jsonify({"error": "Invalid image_id format"}), 400
+
+    if not description:
+        return jsonify({"error": "description is required"}), 400
+    if len(description) > MAX_DESCRIPTION_LENGTH:
+        return jsonify({"error": f"description must not exceed {MAX_DESCRIPTION_LENGTH} characters"}), 400
+
     word_count = count_words(description)
     if word_count < MIN_WORD_COUNT:
         return jsonify({"error": f"Minimum {MIN_WORD_COUNT} words required", "word_count": word_count}), 400
@@ -729,14 +830,14 @@ def submit():
         return jsonify({"error": "rating is required"}), 400
     try:
         rating = int(rating)
-        if not 1 <= rating <= 10:
-            raise ValueError
+        if not MIN_RATING <= rating <= MAX_RATING:
+            return jsonify({"error": f"rating must be an integer between {MIN_RATING}-{MAX_RATING}"}), 400
     except (TypeError, ValueError):
-        return jsonify({"error": "rating must be an integer between 1-10"}), 400
+        return jsonify({"error": f"rating must be an integer between {MIN_RATING}-{MAX_RATING}"}), 400
 
     feedback = (payload.get("feedback") or "").strip()
-    if len(feedback) < 5:
-        return jsonify({"error": "comments must be at least 5 characters"}), 400
+    if len(feedback) < MIN_FEEDBACK_LENGTH:
+        return jsonify({"error": f"comments must be at least {MIN_FEEDBACK_LENGTH} characters"}), 400
     if len(feedback) > MAX_FEEDBACK_LENGTH:
         return jsonify({"error": f"comments must not exceed {MAX_FEEDBACK_LENGTH} characters"}), 400
 
@@ -752,17 +853,15 @@ def submit():
 
     try:
         survey_index = int(payload.get("survey_index", 0))
+        if survey_index < 0 or survey_index > 1000:
+            return jsonify({"error": "survey_index must be between 0 and 1000"}), 400
     except (TypeError, ValueError):
-        survey_index = 0
+        return jsonify({"error": "Invalid survey_index value"}), 400
 
-    try:
-        image_check = db.execute(
-            text("SELECT image_id FROM images WHERE image_id = :image_id"),
-            {"image_id": image_id},
-        ).fetchone()
-    except Exception:
-        app.logger.exception("Error verifying image_id=%s", image_id)
-        return jsonify({"error": "Failed to verify image"}), 500
+    image_check = db.execute(
+        text("SELECT image_id FROM images WHERE image_id = :image_id"),
+        {"image_id": image_id},
+    ).fetchone()
 
     if not image_check:
         return jsonify({"error": "Invalid image_id"}), 400
@@ -791,15 +890,16 @@ def submit():
         too_fast_flag = time_spent_seconds < TOO_FAST_SECONDS
 
     try:
-        duplicate_check = db.execute(
-            text("""
-                SELECT id FROM submissions
-                WHERE participant_fk = :participant_fk AND survey_index = :survey_index
-            """),
-            {"participant_fk": participant_fk, "survey_index": survey_index},
-        ).fetchone()
-        if duplicate_check:
-            return jsonify({"error": "Submission already recorded for this survey index"}), 409
+        if is_survey:
+            duplicate_check = db.execute(
+                text("""
+                    SELECT id FROM submissions
+                    WHERE participant_fk = :participant_fk AND survey_index = :survey_index
+                """),
+                {"participant_fk": participant_fk, "survey_index": survey_index},
+            ).fetchone()
+            if duplicate_check:
+                return jsonify({"error": "Submission already recorded for this survey index"}), 409
 
         quality_score = calculate_quality_score(word_count, attention_passed, time_spent_seconds, feedback)
 
@@ -872,7 +972,7 @@ def submit():
                 failed = 0 if attention_passed else 1
 
             current_attention_score = passed / total
-            is_flagged = current_attention_score < 0.6 and total >= 3
+            is_flagged = current_attention_score < ATTENTION_FLAG_THRESHOLD and total >= ATTENTION_FLAG_MIN_CHECKS
 
             db.execute(
                 text("""
