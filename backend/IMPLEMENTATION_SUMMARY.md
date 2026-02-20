@@ -31,7 +31,7 @@ This implementation adds a complete UPI payment system with OCR-based fraud dete
 ```python
 urllib.parse, hmac, BytesIO, base64
 datetime (datetime, timedelta, timezone)
-qrcode, pytesseract, cv2, numpy, boto3
+qrcode, pytesseract, PIL (Pillow), boto3
 ```
 
 **New Configuration Variables:**
@@ -115,7 +115,6 @@ Verifies payment using OCR and fraud detection (internal use)
 - `pillow==10.3.0` - Image processing
 - `pytesseract==0.3.10` - OCR functionality
 - `qrcode==7.4.2` - QR code generation
-- `opencv-python==4.9.0.80` - Computer vision / image manipulation
 - `boto3==1.34.93` - AWS S3 integration
 - `celery==5.3.6` - Async task processing (for future use)
 
