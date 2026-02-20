@@ -462,7 +462,7 @@ export default function App() {
         <div className="panel status-panel">
           <h2>System Error</h2>
           <p className="status-message">{systemError}</p>
-          <button className="primary" onClick={() => window.location.reload()}>
+          <button className="primary retry" onClick={() => window.location.reload()}>
             Retry
           </button>
         </div>
