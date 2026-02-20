@@ -92,8 +92,13 @@ export default function UserDetailsPage({
   };
 
   const handleSubmit = async () => {
+    // Validate form before submission
+    if (!validateForm()) {
+      return;
+    }
+
     setSubmitting(true);
-    
+
     try {
       await onSubmit();
     } finally {
@@ -296,7 +301,7 @@ export default function UserDetailsPage({
         <button
           className="primary"
           onClick={handleSubmit}
-          disabled={!systemReady || submitting || !isFormComplete}
+          disabled={!systemReady || submitting || !isFormComplete || Object.keys(errors).length > 0}
         >
           {submitting ? "Submitting..." : "Continue"}
         </button>
