@@ -389,6 +389,56 @@ def get_participant(public_id):
         "consent_at": row[9].isoformat() if row[9] else None
     })
 
+@app.route("/check-username")
+@limiter.limit("30 per minute")
+@track_performance
+def check_username():
+    username = request.args.get("username", "").strip()
+    if not username:
+        return jsonify({"error": "username parameter required"}), 400
+    if len(username) < 2:
+        return jsonify({"available": True})
+    db = get_db()
+    exists = db.execute(text("""
+        SELECT 1 FROM participants
+        WHERE username = :un AND is_deleted = false
+        LIMIT 1
+    """), {"un": username}).scalar()
+    return jsonify({"available": not bool(exists)})
+
+
+@app.route("/check-email")
+@limiter.limit("30 per minute")
+@track_performance
+def check_email():
+    email = request.args.get("email", "").strip().lower()
+    if not email:
+        return jsonify({"error": "email parameter required"}), 400
+    db = get_db()
+    exists = db.execute(text("""
+        SELECT 1 FROM participants
+        WHERE email = :em AND is_deleted = false
+        LIMIT 1
+    """), {"em": email}).scalar()
+    return jsonify({"available": not bool(exists)})
+
+
+@app.route("/check-phone")
+@limiter.limit("30 per minute")
+@track_performance
+def check_phone():
+    phone = request.args.get("phone", "").strip()
+    if not phone:
+        return jsonify({"error": "phone parameter required"}), 400
+    db = get_db()
+    exists = db.execute(text("""
+        SELECT 1 FROM participants
+        WHERE phone = :ph AND is_deleted = false
+        LIMIT 1
+    """), {"ph": phone}).scalar()
+    return jsonify({"available": not bool(exists)})
+
+
 @app.route("/consent", methods=["POST"])
 @limiter.limit("20 per minute")
 @track_performance
@@ -932,6 +982,27 @@ def api_docs():
                 "method": "GET",
                 "description": "Get participant profile (public fields only)",
                 "rate_limit": "10/min"
+            },
+            {
+                "path": "/check-username",
+                "method": "GET",
+                "description": "Check if username is available for registration",
+                "query_params": {"username": "string (required)"},
+                "rate_limit": "30/min"
+            },
+            {
+                "path": "/check-email",
+                "method": "GET",
+                "description": "Check if email is already registered",
+                "query_params": {"email": "string (required)"},
+                "rate_limit": "30/min"
+            },
+            {
+                "path": "/check-phone",
+                "method": "GET",
+                "description": "Check if phone number is already registered",
+                "query_params": {"phone": "string (required)"},
+                "rate_limit": "30/min"
             },
             {
                 "path": "/consent",
