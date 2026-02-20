@@ -39,6 +39,7 @@ def verify_database(engine):
     
     required_tables = [
         'participants',
+        'payments',
         'consent_records',
         'submissions',
         'images',
