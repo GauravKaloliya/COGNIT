@@ -210,8 +210,14 @@ export default function App() {
     });
 
     if (!response.ok) {
-      const data = await response.json();
-      const errorMessage = data.error || "Failed to create participant";
+      const data = await response.json().catch(() => ({}));
+      let errorMessage = data.error || "Failed to create participant";
+
+      // Specific handling for 409 Conflict (duplicate participant)
+      if (response.status === 409) {
+        errorMessage = "Participant already exists. Please use a different username, email, or phone number.";
+      }
+
       throw new Error(errorMessage);
     }
 
@@ -247,17 +253,10 @@ export default function App() {
       setStage("payment");
       addToast("Details submitted successfully", "success");
     } catch (err) {
-      // If participant already exists (409), that's okay - just continue
-      if (err.message && err.message.includes("already exists")) {
-        if (consentGiven) {
-          try {
-            await recordConsent();
-          } catch (consentErr) {
-            // Consent might already be recorded too, ignore error
-          }
-        }
-        setStage("payment");
-        addToast("Details submitted successfully", "success");
+      // If participant already exists (409), show error message and do NOT continue
+      if (err.message && (err.message.includes("already exists") || err.message.includes("different username"))) {
+        addToast(err.message, "error");
+        throw err;
       } else {
         addToast(err.message, "error");
         throw err;
