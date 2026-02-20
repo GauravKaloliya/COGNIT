@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from "react";
 
+const USERNAME_MIN_LENGTH = parseInt(import.meta.env.VITE_USERNAME_MIN_LENGTH || "2", 10);
+const AGE_MIN = parseInt(import.meta.env.VITE_AGE_MIN || "13", 10);
+const AGE_MAX = parseInt(import.meta.env.VITE_AGE_MAX || "100", 10);
+const LOCATION_MIN_LENGTH = parseInt(import.meta.env.VITE_LOCATION_MIN_LENGTH || "2", 10);
+
 export default function UserDetailsPage({
   demographics,
   setDemographics,
@@ -16,10 +21,10 @@ export default function UserDetailsPage({
 
   const validateForm = () => {
     const newErrors = {};
-    
+
     // Username validation - no spaces, no special chars except underscore
-    if (!demographics.username || demographics.username.trim().length < 2) {
-      newErrors.username = "Username is required (min 2 characters)";
+    if (!demographics.username || demographics.username.trim().length < USERNAME_MIN_LENGTH) {
+      newErrors.username = `Username is required (min ${USERNAME_MIN_LENGTH} characters)`;
     } else if (!/^[a-zA-Z0-9_]+$/.test(demographics.username)) {
       newErrors.username = "Username can only contain letters, numbers, and underscores (no spaces or special characters)";
     }
@@ -60,17 +65,17 @@ export default function UserDetailsPage({
       newErrors.gender_code = "Gender is required";
     }
     
-    // Age validation - 13 to 100 only
+    // Age validation - AGE_MIN to AGE_MAX only
     if (!demographics.age) {
       newErrors.age = "Age is required";
     } else {
       const ageNum = parseInt(demographics.age);
-      if (isNaN(ageNum) || ageNum < 13 || ageNum > 100) {
-        newErrors.age = "Age must be between 13 and 100";
+      if (isNaN(ageNum) || ageNum < AGE_MIN || ageNum > AGE_MAX) {
+        newErrors.age = `Age must be between ${AGE_MIN} and ${AGE_MAX}`;
       }
     }
-    
-    if (!demographics.location || demographics.location.trim().length < 2) {
+
+    if (!demographics.location || demographics.location.trim().length < LOCATION_MIN_LENGTH) {
       newErrors.location = "Place/Location is required";
     }
     
@@ -168,10 +173,15 @@ export default function UserDetailsPage({
           <label>Phone Number <span className="required" aria-label="required">*</span></label>
           <input
             type="tel"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className={errors.phone ? 'error-input' : ''}
             placeholder="10-digit Indian mobile number"
             value={demographics.phone || ''}
-            onChange={(e) => updateField('phone', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value.replace(/\D/g, '');
+              updateField('phone', value);
+            }}
           />
           {errors.phone && <span className="error-text">{errors.phone}</span>}
         </div>
@@ -197,12 +207,17 @@ export default function UserDetailsPage({
           <label>Age <span className="required" aria-label="required">*</span></label>
           <input
             type="number"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className={`number-left${errors.age ? ' error-input' : ''}`}
-            min="13"
-            max="100"
-            placeholder="Age (13-100)"
+            min={AGE_MIN}
+            max={AGE_MAX}
+            placeholder={`Age (${AGE_MIN}-${AGE_MAX})`}
             value={demographics.age || ''}
-            onChange={(e) => updateField('age', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value.replace(/\D/g, '');
+              updateField('age', value);
+            }}
           />
           {errors.age && <span className="error-text">{errors.age}</span>}
         </div>
