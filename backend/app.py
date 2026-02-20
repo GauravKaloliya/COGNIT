@@ -52,7 +52,7 @@ if not UPI_NAME:
 PAYMENT_SECRET = os.getenv("PAYMENT_SECRET")
 if not PAYMENT_SECRET:
     raise ValueError("PAYMENT_SECRET is required")
-PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "900"))
+PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 
 # S3 Configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
