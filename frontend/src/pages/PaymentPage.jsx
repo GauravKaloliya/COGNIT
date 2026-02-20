@@ -18,6 +18,7 @@ export default function PaymentPage({
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [timerProgress, setTimerProgress] = useState(100);
+  const [timerStarted, setTimerStarted] = useState(false);
   const timerIntervalRef = useRef(null);
 
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -26,7 +27,7 @@ export default function PaymentPage({
   const calculateTimerValues = useCallback((expiresAt) => {
     const now = new Date().getTime();
     const expiry = new Date(expiresAt).getTime();
-    const totalDuration = 15 * 60 * 1000; // 15 minutes in milliseconds
+    const totalDuration = 5 * 60 * 1000; // 5 minutes in milliseconds
     const remaining = Math.max(0, expiry - now);
     const progress = Math.max(0, (remaining / totalDuration) * 100);
     return { remaining, progress };
@@ -38,6 +39,26 @@ export default function PaymentPage({
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // Get timer color based on progress
+  const getTimerColor = () => {
+    if (timerProgress > 60) return '#27ae60'; // Green
+    if (timerProgress > 30) return '#f39c12'; // Orange
+    return '#e74c3c'; // Red
+  };
+
+  // Get border animation style
+  const getButtonStyle = () => {
+    if (!timerStarted) return undefined;
+
+    const color = getTimerColor();
+    const borderWidth = 3;
+    return {
+      border: `${borderWidth}px solid ${color}`,
+      boxShadow: `0 0 10px ${color}40, 0 0 20px ${color}20`,
+      animation: timerProgress <= 15 ? 'timer-pulse 1s ease-in-out infinite' : 'none',
+    };
   };
 
   // Start the countdown timer
@@ -70,6 +91,14 @@ export default function PaymentPage({
       clearInterval(timerIntervalRef.current);
     }
   }, []);
+
+  // Handle UPI link click to start timer
+  const handleUpiLinkClick = useCallback(() => {
+    if (!timerStarted && paymentData?.expires_at) {
+      setTimerStarted(true);
+      startTimer(paymentData.expires_at);
+    }
+  }, [timerStarted, paymentData, startTimer]);
 
   useEffect(() => {
     document.title = "Payment - C.O.G.N.I.T.";
@@ -115,9 +144,6 @@ export default function PaymentPage({
       if (expiresAt <= now) {
         throw new Error("The payment session has expired. Please try again to create a new payment.");
       }
-
-      // Start the countdown timer
-      startTimer(data.expires_at);
     } catch (err) {
       let errorMessage = "We couldn't create the payment. Please try again.";
       
@@ -264,70 +290,11 @@ export default function PaymentPage({
     setError(null);
     setTimeRemaining(0);
     setTimerProgress(100);
+    setTimerStarted(false);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
     }
     createPayment();
-  };
-
-  // Payment Timer Component with border filling animation
-  const PaymentTimer = ({ progress, timeRemaining, isExpired }) => {
-    // Calculate color based on progress
-    const getTimerColor = () => {
-      if (progress > 60) return '#27ae60'; // Green
-      if (progress > 30) return '#f39c12'; // Orange
-      return '#e74c3c'; // Red
-    };
-
-    // Get warning class based on progress
-    const getWarningClass = () => {
-      if (isExpired) return 'expired';
-      if (progress <= 15) return 'danger';
-      if (progress <= 30) return 'warning';
-      return '';
-    };
-
-    const timerColor = getTimerColor();
-    const radius = 36;
-    const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference - (progress / 100) * circumference;
-
-    return (
-      <div className={`payment-timer ${getWarningClass()}`}>
-        <div className="payment-timer-ring">
-          <svg className="payment-timer-svg" viewBox="0 0 80 80">
-            {/* Background circle */}
-            <circle
-              className="payment-timer-bg"
-              cx="40"
-              cy="40"
-              r={radius}
-            />
-            {/* Progress circle with border filling effect */}
-            <circle
-              className="payment-timer-progress"
-              cx="40"
-              cy="40"
-              r={radius}
-              style={{
-                strokeDasharray: circumference,
-                strokeDashoffset: strokeDashoffset,
-                stroke: timerColor,
-              }}
-            />
-          </svg>
-          <div className="payment-timer-content">
-            <span className="payment-timer-icon">⏱️</span>
-            <span className="payment-timer-text">
-              {isExpired ? 'Expired' : formatTime(timeRemaining)}
-            </span>
-          </div>
-        </div>
-        <p className="payment-timer-label">
-          {isExpired ? 'Session expired' : `Time remaining: ${formatTime(timeRemaining)}`}
-        </p>
-      </div>
-    );
   };
 
   if (isLoading) {
@@ -414,15 +381,6 @@ export default function PaymentPage({
         <p className="payment-tagline">₹1 entry. Real reward.</p>
       </div>
 
-      {/* Payment Timer - shows when payment is created and pending */}
-      {paymentData && paymentStatus === "pending" && (
-        <PaymentTimer 
-          progress={timerProgress} 
-          timeRemaining={timeRemaining}
-          isExpired={paymentStatus === "expired"}
-        />
-      )}
-
       {error && (
         <div className="banner warning spaced">
           {error}
@@ -448,7 +406,7 @@ export default function PaymentPage({
               <span className="payment-card-emoji" aria-hidden="true">📱</span>
               {isMobile ? "Pay with UPI" : "Scan QR Code"}
             </h3>
-            
+
             <div className="payment-qr-container">
               {isMobile ? (
                 <a
@@ -456,9 +414,16 @@ export default function PaymentPage({
                   className="payment-upi-button"
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={handleUpiLinkClick}
+                  style={getButtonStyle()}
                 >
                   <span>💳</span>
-                  Pay ₹1 with UPI
+                  <span>Pay ₹1 with UPI</span>
+                  {timerStarted && (
+                    <span className="payment-upi-timer">
+                      {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
+                    </span>
+                  )}
                 </a>
               ) : (
                 <>
@@ -468,6 +433,11 @@ export default function PaymentPage({
                     className="payment-qr-code"
                   />
                   <p className="payment-note">Scan with any UPI app to pay ₹1</p>
+                  {timerStarted && (
+                    <p className="payment-note">
+                      Time remaining: {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
+                    </p>
+                  )}
                 </>
               )}
             </div>
