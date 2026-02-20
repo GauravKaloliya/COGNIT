@@ -18,8 +18,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import NullPool
 import qrcode
 import pytesseract
-import cv2
-import numpy as np
+from PIL import Image
 import boto3
 
 # ────────────────────────────────────────────────
@@ -209,12 +208,20 @@ def generate_upi_link(amount: float, note: str):
 def fetch_s3_image(object_key):
     obj = s3.get_object(Bucket=S3_BUCKET, Key=object_key)
     file_bytes = obj["Body"].read()
-    np_arr = np.frombuffer(file_bytes, np.uint8)
-    return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    return Image.open(BytesIO(file_bytes))
 
 def extract_text_from_image(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
+    # Convert to grayscale
+    if image.mode != 'L':
+        gray = image.convert('L')
+    else:
+        gray = image
+    
+    # Apply thresholding using PIL
+    # Convert to binary image - pixels above threshold become white, below become black
+    threshold = 150
+    gray = gray.point(lambda x: 255 if x > threshold else 0, '1')
+    
     return pytesseract.image_to_string(gray)
 
 def extract_upi_ref(text: str):
