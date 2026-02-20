@@ -134,12 +134,14 @@ def _validate_rate_limit_storage(uri: str) -> str:
 
 storage_uri = _validate_rate_limit_storage(storage_uri)
 
+# Enable ProxyFix in production environments (Vercel or when explicitly set)
+# This prevents IP spoofing when behind a reverse proxy
+if IS_VERCEL or os.getenv("BEHIND_PROXY", "").lower() in ("true", "1", "yes"):
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    app.logger.info("ProxyFix enabled for production environment")
+
 try:
-    # SECURITY NOTE: If deploying behind a reverse proxy (nginx, Apache, Vercel, etc.),
-    # you MUST use ProxyFix to properly handle X-Forwarded-For headers.
-    # Otherwise, attackers can spoof their IP and bypass rate limiting.
-    # Example: from werkzeug.middleware.proxy_fix import ProxyFix
-    #          app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
@@ -174,20 +176,21 @@ def add_security_headers(response):
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["X-Download-Options"] = "noopen"
     response.headers["X-DNS-Prefetch-Control"] = "off"
-    # FIX: Proper CSP directive construction with explicit directives
+    # Build CSP with all required directives
     csp_policy = (
         "default-src 'self'; "
         "script-src 'self'; "
         "style-src 'self'; "
         "img-src 'self' data: https: http:; "
         "font-src 'self'; "
+        "connect-src 'self'; "
         "frame-src 'none'; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
     )
     if origin and origin in allowed_origins:
-        # FIX: Add origin to appropriate CSP directives, not as a raw string
+        # Add origin to appropriate CSP directives
         csp_policy = csp_policy.replace("connect-src 'self';", f"connect-src 'self' {origin};")
         csp_policy = csp_policy.replace("script-src 'self';", f"script-src 'self' {origin};")
         csp_policy = csp_policy.replace("style-src 'self';", f"style-src 'self' {origin};")
@@ -213,8 +216,7 @@ else:
         "max_overflow": 20,
         "pool_recycle": 3600,
         "pool_timeout": 30,
-        # FIX: Set transaction isolation level to REPEATABLE READ to prevent race conditions
-        "isolation_level": "REPEATABLE_READ",
+        "isolation_level": "READ COMMITTED",
     })
 
 engine = create_engine(DATABASE_URL, **engine_options)
@@ -271,68 +273,47 @@ def _get_participant_fk(db, participant_id):
 
 
 def _update_participant_stats_internal(db, participant_fk, participant_id, word_count, is_survey, attention_score=None):
-    # FIX: Use atomic SQL increments instead of computing in Python to avoid race conditions
-    result = db.execute(
-        text("""
-            SELECT total_words, total_submissions, survey_rounds, attention_score
-            FROM participant_stats
-            WHERE participant_fk = :participant_fk
-            FOR UPDATE
-        """),
-        {"participant_fk": participant_fk},
-    )
-    row = result.fetchone()
-
-    if row:
-        current_words = row[0]
-        current_submissions = row[1]
-        current_survey_rounds = row[2]
-        current_attention_score = attention_score if attention_score is not None else row[3]
-
-        # Use atomic increments
-        new_words = current_words + word_count
-        new_submissions = current_submissions + 1
-        new_survey_rounds = current_survey_rounds + (1 if is_survey else 0)
-    else:
-        new_words = word_count
-        new_submissions = 1
-        new_survey_rounds = 1 if is_survey else 0
-        current_attention_score = attention_score if attention_score is not None else 1.0
-
-    priority_eligible = (new_words >= PRIORITY_WORD_THRESHOLD or new_survey_rounds >= PRIORITY_ROUNDS_THRESHOLD) and current_attention_score >= PRIORITY_ATTENTION_THRESHOLD
-
-    # FIX: Use EXCLUDED values directly for atomic behavior
+    # Use atomic SQL UPSERT - compute priority eligibility in SQL after increment
+    # This eliminates the read-before-write race condition
+    survey_rounds_increment = 1 if is_survey else 0
     db.execute(
         text("""
             INSERT INTO participant_stats
             (participant_fk, participant_id, total_words, total_submissions, survey_rounds, priority_eligible, attention_score)
-            VALUES (:participant_fk, :participant_id, :total_words, :total_submissions, :survey_rounds, :priority_eligible, :attention_score)
+            VALUES (:participant_fk, :participant_id, :total_words, :total_submissions, :survey_rounds, FALSE, COALESCE(:attention_score, 1.0))
             ON CONFLICT(participant_fk) DO UPDATE SET
             total_words = participant_stats.total_words + EXCLUDED.total_words,
             total_submissions = participant_stats.total_submissions + 1,
-            survey_rounds = participant_stats.survey_rounds + EXCLUDED.survey_rounds - participant_stats.survey_rounds,
-            priority_eligible = EXCLUDED.priority_eligible,
+            survey_rounds = participant_stats.survey_rounds + EXCLUDED.survey_rounds,
             attention_score = CASE
                 WHEN EXCLUDED.attention_score IS NOT NULL THEN EXCLUDED.attention_score
                 ELSE participant_stats.attention_score
-            END
+            END,
+            priority_eligible = ((participant_stats.total_words + EXCLUDED.total_words) >= :word_threshold
+                OR (participant_stats.survey_rounds + EXCLUDED.survey_rounds) >= :rounds_threshold)
+                AND COALESCE(EXCLUDED.attention_score, participant_stats.attention_score) >= :attention_threshold
         """),
         {
             "participant_fk": participant_fk,
             "participant_id": participant_id,
             "total_words": word_count,
             "total_submissions": 1,
-            "survey_rounds": 1 if is_survey else 0,
-            "priority_eligible": priority_eligible,
+            "survey_rounds": survey_rounds_increment,
             "attention_score": attention_score,
+            "word_threshold": PRIORITY_WORD_THRESHOLD,
+            "rounds_threshold": PRIORITY_ROUNDS_THRESHOLD,
+            "attention_threshold": PRIORITY_ATTENTION_THRESHOLD,
         },
     )
 
 
 def count_words(text_input: str):
-    # FIX: Count alphabetic tokens instead of just non-whitespace characters
-    # This excludes pure punctuation, emojis, and random characters
-    words = re.findall(r"[a-zA-Z]+(?:'[a-zA-Z]+)?", text_input.strip())
+    # Count alphabetic tokens including accented characters and Unicode text
+    # Supports multilingual input including Indian languages and accented characters
+    # \w includes word characters from all languages in Unicode mode
+    words = re.findall(r"\b\w+\b", text_input.strip(), flags=re.UNICODE)
+    # Filter to only include strings that contain at least one letter character
+    words = [w for w in words if re.search(r"[^\W\d_]", w, flags=re.UNICODE)]
     return len(words)
 
 
@@ -344,8 +325,11 @@ def detect_bot_like_content(description: str, word_count: int) -> tuple[bool, st
     if word_count == 0:
         return True, "No words detected"
 
+    # Extract words using Unicode-aware pattern (same as count_words)
+    words = re.findall(r"\b\w+\b", description.lower(), flags=re.UNICODE)
+    words = [w for w in words if re.search(r"[^\W\d_]", w, flags=re.UNICODE)]
+
     # Check for excessive repetition of the same word
-    words = re.findall(r"[a-zA-Z]+(?:'[a-zA-Z]+)?", description.lower())
     if len(words) > 10:
         word_freq = {}
         for word in words:
@@ -355,15 +339,15 @@ def detect_bot_like_content(description: str, word_count: int) -> tuple[bool, st
         if max_freq / len(words) > 0.3:
             return True, f"Excessive word repetition detected"
 
-    # Check for repeated sequences/phrases
-    words_only = " ".join(words)
-    # Look for repeated 3-word sequences
-    sequences = [words_only[i:i+30] for i in range(len(words_only)-29)]
-    if len(sequences) > 5:
-        unique_sequences = len(set(sequences))
-        # If more than 50% of sequences are repeated, it's suspicious
-        if unique_sequences < len(sequences) * 0.5:
-            return True, f"Repeated phrases detected"
+    # Check for repeated word sequences (n-gram based)
+    if len(words) > 20:
+        # Look for repeated 3-word sequences
+        trigrams = [tuple(words[i:i+3]) for i in range(len(words)-2)]
+        if len(trigrams) > 5:
+            unique_trigrams = len(set(trigrams))
+            # If more than 50% of trigrams are repeated, it's suspicious
+            if unique_trigrams < len(trigrams) * 0.5:
+                return True, f"Repeated word sequences detected"
 
     # Check for low lexical diversity (unique words / total words)
     if len(words) > 20:
@@ -376,17 +360,12 @@ def detect_bot_like_content(description: str, word_count: int) -> tuple[bool, st
     if re.search(r"(.)\1{5,}", description):
         return True, f"Suspicious character repetition detected"
 
-    # Check for keyboard smashing patterns
-    keyboard_smash_pattern = r"(?=.*[asdfghjkl])(?=.*[qwertyuiop])(?=.*[zxcvbnm])"
-    if re.search(keyboard_smash_pattern, description.lower()):
-        return True, f"Keyboard smash pattern detected"
-
     return False, ""
 
 
-def calculate_quality_score(word_count: int, attention_passed, time_spent_seconds: float, feedback: str) -> float:
+def calculate_quality_score(word_count: int, attention_passed, time_spent_seconds: float, feedback: str, is_bot_suspected: bool = False) -> float:
     word_score = min(word_count / 150.0, 1.0)
-    # FIX: attention_passed can be None for non-attention submissions - treat as neutral
+    # attention_passed can be None for non-attention submissions - treat as neutral
     if attention_passed is None:
         attention_score = 1.0
     else:
@@ -394,6 +373,9 @@ def calculate_quality_score(word_count: int, attention_passed, time_spent_second
     time_score = 0.5 if time_spent_seconds and time_spent_seconds < TOO_FAST_SECONDS else 1.0
     feedback_score = min(len(feedback) / 50.0, 1.0)
     quality_score = 0.4 * word_score + 0.3 * attention_score + 0.2 * time_score + 0.1 * feedback_score
+    # Significantly reduce quality score for bot-like content
+    if is_bot_suspected:
+        quality_score *= 0.3
     return round(quality_score, 3)
 
 
@@ -839,13 +821,13 @@ def confirm_payment():
 
 def get_random_image_from_db(excluded_ids=None):
     db = get_db()
-    # FIX: Use random offset strategy instead of ORDER BY RANDOM() for scalability
+    # Use random offset strategy instead of ORDER BY RANDOM() for scalability
     # Get total count first
     if excluded_ids:
         result = db.execute(
             text("""
                 SELECT COUNT(*) FROM images
-                WHERE image_id != ALL(:excluded_ids)
+                WHERE NOT image_id = ANY(:excluded_ids)
             """),
             {"excluded_ids": list(excluded_ids)},
         )
@@ -867,7 +849,7 @@ def get_random_image_from_db(excluded_ids=None):
         result = db.execute(
             text("""
                 SELECT image_id, image_url FROM images
-                WHERE image_id != ALL(:excluded_ids)
+                WHERE NOT image_id = ANY(:excluded_ids)
                 OFFSET :offset LIMIT 1
             """),
             {"excluded_ids": list(excluded_ids), "offset": offset},
@@ -1031,7 +1013,7 @@ def submit():
             if duplicate_check:
                 return jsonify({"error": "Submission already recorded for this survey index"}), 409
 
-        quality_score = calculate_quality_score(word_count, attention_passed, time_spent_seconds, feedback)
+        quality_score = calculate_quality_score(word_count, attention_passed, time_spent_seconds, feedback, is_bot_suspected)
 
         attention_score_snapshot = None
         if is_attention:
@@ -1084,33 +1066,13 @@ def submit():
         )
 
         if is_attention:
-            stats = db.execute(
-                text("""
-                    SELECT total_checks, passed_checks, failed_checks FROM attention_stats
-                    WHERE participant_fk = :participant_fk
-                    FOR UPDATE
-                """),
-                {"participant_fk": participant_fk},
-            ).fetchone()
-
-            if stats:
-                total = stats[0] + 1
-                passed = stats[1] + (1 if attention_passed else 0)
-                failed = stats[2] + (0 if attention_passed else 1)
-            else:
-                total = 1
-                passed = 1 if attention_passed else 0
-                failed = 0 if attention_passed else 1
-
-            current_attention_score = passed / total
-            is_flagged = current_attention_score < ATTENTION_FLAG_THRESHOLD and total >= ATTENTION_FLAG_MIN_CHECKS
-
-            # FIX: Use atomic SQL operations to avoid race conditions
-            db.execute(
+            # Use atomic SQL UPSERT - no need for SELECT FOR UPDATE
+            # Get the updated attention score for the submission record
+            result = db.execute(
                 text("""
                     INSERT INTO attention_stats
                     (participant_fk, participant_id, total_checks, passed_checks, failed_checks, attention_score, is_flagged)
-                    VALUES (:participant_fk, :participant_id, 1, :passed, :failed, :score, :flagged)
+                    VALUES (:participant_fk, :participant_id, 1, :passed, :failed, (:passed)::FLOAT, (:passed)::FLOAT < :threshold)
                     ON CONFLICT(participant_fk) DO UPDATE SET
                     total_checks = attention_stats.total_checks + 1,
                     passed_checks = attention_stats.passed_checks + :passed,
@@ -1118,18 +1080,20 @@ def submit():
                     attention_score = (attention_stats.passed_checks + :passed)::FLOAT / (attention_stats.total_checks + 1),
                     is_flagged = ((attention_stats.passed_checks + :passed)::FLOAT / (attention_stats.total_checks + 1)) < :threshold
                         AND (attention_stats.total_checks + 1) >= :min_checks
+                    RETURNING attention_score
                 """),
                 {
                     "participant_fk": participant_fk,
                     "participant_id": participant_id,
                     "passed": 1 if attention_passed else 0,
                     "failed": 0 if attention_passed else 1,
-                    "score": current_attention_score,
-                    "flagged": is_flagged,
                     "threshold": ATTENTION_FLAG_THRESHOLD,
                     "min_checks": ATTENTION_FLAG_MIN_CHECKS,
                 },
             )
+            current_attention_score = result.fetchone()[0]
+        else:
+            current_attention_score = None
 
         _update_participant_stats_internal(
             db, participant_fk, participant_id, word_count, is_survey,
