@@ -785,7 +785,7 @@ def generate_upload_url(payment_public_id):
     db = get_db()
 
     row = db.execute(text("""
-        SELECT id, participant_id, status
+        SELECT id, participant_id, status, expires_at
         FROM payments
         WHERE public_id = :pid
     """), {"pid": payment_public_id}).fetchone()
@@ -793,7 +793,18 @@ def generate_upload_url(payment_public_id):
     if not row:
         return jsonify({"error": "payment not found"}), 404
 
-    payment_id, participant_id, status = row
+    payment_id, participant_id, status, expires_at = row
+
+    # Check if payment has expired
+    if expires_at and datetime.now(timezone.utc) > expires_at:
+        # Auto-update expired payment
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {"pid": payment_id})
+        db.commit()
+        return jsonify({"error": "payment expired"}), 410
 
     if status not in ("pending", "processing"):
         return jsonify({"error": "invalid payment state"}), 400
@@ -834,7 +845,7 @@ def finalize_payment_upload(payment_public_id):
     db = get_db()
 
     row = db.execute(text("""
-        SELECT id, participant_id, status
+        SELECT id, participant_id, status, expires_at
         FROM payments
         WHERE public_id = :pid
         FOR UPDATE
@@ -843,7 +854,17 @@ def finalize_payment_upload(payment_public_id):
     if not row:
         return jsonify({"error": "payment not found"}), 404
 
-    payment_id, participant_id, status = row
+    payment_id, participant_id, status, expires_at = row
+
+    # Check if payment has expired
+    if expires_at and datetime.now(timezone.utc) > expires_at:
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {"pid": payment_id})
+        db.commit()
+        return jsonify({"error": "payment expired"}), 410
 
     if status != "pending":
         return jsonify({"error": "invalid state"}), 400
@@ -876,6 +897,49 @@ def finalize_payment_upload(payment_public_id):
     except Exception:
         db.rollback()
         return jsonify({"error": "duplicate or invalid upload"}), 400
+
+@app.route("/payments/<payment_public_id>/status", methods=["GET"])
+@limiter.limit("30 per minute")
+@track_performance
+def get_payment_status(payment_public_id):
+    """Get current payment status including expiry check."""
+    db = get_db()
+
+    row = db.execute(text("""
+        SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at
+        FROM payments p
+        WHERE p.public_id = :pid
+    """), {"pid": payment_public_id}).fetchone()
+
+    if not row:
+        return jsonify({"error": "payment not found"}), 404
+
+    payment_id, participant_id, status, expires_at, amount, verified_at = row
+    set_rls_context(db, participant_id)
+
+    # Check if payment should be marked as expired
+    now = datetime.now(timezone.utc)
+    is_expired = expires_at and now > expires_at
+
+    if is_expired and status in ("pending", "processing"):
+        # Auto-update expired payment
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {"pid": payment_id})
+        db.commit()
+        status = "expired"
+
+    return jsonify({
+        "payment_id": payment_public_id,
+        "status": status,
+        "amount": float(amount) if amount else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "is_expired": status == "expired",
+        "time_remaining_seconds": max(0, int((expires_at - now).total_seconds())) if expires_at and status in ("pending", "processing") else 0,
+        "verified_at": verified_at.isoformat() if verified_at else None
+    })
 
 @app.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])
 @limiter.exempt
@@ -1048,6 +1112,52 @@ def api_docs():
                 "method": "GET",
                 "description": "This documentation",
                 "rate_limit": "30/min"
+            },
+            {
+                "path": "/payments/create",
+                "method": "POST",
+                "description": "Create a new payment session with expiry timer",
+                "body_example": {
+                    "public_id": "550e8400-...",
+                    "amount": 1.00
+                },
+                "response": {
+                    "payment_id": "uuid",
+                    "amount": 1.00,
+                    "expires_at": "2024-01-01T12:15:00+00:00",
+                    "upi_link": "upi://pay?...",
+                    "qr_base64": "base64encoded..."
+                },
+                "rate_limit": "20/min"
+            },
+            {
+                "path": "/payments/{payment_id}/status",
+                "method": "GET",
+                "description": "Get payment status and time remaining",
+                "response": {
+                    "payment_id": "uuid",
+                    "status": "pending|processing|expired|success|failed",
+                    "is_expired": false,
+                    "time_remaining_seconds": 600,
+                    "expires_at": "2024-01-01T12:15:00+00:00"
+                },
+                "rate_limit": "30/min"
+            },
+            {
+                "path": "/payments/{payment_id}/upload-url",
+                "method": "POST",
+                "description": "Get S3 presigned URL for payment screenshot upload",
+                "rate_limit": "20/min"
+            },
+            {
+                "path": "/payments/{payment_id}/finalize",
+                "method": "POST",
+                "description": "Finalize payment after screenshot upload",
+                "body_example": {
+                    "object_key": "payments/uuid.jpg",
+                    "sha256": "sha256hash"
+                },
+                "rate_limit": "20/min"
             }
         ],
     }
