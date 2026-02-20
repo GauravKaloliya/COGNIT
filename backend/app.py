@@ -44,8 +44,14 @@ PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.
 
 # Payment & UPI Configuration
 UPI_VPA = os.getenv("UPI_VPA")
+if not UPI_VPA:
+    raise ValueError("UPI_VPA is required")
 UPI_NAME = os.getenv("UPI_NAME")
+if not UPI_NAME:
+    raise ValueError("UPI_NAME is required")
 PAYMENT_SECRET = os.getenv("PAYMENT_SECRET")
+if not PAYMENT_SECRET:
+    raise ValueError("PAYMENT_SECRET is required")
 PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "900"))
 
 # S3 Configuration
