@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { getApiUrl } from "../utils/apiBase";
 
 export default function UserDetailsPage({
   demographics,

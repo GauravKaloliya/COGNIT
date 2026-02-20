@@ -1,6 +1,6 @@
 -- =====================================================
 -- C.O.G.N.I.T. PostgreSQL Schema
--- Version: 4.0.0 (PostgreSQL Edition) - Surrogate Key Migration
+-- Version: 4.0.0 (PostgreSQL Edition) - Razorpay Removed
 -- =====================================================
 
 -- =====================================================
@@ -37,28 +37,7 @@ CREATE TABLE IF NOT EXISTS participants (
 );
 
 -- =====================================================
--- Payments Table
--- =====================================================
-
-CREATE TABLE IF NOT EXISTS payments (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    participant_fk BIGINT NOT NULL,
-    participant_id VARCHAR(100) NOT NULL,
-    razorpay_order_id VARCHAR(100) UNIQUE NOT NULL,
-    razorpay_payment_id VARCHAR(100) UNIQUE,
-    razorpay_signature VARCHAR(200),
-    amount INTEGER NOT NULL,
-    currency VARCHAR(10) DEFAULT 'INR',
-    status VARCHAR(50) DEFAULT 'created',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    paid_at TIMESTAMPTZ,
-    FOREIGN KEY (participant_fk)
-        REFERENCES participants(id)
-        ON DELETE CASCADE
-);
-
--- =====================================================
--- Images Table (Created before submissions due to FK)
+-- Images Table
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS images (
@@ -281,7 +260,7 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
 );
 
 -- =====================================================
--- Indexes
+-- Indexes (Payments removed)
 -- =====================================================
 
 CREATE INDEX IF NOT EXISTS idx_participants_participant_id ON participants(participant_id);
@@ -289,11 +268,6 @@ CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(session_id);
 CREATE INDEX IF NOT EXISTS idx_participants_created ON participants(created_at);
 CREATE INDEX IF NOT EXISTS idx_participants_consent ON participants(consent_given);
 CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants(payment_status);
-
-CREATE INDEX IF NOT EXISTS idx_payments_participant_fk ON payments(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_payments_participant_id ON payments(participant_id);
-CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(razorpay_order_id);
-CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_fk ON submissions(participant_fk);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_id ON submissions(participant_id);
@@ -337,72 +311,3 @@ CREATE INDEX IF NOT EXISTS idx_audit_endpoint ON audit_log(endpoint);
 
 CREATE INDEX IF NOT EXISTS idx_performance_timestamp ON performance_metrics(timestamp);
 CREATE INDEX IF NOT EXISTS idx_performance_endpoint ON performance_metrics(endpoint);
-
--- =====================================================
--- TRIGGERS (PostgreSQL Version)
--- =====================================================
-
--- Function for participant insert audit
-CREATE OR REPLACE FUNCTION fn_participant_insert_audit()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO audit_log
-    (event_type, participant_fk, participant_id, endpoint, method, status_code, ip_hash, user_agent, details)
-    VALUES
-    ('participant_created', NEW.id, NEW.participant_id,
-     '/api/participants', 'POST', 201,
-     NEW.ip_hash, NEW.user_agent,
-     'New participant created');
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_participant_insert_audit ON participants;
-CREATE TRIGGER trg_participant_insert_audit
-AFTER INSERT ON participants
-FOR EACH ROW
-EXECUTE FUNCTION fn_participant_insert_audit();
-
-
--- Function for consent insert audit
-CREATE OR REPLACE FUNCTION fn_consent_insert_audit()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO audit_log
-    (event_type, participant_fk, participant_id, endpoint, method, status_code, ip_hash, user_agent, details)
-    VALUES
-    ('consent_recorded', NEW.participant_fk, NEW.participant_id,
-     '/api/consent', 'POST', 200,
-     NEW.ip_hash, NEW.user_agent,
-     'Consent recorded for participant');
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_consent_insert_audit ON consent_records;
-CREATE TRIGGER trg_consent_insert_audit
-AFTER INSERT ON consent_records
-FOR EACH ROW
-EXECUTE FUNCTION fn_consent_insert_audit();
-
-
--- Function for submission insert audit
-CREATE OR REPLACE FUNCTION fn_submission_insert_audit()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO audit_log
-    (event_type, participant_fk, participant_id, endpoint, method, status_code, ip_hash, user_agent, details)
-    VALUES
-    ('submission_created', NEW.participant_fk, NEW.participant_id,
-     '/api/submit', 'POST', 200,
-     NEW.ip_hash, NEW.user_agent,
-     'New submission created for image: ' || NEW.image_id);
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_submission_insert_audit ON submissions;
-CREATE TRIGGER trg_submission_insert_audit
-AFTER INSERT ON submissions
-FOR EACH ROW
-EXECUTE FUNCTION fn_submission_insert_audit();
