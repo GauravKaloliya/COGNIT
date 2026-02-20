@@ -339,6 +339,66 @@ export default function PaymentPage({
         throw new Error(errorMessage);
       }
 
+      // Trigger OCR verification
+      const verifyResponse = await fetch(
+        getApiUrl(`/internal/payments/${paymentData.payment_id}/verify`),
+        { method: "POST" }
+      );
+
+      const verifyData = await verifyResponse.json();
+
+      if (!verifyResponse.ok) {
+        // Handle specific verification errors with user-friendly messages
+        let errorMessage = "Payment verification failed. Please ensure your screenshot shows a clear payment confirmation.";
+        
+        if (verifyData.error === "low_resolution") {
+          errorMessage = `Screenshot resolution too low (${verifyData.width}px). Please upload a clearer image with at least ${verifyData.required}px width.`;
+        } else if (verifyData.error === "low_ocr_confidence") {
+          errorMessage = "We couldn't read your screenshot clearly. Please upload a sharper image.";
+        } else if (verifyData.error === "unsupported_app") {
+          errorMessage = "Please use a supported UPI app (Google Pay, PhonePe, Paytm, BHIM, Amazon Pay, or BharatPe).";
+        } else if (verifyData.error === "vpa_missing") {
+          errorMessage = "The UPI ID in your screenshot doesn't match our payment address. Please try again.";
+        } else if (verifyData.error === "note_mismatch") {
+          errorMessage = "The payment note in your screenshot doesn't match. Please include the correct note.";
+        } else if (verifyData.error === "amount_missing") {
+          errorMessage = "The amount ₹1.00 was not found in your screenshot. Please ensure it's visible.";
+        } else if (verifyData.error === "no_success_keyword") {
+          errorMessage = "No payment success message found. Please upload a screenshot showing successful payment.";
+        } else if (verifyData.error === "failure_detected") {
+          errorMessage = "Your screenshot shows a failed/pending payment. Please upload a successful payment screenshot.";
+        } else if (verifyData.error === "txn_missing") {
+          errorMessage = "No transaction ID found in your screenshot. Please upload a clearer image.";
+        } else if (verifyData.error === "hash_mismatch") {
+          errorMessage = "Image verification failed. Please try uploading again.";
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Check verification result
+      if (verifyData.status === "rejected_fraud") {
+        let rejectionMessage = "Payment verification failed. Please ensure your screenshot shows a clear successful payment.";
+        
+        if (verifyData.reason === "unsupported_app") {
+          rejectionMessage = "Unsupported UPI app detected. Please use Google Pay, PhonePe, Paytm, BHIM, Amazon Pay, or BharatPe.";
+        } else if (verifyData.reason === "vpa_missing") {
+          rejectionMessage = "UPI ID mismatch. Please ensure you're paying to the correct UPI address.";
+        } else if (verifyData.reason === "note_mismatch") {
+          rejectionMessage = "Payment note mismatch. Please include the correct payment reference.";
+        } else if (verifyData.reason === "amount_missing") {
+          rejectionMessage = "Amount ₹1.00 not found. Please ensure the amount is clearly visible.";
+        } else if (verifyData.reason === "no_success_keyword") {
+          rejectionMessage = "No 'success' indicator found. Please upload a screenshot with payment confirmation.";
+        } else if (verifyData.reason === "failure_detected") {
+          rejectionMessage = "Failed/pending payment detected. Please upload a successful payment screenshot.";
+        } else if (verifyData.reason === "txn_missing") {
+          rejectionMessage = "No transaction ID found. Please upload a clearer payment screenshot.";
+        }
+        
+        throw new Error(rejectionMessage);
+      }
+
       setPaymentStatus("success");
       sessionStorage.removeItem("payment_id");
       clearTimerState();

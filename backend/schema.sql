@@ -249,6 +249,8 @@ CREATE TABLE IF NOT EXISTS payments (
     upi_vpa               VARCHAR(120),
     upi_note              VARCHAR(255),
     upi_txn_ref           VARCHAR(120),
+    note                  VARCHAR(255),
+    detected_app          VARCHAR(60),
     extracted_text        TEXT,
     fraud_score           NUMERIC(5,2) DEFAULT 0 CHECK (fraud_score >= 0),
     verification_attempts SMALLINT DEFAULT 0 CHECK (verification_attempts >= 0),
