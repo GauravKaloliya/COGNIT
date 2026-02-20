@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getApiUrl } from "../utils/apiBase";
 
-const MIN_WORDS = 60;
+const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
+const MIN_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MIN_DESCRIPTION_LENGTH || "60", 10);
+const MAX_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MAX_DESCRIPTION_LENGTH || "10000", 10);
+const MIN_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MIN_FEEDBACK_LENGTH || "5", 10);
+const MAX_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MAX_FEEDBACK_LENGTH || "2000", 10);
 
 export default function SurveyPage({
   survey,
@@ -33,9 +37,10 @@ export default function SurveyPage({
   const timerIntervalRef = useRef(null);
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
   const charCount = description.length;
-  const commentsValid = comments.trim().length >= 5;
+  const descriptionValid = description.length >= MIN_DESCRIPTION_LENGTH && description.length <= MAX_DESCRIPTION_LENGTH;
+  const commentsValid = comments.trim().length >= MIN_FEEDBACK_LENGTH && comments.trim().length <= MAX_FEEDBACK_LENGTH;
   const imageReady = imageLoaded && !imageError;
-  const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && !submitting && imageReady;
+  const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && descriptionValid && !submitting && imageReady;
 
   const handleRetryImage = () => {
     setImageError(false);
@@ -145,8 +150,12 @@ export default function SurveyPage({
     if (!imageReady) return "Waiting for image to load...";
     if (submitting) return "Submitting...";
     if (wordCount < MIN_WORDS) return `Need at least ${MIN_WORDS} words (currently ${wordCount})`;
+    if (description.length < MIN_DESCRIPTION_LENGTH) return `Description must be at least ${MIN_DESCRIPTION_LENGTH} characters`;
+    if (description.length > MAX_DESCRIPTION_LENGTH) return `Description exceeds ${MAX_DESCRIPTION_LENGTH} characters`;
     if (rating === 0) return "Please select a rating";
-    if (!commentsValid) return "Comments must be at least 5 characters";
+    const commentsLength = comments.trim().length;
+    if (commentsLength < MIN_FEEDBACK_LENGTH) return `Comments must be at least ${MIN_FEEDBACK_LENGTH} characters`;
+    if (commentsLength > MAX_FEEDBACK_LENGTH) return `Comments exceeds ${MAX_FEEDBACK_LENGTH} characters`;
     return "Submit your response";
   };
 
@@ -297,18 +306,27 @@ export default function SurveyPage({
       <div className="field">
         <label>Description</label>
         <textarea
-          className={!isSurvey && wordCount > 0 && wordCount < MIN_WORDS ? 'error-input' : ''}
+          className={!isSurvey && description.length > 0 && (
+            description.length < MIN_DESCRIPTION_LENGTH ||
+            description.length > MAX_DESCRIPTION_LENGTH
+          ) ? 'error-input' : ''}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value.length <= MAX_DESCRIPTION_LENGTH) {
+              setDescription(value);
+            }
+          }}
           placeholder="Describe what you see..."
           spellCheck
           disabled={!imageReady}
+          maxLength={MAX_DESCRIPTION_LENGTH}
         />
       </div>
 
       <div className="counts">
         <span>Words: {wordCount} / Min {MIN_WORDS}</span>
-        <span>Characters: {charCount}</span>
+        <span>Characters: {charCount} / {MAX_DESCRIPTION_LENGTH}</span>
         <span className={wordCount >= MIN_WORDS ? "ok" : "warning"}>
           Minimum: {MIN_WORDS} words
         </span>
@@ -340,12 +358,28 @@ export default function SurveyPage({
       <div className="field">
         <label>Comments</label>
         <textarea
-          className={!isSurvey && comments.length > 0 && comments.length < 5 ? 'error-input' : ''}
+          className={!isSurvey && comments.length > 0 && (
+            comments.length < MIN_FEEDBACK_LENGTH ||
+            comments.length > MAX_FEEDBACK_LENGTH
+          ) ? 'error-input' : ''}
           value={comments}
-          onChange={(e) => setComments(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value.length <= MAX_FEEDBACK_LENGTH) {
+              setComments(value);
+            }
+          }}
           placeholder="Share any additional notes..."
           disabled={!imageReady}
+          maxLength={MAX_FEEDBACK_LENGTH}
         />
+        {comments.length > 0 && (
+          <div className="counts">
+            <span className={comments.length >= MIN_FEEDBACK_LENGTH ? "ok" : "warning"}>
+              Characters: {comments.length} / {MAX_FEEDBACK_LENGTH}
+            </span>
+          </div>
+        )}
       </div>
 
       {submitError && <div className="banner warning">{submitError}</div>}

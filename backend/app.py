@@ -4,7 +4,7 @@ import re
 import time
 import functools
 import random
-from flask import Flask, jsonify, request, g, current_app
+from flask import Flask, jsonify, request, g, current_app, render_template
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -17,19 +17,19 @@ from sqlalchemy.pool import NullPool
 # ────────────────────────────────────────────────
 
 MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
-TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5.0"))
+MIN_DESCRIPTION_LENGTH = int(os.getenv("MIN_DESCRIPTION_LENGTH", "60"))
 MAX_DESCRIPTION_LENGTH = int(os.getenv("MAX_DESCRIPTION_LENGTH", "10000"))
-MIN_DESCRIPTION_LENGTH = 60
+MIN_FEEDBACK_LENGTH = int(os.getenv("MIN_FEEDBACK_LENGTH", "5"))
 MAX_FEEDBACK_LENGTH = int(os.getenv("MAX_FEEDBACK_LENGTH", "2000"))
-MIN_FEEDBACK_LENGTH = 5
-MIN_RATING = 1
-MAX_RATING = 10
+MIN_RATING = int(os.getenv("MIN_RATING", "1"))
+MAX_RATING = int(os.getenv("MAX_RATING", "10"))
+TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5.0"))
 
-ATTENTION_FLAG_THRESHOLD = 0.60
-ATTENTION_FLAG_MIN_CHECKS = 3
-PRIORITY_WORD_THRESHOLD = 500
-PRIORITY_ROUNDS_THRESHOLD = 3
-PRIORITY_ATTENTION_THRESHOLD = 0.75
+ATTENTION_FLAG_THRESHOLD = float(os.getenv("ATTENTION_FLAG_THRESHOLD", "0.60"))
+ATTENTION_FLAG_MIN_CHECKS = int(os.getenv("ATTENTION_FLAG_MIN_CHECKS", "3"))
+PRIORITY_WORD_THRESHOLD = int(os.getenv("PRIORITY_WORD_THRESHOLD", "500"))
+PRIORITY_ROUNDS_THRESHOLD = int(os.getenv("PRIORITY_ROUNDS_THRESHOLD", "3"))
+PRIORITY_ATTENTION_THRESHOLD = float(os.getenv("PRIORITY_ATTENTION_THRESHOLD", "0.75"))
 
 PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.10"))
 
@@ -542,13 +542,7 @@ def submit():
 @track_performance
 def root():
     base_url = os.getenv("WEBSITE_URL", "").strip() or request.host_url.rstrip("/")
-    return jsonify({
-        "title": "C.O.G.N.I.T. API",
-        "description": "Cognitive Image & Text Research Platform backend API. Collects high-quality image descriptions with attention checks and anti-abuse measures.",
-        "version": "1.0.0",
-        "base_url": base_url,
-        "message": "Welcome to the API. See /docs for full documentation."
-    })
+    return render_template("api_docs.html", base_url=base_url)
 
 @app.route("/docs")
 @limiter.limit("30 per minute")
