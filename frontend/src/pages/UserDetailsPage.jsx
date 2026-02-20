@@ -168,10 +168,15 @@ export default function UserDetailsPage({
           <label>Phone Number <span className="required" aria-label="required">*</span></label>
           <input
             type="tel"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className={errors.phone ? 'error-input' : ''}
             placeholder="10-digit Indian mobile number"
             value={demographics.phone || ''}
-            onChange={(e) => updateField('phone', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value.replace(/\D/g, '');
+              updateField('phone', value);
+            }}
           />
           {errors.phone && <span className="error-text">{errors.phone}</span>}
         </div>
@@ -197,12 +202,17 @@ export default function UserDetailsPage({
           <label>Age <span className="required" aria-label="required">*</span></label>
           <input
             type="number"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className={`number-left${errors.age ? ' error-input' : ''}`}
             min="13"
             max="100"
             placeholder="Age (13-100)"
             value={demographics.age || ''}
-            onChange={(e) => updateField('age', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value.replace(/\D/g, '');
+              updateField('age', value);
+            }}
           />
           {errors.age && <span className="error-text">{errors.age}</span>}
         </div>
