@@ -155,8 +155,8 @@ export default function SurveyPage({
     return "Submit your response";
   };
 
-  const imageSrc = survey?.image_url
-    ? (survey.image_url.startsWith('http') ? survey.image_url : getApiUrl(survey.image_url))
+  const imageSrc = survey?.url
+    ? (survey.url.startsWith('http') ? survey.url : getApiUrl(survey.url))
     : "";
 
   // Show loading state if we're waiting for survey data
