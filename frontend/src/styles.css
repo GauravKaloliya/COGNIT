@@ -992,6 +992,12 @@ textarea {
   width: auto;
 }
 
+.primary.small {
+  padding: var(--space-2) var(--space-4);
+  min-width: 80px;
+  width: auto;
+}
+
 .primary.large {
   padding: var(--space-4) var(--space-6);
   font-size: var(--text-lg);

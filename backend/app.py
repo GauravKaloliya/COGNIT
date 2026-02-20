@@ -55,7 +55,10 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 
-CORS(app, resources={r"/*": {"origins": os.getenv("CORS_ORIGINS", "*")}})
+cors_origins = os.getenv("CORS_ORIGINS", "*")
+if cors_origins != "*":
+    cors_origins = [origin.strip() for origin in cors_origins.split(",")]
+CORS(app, resources={r"/*": {"origins": cors_origins}})
 
 limiter = Limiter(
     app=app,
@@ -541,14 +544,14 @@ def submit():
 @limiter.limit("30 per minute")
 @track_performance
 def root():
-    base_url = os.getenv("WEBSITE_URL", "").strip() or request.host_url.rstrip("/")
+    base_url = "https://api.cognit.online"
     return render_template("api_docs.html", base_url=base_url)
 
 @app.route("/docs")
 @limiter.limit("30 per minute")
 @track_performance
 def api_docs():
-    base_url = os.getenv("WEBSITE_URL", "").strip() or request.host_url.rstrip("/")
+    base_url = "https://api.cognit.online"
 
     docs = {
         "title": "C.O.G.N.I.T. API",
