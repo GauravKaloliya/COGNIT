@@ -1974,6 +1974,113 @@ body.dark .toast.warning {
 }
 
 /* --------------------------------------------------------------------------
+   Payment QR & Upload Styles
+   -------------------------------------------------------------------------- */
+.payment-qr-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+
+@media (min-width: 768px) {
+  .payment-qr-container {
+    background: var(--bg);
+  }
+}
+
+.payment-qr-code {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px var(--shadow-color, rgba(0, 0, 0, 0.1));
+}
+
+body.dark .payment-qr-code {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.payment-upi-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: white;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 1.1rem;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.payment-upi-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+}
+
+.payment-upload-area {
+  border: 2px dashed var(--border-color, var(--border));
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin: 1rem 0;
+}
+
+.payment-upload-area:hover {
+  border-color: var(--primary-color, var(--primary));
+  background: var(--bg-tertiary, var(--accent-bg));
+}
+
+.payment-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.payment-status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.payment-status-badge.processing {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.payment-status-badge.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+body.dark .payment-status-badge.pending {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+body.dark .payment-status-badge.processing {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+body.dark .payment-status-badge.success {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+/* --------------------------------------------------------------------------
    Accessibility
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
