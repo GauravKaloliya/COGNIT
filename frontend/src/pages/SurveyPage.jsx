@@ -46,11 +46,7 @@ export default function SurveyPage({
     setImageError(false);
     setImageLoaded(false);
     setTimerActive(false);
-    const img = document.querySelector('.image-container img');
-    if (img && img.src) {
-      const originalSrc = img.src;
-      img.src = originalSrc.split('?')[0] + '?retry=' + Date.now();
-    }
+    onRetry();
   };
 
   useEffect(() => {
