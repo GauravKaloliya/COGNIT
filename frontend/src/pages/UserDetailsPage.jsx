@@ -210,7 +210,7 @@ export default function UserDetailsPage({
             placeholder="Enter your username"
             value={demographics.username || ''}
             onChange={(e) => updateField('username', e.target.value)}
-            onKeyUp={(e) => debouncedCheck('username', e.target.value)}
+            onBlur={(e) => debouncedCheck('username', e.target.value)}
           />
           {checking.username && <span className="checking-text">Checking...</span>}
           {errors.username && <span className="error-text">{errors.username}</span>}
@@ -224,7 +224,7 @@ export default function UserDetailsPage({
             placeholder="yourname@gmail.com"
             value={demographics.email || ''}
             onChange={(e) => updateField('email', e.target.value)}
-            onKeyUp={(e) => debouncedCheck('email', e.target.value)}
+            onBlur={(e) => debouncedCheck('email', e.target.value)}
           />
           {checking.email && <span className="checking-text">Checking...</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
@@ -243,7 +243,7 @@ export default function UserDetailsPage({
               const value = e.target.value.replace(/\D/g, '');
               updateField('phone', value);
             }}
-            onKeyUp={(e) => {
+            onBlur={(e) => {
               const value = e.target.value.replace(/\D/g, '');
               debouncedCheck('phone', value);
             }}
