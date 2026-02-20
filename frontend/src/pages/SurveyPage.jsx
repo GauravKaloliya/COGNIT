@@ -172,7 +172,7 @@ export default function SurveyPage({
             <p className="status-message error">{fetchError}</p>
             {onRetry && (
               <button
-                className="primary retry"
+                className="primary small"
                 onClick={onRetry}
               >
                 Retry
@@ -277,7 +277,7 @@ export default function SurveyPage({
           <div className="image-error">
             <p>Image failed to load.</p>
             <button
-              className="primary retry button-top"
+              className="primary small button-top"
               onClick={handleRetryImage}
             >
               Retry
