@@ -902,7 +902,7 @@ textarea {
   line-height: var(--leading-normal);
 }
 
-/* Payment checkbox specific */
+/* Participation confirmation checkbox */
 .payment-checkbox {
   background-color: var(--panel);
   padding: var(--space-3);
@@ -1692,7 +1692,7 @@ body.dark .toast.warning {
   padding-bottom: 0;
 }
 
-/* Payment panel - mobile optimized */
+/* Participation panel - mobile optimized */
 .payment-panel {
   position: relative;
   gap: var(--space-3);
@@ -2246,7 +2246,7 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 }
 
-/* Payment page specific improvements */
+/* Participation page specific improvements */
 .payment-panel .page-actions {
   margin-top: var(--space-5);
 }
@@ -2312,7 +2312,7 @@ img {
   line-height: var(--leading-relaxed);
 }
 
-/* Payment CTA specific styling */
+/* Participation CTA specific styling */
 .payment-cta {
   border-radius: var(--radius-md);
 }

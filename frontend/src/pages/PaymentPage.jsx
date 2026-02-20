@@ -7,12 +7,12 @@ export default function PaymentPage({
   systemReady,
   participantId
 }) {
-  const [paymentChecked, setPaymentChecked] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    document.title = "Payment - C.O.G.N.I.T.";
+    document.title = "Participation - C.O.G.N.I.T.";
   }, []);
 
   const handleSubmit = async () => {
@@ -21,8 +21,8 @@ export default function PaymentPage({
       return;
     }
 
-    if (!paymentChecked) {
-      setError("You must agree to the payment terms to continue");
+    if (!confirmed) {
+      setError("You must confirm your participation to continue.");
       return;
     }
 
@@ -77,13 +77,13 @@ export default function PaymentPage({
       <div className="payment-content">
         <section className="payment-card">
           <h3>
-            <span className="payment-card-emoji" aria-hidden="true">💰</span>
+            <span className="payment-card-emoji" aria-hidden="true">🎓</span>
             Free Participation
           </h3>
           <p>Your participation enters you into the reward pool at no cost.</p>
           <ul className="payment-list">
-            <li>Instant participation</li>
-            <li>No entry fee required</li>
+            <li>Instant entry</li>
+            <li>Open to all eligible participants</li>
           </ul>
         </section>
 
@@ -96,7 +96,7 @@ export default function PaymentPage({
             <li><span className="payment-step-emoji" aria-hidden="true">1️⃣</span> Confirm participation</li>
             <li><span className="payment-step-emoji" aria-hidden="true">2️⃣</span> Your entry is added to the active pool</li>
             <li><span className="payment-step-emoji" aria-hidden="true">3️⃣</span> Winners are selected</li>
-            <li><span className="payment-step-emoji" aria-hidden="true">4️⃣</span> ₹10 is sent via UPI (24–48 hours)</li>
+            <li><span className="payment-step-emoji" aria-hidden="true">4️⃣</span> Reward is sent via UPI (24–48 hours)</li>
           </ol>
           <p className="payment-note">Clean. Direct. Transparent.</p>
         </section>
@@ -121,10 +121,9 @@ export default function PaymentPage({
             Reward Details
           </h3>
           <ul className="payment-list">
-            <li>₹10 per selected entry</li>
+            <li>₹10 per selected participant</li>
             <li>Direct UPI transfer</li>
             <li>Processed within 24–48 hours</li>
-            <li>No minimum withdrawal</li>
           </ul>
         </section>
       </div>
@@ -135,17 +134,17 @@ export default function PaymentPage({
         </div>
       )}
 
-      <div className={`consent-checkbox payment-checkbox ${error && !paymentChecked ? 'error' : ''}`}>
+      <div className={`consent-checkbox payment-checkbox ${error && !confirmed ? 'error' : ''}`}>
         <input
           type="checkbox"
-          checked={paymentChecked}
+          checked={confirmed}
           onChange={(e) => {
-            setPaymentChecked(e.target.checked);
+            setConfirmed(e.target.checked);
             if (error) setError(null);
           }}
-          id="payment-check"
+          id="participation-check"
         />
-        <label htmlFor="payment-check" className="consent-text">
+        <label htmlFor="participation-check" className="consent-text">
           I understand my participation gives me a chance to receive ₹10 via UPI based on selection.
         </label>
       </div>
@@ -154,7 +153,7 @@ export default function PaymentPage({
         <button
           className="primary payment-cta"
           onClick={handleSubmit}
-          disabled={!systemReady || submitting || !paymentChecked}
+          disabled={!systemReady || submitting || !confirmed}
         >
           {submitting ? "Processing..." : "🎯 Confirm & Start"}
         </button>

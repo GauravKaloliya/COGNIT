@@ -96,10 +96,7 @@ export default function ConsentPage({
         <p>Early withdrawal before task completion means you will not be entered into the reward draw.</p>
 
         <h3>Compensation Structure</h3>
-        <ul>
-          <li><strong>Free participation:</strong> No entry fee required</li>
-          <li><strong>Reward draw:</strong> Randomly selected participants receive ₹10 via UPI (typically within 24–48 hours)</li>
-        </ul>
+        <p>Participation is free. Randomly selected participants receive ₹10 via UPI (typically within 24–48 hours).</p>
         <p>
           Participants demonstrating consistent, attentive, and high-quality engagement may receive priority in reward allocation. Quality is assessed using objective behavioral metrics such as response completeness, instruction compliance, and engagement consistency. Receipt of any reward is not guaranteed.
         </p>

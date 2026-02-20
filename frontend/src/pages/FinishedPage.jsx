@@ -106,7 +106,7 @@ export default function FinishedPage({ surveyCompleted, participantId }) {
         )}
 
         <div className="finish-reminder">
-          <h4>💰 About the Reward Program</h4>
+          <h4>🎁 About the Reward Program</h4>
           <ul>
             <li>Participants are <strong>randomly selected</strong> to receive <strong>₹10 rewards</strong></li>
             <li>Active participants who write detailed descriptions get added to a <strong>priority list</strong></li>

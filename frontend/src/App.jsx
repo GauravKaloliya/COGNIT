@@ -421,7 +421,7 @@ export default function App() {
     const steps = [
       { id: "consent", label: "Consent" },
       { id: "user-details", label: "Your Details" },
-      { id: "payment", label: "Payment" }
+      { id: "payment", label: "Confirm" }
     ];
     const currentIndex = steps.findIndex(s => s.id === stage);
 
