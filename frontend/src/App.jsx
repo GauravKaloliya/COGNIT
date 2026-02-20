@@ -122,7 +122,6 @@ export default function App() {
   const [survey, setSurvey] = useState(getStoredValue("survey", null));
   const [surveyCompleted, setSurveyCompleted] = useState(getStoredValue("surveyCompleted", 0));
   const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(getStoredValue("surveyFeedbackReady", false));
-  const [readyForNext, setReadyForNext] = useState(false);
   const [shownImages, setShownImages] = useState(getStoredValue("shownImages", []));
   const [imageError, setImageError] = useState(null);
   
@@ -383,21 +382,7 @@ export default function App() {
     // Show feedback screen after first practice survey
     if (surveyCompleted === 0) {
       setSurveyFeedbackReady(true);
-    } else {
-      setReadyForNext(true);
     }
-  };
-
-  // Handle next survey
-  const handleNext = async () => {
-    setReadyForNext(false);
-
-    if (surveyCompleted >= 15) {
-      setStage("finished");
-      return;
-    }
-
-    await fetchImage();
   };
 
   // Handle finish
@@ -477,9 +462,7 @@ export default function App() {
             survey={survey}
             publicId={publicId}
             onSubmit={handleSubmit}
-            onNext={handleNext}
             onFinish={handleFinish}
-            showNext={readyForNext}
             isSurvey={true}
             surveyFeedbackReady={surveyFeedbackReady}
             onSurveyContinue={handleSurveyContinue}
