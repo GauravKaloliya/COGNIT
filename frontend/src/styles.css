@@ -1275,14 +1275,12 @@ body.dark .counts {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  margin-top: var(--space-5);
   padding-top: var(--space-4);
 }
 
 @media (min-width: 768px) {
   .actions {
     gap: var(--space-4);
-    margin-top: var(--space-6);
   }
 }
 
