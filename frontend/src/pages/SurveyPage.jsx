@@ -5,8 +5,7 @@ const MIN_WORDS = 60;
 
 export default function SurveyPage({
   survey,
-  participantId,
-  sessionId,
+  publicId,
   onSubmit,
   onNext,
   onFinish,

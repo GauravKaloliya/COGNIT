@@ -56,8 +56,8 @@ export default function UserDetailsPage({
       }
     }
     
-    if (!demographics.gender) {
-      newErrors.gender = "Gender is required";
+    if (!demographics.gender_code) {
+      newErrors.gender_code = "Gender is required";
     }
     
     // Age validation - 13 to 100 only
@@ -70,12 +70,12 @@ export default function UserDetailsPage({
       }
     }
     
-    if (!demographics.place || demographics.place.trim().length < 2) {
-      newErrors.place = "Place/Location is required";
+    if (!demographics.location || demographics.location.trim().length < 2) {
+      newErrors.location = "Place/Location is required";
     }
     
-    if (!demographics.native_language) {
-      newErrors.native_language = "Native language is required";
+    if (!demographics.language_code) {
+      newErrors.language_code = "Native language is required";
     }
     
     if (!demographics.prior_experience) {
@@ -107,10 +107,10 @@ export default function UserDetailsPage({
     "username",
     "email",
     "phone",
-    "gender",
+    "gender_code",
     "age",
-    "place",
-    "native_language",
+    "location",
+    "language_code",
     "prior_experience"
   ];
 
@@ -176,12 +176,12 @@ export default function UserDetailsPage({
           {errors.phone && <span className="error-text">{errors.phone}</span>}
         </div>
 
-        <div className={`form-field ${errors.gender ? 'error' : ''}`}>
+        <div className={`form-field ${errors.gender_code ? 'error' : ''}`}>
           <label>Gender <span className="required" aria-label="required">*</span></label>
           <select
-            className={errors.gender ? 'error-input' : ''}
-            value={demographics.gender || ''}
-            onChange={(e) => updateField('gender', e.target.value)}
+            className={errors.gender_code ? 'error-input' : ''}
+            value={demographics.gender_code || ''}
+            onChange={(e) => updateField('gender_code', e.target.value)}
           >
             <option value="" disabled>Select gender</option>
             <option value="male">Male</option>
@@ -190,7 +190,7 @@ export default function UserDetailsPage({
             <option value="prefer-not-say">Prefer not to say</option>
             <option value="other">Other</option>
           </select>
-          {errors.gender && <span className="error-text">{errors.gender}</span>}
+          {errors.gender_code && <span className="error-text">{errors.gender_code}</span>}
         </div>
 
         <div className={`form-field ${errors.age ? 'error' : ''}`}>
@@ -207,38 +207,39 @@ export default function UserDetailsPage({
           {errors.age && <span className="error-text">{errors.age}</span>}
         </div>
 
-        <div className={`form-field ${errors.place ? 'error' : ''}`}>
+        <div className={`form-field ${errors.location ? 'error' : ''}`}>
           <label>Place/Location <span className="required" aria-label="required">*</span></label>
           <input
             type="text"
-            className={errors.place ? 'error-input' : ''}
+            className={errors.location ? 'error-input' : ''}
             placeholder="e.g., Mumbai, India"
-            value={demographics.place || ''}
-            onChange={(e) => updateField('place', e.target.value)}
+            value={demographics.location || ''}
+            onChange={(e) => updateField('location', e.target.value)}
           />
-          {errors.place && <span className="error-text">{errors.place}</span>}
+          {errors.location && <span className="error-text">{errors.location}</span>}
         </div>
 
-        <div className={`form-field ${errors.native_language ? 'error' : ''}`}>
+        <div className={`form-field ${errors.language_code ? 'error' : ''}`}>
           <label>Native Language <span className="required" aria-label="required">*</span></label>
           <select
-            className={errors.native_language ? 'error-input' : ''}
-            value={demographics.native_language || ''}
-            onChange={(e) => updateField('native_language', e.target.value)}
+            className={errors.language_code ? 'error-input' : ''}
+            value={demographics.language_code || ''}
+            onChange={(e) => updateField('language_code', e.target.value)}
           >
             <option value="" disabled>Select native language</option>
-            <option value="English">English</option>
-            <option value="Hindi">Hindi (हिन्दी)</option>
-            <option value="Bengali">Bengali (বাংলা)</option>
-            <option value="Telugu">Telugu (తెలుగు)</option>
-            <option value="Marathi">Marathi (मराठी)</option>
-            <option value="Tamil">Tamil (தமிழ்)</option>
-            <option value="Urdu">Urdu (اردو)</option>
-            <option value="Gujarati">Gujarati (ગુજરાતી)</option>
-            <option value="Kannada">Kannada (ಕನ್ನಡ)</option>
-            <option value="Malayalam">Malayalam (മലയാളം)</option>
+            <option value="en">English</option>
+            <option value="hi">Hindi (हिन्दी)</option>
+            <option value="bn">Bengali (বাংলা)</option>
+            <option value="te">Telugu (తెలుగు)</option>
+            <option value="mr">Marathi (मराठी)</option>
+            <option value="ta">Tamil (தமிழ்)</option>
+            <option value="ur">Urdu (اردو)</option>
+            <option value="gu">Gujarati (ગુજરાતી)</option>
+            <option value="kn">Kannada (ಕನ್ನಡ)</option>
+            <option value="ml">Malayalam (മലയാളം)</option>
+            <option value="other">Other</option>
           </select>
-          {errors.native_language && <span className="error-text">{errors.native_language}</span>}
+          {errors.language_code && <span className="error-text">{errors.language_code}</span>}
         </div>
 
         <div className={`form-field ${errors.prior_experience ? 'error' : ''}`}>
