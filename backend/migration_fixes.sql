@@ -25,18 +25,23 @@ WHERE survey_index IS NOT NULL;
 -- =====================================================
 
 ALTER TABLE participants
-ADD CONSTRAINT IF NOT EXISTS valid_gender CHECK (
+DROP CONSTRAINT IF EXISTS valid_gender;
+
+ALTER TABLE participants
+ADD CONSTRAINT valid_gender CHECK (
     gender IS NULL OR
-    gender IN ('male', 'female', 'other', 'prefer_not_to_say')
+    gender IN ('male', 'female', 'non-binary', 'prefer-not-say', 'other')
 );
 
 ALTER TABLE participants
-ADD CONSTRAINT IF NOT EXISTS valid_native_language CHECK (
+DROP CONSTRAINT IF EXISTS valid_native_language;
+
+ALTER TABLE participants
+ADD CONSTRAINT valid_native_language CHECK (
     native_language IS NULL OR
     native_language IN (
-        'english', 'hindi', 'spanish', 'french', 'german', 'chinese', 'japanese', 'korean',
-        'arabic', 'portuguese', 'russian', 'italian', 'dutch', 'turkish', 'polish',
-        'other'
+        'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil', 'urdu',
+        'gujarati', 'kannada', 'malayalam', 'other'
     )
 );
 
