@@ -109,7 +109,11 @@ export default function UserDetailsPage({
   const updateField = (field, value) => {
     setDemographics(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: null }));
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
   };
 
