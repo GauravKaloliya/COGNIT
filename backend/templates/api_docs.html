@@ -547,30 +547,119 @@
                     </div>
                 </div>
 
-                <h3 style="margin-top: 32px;">Participation</h3>
+                <h3 style="margin-top: 32px;">Availability Checks</h3>
 
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payment/confirm</code>
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/check-username?username=&lt;value&gt;</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Confirms participant entry into the reward pool and marks their participation status as active.</p>
+                        <p class="endpoint-desc">Checks if a username is available for registration. Returns available: true if the username is not already taken.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
                         </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "participant_id": "user-123"
-}</pre></div>
+                        <h4>Query Parameters</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Required</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>username</code></td>
+                                    <td>string</td>
+                                    <td>Yes</td>
+                                    <td>Username to check for availability</td>
+                                </tr>
+                            </tbody>
+                        </table>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
-  "status": "confirmed"
+  "available": true
 }</pre></div>
-                        <h4>Errors</h4>
+                        <h4>Errors (400)</h4>
                         <div class="code-block small"><pre>{
-  "error": "Participant not found"
+  "error": "username parameter required"
+}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/check-email?email=&lt;value&gt;</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Checks if an email address is already registered. Returns available: true if the email is not in use.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
+                        </div>
+                        <h4>Query Parameters</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Required</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>email</code></td>
+                                    <td>string</td>
+                                    <td>Yes</td>
+                                    <td>Email address to check for availability</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "available": true
+}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/check-phone?phone=&lt;value&gt;</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Checks if a phone number is already registered. Returns available: true if the phone is not in use.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
+                        </div>
+                        <h4>Query Parameters</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Required</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>phone</code></td>
+                                    <td>string</td>
+                                    <td>Yes</td>
+                                    <td>Phone number to check for availability</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "available": true
 }</pre></div>
                     </div>
                 </div>
@@ -607,57 +696,12 @@
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "image_id": "aurora-lake.svg",
-  "image_url": "/images/aurora-lake.svg"
+  "url": "https://example.com/images/aurora-lake.svg"
 }</pre></div>
                         <h4>No Images Available (404)</h4>
                         <div class="code-block small"><pre>{
-  "error": "No images available"
+  "error": "no images"
 }</pre></div>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/images/&lt;image_id&gt;</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Serves image binaries from the image store. SVG images are returned with the correct MIME type.</p>
-                        <h4>Path Parameters</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Type</th>
-                                    <th>Required</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>image_id</code></td>
-                                    <td>string</td>
-                                    <td>Yes</td>
-                                    <td>The file name of the image</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>Binary image data</pre></div>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/logo</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Fetches the C.O.G.N.I.T. logo. The API attempts to serve the image from GitHub and falls back to local storage.</p>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>Binary image data (PNG)</pre></div>
                     </div>
                 </div>
 
