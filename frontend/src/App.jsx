@@ -10,7 +10,12 @@ function createId() {
   if (crypto?.randomUUID) {
     return crypto.randomUUID();
   }
-  return Math.random().toString(36).slice(2);
+  // Fallback UUID generation
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
 function getStoredValue(key, fallback) {
@@ -95,20 +100,20 @@ export default function App() {
   
   // Flow state
   const [stage, setStage] = useState(getStoredValue("stage", "consent"));
-  const [participantId] = useState(() => getStoredValue("participantId", createId()));
+  const [publicId] = useState(() => getStoredValue("publicId", createId()));
   const [sessionId] = useState(() => getStoredValue("sessionId", createId()));
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
   
-  // Demographics state
+  // Demographics state - using new API field names
   const [demographics, setDemographics] = useState(
     getStoredValue("demographics", {
       username: "",
       email: "",
       phone: "",
-      gender: "",
+      gender_code: "",
       age: "",
-      place: "",
-      native_language: "",
+      location: "",
+      language_code: "",
       prior_experience: ""
     })
   );
@@ -126,7 +131,7 @@ export default function App() {
   const [showConfetti, setShowConfetti] = useState(false);
 
   // Persist state
-  useEffect(() => { saveStoredValue("participantId", participantId); }, [participantId]);
+  useEffect(() => { saveStoredValue("publicId", publicId); }, [publicId]);
   useEffect(() => { saveStoredValue("sessionId", sessionId); }, [sessionId]);
   useEffect(() => { saveStoredValue("consentGiven", consentGiven); }, [consentGiven]);
   useEffect(() => { saveStoredValue("demographics", demographics); }, [demographics]);
@@ -156,7 +161,7 @@ export default function App() {
         const response = await fetch(getApiUrl('/health'));
         if (response.ok) {
           const data = await response.json();
-          if (data.status === 'healthy' && data.services.database === 'connected') {
+          if (data.status === 'healthy' && data.database === 'connected') {
             setSystemReady(true);
             setSystemError(null);
           } else {
@@ -192,15 +197,15 @@ export default function App() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        participant_id: participantId,
+        public_id: publicId,
         session_id: sessionId,
         username: demographics.username,
         email: demographics.email,
         phone: demographics.phone,
-        gender: demographics.gender,
+        gender_code: demographics.gender_code,
         age: parseInt(demographics.age),
-        place: demographics.place,
-        native_language: demographics.native_language,
+        location: demographics.location,
+        language_code: demographics.language_code,
         prior_experience: demographics.prior_experience
       })
     });
@@ -220,8 +225,7 @@ export default function App() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        participant_id: participantId,
-        consent_given: true
+        public_id: publicId
       })
     });
 
@@ -316,15 +320,14 @@ export default function App() {
   // Handle submission
   const handleSubmit = async (formData) => {
     const payload = {
-      participant_id: participantId,
-      session_id: sessionId,
+      public_id: publicId,
       image_id: survey.image_id,
-      image_url: survey.image_url,
       description: formData.description,
       rating: formData.rating,
       feedback: formData.comments,
       time_spent_seconds: formData.timeSpentSeconds,
-      is_survey: surveyCompleted === 0
+      is_survey: surveyCompleted === 0,
+      survey_index: surveyCompleted === 0 ? 0 : surveyCompleted
     };
 
     const response = await fetch(getApiUrl('/submit'), {
@@ -339,20 +342,22 @@ export default function App() {
 
       // Provide more specific error messages for common issues
       if (response.status === 400) {
-        if (data.error && data.error.includes("participant_id is required")) {
-          errorMessage = "Participant ID is missing. Please refresh the page and start again.";
-        } else if (data.error && data.error.includes("Participant not found")) {
+        if (data.error && data.error.includes("public_id is required")) {
+          errorMessage = "Public ID is missing. Please refresh the page and start again.";
+        } else if (data.error && data.error.includes("not found")) {
           errorMessage = "Participant not found. Please complete the registration process first.";
-        } else if (data.error && data.error.includes("Minimum")) {
+        } else if (data.error && data.error.includes("words required")) {
           errorMessage = data.error; // Keep the original word count error
-        } else if (data.error && data.error.includes("rating is required")) {
+        } else if (data.error && data.error.includes("rating")) {
           errorMessage = "Please select a rating for the image.";
-        } else if (data.error && data.error.includes("comments must be at least")) {
-          errorMessage = "Comments must be at least 5 characters long.";
+        } else if (data.error && data.error.includes("feedback")) {
+          errorMessage = "Feedback must be at least 5 characters long.";
         }
       } else if (response.status === 403) {
         if (data.error && data.error.includes("consent")) {
           errorMessage = "Consent is required. Please complete the consent process first.";
+        } else if (data.error && data.error.includes("flagged")) {
+          errorMessage = "Your account has been flagged due to low attention scores.";
         }
       } else if (response.status === 409) {
         errorMessage = "This submission has already been recorded.";
@@ -490,7 +495,7 @@ export default function App() {
             onPaymentComplete={handlePaymentComplete}
             onBack={() => setStage("user-details")}
             systemReady={systemReady}
-            participantId={participantId}
+            publicId={publicId}
           />
         );
       
@@ -498,8 +503,7 @@ export default function App() {
         return (
           <SurveyPage
             survey={survey}
-            participantId={participantId}
-            sessionId={sessionId}
+            publicId={publicId}
             onSubmit={handleSubmit}
             onNext={handleNext}
             onFinish={handleFinish}
@@ -515,7 +519,7 @@ export default function App() {
         );
       
       case "finished":
-        return <FinishedPage surveyCompleted={surveyCompleted} participantId={participantId} />;
+        return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} />;
       
       default:
         return <UserDetailsPage demographics={demographics} setDemographics={setDemographics} onSubmit={handleUserDetailsSubmit} onBack={() => setStage("consent")} systemReady={systemReady} />;

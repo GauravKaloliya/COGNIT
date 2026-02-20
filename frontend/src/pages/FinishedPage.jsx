@@ -1,51 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { getApiUrl } from "../utils/apiBase";
 
-export default function FinishedPage({ surveyCompleted, participantId }) {
+export default function FinishedPage({ surveyCompleted, publicId }) {
   const [rewardStatus, setRewardStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     document.title = "Thank You - C.O.G.N.I.T.";
-    if (participantId) {
-      checkRewardWinner();
-    } else {
-      setLoading(false);
-    }
-  }, [participantId]);
-
-  const checkRewardWinner = async () => {
-    try {
-      // First check current status
-      const statusResponse = await fetch(getApiUrl(`/api/reward/${participantId}`));
-      if (statusResponse.ok) {
-        const statusData = await statusResponse.json();
-
-        // If not already a winner, try to select
-        if (!statusData.is_winner) {
-          const selectResponse = await fetch(getApiUrl(`/api/reward/select/${participantId}`), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" }
-          });
-          if (selectResponse.ok) {
-            const selectData = await selectResponse.json();
-            if (selectData.selected) {
-              setRewardStatus({ is_winner: true, reward_amount: selectData.reward_amount });
-            } else {
-              setRewardStatus({ ...statusData, was_checked: true });
-            }
-          } else {
-            setRewardStatus(statusData);
-          }
-        } else {
-          setRewardStatus(statusData);
-        }
-      }
-    } catch (err) {
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Note: The new backend API doesn't have reward winner endpoints
+    // Reward status would need to be checked via a different mechanism
+    // For now, we just stop loading
+    setLoading(false);
+  }, [publicId]);
 
   const handleFinish = () => {
     // Preserve dark mode setting before clearing
