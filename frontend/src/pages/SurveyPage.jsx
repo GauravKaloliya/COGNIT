@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getApiUrl } from "../utils/apiBase";
 
-const MIN_WORDS = 60;
-const MIN_DESCRIPTION_LENGTH = 60;
-const MAX_DESCRIPTION_LENGTH = 10000;
-const MIN_FEEDBACK_LENGTH = 5;
-const MAX_FEEDBACK_LENGTH = 2000;
+const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
+const MIN_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MIN_DESCRIPTION_LENGTH || "60", 10);
+const MAX_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MAX_DESCRIPTION_LENGTH || "10000", 10);
+const MIN_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MIN_FEEDBACK_LENGTH || "5", 10);
+const MAX_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MAX_FEEDBACK_LENGTH || "2000", 10);
 
 export default function SurveyPage({
   survey,
