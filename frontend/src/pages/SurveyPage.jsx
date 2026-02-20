@@ -11,9 +11,7 @@ export default function SurveyPage({
   survey,
   publicId,
   onSubmit,
-  onNext,
   onFinish,
-  showNext,
   isSurvey = false,
   surveyFeedbackReady = false,
   onSurveyContinue,
@@ -378,11 +376,6 @@ export default function SurveyPage({
         >
           {submitting ? "Submitting..." : "Submit"}
         </button>
-        {showNext && (
-          <button className="ghost" onClick={onNext}>
-            Next
-          </button>
-        )}
       </div>
 
       {!isSurvey && (
