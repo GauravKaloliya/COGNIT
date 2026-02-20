@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
 
 export default function PaymentPage({ 
@@ -15,11 +15,71 @@ export default function PaymentPage({
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
+  // Timer state
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [timerProgress, setTimerProgress] = useState(100);
+  const timerIntervalRef = useRef(null);
+
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  // Calculate timer values based on expiry
+  const calculateTimerValues = useCallback((expiresAt) => {
+    const now = new Date().getTime();
+    const expiry = new Date(expiresAt).getTime();
+    const totalDuration = 15 * 60 * 1000; // 15 minutes in milliseconds
+    const remaining = Math.max(0, expiry - now);
+    const progress = Math.max(0, (remaining / totalDuration) * 100);
+    return { remaining, progress };
+  }, []);
+
+  // Format time remaining into MM:SS
+  const formatTime = (ms) => {
+    const totalSeconds = Math.ceil(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // Start the countdown timer
+  const startTimer = useCallback((expiresAt) => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+
+    const updateTimer = () => {
+      const { remaining, progress } = calculateTimerValues(expiresAt);
+      setTimeRemaining(remaining);
+      setTimerProgress(progress);
+
+      if (remaining <= 0) {
+        clearInterval(timerIntervalRef.current);
+        handleExpiry();
+      }
+    };
+
+    updateTimer(); // Initial update
+    timerIntervalRef.current = setInterval(updateTimer, 1000);
+  }, [calculateTimerValues]);
+
+  // Handle payment expiry
+  const handleExpiry = useCallback(() => {
+    setPaymentStatus("expired");
+    setError("Payment session has expired. Please create a new payment to continue.");
+    sessionStorage.removeItem("payment_id");
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     document.title = "Payment - C.O.G.N.I.T.";
     createPayment();
+
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    };
   }, []);
 
   const createPayment = async () => {
@@ -55,6 +115,9 @@ export default function PaymentPage({
       if (expiresAt <= now) {
         throw new Error("The payment session has expired. Please try again to create a new payment.");
       }
+
+      // Start the countdown timer
+      startTimer(data.expires_at);
     } catch (err) {
       let errorMessage = "We couldn't create the payment. Please try again.";
       
@@ -122,6 +185,11 @@ export default function PaymentPage({
 
       if (!uploadUrlResponse.ok) {
         const data = await uploadUrlResponse.json();
+        // Handle expired payment (410 Gone)
+        if (uploadUrlResponse.status === 410 || data.error?.includes("expired")) {
+          handleExpiry();
+          throw new Error("Payment session has expired. Please create a new payment.");
+        }
         throw new Error(data.error || "Failed to get upload URL");
       }
 
@@ -151,6 +219,12 @@ export default function PaymentPage({
       if (!finalizeResponse.ok) {
         const data = await finalizeResponse.json();
         let errorMessage = "We couldn't verify your payment. Please try again.";
+        
+        // Handle expired payment (410 Gone)
+        if (finalizeResponse.status === 410 || data.error?.includes("expired")) {
+          handleExpiry();
+          throw new Error("Payment session has expired. Please create a new payment.");
+        }
         
         if (data.error) {
           if (data.error.includes("invalid state")) {
@@ -188,7 +262,72 @@ export default function PaymentPage({
     setUploadFile(null);
     setPaymentStatus("pending");
     setError(null);
+    setTimeRemaining(0);
+    setTimerProgress(100);
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
     createPayment();
+  };
+
+  // Payment Timer Component with border filling animation
+  const PaymentTimer = ({ progress, timeRemaining, isExpired }) => {
+    // Calculate color based on progress
+    const getTimerColor = () => {
+      if (progress > 60) return '#27ae60'; // Green
+      if (progress > 30) return '#f39c12'; // Orange
+      return '#e74c3c'; // Red
+    };
+
+    // Get warning class based on progress
+    const getWarningClass = () => {
+      if (isExpired) return 'expired';
+      if (progress <= 15) return 'danger';
+      if (progress <= 30) return 'warning';
+      return '';
+    };
+
+    const timerColor = getTimerColor();
+    const radius = 36;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+    return (
+      <div className={`payment-timer ${getWarningClass()}`}>
+        <div className="payment-timer-ring">
+          <svg className="payment-timer-svg" viewBox="0 0 80 80">
+            {/* Background circle */}
+            <circle
+              className="payment-timer-bg"
+              cx="40"
+              cy="40"
+              r={radius}
+            />
+            {/* Progress circle with border filling effect */}
+            <circle
+              className="payment-timer-progress"
+              cx="40"
+              cy="40"
+              r={radius}
+              style={{
+                strokeDasharray: circumference,
+                strokeDashoffset: strokeDashoffset,
+                stroke: timerColor,
+              }}
+            />
+          </svg>
+          <div className="payment-timer-content">
+            <span className="payment-timer-icon">⏱️</span>
+            <span className="payment-timer-text">
+              {isExpired ? 'Expired' : formatTime(timeRemaining)}
+            </span>
+          </div>
+        </div>
+        <p className="payment-timer-label">
+          {isExpired ? 'Session expired' : `Time remaining: ${formatTime(timeRemaining)}`}
+        </p>
+      </div>
+    );
   };
 
   if (isLoading) {
@@ -230,6 +369,34 @@ export default function PaymentPage({
     );
   }
 
+  // Show expired state
+  if (paymentStatus === "expired") {
+    return (
+      <div className="panel payment-panel">
+        <div className="page-top-actions">
+          {onBack && (
+            <button className="ghost back-button" onClick={onBack}>
+              ← Back
+            </button>
+          )}
+        </div>
+        <div className="payment-header">
+          <div className="payment-header-emoji" aria-hidden="true">⏰</div>
+          <h2 className="payment-title">Payment Expired</h2>
+          <p className="payment-subtitle">Your payment session has timed out</p>
+        </div>
+        <div className="banner warning spaced">
+          {error || "The payment session has expired. Please create a new payment to continue."}
+        </div>
+        <div className="page-actions">
+          <button className="primary" onClick={handleRetry}>
+            Create New Payment
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="panel payment-panel">
       <div className="page-top-actions">
@@ -246,6 +413,15 @@ export default function PaymentPage({
         <p className="payment-subtitle">Participate → Get a chance to receive ₹10</p>
         <p className="payment-tagline">₹1 entry. Real reward.</p>
       </div>
+
+      {/* Payment Timer - shows when payment is created and pending */}
+      {paymentData && paymentStatus === "pending" && (
+        <PaymentTimer 
+          progress={timerProgress} 
+          timeRemaining={timeRemaining}
+          isExpired={paymentStatus === "expired"}
+        />
+      )}
 
       {error && (
         <div className="banner warning spaced">

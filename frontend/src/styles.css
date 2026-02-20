@@ -2091,6 +2091,134 @@ body.dark .payment-status-badge.success {
 }
 
 /* --------------------------------------------------------------------------
+   Payment Timer with Border Filling Animation
+   -------------------------------------------------------------------------- */
+.payment-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin: 0 0 1rem 0;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.payment-timer-ring {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.payment-timer-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.payment-timer-bg {
+  fill: none;
+  stroke: var(--border-light);
+  stroke-width: 4;
+}
+
+.payment-timer-progress {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear, stroke 0.3s ease;
+}
+
+.payment-timer-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.payment-timer-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.payment-timer-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 0.125rem;
+}
+
+.payment-timer-label {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.payment-timer.expired .payment-timer-progress {
+  stroke: var(--error) !important;
+}
+
+.payment-timer.expired .payment-timer-text {
+  color: var(--error);
+}
+
+/* Timer warning states */
+.payment-timer.warning .payment-timer-progress {
+  stroke: var(--warning);
+}
+
+.payment-timer.danger .payment-timer-progress {
+  stroke: var(--error);
+  animation: pulse-timer 1s ease-in-out infinite;
+}
+
+@keyframes pulse-timer {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Dark mode timer styles */
+body.dark .payment-timer {
+  background: var(--soft-panel);
+}
+
+body.dark .payment-timer-bg {
+  stroke: var(--border);
+}
+
+/* Responsive timer */
+@media (min-width: 768px) {
+  .payment-timer {
+    flex-direction: row;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .payment-timer-ring {
+    width: 60px;
+    height: 60px;
+  }
+
+  .payment-timer-label {
+    font-size: 1rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Accessibility
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
