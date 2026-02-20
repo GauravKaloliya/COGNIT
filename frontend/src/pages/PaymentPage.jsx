@@ -5,7 +5,7 @@ export default function PaymentPage({
   onPaymentComplete, 
   onBack,
   systemReady,
-  participantId
+  publicId
 }) {
   const [paymentChecked, setPaymentChecked] = useState(false);
   const [error, setError] = useState(null);
@@ -26,7 +26,7 @@ export default function PaymentPage({
       return;
     }
 
-    if (!participantId) {
+    if (!publicId) {
       setError("Participant details are missing. Please restart the study.");
       return;
     }
@@ -35,17 +35,9 @@ export default function PaymentPage({
     setSubmitting(true);
 
     try {
-      const response = await fetch(getApiUrl("/payment/confirm"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ participant_id: participantId })
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Unable to confirm participation");
-      }
-
+      // Note: The new backend API doesn't have a payment confirmation endpoint
+      // Payment status is tracked in the schema but not exposed via API
+      // For now, we just proceed to the survey
       await onPaymentComplete();
     } catch (err) {
       setError(err.message || "Failed to confirm participation. Please try again.");
