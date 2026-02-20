@@ -32,6 +32,10 @@
   - Location: `schema.sql:27-35`
   - Fix: Added CHECK constraint with controlled vocabulary
 
+- [x] **#8b: Removed Redundant Age Variables**
+  - Location: `app.py:24-25`
+  - Fix: Removed MIN_PARTICIPANT_AGE and MAX_PARTICIPANT_AGE, kept MIN_AGE and MAX_AGE
+
 - [x] **#10: Email Regex Weak**
   - Location: `app.py:510`, `migration_fixes.sql`
   - Fix: Improved regex with proper TLD validation
@@ -97,14 +101,14 @@
 
 ## Summary Statistics
 
-- **Total Issues Identified:** 25
+- **Total Issues Identified:** 26
 - **Critical Bugs Fixed:** 5/5 (100%)
-- **Data Integrity Fixed:** 3/5 (60%) - 2 deferred
+- **Data Integrity Fixed:** 4/6 (67%) - 2 deferred + age variables removed
 - **Concurrency Fixed:** 3/3 (100%)
 - **Security Fixed:** 4/5 (80%) - 1 noted
 - **Performance Fixed:** 2/4 (50%) - 2 noted as appropriate
 - **Architecture Improved:** 2/5 (40%) - key improvements done
-- **Overall Fixes Applied:** 19/25 (76%)
+- **Overall Fixes Applied:** 20/26 (77%)
 
 ## Files Modified
 
@@ -131,10 +135,11 @@ psql $DATABASE_URL -f migration_fixes.sql
 4. Test concurrent submissions (race conditions)
 
 ### Medium Priority (Validation)
-5. Test gender/native_language validation
-6. Test email validation edge cases
-7. Test bot detection with repetitive content
-8. Test session_id validation
+5. Test gender validation: 'male', 'female', 'non-binary', 'prefer-not-say', 'other'
+6. Test native_language validation: Indian languages (hindi, bengali, telugu, marathi, tamil, urdu, gujarati, kannada, malayalam)
+7. Test email validation edge cases
+8. Test bot detection with repetitive content
+9. Test session_id validation
 
 ### Low Priority (Performance)
 9. Load test `/images/random` endpoint

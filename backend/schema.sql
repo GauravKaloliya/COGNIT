@@ -19,18 +19,17 @@ CREATE TABLE IF NOT EXISTS participants (
     place VARCHAR(100),
     native_language VARCHAR(50),
     prior_experience VARCHAR(100),
-    -- FIX: CHECK constraint for gender
+    -- CHECK constraint for gender (matches frontend values)
     CONSTRAINT valid_gender CHECK (
         gender IS NULL OR
-        gender IN ('male', 'female', 'other', 'prefer_not_to_say')
+        gender IN ('male', 'female', 'non-binary', 'prefer-not-say', 'other')
     ),
-    -- FIX: CHECK constraint for native_language (common languages)
+    -- CHECK constraint for native_language (matches frontend values - Indian languages)
     CONSTRAINT valid_native_language CHECK (
         native_language IS NULL OR
         native_language IN (
-            'english', 'hindi', 'spanish', 'french', 'german', 'chinese', 'japanese', 'korean',
-            'arabic', 'portuguese', 'russian', 'italian', 'dutch', 'turkish', 'polish',
-            'other'
+            'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil', 'urdu',
+            'gujarati', 'kannada', 'malayalam', 'other'
         )
     ),
     consent_given BOOLEAN DEFAULT FALSE,

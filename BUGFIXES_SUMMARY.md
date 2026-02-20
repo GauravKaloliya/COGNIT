@@ -40,12 +40,17 @@ This document summarizes all the critical bug fixes implemented in this update.
 ### 7. ✅ No CHECK on gender
 **Location:** `schema.sql:22-26`
 **Issue:** `gender VARCHAR(50)` allowed any value, causing data pollution.
-**Fix:** Added CHECK constraint: `gender IN ('male', 'female', 'other', 'prefer_not_to_say')`.
+**Fix:** Added CHECK constraint matching frontend: `gender IN ('male', 'female', 'non-binary', 'prefer-not-say', 'other')`.
 
 ### 8. ✅ No CHECK on native_language
 **Location:** `schema.sql:27-35`
 **Issue:** Free text caused case inconsistencies, typos, and hard aggregation.
-**Fix:** Added CHECK constraint with controlled vocabulary of common languages.
+**Fix:** Added CHECK constraint with Indian languages matching frontend: `'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil', 'urdu', 'gujarati', 'kannada', 'malayalam', 'other'`.
+
+### 8b. ✅ Removed Redundant Age Variables
+**Location:** `app.py:24-25`
+**Issue:** Conflicting age constants (MIN_AGE/MAX_AGE vs MIN_PARTICIPANT_AGE/MAX_PARTICIPANT_AGE).
+**Fix:** Removed redundant MIN_PARTICIPANT_AGE and MAX_PARTICIPANT_AGE, kept MIN_AGE (13) and MAX_AGE (120).
 
 ### 9. ⚠️ image_url Stored in Submissions
 **Status:** Documented, requires major refactoring (not changed)
