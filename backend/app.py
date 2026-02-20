@@ -4,7 +4,7 @@ import re
 import time
 import functools
 import random
-from flask import Flask, jsonify, request, g, current_app
+from flask import Flask, jsonify, request, g, current_app, render_template
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -542,13 +542,7 @@ def submit():
 @track_performance
 def root():
     base_url = os.getenv("WEBSITE_URL", "").strip() or request.host_url.rstrip("/")
-    return jsonify({
-        "title": "C.O.G.N.I.T. API",
-        "description": "Cognitive Image & Text Research Platform backend API. Collects high-quality image descriptions with attention checks and anti-abuse measures.",
-        "version": "1.0.0",
-        "base_url": base_url,
-        "message": "Welcome to the API. See /docs for full documentation."
-    })
+    return render_template("api_docs.html", base_url=base_url)
 
 @app.route("/docs")
 @limiter.limit("30 per minute")
