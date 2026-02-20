@@ -2027,12 +2027,22 @@ body.dark .payment-qr-code {
   font-weight: 600;
   font-size: 1.1rem;
   text-decoration: none;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.3s;
+  position: relative;
 }
 
 .payment-upi-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+}
+
+.payment-upi-timer {
+  margin-left: auto;
+  padding-left: 0.75rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .payment-upload-area {
@@ -2547,6 +2557,15 @@ select option {
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@keyframes timer-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
   }
 }
 
