@@ -276,7 +276,7 @@ export default function App() {
     setSurveyFeedbackReady(false); // Reset feedback state for new survey session
     try {
       await fetchImage();
-      addToast("Payment completed successfully", "success");
+      addToast("Participation confirmed successfully", "success");
     } catch (err) {
       addToast("Failed to load first survey image. Please try again.", "error");
       // Stay on survey page but show error
@@ -355,9 +355,7 @@ export default function App() {
           errorMessage = "Comments must be at least 5 characters long.";
         }
       } else if (response.status === 403) {
-        if (data.error && data.error.includes("Payment required")) {
-          errorMessage = "Payment is required before submitting responses.";
-        } else if (data.error && data.error.includes("consent")) {
+        if (data.error && data.error.includes("consent")) {
           errorMessage = "Consent is required. Please complete the consent process first.";
         }
       } else if (response.status === 409) {
