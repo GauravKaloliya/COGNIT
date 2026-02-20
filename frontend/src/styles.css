@@ -992,7 +992,7 @@ textarea {
   width: auto;
 }
 
-.primary.retry {
+.primary.small {
   padding: var(--space-2) var(--space-4);
   min-width: 80px;
   width: auto;
