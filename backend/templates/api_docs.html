@@ -399,7 +399,7 @@
                         <div class="code-block small"><pre>{
   "title": "C.O.G.N.I.T. API Documentation",
   "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API.",
-  "base_url": "https://api.cognit.online",
+  "base_url": "{{ base_url }}",
   "security": { ... },
   "endpoints": {
     "health": { "path": "/health", "method": "GET", "auth_required": false },
@@ -775,7 +775,7 @@ console.log(result);</pre></div>
                 <h3 style="margin-top: 32px;">Python / Requests</h3>
                 <div class="code-block"><pre>import requests
 
-base_url = "http://localhost:5000"
+base_url = "{{ base_url }}"
 
 participant_payload = {
     "participant_id": "user-123",
@@ -813,7 +813,7 @@ print(submission.json())</pre></div>
 
                 <h3 style="margin-top: 32px;">cURL</h3>
                 <div class="code-block"><pre># Create participant
-curl -X POST "http://localhost:5000/participants" \
+curl -X POST "{{ base_url }}/participants" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
@@ -827,7 +827,7 @@ curl -X POST "http://localhost:5000/participants" \
   }'
 
 # Record consent
-curl -X POST "http://localhost:5000/consent" \
+curl -X POST "{{ base_url }}/consent" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",
@@ -835,10 +835,10 @@ curl -X POST "http://localhost:5000/consent" \
   }'
 
 # Get a random image excluding previous ones
-curl -X GET "http://localhost:5000/images/random?exclude=aurora-lake.svg"
+curl -X GET "{{ base_url }}/images/random?exclude=aurora-lake.svg"
 
 # Submit data
-curl -X POST "http://localhost:5000/submit" \
+curl -X POST "{{ base_url }}/submit" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_id": "user-123",

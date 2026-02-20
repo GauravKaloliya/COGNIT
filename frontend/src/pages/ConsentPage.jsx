@@ -97,7 +97,7 @@ export default function ConsentPage({
 
         <h3>Compensation Structure</h3>
         <ul>
-          <li><strong>Nominal platform access fee:</strong> ₹1 (non-refundable)</li>
+          <li><strong>Free participation:</strong> No entry fee required</li>
           <li><strong>Reward draw:</strong> Randomly selected participants receive ₹10 via UPI (typically within 24–48 hours)</li>
         </ul>
         <p>
@@ -141,7 +141,6 @@ export default function ConsentPage({
           <li>Possess a valid 10-digit Indian mobile number</li>
           <li>Have access to a supported email provider</li>
           <li>Are comfortable reading and writing in English</li>
-          <li>Understand that the ₹1 access fee is non-refundable</li>
         </ul>
 
         <h3>Contact Information</h3>
