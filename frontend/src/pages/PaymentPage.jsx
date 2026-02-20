@@ -339,6 +339,47 @@ export default function PaymentPage({
         throw new Error(errorMessage);
       }
 
+      // Now verify the payment with enhanced OCR validation
+      const verifyResponse = await fetch(
+        getApiUrl(`/internal/payments/${paymentData.payment_id}/verify`),
+        { method: "POST" }
+      );
+
+      if (!verifyResponse.ok) {
+        throw new Error("Payment verification failed. Please try again.");
+      }
+
+      const verifyData = await verifyResponse.json();
+
+      if (!verifyData.is_valid) {
+        // Handle specific rejection reasons with user-friendly messages
+        let rejectionMessage = "Payment verification failed. Please ensure your screenshot shows a clear payment confirmation.";
+        
+        if (verifyData.reason === "unsupported_app") {
+          rejectionMessage = "Please use a supported UPI app (Google Pay, PhonePe, Paytm, BHIM, Amazon Pay, or BharatPe).";
+        } else if (verifyData.reason === "vpa_missing") {
+          rejectionMessage = "Payment VPA not detected. Please ensure you're paying to the correct UPI ID.";
+        } else if (verifyData.reason === "note_mismatch") {
+          rejectionMessage = "Payment note doesn't match. Please include the correct payment reference.";
+        } else if (verifyData.reason === "amount_missing") {
+          rejectionMessage = "Amount not detected. Please ensure the screenshot clearly shows ₹1.";
+        } else if (verifyData.reason === "no_success_keyword") {
+          rejectionMessage = "Payment status not confirmed. Please upload a screenshot showing successful payment.";
+        } else if (verifyData.reason === "failure_detected") {
+          rejectionMessage = "Payment appears to have failed. Please complete a successful payment and upload a new screenshot.";
+        } else if (verifyData.reason === "txn_missing") {
+          rejectionMessage = "Transaction ID not detected. Please upload a clearer payment screenshot.";
+        } else if (verifyData.reason === "rejected_low_resolution") {
+          rejectionMessage = "Image resolution too low. Please upload a higher quality screenshot.";
+        } else if (verifyData.reason === "rejected_low_ocr_confidence") {
+          rejectionMessage = "Couldn't read the screenshot clearly. Please upload a clearer image.";
+        } else if (verifyData.reason === "rejected_hash_mismatch") {
+          rejectionMessage = "Image verification failed. Please try uploading again.";
+        }
+        
+        throw new Error(rejectionMessage);
+      }
+
       setPaymentStatus("success");
       sessionStorage.removeItem("payment_id");
       clearTimerState();
