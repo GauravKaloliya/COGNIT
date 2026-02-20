@@ -101,11 +101,62 @@ export default function UserDetailsPage({
     }
 
     setSubmitting(true);
+    setChecking({ username: true, email: true, phone: true });
 
     try {
+      // Double-check username, email, and phone availability on submit
+      const checks = [];
+      
+      if (demographics.username && demographics.username.trim().length >= USERNAME_MIN_LENGTH) {
+        checks.push(
+          fetch(`${getApiUrl('/check-username')}?username=${encodeURIComponent(demographics.username.trim())}`)
+            .then(res => res.json())
+            .then(data => ({ field: 'username', available: data.available }))
+            .catch(() => ({ field: 'username', available: true })) // Assume available on network error
+        );
+      }
+      
+      if (demographics.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(demographics.email.trim())) {
+        checks.push(
+          fetch(`${getApiUrl('/check-email')}?email=${encodeURIComponent(demographics.email.trim())}`)
+            .then(res => res.json())
+            .then(data => ({ field: 'email', available: data.available }))
+            .catch(() => ({ field: 'email', available: true }))
+        );
+      }
+      
+      if (demographics.phone) {
+        const phoneDigits = demographics.phone.replace(/\D/g, '');
+        const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
+                              (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
+        if (isValidIndian) {
+          checks.push(
+            fetch(`${getApiUrl('/check-phone')}?phone=${encodeURIComponent(phoneDigits)}`)
+              .then(res => res.json())
+              .then(data => ({ field: 'phone', available: data.available }))
+              .catch(() => ({ field: 'phone', available: true }))
+          );
+        }
+      }
+      
+      const results = await Promise.all(checks);
+      
+      const newErrors = {};
+      results.forEach(result => {
+        if (!result.available) {
+          newErrors[result.field] = `This ${result.field} is already registered`;
+        }
+      });
+      
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(prev => ({ ...prev, ...newErrors }));
+        return;
+      }
+      
       await onSubmit();
     } finally {
       setSubmitting(false);
+      setChecking({ username: false, email: false, phone: false });
     }
   };
 

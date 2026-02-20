@@ -24,13 +24,7 @@ export default function PaymentPage({
 
   const createPayment = async () => {
     if (!publicId) {
-      setError("Participant details are missing. Please restart the study.");
-      return;
-    }
-
-    const existingPaymentId = sessionStorage.getItem("payment_id");
-    if (existingPaymentId) {
-      setError("Payment already in progress. Please complete or refresh.");
+      setError("We couldn't find your registration details. Please go back and complete the registration form.");
       return;
     }
 
@@ -59,10 +53,25 @@ export default function PaymentPage({
       const expiresAt = new Date(data.expires_at);
       const now = new Date();
       if (expiresAt <= now) {
-        throw new Error("Payment session has expired. Please refresh and try again.");
+        throw new Error("The payment session has expired. Please try again to create a new payment.");
       }
     } catch (err) {
-      setError(err.message || "Failed to create payment. Please try again.");
+      let errorMessage = "We couldn't create the payment. Please try again.";
+      
+      // Provide user-friendly error messages
+      if (err.message.includes("participant not found")) {
+        errorMessage = "We couldn't find your registration. Please go back and complete the registration form first.";
+      } else if (err.message.includes("expired")) {
+        errorMessage = err.message; // Already user-friendly
+      } else if (err.message.includes("network") || err.message.includes("fetch")) {
+        errorMessage = "We're having trouble connecting to our servers. Please check your internet connection and try again.";
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      // Clear the payment_id on error to allow retry
+      sessionStorage.removeItem("payment_id");
     } finally {
       setIsLoading(false);
     }
@@ -72,11 +81,11 @@ export default function PaymentPage({
     const file = e.target.files[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        setError("Please select an image file");
+        setError("Please upload an image file (JPG, PNG, etc.) of your payment screenshot.");
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        setError("File size must be less than 5MB");
+        setError("The file is too large. Please upload an image smaller than 5MB.");
         return;
       }
       setUploadFile(file);
@@ -93,12 +102,12 @@ export default function PaymentPage({
 
   const handleUploadAndFinalize = async () => {
     if (!uploadFile) {
-      setError("Please upload a payment screenshot");
+      setError("Please upload a screenshot of your payment first.");
       return;
     }
 
     if (!paymentData?.payment_id) {
-      setError("Payment data not found. Please refresh.");
+      setError("We couldn't find your payment details. Please try again.");
       return;
     }
 
@@ -125,7 +134,7 @@ export default function PaymentPage({
       });
 
       if (!uploadResponse.ok) {
-        throw new Error("Failed to upload image");
+        throw new Error("We couldn't upload your screenshot. Please check your internet connection and try again.");
       }
 
       const sha256 = await calculateSha256(uploadFile);
@@ -141,14 +150,33 @@ export default function PaymentPage({
 
       if (!finalizeResponse.ok) {
         const data = await finalizeResponse.json();
-        throw new Error(data.error || "Failed to finalize payment");
+        let errorMessage = "We couldn't verify your payment. Please try again.";
+        
+        if (data.error) {
+          if (data.error.includes("invalid state")) {
+            errorMessage = "This payment has already been processed or has expired. Please start a new payment.";
+          } else if (data.error.includes("duplicate")) {
+            errorMessage = "This screenshot has already been submitted. Please use a different payment screenshot.";
+          } else {
+            errorMessage = data.error;
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       setPaymentStatus("success");
       sessionStorage.removeItem("payment_id");
       await onPaymentComplete();
     } catch (err) {
-      setError(err.message || "Payment verification failed. Please try again.");
+      let errorMessage = err.message || "Payment verification failed. Please try again.";
+      
+      // Additional error context for upload/finalize failures
+      if (err.message.includes("network") || err.message.includes("fetch")) {
+        errorMessage = "We're having trouble connecting. Please check your internet connection and try again.";
+      }
+      
+      setError(errorMessage);
     } finally {
       setVerifying(false);
     }
