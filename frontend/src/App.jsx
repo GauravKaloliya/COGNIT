@@ -419,30 +419,76 @@ export default function App() {
 
   // Render progress bar for multi-step flows
   const renderProgressBar = () => {
-    // Only show progress bar for consent -> details -> payment flow
-    const flowStages = ["consent", "user-details", "payment"];
-    if (!flowStages.includes(stage)) return null;
+    // Pre-survey flow: consent -> details -> payment
+    const preSurveyStages = ["consent", "user-details", "payment"];
+    
+    // Survey flow stages
+    const surveyStages = ["survey", "finished"];
+    
+    if (preSurveyStages.includes(stage)) {
+      const steps = [
+        { id: "consent", label: "Consent" },
+        { id: "user-details", label: "Your Details" },
+        { id: "payment", label: "Payment" }
+      ];
+      const currentIndex = steps.findIndex(s => s.id === stage);
 
-    const steps = [
-      { id: "consent", label: "Consent" },
-      { id: "user-details", label: "Your Details" },
-      { id: "payment", label: "Payment" }
-    ];
-    const currentIndex = steps.findIndex(s => s.id === stage);
-
-    return (
-      <div className="progress-bar">
-        {steps.map((step, index) => (
-          <React.Fragment key={step.id}>
-            <div className={`progress-step ${index === currentIndex ? "active" : ""} ${index < currentIndex ? "completed" : ""}`}>
-              <span className="progress-step-number">{index < currentIndex ? "✓" : index + 1}</span>
-              <span className="progress-step-label">{step.label}</span>
-            </div>
-            {index < steps.length - 1 && <div className="progress-step-divider" />}
-          </React.Fragment>
-        ))}
-      </div>
-    );
+      return (
+        <div className="progress-bar">
+          {steps.map((step, index) => (
+            <React.Fragment key={step.id}>
+              <div className={`progress-step ${index === currentIndex ? "active" : ""} ${index < currentIndex ? "completed" : ""}`}>
+                <span className="progress-step-number">{index < currentIndex ? "✓" : index + 1}</span>
+                <span className="progress-step-label">{step.label}</span>
+              </div>
+              {index < steps.length - 1 && <div className="progress-step-divider" />}
+            </React.Fragment>
+          ))}
+        </div>
+      );
+    }
+    
+    // Survey progress bar
+    if (stage === "survey") {
+      const totalSurveys = 15;
+      const currentSurvey = Math.min(surveyCompleted + 1, totalSurveys);
+      const progressPercent = (surveyCompleted / totalSurveys) * 100;
+      
+      return (
+        <div className="progress-bar survey-progress">
+          <div className="survey-progress-header">
+            <span className="progress-step-label">Survey Progress</span>
+            <span className="survey-progress-count">{surveyCompleted} of {totalSurveys} completed</span>
+          </div>
+          <div className="survey-progress-bar">
+            <div 
+              className="survey-progress-fill" 
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </div>
+      );
+    }
+    
+    // Finish page - show completion
+    if (stage === "finished") {
+      return (
+        <div className="progress-bar survey-progress">
+          <div className="survey-progress-header">
+            <span className="progress-step-label">Survey Complete</span>
+            <span className="survey-progress-count">{surveyCompleted} surveys completed</span>
+          </div>
+          <div className="survey-progress-bar">
+            <div 
+              className="survey-progress-fill complete" 
+              style={{ width: '100%' }}
+            />
+          </div>
+        </div>
+      );
+    }
+    
+    return null;
   };
 
   // Render based on stage
