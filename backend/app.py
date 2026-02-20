@@ -240,10 +240,17 @@ def close_db(exception):
 def get_ip_hash():
     import ipaddress
 
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    if forwarded_for:
-        ip_address = forwarded_for.split(",")[0].strip()
+    # FIX: Only trust X-Forwarded-For if explicitly configured to avoid IP spoofing
+    TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "false").lower() == "true"
+    
+    if TRUST_X_FORWARDED_FOR:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            ip_address = forwarded_for.split(",")[0].strip()
+        else:
+            ip_address = request.remote_addr or "unknown"
     else:
+        # Only use remote_addr for security
         ip_address = request.remote_addr or "unknown"
 
     ip_address = ip_address.strip()
@@ -404,20 +411,25 @@ def _log_audit_event(db, event_type, participant_fk=None, participant_id=None, u
 
 def _log_performance_metric(endpoint, response_time_ms, status_code, request_size=0, response_size=0):
     db = get_db()
-    db.execute(
-        text("""
-            INSERT INTO performance_metrics
-            (endpoint, response_time_ms, status_code, request_size_bytes, response_size_bytes)
-            VALUES (:endpoint, :response_time_ms, :status_code, :request_size_bytes, :response_size_bytes)
-        """),
-        {
-            "endpoint": endpoint,
-            "response_time_ms": response_time_ms,
-            "status_code": status_code,
-            "request_size_bytes": request_size,
-            "response_size_bytes": response_size,
-        },
-    )
+    try:
+        db.execute(
+            text("""
+                INSERT INTO performance_metrics
+                (endpoint, response_time_ms, status_code, request_size_bytes, response_size_bytes)
+                VALUES (:endpoint, :response_time_ms, :status_code, :request_size_bytes, :response_size_bytes)
+            """),
+            {
+                "endpoint": endpoint,
+                "response_time_ms": response_time_ms,
+                "status_code": status_code,
+                "request_size_bytes": request_size,
+                "response_size_bytes": response_size,
+            },
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception("Failed to log performance metric for endpoint=%s", endpoint)
 
 
 def track_performance(f):
@@ -566,14 +578,17 @@ def create_participant():
     if not re.match(r"^[a-zA-Z0-9_-]+$", session_id):
         return jsonify({"error": "session_id can only contain letters, numbers, underscores, and hyphens"}), 400
 
-    allowed_email_domains = ["gmail.com", "outlook.com", "hotmail.com", "icloud.com", "me.com", "mac.com"]
+    # FIX: Email domains from environment variable (comma-separated), defaults to allow all
+    allowed_email_domains_str = os.getenv("ALLOWED_EMAIL_DOMAINS", "")
+    allowed_email_domains = [d.strip().lower() for d in allowed_email_domains_str.split(",") if d.strip()] if allowed_email_domains_str else []
+    
     email = data.get("email", "").strip().lower()
     if email:
         # FIX: Improved email regex with proper TLD validation
         if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
             return jsonify({"error": "Invalid email format"}), 400
         domain = email.split("@")[1]
-        if domain not in allowed_email_domains:
+        if allowed_email_domains and domain not in allowed_email_domains:
             return jsonify({"error": f"Only {', '.join(allowed_email_domains)} email addresses are allowed"}), 400
 
     phone = data.get("phone", "").strip()
@@ -699,7 +714,7 @@ def record_consent():
         return jsonify({"error": "Consent must be given to proceed"}), 400
 
     db = get_db()
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(timezone.utc)
 
     try:
         result = db.execute(
@@ -722,15 +737,14 @@ def record_consent():
         )
         db.execute(
             text("""
-                INSERT INTO consent_records (participant_fk, participant_id, consent_given, consent_timestamp, ip_hash, user_agent)
-                VALUES (:participant_fk, :participant_id, TRUE, :consent_timestamp, :ip_hash, :user_agent)
-                ON CONFLICT(participant_id) DO UPDATE SET
+                INSERT INTO consent_records (participant_fk, consent_given, consent_timestamp, ip_hash, user_agent)
+                VALUES (:participant_fk, TRUE, :consent_timestamp, :ip_hash, :user_agent)
+                ON CONFLICT(participant_fk) DO UPDATE SET
                 consent_given = TRUE, consent_timestamp = EXCLUDED.consent_timestamp,
                 ip_hash = EXCLUDED.ip_hash, user_agent = EXCLUDED.user_agent
             """),
             {
                 "participant_fk": participant_fk,
-                "participant_id": participant_id,
                 "consent_timestamp": timestamp,
                 "ip_hash": get_ip_hash(),
                 "user_agent": request.headers.get("User-Agent", ""),
@@ -773,22 +787,19 @@ def confirm_payment():
 
     db = get_db()
 
-    existing = db.execute(
-        text("SELECT id, payment_status FROM participants WHERE participant_id = :participant_id"),
-        {"participant_id": participant_id},
-    ).fetchone()
-    if existing and existing[1] == 'paid':
-        return jsonify({"status": "already_confirmed"}), 200
-
     try:
         result = db.execute(
-            text("SELECT id FROM participants WHERE participant_id = :participant_id FOR UPDATE"),
+            text("SELECT id, payment_status FROM participants WHERE participant_id = :participant_id FOR UPDATE"),
             {"participant_id": participant_id},
         )
         participant_row = result.fetchone()
         if not participant_row:
             db.rollback()
             return jsonify({"error": "Participant not found"}), 400
+
+        if participant_row[1] == 'paid':
+            db.rollback()
+            return jsonify({"status": "already_confirmed"}), 200
 
         participant_fk = participant_row[0]
 
@@ -1002,17 +1013,6 @@ def submit():
         too_fast_flag = time_spent_seconds < TOO_FAST_SECONDS
 
     try:
-        if is_survey:
-            duplicate_check = db.execute(
-                text("""
-                    SELECT id FROM submissions
-                    WHERE participant_fk = :participant_fk AND survey_index = :survey_index
-                """),
-                {"participant_fk": participant_fk, "survey_index": survey_index},
-            ).fetchone()
-            if duplicate_check:
-                return jsonify({"error": "Submission already recorded for this survey index"}), 409
-
         quality_score = calculate_quality_score(word_count, attention_passed, time_spent_seconds, feedback, is_bot_suspected)
 
         attention_score_snapshot = None
@@ -1023,30 +1023,20 @@ def submit():
             ).fetchone()
             attention_score_snapshot = stats_result[0] if stats_result else 1.0
 
-        image_url = payload.get("image_url")
-        if not image_url:
-            image_url_row = db.execute(
-                text("SELECT image_url FROM images WHERE image_id = :image_id"),
-                {"image_id": image_id},
-            ).fetchone()
-            image_url = image_url_row[0] if image_url_row else None
-
         db.execute(
             text("""
                 INSERT INTO submissions
-                (participant_fk, participant_id, session_id, image_id, image_url, survey_index, description, word_count, rating,
+                (participant_fk, session_id, image_id, survey_index, description, word_count, rating,
                  feedback, time_spent_seconds, is_survey, is_attention, attention_passed, too_fast_flag,
                  attention_score_at_submission, quality_score, ai_suspected, user_agent, ip_hash)
-                VALUES (:participant_fk, :participant_id, :session_id, :image_id, :image_url, :survey_index, :description, :word_count, :rating,
+                VALUES (:participant_fk, :session_id, :image_id, :survey_index, :description, :word_count, :rating,
                  :feedback, :time_spent_seconds, :is_survey, :is_attention, :attention_passed, :too_fast_flag,
                  :attention_score_at_submission, :quality_score, :ai_suspected, :user_agent, :ip_hash)
             """),
             {
                 "participant_fk": participant_fk,
-                "participant_id": participant_id,
                 "session_id": payload.get("session_id", ""),
                 "image_id": image_id,
-                "image_url": image_url,
                 "survey_index": survey_index,
                 "description": description,
                 "word_count": word_count,
@@ -1071,8 +1061,8 @@ def submit():
             result = db.execute(
                 text("""
                     INSERT INTO attention_stats
-                    (participant_fk, participant_id, total_checks, passed_checks, failed_checks, attention_score, is_flagged)
-                    VALUES (:participant_fk, :participant_id, 1, :passed, :failed, (:passed)::FLOAT, (:passed)::FLOAT < :threshold)
+                    (participant_fk, total_checks, passed_checks, failed_checks, attention_score, is_flagged)
+                    VALUES (:participant_fk, 1, :passed, :failed, (:passed)::FLOAT, (:passed)::FLOAT < :threshold)
                     ON CONFLICT(participant_fk) DO UPDATE SET
                     total_checks = attention_stats.total_checks + 1,
                     passed_checks = attention_stats.passed_checks + :passed,
@@ -1084,7 +1074,6 @@ def submit():
                 """),
                 {
                     "participant_fk": participant_fk,
-                    "participant_id": participant_id,
                     "passed": 1 if attention_passed else 0,
                     "failed": 0 if attention_passed else 1,
                     "threshold": ATTENTION_FLAG_THRESHOLD,
