@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+
+const UPI_LINK = "upi://pay?pa=iamgaurav225@okaxis&pn=C.O.G.N.I.T.&am=1.00&cu=INR";
+
+const isDesktop = () => {
+  return typeof window !== "undefined" && window.innerWidth > 768;
+};
 
 export default function FinishedPage({ surveyCompleted, publicId }) {
   const [rewardStatus, setRewardStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [desktop, setDesktop] = useState(false);
 
   useEffect(() => {
     document.title = "Thank You - C.O.G.N.I.T.";
+    setDesktop(isDesktop());
     // Note: The new backend API doesn't have reward winner endpoints
     // Reward status would need to be checked via a different mechanism
     // For now, we just stop loading
@@ -49,6 +58,21 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
                 <p className="finish-reward-body">
                   Thank you for your valuable participation. Your reward will be processed shortly.
                 </p>
+                {desktop ? (
+                  <div className="finish-qr-section">
+                    <p className="finish-reward-body">Scan the QR code below to receive your ₹10 reward:</p>
+                    <div className="finish-qr-code">
+                      <QRCodeSVG value={UPI_LINK} size={160} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="finish-upi-section">
+                    <p className="finish-reward-body">Click the link below to receive your ₹10 reward:</p>
+                    <a href={UPI_LINK} className="finish-upi-link">
+                      Pay with UPI
+                    </a>
+                  </div>
+                )}
               </>
             ) : (
               <>
