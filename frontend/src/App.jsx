@@ -286,7 +286,6 @@ export default function App() {
 
   // Fetch image
   const fetchImage = async () => {
-    setReadyForNext(false);
     setSurveyFeedbackReady(false);
     setImageError(null);
 
