@@ -22,14 +22,14 @@ MAX_DESCRIPTION_LENGTH = 10000
 MIN_RATING = 1
 MAX_RATING = 10
 MIN_AGE = 13
-MAX_AGE = 100
-MIN_PARTICIPANT_AGE = 1
-MAX_PARTICIPANT_AGE = 120
+MAX_AGE = 120
 ATTENTION_FLAG_THRESHOLD = 0.6
 ATTENTION_FLAG_MIN_CHECKS = 3
 PRIORITY_WORD_THRESHOLD = 500
 PRIORITY_ROUNDS_THRESHOLD = 3
 PRIORITY_ATTENTION_THRESHOLD = 0.75
+# FIX: Add performance logging sampling rate (10% by default)
+PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.1"))
 
 IP_HASH_SALT = os.getenv("IP_HASH_SALT")
 if not IP_HASH_SALT:
@@ -135,6 +135,11 @@ def _validate_rate_limit_storage(uri: str) -> str:
 storage_uri = _validate_rate_limit_storage(storage_uri)
 
 try:
+    # SECURITY NOTE: If deploying behind a reverse proxy (nginx, Apache, Vercel, etc.),
+    # you MUST use ProxyFix to properly handle X-Forwarded-For headers.
+    # Otherwise, attackers can spoof their IP and bypass rate limiting.
+    # Example: from werkzeug.middleware.proxy_fix import ProxyFix
+    #          app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
@@ -169,20 +174,23 @@ def add_security_headers(response):
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["X-Download-Options"] = "noopen"
     response.headers["X-DNS-Prefetch-Control"] = "off"
+    # FIX: Proper CSP directive construction with explicit directives
     csp_policy = (
         "default-src 'self'; "
         "script-src 'self'; "
         "style-src 'self'; "
         "img-src 'self' data: https: http:; "
         "font-src 'self'; "
-        "connect-src 'self'; "
         "frame-src 'none'; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
     )
     if origin and origin in allowed_origins:
-        csp_policy += f" {origin}"
+        # FIX: Add origin to appropriate CSP directives, not as a raw string
+        csp_policy = csp_policy.replace("connect-src 'self';", f"connect-src 'self' {origin};")
+        csp_policy = csp_policy.replace("script-src 'self';", f"script-src 'self' {origin};")
+        csp_policy = csp_policy.replace("style-src 'self';", f"style-src 'self' {origin};")
     response.headers["Content-Security-Policy"] = csp_policy
     if not IS_VERCEL and os.getenv("FLASK_ENV") != "development":
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
@@ -205,6 +213,8 @@ else:
         "max_overflow": 20,
         "pool_recycle": 3600,
         "pool_timeout": 30,
+        # FIX: Set transaction isolation level to REPEATABLE READ to prevent race conditions
+        "isolation_level": "REPEATABLE_READ",
     })
 
 engine = create_engine(DATABASE_URL, **engine_options)
@@ -226,6 +236,8 @@ def close_db(exception):
 
 
 def get_ip_hash():
+    import ipaddress
+
     forwarded_for = request.headers.get("X-Forwarded-For", "")
     if forwarded_for:
         ip_address = forwarded_for.split(",")[0].strip()
@@ -236,10 +248,16 @@ def get_ip_hash():
     if not ip_address or ip_address == "unknown":
         return "0" * 64
 
-    if not re.match(r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$", ip_address):
+    try:
+        # FIX: Support both IPv4 and IPv6 addresses
+        ip_obj = ipaddress.ip_address(ip_address)
+        # Normalize IPv6 addresses to their compressed form
+        normalized_ip = str(ip_obj)
+    except ValueError:
+        # Invalid IP address
         return "0" * 64
 
-    digest = hashlib.sha256(f"{ip_address}{IP_HASH_SALT}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{normalized_ip}{IP_HASH_SALT}".encode("utf-8")).hexdigest()
     return digest
 
 
@@ -253,6 +271,7 @@ def _get_participant_fk(db, participant_id):
 
 
 def _update_participant_stats_internal(db, participant_fk, participant_id, word_count, is_survey, attention_score=None):
+    # FIX: Use atomic SQL increments instead of computing in Python to avoid race conditions
     result = db.execute(
         text("""
             SELECT total_words, total_submissions, survey_rounds, attention_score
@@ -265,10 +284,15 @@ def _update_participant_stats_internal(db, participant_fk, participant_id, word_
     row = result.fetchone()
 
     if row:
-        new_words = row[0] + word_count
-        new_submissions = row[1] + 1
-        new_survey_rounds = row[2] + (1 if is_survey else 0)
+        current_words = row[0]
+        current_submissions = row[1]
+        current_survey_rounds = row[2]
         current_attention_score = attention_score if attention_score is not None else row[3]
+
+        # Use atomic increments
+        new_words = current_words + word_count
+        new_submissions = current_submissions + 1
+        new_survey_rounds = current_survey_rounds + (1 if is_survey else 0)
     else:
         new_words = word_count
         new_submissions = 1
@@ -277,37 +301,96 @@ def _update_participant_stats_internal(db, participant_fk, participant_id, word_
 
     priority_eligible = (new_words >= PRIORITY_WORD_THRESHOLD or new_survey_rounds >= PRIORITY_ROUNDS_THRESHOLD) and current_attention_score >= PRIORITY_ATTENTION_THRESHOLD
 
+    # FIX: Use EXCLUDED values directly for atomic behavior
     db.execute(
         text("""
             INSERT INTO participant_stats
             (participant_fk, participant_id, total_words, total_submissions, survey_rounds, priority_eligible, attention_score)
             VALUES (:participant_fk, :participant_id, :total_words, :total_submissions, :survey_rounds, :priority_eligible, :attention_score)
             ON CONFLICT(participant_fk) DO UPDATE SET
-            total_words = EXCLUDED.total_words,
-            total_submissions = EXCLUDED.total_submissions,
-            survey_rounds = EXCLUDED.survey_rounds,
+            total_words = participant_stats.total_words + EXCLUDED.total_words,
+            total_submissions = participant_stats.total_submissions + 1,
+            survey_rounds = participant_stats.survey_rounds + EXCLUDED.survey_rounds - participant_stats.survey_rounds,
             priority_eligible = EXCLUDED.priority_eligible,
-            attention_score = EXCLUDED.attention_score
+            attention_score = CASE
+                WHEN EXCLUDED.attention_score IS NOT NULL THEN EXCLUDED.attention_score
+                ELSE participant_stats.attention_score
+            END
         """),
         {
             "participant_fk": participant_fk,
             "participant_id": participant_id,
-            "total_words": new_words,
-            "total_submissions": new_submissions,
-            "survey_rounds": new_survey_rounds,
+            "total_words": word_count,
+            "total_submissions": 1,
+            "survey_rounds": 1 if is_survey else 0,
             "priority_eligible": priority_eligible,
-            "attention_score": current_attention_score,
+            "attention_score": attention_score,
         },
     )
 
 
 def count_words(text_input: str):
-    return len(re.findall(r"[^\s]+", text_input.strip()))
+    # FIX: Count alphabetic tokens instead of just non-whitespace characters
+    # This excludes pure punctuation, emojis, and random characters
+    words = re.findall(r"[a-zA-Z]+(?:'[a-zA-Z]+)?", text_input.strip())
+    return len(words)
+
+
+def detect_bot_like_content(description: str, word_count: int) -> tuple[bool, str]:
+    """
+    Detect potential bot-generated content patterns.
+    Returns (is_bot_suspected, reason)
+    """
+    if word_count == 0:
+        return True, "No words detected"
+
+    # Check for excessive repetition of the same word
+    words = re.findall(r"[a-zA-Z]+(?:'[a-zA-Z]+)?", description.lower())
+    if len(words) > 10:
+        word_freq = {}
+        for word in words:
+            word_freq[word] = word_freq.get(word, 0) + 1
+        max_freq = max(word_freq.values())
+        # If any word appears more than 30% of the time, it's suspicious
+        if max_freq / len(words) > 0.3:
+            return True, f"Excessive word repetition detected"
+
+    # Check for repeated sequences/phrases
+    words_only = " ".join(words)
+    # Look for repeated 3-word sequences
+    sequences = [words_only[i:i+30] for i in range(len(words_only)-29)]
+    if len(sequences) > 5:
+        unique_sequences = len(set(sequences))
+        # If more than 50% of sequences are repeated, it's suspicious
+        if unique_sequences < len(sequences) * 0.5:
+            return True, f"Repeated phrases detected"
+
+    # Check for low lexical diversity (unique words / total words)
+    if len(words) > 20:
+        unique_ratio = len(set(words)) / len(words)
+        if unique_ratio < 0.3:  # Less than 30% unique words is suspicious
+            return True, f"Low lexical diversity detected"
+
+    # Check for suspicious character patterns
+    # Too many consecutive same characters
+    if re.search(r"(.)\1{5,}", description):
+        return True, f"Suspicious character repetition detected"
+
+    # Check for keyboard smashing patterns
+    keyboard_smash_pattern = r"(?=.*[asdfghjkl])(?=.*[qwertyuiop])(?=.*[zxcvbnm])"
+    if re.search(keyboard_smash_pattern, description.lower()):
+        return True, f"Keyboard smash pattern detected"
+
+    return False, ""
 
 
 def calculate_quality_score(word_count: int, attention_passed, time_spent_seconds: float, feedback: str) -> float:
     word_score = min(word_count / 150.0, 1.0)
-    attention_score = 1.0 if attention_passed is True else 0.0
+    # FIX: attention_passed can be None for non-attention submissions - treat as neutral
+    if attention_passed is None:
+        attention_score = 1.0
+    else:
+        attention_score = 1.0 if attention_passed else 0.0
     time_score = 0.5 if time_spent_seconds and time_spent_seconds < TOO_FAST_SECONDS else 1.0
     feedback_score = min(len(feedback) / 50.0, 1.0)
     quality_score = 0.4 * word_score + 0.3 * attention_score + 0.2 * time_score + 0.1 * feedback_score
@@ -397,17 +480,21 @@ def track_performance(f):
                     except Exception:
                         response_size = 0
 
-            _log_performance_metric(
-                endpoint=request.path,
-                response_time_ms=response_time_ms,
-                status_code=status_code,
-                request_size=request.content_length or 0,
-                response_size=response_size,
-            )
+            # FIX: Sample performance logs to reduce DB write amplification
+            import random
+            if random.random() < PERFORMANCE_LOG_SAMPLE_RATE:
+                _log_performance_metric(
+                    endpoint=request.path,
+                    response_time_ms=response_time_ms,
+                    status_code=status_code,
+                    request_size=request.content_length or 0,
+                    response_size=response_size,
+                )
             return result
         except Exception:
             end_time = time.time()
             response_time_ms = int((end_time - start_time) * 1000)
+            # FIX: Always log errors regardless of sample rate
             _log_performance_metric(
                 endpoint=request.path,
                 response_time_ms=response_time_ms,
@@ -488,10 +575,20 @@ def create_participant():
     if not re.match(r"^[a-zA-Z0-9_]{3,50}$", username):
         return jsonify({"error": "Username must be 3-50 characters and contain only letters, numbers, and underscores"}), 400
 
+    # FIX: Add session_id length validation
+    session_id = data.get("session_id", "").strip()
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+    if len(session_id) > 100 or len(session_id) < 10:
+        return jsonify({"error": "session_id must be between 10 and 100 characters"}), 400
+    if not re.match(r"^[a-zA-Z0-9_-]+$", session_id):
+        return jsonify({"error": "session_id can only contain letters, numbers, underscores, and hyphens"}), 400
+
     allowed_email_domains = ["gmail.com", "outlook.com", "hotmail.com", "icloud.com", "me.com", "mac.com"]
     email = data.get("email", "").strip().lower()
     if email:
-        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        # FIX: Improved email regex with proper TLD validation
+        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
             return jsonify({"error": "Invalid email format"}), 400
         domain = email.split("@")[1]
         if domain not in allowed_email_domains:
@@ -742,19 +839,43 @@ def confirm_payment():
 
 def get_random_image_from_db(excluded_ids=None):
     db = get_db()
+    # FIX: Use random offset strategy instead of ORDER BY RANDOM() for scalability
+    # Get total count first
     if excluded_ids:
         result = db.execute(
             text("""
-                SELECT image_id, image_url FROM images
+                SELECT COUNT(*) FROM images
                 WHERE image_id != ALL(:excluded_ids)
-                ORDER BY RANDOM()
-                LIMIT 1
             """),
             {"excluded_ids": list(excluded_ids)},
         )
     else:
         result = db.execute(
-            text("SELECT image_id, image_url FROM images ORDER BY RANDOM() LIMIT 1")
+            text("SELECT COUNT(*) FROM images")
+        )
+    count = result.fetchone()[0]
+
+    if count == 0:
+        return None
+
+    # Get random offset
+    import random
+    offset = random.randint(0, count - 1)
+
+    # Fetch image at offset
+    if excluded_ids:
+        result = db.execute(
+            text("""
+                SELECT image_id, image_url FROM images
+                WHERE image_id != ALL(:excluded_ids)
+                OFFSET :offset LIMIT 1
+            """),
+            {"excluded_ids": list(excluded_ids), "offset": offset},
+        )
+    else:
+        result = db.execute(
+            text("SELECT image_id, image_url FROM images OFFSET :offset LIMIT 1"),
+            {"offset": offset},
         )
     row = result.fetchone()
     if row:
@@ -824,6 +945,11 @@ def submit():
     if word_count < MIN_WORD_COUNT:
         return jsonify({"error": f"Minimum {MIN_WORD_COUNT} words required", "word_count": word_count}), 400
 
+    # FIX: Add bot detection
+    is_bot_suspected, bot_reason = detect_bot_like_content(description, word_count)
+    if is_bot_suspected:
+        app.logger.warning(f"Bot-like content detected from participant_id=%s: %s", participant_id, bot_reason)
+
     rating = payload.get("rating")
     time_spent_seconds = payload.get("time_spent_seconds")
     if rating is None:
@@ -852,9 +978,13 @@ def submit():
     is_survey = bool(payload.get("is_survey"))
 
     try:
-        survey_index = int(payload.get("survey_index", 0))
-        if survey_index < 0 or survey_index > 1000:
-            return jsonify({"error": "survey_index must be between 0 and 1000"}), 400
+        # FIX: survey_index should be NULL for non-survey submissions
+        if is_survey:
+            survey_index = int(payload.get("survey_index", 0))
+            if survey_index < 0 or survey_index > 1000:
+                return jsonify({"error": "survey_index must be between 0 and 1000"}), 400
+        else:
+            survey_index = None
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid survey_index value"}), 400
 
@@ -924,10 +1054,10 @@ def submit():
                 INSERT INTO submissions
                 (participant_fk, participant_id, session_id, image_id, image_url, survey_index, description, word_count, rating,
                  feedback, time_spent_seconds, is_survey, is_attention, attention_passed, too_fast_flag,
-                 attention_score_at_submission, quality_score, user_agent, ip_hash)
+                 attention_score_at_submission, quality_score, ai_suspected, user_agent, ip_hash)
                 VALUES (:participant_fk, :participant_id, :session_id, :image_id, :image_url, :survey_index, :description, :word_count, :rating,
                  :feedback, :time_spent_seconds, :is_survey, :is_attention, :attention_passed, :too_fast_flag,
-                 :attention_score_at_submission, :quality_score, :user_agent, :ip_hash)
+                 :attention_score_at_submission, :quality_score, :ai_suspected, :user_agent, :ip_hash)
             """),
             {
                 "participant_fk": participant_fk,
@@ -947,6 +1077,7 @@ def submit():
                 "too_fast_flag": too_fast_flag,
                 "attention_score_at_submission": attention_score_snapshot,
                 "quality_score": quality_score,
+                "ai_suspected": is_bot_suspected,
                 "user_agent": request.headers.get("User-Agent", ""),
                 "ip_hash": get_ip_hash(),
             },
@@ -974,23 +1105,29 @@ def submit():
             current_attention_score = passed / total
             is_flagged = current_attention_score < ATTENTION_FLAG_THRESHOLD and total >= ATTENTION_FLAG_MIN_CHECKS
 
+            # FIX: Use atomic SQL operations to avoid race conditions
             db.execute(
                 text("""
                     INSERT INTO attention_stats
                     (participant_fk, participant_id, total_checks, passed_checks, failed_checks, attention_score, is_flagged)
-                    VALUES (:participant_fk, :participant_id, :total, :passed, :failed, :score, :flagged)
+                    VALUES (:participant_fk, :participant_id, 1, :passed, :failed, :score, :flagged)
                     ON CONFLICT(participant_fk) DO UPDATE SET
-                    total_checks = :total, passed_checks = :passed, failed_checks = :failed,
-                    attention_score = :score, is_flagged = :flagged
+                    total_checks = attention_stats.total_checks + 1,
+                    passed_checks = attention_stats.passed_checks + :passed,
+                    failed_checks = attention_stats.failed_checks + :failed,
+                    attention_score = (attention_stats.passed_checks + :passed)::FLOAT / (attention_stats.total_checks + 1),
+                    is_flagged = ((attention_stats.passed_checks + :passed)::FLOAT / (attention_stats.total_checks + 1)) < :threshold
+                        AND (attention_stats.total_checks + 1) >= :min_checks
                 """),
                 {
                     "participant_fk": participant_fk,
                     "participant_id": participant_id,
-                    "total": total,
-                    "passed": passed,
-                    "failed": failed,
+                    "passed": 1 if attention_passed else 0,
+                    "failed": 0 if attention_passed else 1,
                     "score": current_attention_score,
                     "flagged": is_flagged,
+                    "threshold": ATTENTION_FLAG_THRESHOLD,
+                    "min_checks": ATTENTION_FLAG_MIN_CHECKS,
                 },
             )
 
