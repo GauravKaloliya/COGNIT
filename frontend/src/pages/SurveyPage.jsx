@@ -247,17 +247,6 @@ export default function SurveyPage({
 
   return (
     <div className="panel">
-      <div className="progress">
-        {isSurvey ? (
-          <span>Survey Session</span>
-        ) : (
-          <button className="ghost" onClick={onFinish}>
-            Finish
-          </button>
-        )}
-      </div>
-
-
       <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
         {!imageError ? (
           <img
