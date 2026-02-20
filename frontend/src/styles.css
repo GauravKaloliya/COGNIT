@@ -2305,3 +2305,68 @@ select option {
   }
 }
 
+/* QR Code container */
+.qr-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-4);
+  background: #fff;
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+
+.qr-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Payment loading state */
+.payment-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  gap: var(--space-3);
+}
+
+.payment-loading .spinner {
+  width: 40px;
+  height: 40px;
+}
+
+.payment-loading p {
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
+/* Payment amount display */
+.payment-amount {
+  font-size: var(--text-lg);
+  text-align: center;
+  margin: var(--space-2) 0;
+}
+
+.payment-amount strong {
+  color: var(--color-success);
+  font-size: var(--text-xl);
+}
+
+/* UPI button */
+.upi-button {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin: var(--space-2) 0;
+}
+
+/* Payment note */
+.payment-note {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: center;
+  margin-top: var(--space-2);
+}
+

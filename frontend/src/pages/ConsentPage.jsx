@@ -97,7 +97,7 @@ export default function ConsentPage({
 
         <h3>Compensation Structure</h3>
         <ul>
-          <li><strong>Free participation:</strong> No entry fee required</li>
+          <li><strong>₹1 participation:</strong> Pay just ₹1 to participate</li>
           <li><strong>Reward draw:</strong> Randomly selected participants receive ₹10 via UPI (typically within 24–48 hours)</li>
         </ul>
         <p>
