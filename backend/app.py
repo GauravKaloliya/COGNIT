@@ -948,6 +948,28 @@ def _get_api_documentation():
         }
     }
 
+@app.route("/reward/<participant_id>")
+@limiter.limit("30 per minute")
+@track_performance
+def get_reward_status(participant_id):
+    db = get_db()
+    result = db.execute(text("SELECT id FROM participants WHERE participant_id = :participant_id"), {"participant_id": participant_id})
+    participant_row = result.fetchone()
+    if not participant_row:
+        return jsonify({"error": "Participant not found"}), 404
+    participant_fk = participant_row[0]
+    eligibility = get_reward_eligibility(participant_fk)
+    return jsonify(eligibility)
+
+
+@app.route("/reward/select/<participant_id>", methods=["POST"])
+@limiter.limit("10 per minute")
+@track_performance
+def select_reward(participant_id):
+    result = select_reward_winner(participant_id)
+    return jsonify(result)
+
+
 @app.route("/")
 def serve_api_docs():
     return render_template("api_docs.html", base_url="https://api.cognit.online")

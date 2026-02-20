@@ -1,6 +1,6 @@
 -- =====================================================
 -- C.O.G.N.I.T. PostgreSQL Schema
--- Version: 4.0.0 (PostgreSQL Edition) - Surrogate Key Migration
+-- Version: 5.0.0 (PostgreSQL Edition) - Razorpay Removed
 -- =====================================================
 
 -- =====================================================
