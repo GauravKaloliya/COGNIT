@@ -294,9 +294,9 @@ export default function App() {
 
     try {
       // Build URL with excluded images to prevent duplicates
-      let url = getApiUrl(`/images/random?session_id=${sessionId}`);
+      let url = getApiUrl('/images/random');
       if (shownImages.length > 0) {
-        url += `&exclude=${encodeURIComponent(shownImages.join(','))}`;
+        url += `?exclude=${encodeURIComponent(shownImages.join(','))}`;
       }
       
       const response = await fetch(url);
