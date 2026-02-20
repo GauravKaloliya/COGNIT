@@ -319,7 +319,6 @@ export default function App() {
       participant_id: participantId,
       session_id: sessionId,
       image_id: survey.image_id,
-      image_url: survey.image_url,
       description: formData.description,
       rating: formData.rating,
       feedback: formData.comments,

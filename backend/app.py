@@ -28,8 +28,14 @@ ATTENTION_FLAG_MIN_CHECKS = 3
 PRIORITY_WORD_THRESHOLD = 500
 PRIORITY_ROUNDS_THRESHOLD = 3
 PRIORITY_ATTENTION_THRESHOLD = 0.75
-# FIX: Add performance logging sampling rate (10% by default)
 PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.1"))
+
+# FIX: Make email domains configurable
+ALLOWED_EMAIL_DOMAINS = os.getenv("ALLOWED_EMAIL_DOMAINS", "").strip()
+if ALLOWED_EMAIL_DOMAINS:
+    ALLOWED_EMAIL_DOMAINS = [domain.strip() for domain in ALLOWED_EMAIL_DOMAINS.split(",") if domain.strip()]
+else:
+    ALLOWED_EMAIL_DOMAINS = ["gmail.com", "outlook.com", "hotmail.com", "icloud.com", "me.com", "mac.com"]
 
 IP_HASH_SALT = os.getenv("IP_HASH_SALT")
 if not IP_HASH_SALT:
@@ -272,15 +278,15 @@ def _get_participant_fk(db, participant_id):
     return row[0] if row else None
 
 
-def _update_participant_stats_internal(db, participant_fk, participant_id, word_count, is_survey, attention_score=None):
+def _update_participant_stats_internal(db, participant_fk, word_count, is_survey, attention_score=None):
     # Use atomic SQL UPSERT - compute priority eligibility in SQL after increment
     # This eliminates the read-before-write race condition
     survey_rounds_increment = 1 if is_survey else 0
     db.execute(
         text("""
             INSERT INTO participant_stats
-            (participant_fk, participant_id, total_words, total_submissions, survey_rounds, priority_eligible, attention_score)
-            VALUES (:participant_fk, :participant_id, :total_words, :total_submissions, :survey_rounds, FALSE, COALESCE(:attention_score, 1.0))
+            (participant_fk, total_words, total_submissions, survey_rounds, priority_eligible, attention_score)
+            VALUES (:participant_fk, :total_words, :total_submissions, :survey_rounds, FALSE, COALESCE(:attention_score, 1.0))
             ON CONFLICT(participant_fk) DO UPDATE SET
             total_words = participant_stats.total_words + EXCLUDED.total_words,
             total_submissions = participant_stats.total_submissions + 1,
@@ -295,7 +301,6 @@ def _update_participant_stats_internal(db, participant_fk, participant_id, word_
         """),
         {
             "participant_fk": participant_fk,
-            "participant_id": participant_id,
             "total_words": word_count,
             "total_submissions": 1,
             "survey_rounds": survey_rounds_increment,
@@ -320,6 +325,7 @@ def count_words(text_input: str):
 def detect_bot_like_content(description: str, word_count: int) -> tuple[bool, str]:
     """
     Detect potential bot-generated content patterns.
+    More lenient thresholds to avoid false positives for ESL participants.
     Returns (is_bot_suspected, reason)
     """
     if word_count == 0:
@@ -330,34 +336,34 @@ def detect_bot_like_content(description: str, word_count: int) -> tuple[bool, st
     words = [w for w in words if re.search(r"[^\W\d_]", w, flags=re.UNICODE)]
 
     # Check for excessive repetition of the same word
+    # Increased from 30% to 50% to be more lenient
     if len(words) > 10:
         word_freq = {}
         for word in words:
             word_freq[word] = word_freq.get(word, 0) + 1
         max_freq = max(word_freq.values())
-        # If any word appears more than 30% of the time, it's suspicious
-        if max_freq / len(words) > 0.3:
+        if max_freq / len(words) > 0.5:
             return True, f"Excessive word repetition detected"
 
     # Check for repeated word sequences (n-gram based)
+    # Increased from 50% to 70% to be more lenient
     if len(words) > 20:
-        # Look for repeated 3-word sequences
         trigrams = [tuple(words[i:i+3]) for i in range(len(words)-2)]
         if len(trigrams) > 5:
             unique_trigrams = len(set(trigrams))
-            # If more than 50% of trigrams are repeated, it's suspicious
-            if unique_trigrams < len(trigrams) * 0.5:
+            if unique_trigrams < len(trigrams) * 0.3:
                 return True, f"Repeated word sequences detected"
 
     # Check for low lexical diversity (unique words / total words)
+    # Increased from 30% to 20% to be more lenient for ESL participants
     if len(words) > 20:
         unique_ratio = len(set(words)) / len(words)
-        if unique_ratio < 0.3:  # Less than 30% unique words is suspicious
+        if unique_ratio < 0.2:
             return True, f"Low lexical diversity detected"
 
     # Check for suspicious character patterns
-    # Too many consecutive same characters
-    if re.search(r"(.)\1{5,}", description):
+    # Increased from 5 to 8 consecutive same characters
+    if re.search(r"(.)\1{7,}", description):
         return True, f"Suspicious character repetition detected"
 
     return False, ""
@@ -403,21 +409,30 @@ def _log_audit_event(db, event_type, participant_fk=None, participant_id=None, u
 
 
 def _log_performance_metric(endpoint, response_time_ms, status_code, request_size=0, response_size=0):
-    db = get_db()
-    db.execute(
-        text("""
-            INSERT INTO performance_metrics
-            (endpoint, response_time_ms, status_code, request_size_bytes, response_size_bytes)
-            VALUES (:endpoint, :response_time_ms, :status_code, :request_size_bytes, :response_size_bytes)
-        """),
-        {
-            "endpoint": endpoint,
-            "response_time_ms": response_time_ms,
-            "status_code": status_code,
-            "request_size_bytes": request_size,
-            "response_size_bytes": response_size,
-        },
-    )
+    # FIX: Use separate DB connection to ensure performance logs are always committed
+    # even if the main transaction rolls back
+    separate_conn = engine.connect()
+    try:
+        separate_conn.execute(
+            text("""
+                INSERT INTO performance_metrics
+                (endpoint, response_time_ms, status_code, request_size_bytes, response_size_bytes)
+                VALUES (:endpoint, :response_time_ms, :status_code, :request_size_bytes, :response_size_bytes)
+            """),
+            {
+                "endpoint": endpoint,
+                "response_time_ms": response_time_ms,
+                "status_code": status_code,
+                "request_size_bytes": request_size,
+                "response_size_bytes": response_size,
+            },
+        )
+        separate_conn.commit()
+    except Exception as e:
+        # Don't fail the request if performance logging fails
+        app.logger.error(f"Failed to log performance metric: {e}")
+    finally:
+        separate_conn.close()
 
 
 def track_performance(f):
@@ -566,15 +581,13 @@ def create_participant():
     if not re.match(r"^[a-zA-Z0-9_-]+$", session_id):
         return jsonify({"error": "session_id can only contain letters, numbers, underscores, and hyphens"}), 400
 
-    allowed_email_domains = ["gmail.com", "outlook.com", "hotmail.com", "icloud.com", "me.com", "mac.com"]
     email = data.get("email", "").strip().lower()
     if email:
-        # FIX: Improved email regex with proper TLD validation
         if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
             return jsonify({"error": "Invalid email format"}), 400
         domain = email.split("@")[1]
-        if domain not in allowed_email_domains:
-            return jsonify({"error": f"Only {', '.join(allowed_email_domains)} email addresses are allowed"}), 400
+        if domain not in ALLOWED_EMAIL_DOMAINS:
+            return jsonify({"error": f"Only {', '.join(ALLOWED_EMAIL_DOMAINS)} email addresses are allowed"}), 400
 
     phone = data.get("phone", "").strip()
     if phone:
@@ -699,7 +712,7 @@ def record_consent():
         return jsonify({"error": "Consent must be given to proceed"}), 400
 
     db = get_db()
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(timezone.utc)
 
     try:
         result = db.execute(
@@ -722,15 +735,14 @@ def record_consent():
         )
         db.execute(
             text("""
-                INSERT INTO consent_records (participant_fk, participant_id, consent_given, consent_timestamp, ip_hash, user_agent)
-                VALUES (:participant_fk, :participant_id, TRUE, :consent_timestamp, :ip_hash, :user_agent)
-                ON CONFLICT(participant_id) DO UPDATE SET
+                INSERT INTO consent_records (participant_fk, consent_given, consent_timestamp, ip_hash, user_agent)
+                VALUES (:participant_fk, TRUE, :consent_timestamp, :ip_hash, :user_agent)
+                ON CONFLICT(participant_fk) DO UPDATE SET
                 consent_given = TRUE, consent_timestamp = EXCLUDED.consent_timestamp,
                 ip_hash = EXCLUDED.ip_hash, user_agent = EXCLUDED.user_agent
             """),
             {
                 "participant_fk": participant_fk,
-                "participant_id": participant_id,
                 "consent_timestamp": timestamp,
                 "ip_hash": get_ip_hash(),
                 "user_agent": request.headers.get("User-Agent", ""),
@@ -773,16 +785,10 @@ def confirm_payment():
 
     db = get_db()
 
-    existing = db.execute(
-        text("SELECT id, payment_status FROM participants WHERE participant_id = :participant_id"),
-        {"participant_id": participant_id},
-    ).fetchone()
-    if existing and existing[1] == 'paid':
-        return jsonify({"status": "already_confirmed"}), 200
-
     try:
+        # FIX: Only use SELECT FOR UPDATE to avoid race condition
         result = db.execute(
-            text("SELECT id FROM participants WHERE participant_id = :participant_id FOR UPDATE"),
+            text("SELECT id, payment_status FROM participants WHERE participant_id = :participant_id FOR UPDATE"),
             {"participant_id": participant_id},
         )
         participant_row = result.fetchone()
@@ -791,6 +797,10 @@ def confirm_payment():
             return jsonify({"error": "Participant not found"}), 400
 
         participant_fk = participant_row[0]
+        current_status = participant_row[1]
+
+        if current_status == 'paid':
+            return jsonify({"status": "already_confirmed"}), 200
 
         db.execute(
             text("""
@@ -821,43 +831,56 @@ def confirm_payment():
 
 def get_random_image_from_db(excluded_ids=None):
     db = get_db()
-    # Use random offset strategy instead of ORDER BY RANDOM() for scalability
-    # Get total count first
-    if excluded_ids:
-        result = db.execute(
-            text("""
-                SELECT COUNT(*) FROM images
-                WHERE NOT image_id = ANY(:excluded_ids)
-            """),
-            {"excluded_ids": list(excluded_ids)},
-        )
-    else:
-        result = db.execute(
-            text("SELECT COUNT(*) FROM images")
-        )
-    count = result.fetchone()[0]
-
-    if count == 0:
-        return None
-
-    # Get random offset
+    # FIX: Use TABLESAMPLE for better scalability than OFFSET
+    # TABLESAMPLE scans a random subset of pages, making it O(1) instead of O(N)
     import random
-    offset = random.randint(0, count - 1)
 
-    # Fetch image at offset
+    if excluded_ids:
+        # For excluded IDs, use WHERE clause with TABLESAMPLE
+        for _ in range(3):  # Try up to 3 times to get a valid image
+            result = db.execute(
+                text("""
+                    SELECT image_id, image_url FROM images TABLESAMPLE SYSTEM(1)
+                    WHERE NOT image_id = ANY(:excluded_ids)
+                    LIMIT 1
+                """),
+                {"excluded_ids": list(excluded_ids)},
+            )
+            row = result.fetchone()
+            if row:
+                return {"image_id": row[0], "image_url": row[1]}
+    else:
+        # No exclusions, simpler query
+        for _ in range(3):  # Try up to 3 times to get a valid image
+            result = db.execute(
+                text("""
+                    SELECT image_id, image_url FROM images TABLESAMPLE SYSTEM(1)
+                    LIMIT 1
+                """)
+            )
+            row = result.fetchone()
+            if row:
+                return {"image_id": row[0], "image_url": row[1]}
+
+    # Fallback to ORDER BY RANDOM() if TABLESAMPLE fails to find a result
+    # (only happens in edge cases with very few images or large exclusion lists)
     if excluded_ids:
         result = db.execute(
             text("""
                 SELECT image_id, image_url FROM images
                 WHERE NOT image_id = ANY(:excluded_ids)
-                OFFSET :offset LIMIT 1
+                ORDER BY RANDOM()
+                LIMIT 1
             """),
-            {"excluded_ids": list(excluded_ids), "offset": offset},
+            {"excluded_ids": list(excluded_ids)},
         )
     else:
         result = db.execute(
-            text("SELECT image_id, image_url FROM images OFFSET :offset LIMIT 1"),
-            {"offset": offset},
+            text("""
+                SELECT image_id, image_url FROM images
+                ORDER BY RANDOM()
+                LIMIT 1
+            """)
         )
     row = result.fetchone()
     if row:
@@ -1002,51 +1025,30 @@ def submit():
         too_fast_flag = time_spent_seconds < TOO_FAST_SECONDS
 
     try:
-        if is_survey:
-            duplicate_check = db.execute(
-                text("""
-                    SELECT id FROM submissions
-                    WHERE participant_fk = :participant_fk AND survey_index = :survey_index
-                """),
-                {"participant_fk": participant_fk, "survey_index": survey_index},
-            ).fetchone()
-            if duplicate_check:
-                return jsonify({"error": "Submission already recorded for this survey index"}), 409
-
+        # FIX: Removed redundant duplicate check - rely on unique index only
         quality_score = calculate_quality_score(word_count, attention_passed, time_spent_seconds, feedback, is_bot_suspected)
 
+        # FIX: Set attention_score_snapshot to None initially
+        # Will be updated after stats are updated (below)
         attention_score_snapshot = None
-        if is_attention:
-            stats_result = db.execute(
-                text("SELECT attention_score FROM attention_stats WHERE participant_fk = :participant_fk"),
-                {"participant_fk": participant_fk},
-            ).fetchone()
-            attention_score_snapshot = stats_result[0] if stats_result else 1.0
+        current_attention_score = None
 
-        image_url = payload.get("image_url")
-        if not image_url:
-            image_url_row = db.execute(
-                text("SELECT image_url FROM images WHERE image_id = :image_id"),
-                {"image_id": image_id},
-            ).fetchone()
-            image_url = image_url_row[0] if image_url_row else None
+        # FIX: Removed redundant image_url - it's available via image_id foreign key
 
         db.execute(
             text("""
                 INSERT INTO submissions
-                (participant_fk, participant_id, session_id, image_id, image_url, survey_index, description, word_count, rating,
+                (participant_fk, session_id, image_id, survey_index, description, word_count, rating,
                  feedback, time_spent_seconds, is_survey, is_attention, attention_passed, too_fast_flag,
                  attention_score_at_submission, quality_score, ai_suspected, user_agent, ip_hash)
-                VALUES (:participant_fk, :participant_id, :session_id, :image_id, :image_url, :survey_index, :description, :word_count, :rating,
+                VALUES (:participant_fk, :session_id, :image_id, :survey_index, :description, :word_count, :rating,
                  :feedback, :time_spent_seconds, :is_survey, :is_attention, :attention_passed, :too_fast_flag,
                  :attention_score_at_submission, :quality_score, :ai_suspected, :user_agent, :ip_hash)
             """),
             {
                 "participant_fk": participant_fk,
-                "participant_id": participant_id,
                 "session_id": payload.get("session_id", ""),
                 "image_id": image_id,
-                "image_url": image_url,
                 "survey_index": survey_index,
                 "description": description,
                 "word_count": word_count,
@@ -1071,8 +1073,8 @@ def submit():
             result = db.execute(
                 text("""
                     INSERT INTO attention_stats
-                    (participant_fk, participant_id, total_checks, passed_checks, failed_checks, attention_score, is_flagged)
-                    VALUES (:participant_fk, :participant_id, 1, :passed, :failed, (:passed)::FLOAT, (:passed)::FLOAT < :threshold)
+                    (participant_fk, total_checks, passed_checks, failed_checks, attention_score, is_flagged)
+                    VALUES (:participant_fk, 1, :passed, :failed, (:passed)::FLOAT, (:passed)::FLOAT < :threshold)
                     ON CONFLICT(participant_fk) DO UPDATE SET
                     total_checks = attention_stats.total_checks + 1,
                     passed_checks = attention_stats.passed_checks + :passed,
@@ -1084,7 +1086,6 @@ def submit():
                 """),
                 {
                     "participant_fk": participant_fk,
-                    "participant_id": participant_id,
                     "passed": 1 if attention_passed else 0,
                     "failed": 0 if attention_passed else 1,
                     "threshold": ATTENTION_FLAG_THRESHOLD,
@@ -1096,7 +1097,7 @@ def submit():
             current_attention_score = None
 
         _update_participant_stats_internal(
-            db, participant_fk, participant_id, word_count, is_survey,
+            db, participant_fk, word_count, is_survey,
             current_attention_score if is_attention else None,
         )
 
