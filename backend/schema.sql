@@ -19,6 +19,19 @@ CREATE TABLE IF NOT EXISTS participants (
     place VARCHAR(100),
     native_language VARCHAR(50),
     prior_experience VARCHAR(100),
+    -- CHECK constraint for gender (matches frontend values)
+    CONSTRAINT valid_gender CHECK (
+        gender IS NULL OR
+        gender IN ('male', 'female', 'non-binary', 'prefer-not-say', 'other')
+    ),
+    -- CHECK constraint for native_language (matches frontend values - Indian languages)
+    CONSTRAINT valid_native_language CHECK (
+        native_language IS NULL OR
+        native_language IN (
+            'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil', 'urdu',
+            'gujarati', 'kannada', 'malayalam', 'other'
+        )
+    ),
     consent_given BOOLEAN DEFAULT FALSE,
     consent_timestamp TIMESTAMPTZ,
     payment_status VARCHAR(50) DEFAULT 'pending',
@@ -135,7 +148,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     session_id VARCHAR(100) NOT NULL,
     image_id VARCHAR(100) NOT NULL,
     image_url VARCHAR(500),
-    survey_index INTEGER NOT NULL,
+    survey_index INTEGER,  -- FIX: Allow NULL for non-survey submissions
     description TEXT NOT NULL CHECK (length(description) BETWEEN 10 AND 10000),
     word_count INTEGER NOT NULL CHECK (word_count BETWEEN 0 AND 10000),
     rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 10),
@@ -161,8 +174,7 @@ CREATE TABLE IF NOT EXISTS submissions (
         FOREIGN KEY (image_id)
         REFERENCES images(image_id),
 
-    CONSTRAINT unique_participant_survey_index
-        UNIQUE (participant_fk, survey_index),
+    -- FIX: Partial unique index created separately below instead of this constraint
 
     CONSTRAINT submissions_attention_score_range
         CHECK (attention_score_at_submission IS NULL OR attention_score_at_submission BETWEEN 0 AND 1),
@@ -305,7 +317,14 @@ CREATE INDEX IF NOT EXISTS idx_submissions_survey ON submissions(is_survey);
 CREATE INDEX IF NOT EXISTS idx_submissions_attention ON submissions(is_attention);
 CREATE INDEX IF NOT EXISTS idx_submissions_quality ON submissions(quality_score);
 CREATE INDEX IF NOT EXISTS idx_submissions_ai_suspected ON submissions(ai_suspected);
+-- FIX: Partial unique index for survey_index - only applies when survey_index IS NOT NULL
+CREATE UNIQUE INDEX IF NOT EXISTS unique_survey_index
+ON submissions(participant_fk, survey_index)
+WHERE survey_index IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_survey_index ON submissions(participant_fk, survey_index);
+-- FIX: Composite index for analytics queries (participant submissions sorted by time)
+CREATE INDEX IF NOT EXISTS idx_submissions_participant_created
+ON submissions(participant_fk, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_consent_participant_fk ON consent_records(participant_fk);
 CREATE INDEX IF NOT EXISTS idx_consent_participant_id ON consent_records(participant_id);
