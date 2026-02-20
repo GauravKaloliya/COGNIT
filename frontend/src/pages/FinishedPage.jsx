@@ -112,7 +112,7 @@ export default function FinishedPage({ surveyCompleted, participantId }) {
             <li>Active participants who write detailed descriptions get added to a <strong>priority list</strong></li>
             <li>Priority participants have <strong>higher chances</strong> of being selected</li>
             <li>Rewards are sent via <strong>UPI transfer</strong> within 24-48 hours</li>
-            <li>If you're selected, you'll receive an email/SMS with payment confirmation</li>
+            <li>If you're selected, you'll receive an email with reward confirmation</li>
           </ul>
         </div>
 

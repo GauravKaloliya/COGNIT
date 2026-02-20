@@ -42,7 +42,6 @@ def verify_database(engine):
         'consent_records',
         'submissions',
         'images',
-        'payments',
         'audit_log',
         'performance_metrics'
     ]

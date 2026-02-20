@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS participants (
     prior_experience VARCHAR(100),
     consent_given BOOLEAN DEFAULT FALSE,
     consent_timestamp TIMESTAMPTZ,
-    payment_status VARCHAR(50) DEFAULT 'pending',
     ip_hash CHAR(64),
     user_agent VARCHAR(500),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -34,27 +33,6 @@ CREATE TABLE IF NOT EXISTS participants (
     CONSTRAINT valid_ip_hash CHECK (
         ip_hash IS NULL OR length(ip_hash) = 64
     )
-);
-
--- =====================================================
--- Payments Table
--- =====================================================
-
-CREATE TABLE IF NOT EXISTS payments (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    participant_fk BIGINT NOT NULL,
-    participant_id VARCHAR(100) NOT NULL,
-    razorpay_order_id VARCHAR(100) UNIQUE NOT NULL,
-    razorpay_payment_id VARCHAR(100) UNIQUE,
-    razorpay_signature VARCHAR(200),
-    amount INTEGER NOT NULL,
-    currency VARCHAR(10) DEFAULT 'INR',
-    status VARCHAR(50) DEFAULT 'created',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    paid_at TIMESTAMPTZ,
-    FOREIGN KEY (participant_fk)
-        REFERENCES participants(id)
-        ON DELETE CASCADE
 );
 
 -- =====================================================
@@ -288,12 +266,6 @@ CREATE INDEX IF NOT EXISTS idx_participants_participant_id ON participants(parti
 CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(session_id);
 CREATE INDEX IF NOT EXISTS idx_participants_created ON participants(created_at);
 CREATE INDEX IF NOT EXISTS idx_participants_consent ON participants(consent_given);
-CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants(payment_status);
-
-CREATE INDEX IF NOT EXISTS idx_payments_participant_fk ON payments(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_payments_participant_id ON payments(participant_id);
-CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(razorpay_order_id);
-CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_fk ON submissions(participant_fk);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_id ON submissions(participant_id);

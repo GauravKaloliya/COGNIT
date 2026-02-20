@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
-import PaymentPage from "./pages/PaymentPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
@@ -242,8 +241,14 @@ export default function App() {
       if (consentGiven) {
         await recordConsent();
       }
-      setStage("payment");
-      addToast("Details submitted successfully", "success");
+      setStage("survey");
+      setSurveyFeedbackReady(false);
+      try {
+        await fetchImage();
+        addToast("Details submitted successfully", "success");
+      } catch (err) {
+        addToast("Failed to load first survey image. Please try again.", "error");
+      }
     } catch (err) {
       // If participant already exists (409), that's okay - just continue
       if (err.message && err.message.includes("already exists")) {
@@ -254,8 +259,14 @@ export default function App() {
             // Consent might already be recorded too, ignore error
           }
         }
-        setStage("payment");
-        addToast("Details submitted successfully", "success");
+        setStage("survey");
+        setSurveyFeedbackReady(false);
+        try {
+          await fetchImage();
+          addToast("Details submitted successfully", "success");
+        } catch (imgErr) {
+          addToast("Failed to load first survey image. Please try again.", "error");
+        }
       } else {
         addToast(err.message, "error");
         throw err;
@@ -268,19 +279,6 @@ export default function App() {
     setConsentGiven(true);
     setStage("user-details");
     addToast("Consent recorded successfully", "success");
-  };
-
-  // Handle payment completion
-  const handlePaymentComplete = async () => {
-    setStage("survey");
-    setSurveyFeedbackReady(false); // Reset feedback state for new survey session
-    try {
-      await fetchImage();
-      addToast("Payment completed successfully", "success");
-    } catch (err) {
-      addToast("Failed to load first survey image. Please try again.", "error");
-      // Stay on survey page but show error
-    }
   };
 
   // Fetch image
@@ -355,9 +353,7 @@ export default function App() {
           errorMessage = "Comments must be at least 5 characters long.";
         }
       } else if (response.status === 403) {
-        if (data.error && data.error.includes("Payment required")) {
-          errorMessage = "Payment is required before submitting responses.";
-        } else if (data.error && data.error.includes("consent")) {
+        if (data.error && data.error.includes("consent")) {
           errorMessage = "Consent is required. Please complete the consent process first.";
         }
       } else if (response.status === 409) {
@@ -423,7 +419,6 @@ export default function App() {
     const steps = [
       { id: "consent", label: "Consent" },
       { id: "user-details", label: "Details" },
-      { id: "payment", label: "Payment" },
       { id: "survey", label: "Practice" },
       { id: "finished", label: "Complete" }
     ];
@@ -437,14 +432,13 @@ export default function App() {
 
   // Render progress bar for multi-step flows
   const renderProgressBar = () => {
-    // Only show progress bar for consent -> details -> payment flow
-    const flowStages = ["consent", "user-details", "payment"];
+    // Only show progress bar for consent -> details flow
+    const flowStages = ["consent", "user-details"];
     if (!flowStages.includes(stage)) return null;
 
     const steps = [
       { id: "consent", label: "Consent" },
-      { id: "user-details", label: "Your Details" },
-      { id: "payment", label: "Payment" }
+      { id: "user-details", label: "Your Details" }
     ];
     const currentIndex = steps.findIndex(s => s.id === stage);
 
@@ -506,17 +500,7 @@ export default function App() {
             systemReady={systemReady}
           />
         );
-      
-      case "payment":
-        return (
-          <PaymentPage
-            onPaymentComplete={handlePaymentComplete}
-            onBack={() => setStage("user-details")}
-            systemReady={systemReady}
-            participantId={participantId}
-          />
-        );
-      
+
       case "survey":
         return (
           <SurveyPage
