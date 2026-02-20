@@ -3,7 +3,7 @@
 -- Contains AWS S3 URLs for all survey images
 -- =====================================================
 
-INSERT INTO images (image_id, image_url, difficulty_score, object_count, width, height) VALUES
+INSERT INTO images (image_id, url, difficulty, object_count, width, height) VALUES
 ('survey/attention-circle.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/attention-circle.svg', 5.0, 1, 800, 600),
 ('survey/attention-ocean.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/attention-ocean.svg', 5.0, 1, 800, 600),
 ('survey/attention-red.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/attention-red.svg', 5.0, 1, 800, 600),
@@ -76,21 +76,33 @@ INSERT INTO images (image_id, image_url, difficulty_score, object_count, width, 
 ('survey/violet-harbor.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/violet-harbor.svg', 5.0, 1, 800, 600),
 ('survey/whispering-glade.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/whispering-glade.svg', 5.0, 1, 800, 600)
 ON CONFLICT (image_id) DO UPDATE SET
-    image_url = EXCLUDED.image_url,
-    difficulty_score = EXCLUDED.difficulty_score,
-    object_count = EXCLUDED.object_count,
-    width = EXCLUDED.width,
-    height = EXCLUDED.height;
+    url              = EXCLUDED.url,
+    difficulty       = EXCLUDED.difficulty,
+    object_count     = EXCLUDED.object_count,
+    width            = EXCLUDED.width,
+    height           = EXCLUDED.height;
 
 -- =====================================================
 -- Attention Checks Seed Data
 -- =====================================================
 
-INSERT INTO attention_checks (image_id, expected_word, strict, is_active) VALUES
-('survey/attention-circle.svg', 'circle', true, true),
-('survey/attention-ocean.svg', 'ocean', true, true),
-('survey/attention-red.svg', 'red', true, true)
-ON CONFLICT (image_id) DO UPDATE SET
+INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
+SELECT id, 'circle', true, true FROM images WHERE image_id = 'survey/attention-circle.svg'
+ON CONFLICT (image_id) WHERE is_active = true DO UPDATE SET
     expected_word = EXCLUDED.expected_word,
-    strict = EXCLUDED.strict,
-    is_active = EXCLUDED.is_active;
+    is_strict     = EXCLUDED.is_strict,
+    is_active     = EXCLUDED.is_active;
+
+INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
+SELECT id, 'ocean', true, true FROM images WHERE image_id = 'survey/attention-ocean.svg'
+ON CONFLICT (image_id) WHERE is_active = true DO UPDATE SET
+    expected_word = EXCLUDED.expected_word,
+    is_strict     = EXCLUDED.is_strict,
+    is_active     = EXCLUDED.is_active;
+
+INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
+SELECT id, 'red', true, true FROM images WHERE image_id = 'survey/attention-red.svg'
+ON CONFLICT (image_id) WHERE is_active = true DO UPDATE SET
+    expected_word = EXCLUDED.expected_word,
+    is_strict     = EXCLUDED.is_strict,
+    is_active     = EXCLUDED.is_active;
