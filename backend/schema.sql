@@ -1,16 +1,8 @@
 -- =====================================================================
--- C.O.G.N.I.T. PostgreSQL Schema – Neon / modern Postgres compatible
--- Fully fixed version – no invalid CONSTRAINT ... WHERE inside CREATE TABLE
--- =====================================================================
-
--- =====================================================================
 -- EXTENSIONS
 -- =====================================================================
-CREATE EXTENSION IF NOT EXISTS pgcrypto;     -- optional, keep if using crypto functions
-CREATE EXTENSION IF NOT EXISTS btree_gin;    -- optional, for future GIN needs
-
--- gen_random_uuid() is built-in → no uuid-ossp needed
-
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS btree_gin;
 
 -- =====================================================================
 -- HELPER FUNCTION
@@ -36,11 +28,11 @@ CREATE TABLE IF NOT EXISTS genders (
 
 INSERT INTO genders (code, display_name, sort_order)
 VALUES
-    ('male',          'Male',              1),
-    ('female',        'Female',            2),
-    ('non-binary',    'Non-binary',        3),
-    ('prefer-not-say','Prefer not to say', 4),
-    ('other',         'Other',             5)
+('male','Male',1),
+('female','Female',2),
+('non-binary','Non-binary',3),
+('prefer-not-say','Prefer not to say',4),
+('other','Other',5)
 ON CONFLICT (code) DO NOTHING;
 
 
@@ -53,17 +45,17 @@ CREATE TABLE IF NOT EXISTS languages (
 
 INSERT INTO languages (code, name, native_name)
 VALUES
-    ('en',  'English',   'English'),
-    ('hi',  'Hindi',     'हिन्दी'),
-    ('bn',  'Bengali',   'বাংলা'),
-    ('te',  'Telugu',    'తెలుగు'),
-    ('mr',  'Marathi',   'मराठी'),
-    ('ta',  'Tamil',     'தமிழ்'),
-    ('ur',  'Urdu',      'اُردُو'),
-    ('gu',  'Gujarati',  'ગુજરાતી'),
-    ('kn',  'Kannada',   'ಕನ್ನಡ'),
-    ('ml',  'Malayalam', 'മലയാളം'),
-    ('other','Other',    NULL)
+('en','English','English'),
+('hi','Hindi','हिन्दी'),
+('bn','Bengali','বাংলা'),
+('te','Telugu','తెలుగు'),
+('mr','Marathi','मराठी'),
+('ta','Tamil','தமிழ்'),
+('ur','Urdu','اُردُو'),
+('gu','Gujarati','ગુજરાતી'),
+('kn','Kannada','ಕನ್ನಡ'),
+('ml','Malayalam','മലയാളം'),
+('other','Other',NULL)
 ON CONFLICT (code) DO NOTHING;
 
 
@@ -81,7 +73,7 @@ CREATE TABLE IF NOT EXISTS participants (
     age              SMALLINT CHECK (age >= 13 AND age <= 120),
     location         VARCHAR(120),
     language_code    VARCHAR(20) REFERENCES languages(code),
-    prior_experience  VARCHAR(120),
+    prior_experience VARCHAR(120),
     consent_given    BOOLEAN NOT NULL DEFAULT FALSE,
     consent_at       TIMESTAMPTZ,
     payment_status   VARCHAR(20) NOT NULL DEFAULT 'pending'
@@ -108,7 +100,6 @@ CREATE INDEX idx_participants_payment_status ON participants (payment_status);
 CREATE INDEX idx_participants_consent        ON participants (consent_given);
 CREATE INDEX idx_participants_active         ON participants (is_deleted) WHERE is_deleted = false;
 
--- Enforces unique username only among non-deleted records
 CREATE UNIQUE INDEX idx_participants_active_username
     ON participants (username)
     WHERE is_deleted = false;
@@ -152,7 +143,6 @@ CREATE TABLE IF NOT EXISTS attention_checks (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Enforces at most one active check per image
 CREATE UNIQUE INDEX idx_attention_checks_active_unique
     ON attention_checks (image_id)
     WHERE is_active = true;
@@ -182,7 +172,6 @@ CREATE TABLE IF NOT EXISTS submissions (
     user_agent         VARCHAR(512),
     extra_metadata     JSONB NOT NULL DEFAULT '{}',
     created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
     CONSTRAINT chk_attention_passed_consistent CHECK (
         NOT (is_attention_check = true AND attention_passed IS NULL)
@@ -200,7 +189,7 @@ CREATE INDEX idx_submissions_attention            ON submissions (is_attention_c
 
 
 -- =====================================================================
--- PARTICIPANT ATTENTION STATISTICS
+-- PARTICIPANT ATTENTION STATS
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS participant_attention_stats (
     participant_id  BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
@@ -212,7 +201,6 @@ CREATE TABLE IF NOT EXISTS participant_attention_stats (
     last_checked_at TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
     CONSTRAINT chk_attention_counts_consistent CHECK (
         total_checks = passed_checks + failed_checks
     )
@@ -227,17 +215,17 @@ CREATE INDEX idx_attention_flagged_score
 
 
 -- =====================================================================
--- PARTICIPANT ACTIVITY STATISTICS
+-- PARTICIPANT ACTIVITY STATS
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS participant_activity_stats (
-    participant_id    BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
-    total_words       BIGINT NOT NULL DEFAULT 0,
-    total_submissions  INTEGER NOT NULL DEFAULT 0,
-    survey_rounds     INTEGER NOT NULL DEFAULT 0,
-    priority_eligible  BOOLEAN NOT NULL DEFAULT FALSE,
-    last_reward_check  TIMESTAMPTZ,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    participant_id   BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
+    total_words      BIGINT NOT NULL DEFAULT 0,
+    total_submissions INTEGER NOT NULL DEFAULT 0,
+    survey_rounds    INTEGER NOT NULL DEFAULT 0,
+    priority_eligible BOOLEAN NOT NULL DEFAULT FALSE,
+    last_reward_check TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TRIGGER trg_activity_stats_updated
@@ -249,22 +237,162 @@ CREATE INDEX idx_activity_priority_eligible
 
 
 -- =====================================================================
--- PAYMENTS
+-- SECURE AUTO UPI PAYMENTS (UPGRADED)
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS payments (
-    id             BIGSERIAL PRIMARY KEY,
-    participant_id BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-    transaction_id VARCHAR(120) NOT NULL UNIQUE,
-    amount         NUMERIC(12,2) NOT NULL CHECK (amount > 0),
-    gateway        VARCHAR(60),
-    status         VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','success','failed','refunded')),
-    metadata       JSONB NOT NULL DEFAULT '{}',
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                    BIGSERIAL PRIMARY KEY,
+    participant_id        BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    public_id             UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    transaction_id        VARCHAR(120),
+    amount                NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+    currency              VARCHAR(10) NOT NULL DEFAULT 'INR',
+    upi_vpa               VARCHAR(120),
+    upi_note              VARCHAR(255),
+    upi_txn_ref           VARCHAR(120),
+    extracted_text        TEXT,
+    fraud_score           NUMERIC(5,2) DEFAULT 0 CHECK (fraud_score >= 0),
+    verification_attempts SMALLINT DEFAULT 0 CHECK (verification_attempts >= 0),
+    signature             CHAR(64) NOT NULL CHECK (length(signature) = 64),
+    expires_at            TIMESTAMPTZ NOT NULL,
+    gateway               VARCHAR(60),
+    status                VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','processing','success','failed','rejected_fraud','expired','refunded')),
+    verified_at           TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    metadata              JSONB NOT NULL DEFAULT '{}',
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Expiry checks (moved here for clarity)
+    CONSTRAINT chk_expires_after_create  CHECK (expires_at > created_at)
 );
 
+CREATE UNIQUE INDEX idx_payments_unique_upi_ref
+    ON payments (upi_txn_ref)
+    WHERE upi_txn_ref IS NOT NULL;
+
+CREATE INDEX idx_payments_expired_pending
+ON payments (expires_at)
+WHERE status = 'pending';
+
+CREATE UNIQUE INDEX idx_payments_one_active_per_participant
+    ON payments (participant_id)
+    WHERE status IN ('pending','processing');
+
 CREATE INDEX idx_payments_participant ON payments (participant_id);
-CREATE INDEX idx_payments_status     ON payments (status);
+CREATE INDEX idx_payments_status ON payments (status);
+
+-- =====================================================================
+-- PAYMENT FILES (S3-backed secure storage)
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS payment_files (
+    id              BIGSERIAL PRIMARY KEY,
+
+    payment_id      BIGINT NOT NULL
+        REFERENCES payments(id)
+        ON DELETE CASCADE,
+
+    -- S3 location
+    bucket_name     VARCHAR(120) NOT NULL DEFAULT 'cognitapi',
+    object_key      VARCHAR(512) NOT NULL,
+
+    -- File integrity
+    sha256          CHAR(64) NOT NULL CHECK (length(sha256) = 64),
+    etag            VARCHAR(128),
+    file_size       BIGINT CHECK (file_size >= 0),
+    content_type    VARCHAR(120),
+
+    -- Metadata
+    uploaded_by_ip_hash CHAR(64),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Prevent duplicate object reuse
+    CONSTRAINT chk_payment_files_key_prefix
+        CHECK (object_key LIKE 'payments/%')
+);
+
+CREATE TRIGGER trg_payments_updated_at
+BEFORE UPDATE ON payments
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Prevent same file being reused across payments
+CREATE UNIQUE INDEX idx_payment_files_sha256_unique
+ON payment_files (sha256);
+
+-- Fast lookup by payment
+CREATE INDEX idx_payment_files_payment
+ON payment_files (payment_id);
+
+-- Prevent duplicate object keys
+CREATE UNIQUE INDEX idx_payment_files_object_key_unique
+ON payment_files (object_key);
+
+CREATE UNIQUE INDEX idx_one_file_per_payment
+ON payment_files (payment_id);
+
+CREATE TABLE payment_submissions (
+    payment_id    BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+    submission_id BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+    PRIMARY KEY (payment_id, submission_id)
+);
+
+CREATE INDEX idx_payment_submissions_payment
+ON payment_submissions (payment_id);
+
+CREATE INDEX idx_payment_submissions_submission
+ON payment_submissions (submission_id);
+
+CREATE INDEX idx_payment_submissions_submission_payment
+ON payment_submissions (submission_id, payment_id);
+
+-- =====================================================================
+-- PAYMENT FRAUD SIGNALS
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS payment_fraud_signals (
+    id            BIGSERIAL PRIMARY KEY,
+    payment_id    BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+    signal_type   VARCHAR(80) NOT NULL,
+    signal_score  NUMERIC(5,2) NOT NULL CHECK (signal_score >= 0),
+    details       JSONB NOT NULL DEFAULT '{}',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_fraud_signals_payment
+    ON payment_fraud_signals (payment_id);
+
+CREATE UNIQUE INDEX idx_unique_signal_per_payment
+ON payment_fraud_signals (payment_id, signal_type);
+
+
+-- =====================================================================
+-- SYNC PARTICIPANT PAYMENT STATUS
+-- =====================================================================
+CREATE OR REPLACE FUNCTION sync_participant_payment_status()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.status = 'success' THEN
+        UPDATE participants SET payment_status = 'paid'
+        WHERE id = NEW.participant_id;
+
+    ELSIF NEW.status IN ('failed','expired','rejected_fraud') THEN
+        UPDATE participants SET payment_status = 'failed'
+        WHERE id = NEW.participant_id;
+
+    ELSIF NEW.status = 'refunded' THEN
+        UPDATE participants SET payment_status = 'refunded'
+        WHERE id = NEW.participant_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_sync_payment_status
+AFTER UPDATE ON payments
+FOR EACH ROW
+WHEN (OLD.status IS DISTINCT FROM NEW.status)
+EXECUTE FUNCTION sync_participant_payment_status();
 
 
 -- =====================================================================
@@ -289,7 +417,7 @@ CREATE TRIGGER trg_reward_winners_updated
     BEFORE UPDATE ON reward_winners
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE INDEX idx_reward_winners_status     ON reward_winners (status);
+CREATE INDEX idx_reward_winners_status ON reward_winners (status);
 CREATE INDEX idx_reward_winners_participant ON reward_winners (participant_id);
 
 
@@ -310,9 +438,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_audit_created     ON audit_log (created_at DESC);
+CREATE INDEX idx_audit_created ON audit_log (created_at DESC);
 CREATE INDEX idx_audit_participant ON audit_log (participant_id);
-CREATE INDEX idx_audit_event_type  ON audit_log (event_type);
+CREATE INDEX idx_audit_event_type ON audit_log (event_type);
 
 
 -- =====================================================================
@@ -328,23 +456,91 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_perf_created  ON performance_metrics (created_at DESC);
+CREATE INDEX idx_perf_created ON performance_metrics (created_at DESC);
 CREATE INDEX idx_perf_endpoint ON performance_metrics (endpoint, created_at);
 
+CREATE OR REPLACE FUNCTION reject_expired_pending_payments()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.status IN ('pending', 'processing')
+       AND NEW.expires_at <= CURRENT_TIMESTAMP THEN
+        NEW.status := 'expired';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_reject_expired_pending
+BEFORE INSERT OR UPDATE OF status, expires_at
+ON payments
+FOR EACH ROW EXECUTE FUNCTION reject_expired_pending_payments();
 
 -- =====================================================================
 -- ROW LEVEL SECURITY
 -- =====================================================================
 ALTER TABLE participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE participants FORCE ROW LEVEL SECURITY;
+ALTER TABLE payments FORCE ROW LEVEL SECURITY;
+ALTER TABLE payment_files FORCE ROW LEVEL SECURITY;
+ALTER TABLE payment_submissions FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY participants_active_policy ON participants
     USING (is_deleted = false)
     WITH CHECK (is_deleted = false);
-
 
 ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY submissions_owner_policy ON submissions
     USING (participant_id = current_setting('app.current_participant_id', true)::bigint)
     WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY payments_owner_policy
+ON payments
+USING (
+    participant_id =
+    current_setting('app.current_participant_id', true)::bigint
+)
+WITH CHECK (
+    participant_id =
+    current_setting('app.current_participant_id', true)::bigint
+);
+
+ALTER TABLE payment_files ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY payment_files_owner_policy
+ON payment_files
+USING (
+    payment_id IN (
+        SELECT id FROM payments
+        WHERE participant_id =
+        current_setting('app.current_participant_id', true)::bigint
+    )
+)
+WITH CHECK (
+    payment_id IN (
+        SELECT id FROM payments
+        WHERE participant_id =
+        current_setting('app.current_participant_id', true)::bigint
+    )
+);
+
+ALTER TABLE payment_submissions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY payment_submissions_owner_policy
+ON payment_submissions
+USING (
+    payment_id IN (
+        SELECT id FROM payments
+        WHERE participant_id =
+        current_setting('app.current_participant_id', true)::bigint
+    )
+)
+WITH CHECK (
+    payment_id IN (
+        SELECT id FROM payments
+        WHERE participant_id =
+        current_setting('app.current_participant_id', true)::bigint
+    )
+);
