@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS participants (
     consent_given BOOLEAN DEFAULT FALSE,
     consent_timestamp TIMESTAMPTZ,
     payment_status VARCHAR(50) DEFAULT 'pending',
-    ip_hash CHAR(64),
+    ip_hash VARCHAR(64),
     user_agent VARCHAR(500),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 
@@ -103,7 +103,6 @@ CREATE TABLE IF NOT EXISTS attention_checks (
 CREATE TABLE IF NOT EXISTS attention_stats (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     participant_fk BIGINT NOT NULL,
-    participant_id VARCHAR(100) NOT NULL,
     total_checks INT DEFAULT 0 CHECK (total_checks >= 0),
     passed_checks INT DEFAULT 0 CHECK (passed_checks >= 0),
     failed_checks INT DEFAULT 0 CHECK (failed_checks >= 0),
@@ -131,10 +130,7 @@ CREATE TABLE IF NOT EXISTS attention_stats (
         CHECK (attention_score BETWEEN 0 AND 1),
 
     CONSTRAINT unique_attention_stats_participant
-        UNIQUE (participant_fk),
-
-    CONSTRAINT unique_attention_stats_participant_id
-        UNIQUE (participant_id)
+        UNIQUE (participant_fk)
 );
 
 -- =====================================================
@@ -144,10 +140,8 @@ CREATE TABLE IF NOT EXISTS attention_stats (
 CREATE TABLE IF NOT EXISTS submissions (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     participant_fk BIGINT NOT NULL,
-    participant_id VARCHAR(100) NOT NULL,
     session_id VARCHAR(100) NOT NULL,
     image_id VARCHAR(100) NOT NULL,
-    image_url VARCHAR(500),
     survey_index INTEGER,  -- FIX: Allow NULL for non-survey submissions
     description TEXT NOT NULL CHECK (length(description) BETWEEN 10 AND 10000),
     word_count INTEGER NOT NULL CHECK (word_count BETWEEN 0 AND 10000),
@@ -162,7 +156,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     quality_score DOUBLE PRECISION,
     ai_suspected BOOLEAN DEFAULT FALSE,
     user_agent VARCHAR(500),
-    ip_hash CHAR(64),
+    ip_hash VARCHAR(64),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_participant
@@ -192,11 +186,10 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 CREATE TABLE IF NOT EXISTS consent_records (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    participant_fk BIGINT NOT NULL,
-    participant_id VARCHAR(100) UNIQUE NOT NULL,
+    participant_fk BIGINT NOT NULL UNIQUE,
     consent_given BOOLEAN DEFAULT FALSE,
     consent_timestamp TIMESTAMPTZ,
-    ip_hash CHAR(64),
+    ip_hash VARCHAR(64),
     user_agent VARCHAR(500),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 
@@ -212,7 +205,6 @@ CREATE TABLE IF NOT EXISTS consent_records (
 CREATE TABLE IF NOT EXISTS participant_stats (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     participant_fk BIGINT NOT NULL,
-    participant_id VARCHAR(100) NOT NULL,
     total_words INT DEFAULT 0,
     total_submissions INT DEFAULT 0,
     survey_rounds INT DEFAULT 0,
@@ -229,10 +221,7 @@ CREATE TABLE IF NOT EXISTS participant_stats (
         CHECK (attention_score BETWEEN 0 AND 1),
 
     CONSTRAINT unique_participant_stats_participant
-        UNIQUE (participant_fk),
-
-    CONSTRAINT unique_participant_stats_participant_id
-        UNIQUE (participant_id)
+        UNIQUE (participant_fk)
 );
 
 -- =====================================================
@@ -242,7 +231,6 @@ CREATE TABLE IF NOT EXISTS participant_stats (
 CREATE TABLE IF NOT EXISTS reward_winners (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     participant_fk BIGINT NOT NULL,
-    participant_id VARCHAR(100) NOT NULL,
     reward_amount INTEGER NOT NULL CHECK (reward_amount > 0),
     status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
     selected_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -254,10 +242,7 @@ CREATE TABLE IF NOT EXISTS reward_winners (
         ON DELETE CASCADE,
 
     CONSTRAINT unique_reward_participant
-        UNIQUE (participant_fk),
-
-    CONSTRAINT unique_reward_participant_id
-        UNIQUE (participant_id)
+        UNIQUE (participant_fk)
 );
 
 -- =====================================================
@@ -270,11 +255,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
     event_type VARCHAR(50) NOT NULL,
     user_id VARCHAR(100),
     participant_fk BIGINT,
-    participant_id VARCHAR(100),
     endpoint VARCHAR(100),
     method VARCHAR(10),
     status_code INTEGER,
-    ip_hash CHAR(64),
+    ip_hash VARCHAR(64),
     user_agent VARCHAR(500),
     details TEXT CHECK (length(details) <= 2000),
 
@@ -309,7 +293,7 @@ CREATE INDEX IF NOT EXISTS idx_participants_consent ON participants(consent_give
 CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants(payment_status);
 
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_fk ON submissions(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_submissions_participant_id ON submissions(participant_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_session_participant ON submissions(session_id, participant_fk);
 CREATE INDEX IF NOT EXISTS idx_submissions_session ON submissions(session_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_created ON submissions(created_at);
 CREATE INDEX IF NOT EXISTS idx_submissions_image ON submissions(image_id);
@@ -327,7 +311,6 @@ CREATE INDEX IF NOT EXISTS idx_submissions_participant_created
 ON submissions(participant_fk, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_consent_participant_fk ON consent_records(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_consent_participant_id ON consent_records(participant_id);
 CREATE INDEX IF NOT EXISTS idx_consent_timestamp ON consent_records(consent_timestamp);
 
 CREATE INDEX IF NOT EXISTS idx_images_created ON images(created_at);
@@ -336,23 +319,19 @@ CREATE INDEX IF NOT EXISTS idx_attention_checks_image ON attention_checks(image_
 CREATE INDEX IF NOT EXISTS idx_attention_checks_active ON attention_checks(is_active);
 
 CREATE INDEX IF NOT EXISTS idx_attention_stats_participant_fk ON attention_stats(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_attention_stats_participant_id ON attention_stats(participant_id);
 CREATE INDEX IF NOT EXISTS idx_attention_stats_flagged ON attention_stats(is_flagged);
 
 CREATE INDEX IF NOT EXISTS idx_participant_stats_participant_fk ON participant_stats(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_participant_stats_participant_id ON participant_stats(participant_id);
 CREATE INDEX IF NOT EXISTS idx_participant_stats_priority ON participant_stats(priority_eligible);
 CREATE INDEX IF NOT EXISTS idx_participant_stats_reward_attempt ON participant_stats(last_reward_attempt_at);
 
 CREATE INDEX IF NOT EXISTS idx_reward_winners_participant_fk ON reward_winners(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_reward_winners_participant_id ON reward_winners(participant_id);
 CREATE INDEX IF NOT EXISTS idx_reward_winners_status ON reward_winners(status);
 CREATE INDEX IF NOT EXISTS idx_reward_winners_selected_at ON reward_winners(selected_at);
 
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_participant_fk ON audit_log(participant_fk);
-CREATE INDEX IF NOT EXISTS idx_audit_participant_id ON audit_log(participant_id);
 CREATE INDEX IF NOT EXISTS idx_audit_endpoint ON audit_log(endpoint);
 
 CREATE INDEX IF NOT EXISTS idx_performance_timestamp ON performance_metrics(timestamp);
