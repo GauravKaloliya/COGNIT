@@ -23,6 +23,26 @@ export default function PaymentPage({
 
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
+  // Timer state persistence helpers
+  const saveTimerState = useCallback((expiresAt) => {
+    sessionStorage.setItem("payment_timer_expires_at", expiresAt);
+    sessionStorage.setItem("payment_timer_started", "true");
+  }, []);
+
+  const clearTimerState = useCallback(() => {
+    sessionStorage.removeItem("payment_timer_expires_at");
+    sessionStorage.removeItem("payment_timer_started");
+  }, []);
+
+  const getTimerState = useCallback(() => {
+    const expiresAt = sessionStorage.getItem("payment_timer_expires_at");
+    const started = sessionStorage.getItem("payment_timer_started");
+    return {
+      expiresAt,
+      started: started === "true"
+    };
+  }, []);
+
   // Calculate timer values based on expiry
   const calculateTimerValues = useCallback((expiresAt) => {
     const now = new Date().getTime();
@@ -67,6 +87,9 @@ export default function PaymentPage({
       clearInterval(timerIntervalRef.current);
     }
 
+    // Save timer state to sessionStorage
+    saveTimerState(expiresAt);
+
     const updateTimer = () => {
       const { remaining, progress } = calculateTimerValues(expiresAt);
       setTimeRemaining(remaining);
@@ -80,17 +103,18 @@ export default function PaymentPage({
 
     updateTimer(); // Initial update
     timerIntervalRef.current = setInterval(updateTimer, 1000);
-  }, [calculateTimerValues]);
+  }, [calculateTimerValues, saveTimerState]);
 
   // Handle payment expiry
   const handleExpiry = useCallback(() => {
     setPaymentStatus("expired");
     setError("Payment session has expired. Please create a new payment to continue.");
     sessionStorage.removeItem("payment_id");
+    clearTimerState();
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
     }
-  }, []);
+  }, [clearTimerState]);
 
   // Handle UPI link click to start timer
   const handleUpiLinkClick = useCallback(() => {
@@ -111,6 +135,50 @@ export default function PaymentPage({
     };
   }, []);
 
+  // Restore timer state from sessionStorage on mount and when payment data changes
+  useEffect(() => {
+    if (!paymentData) return;
+
+    const { expiresAt, started } = getTimerState();
+
+    if (started && expiresAt) {
+      // Check if the stored expiry is still valid
+      const { remaining, progress } = calculateTimerValues(expiresAt);
+
+      if (remaining > 0 && progress > 0) {
+        // Timer is still valid, restore state
+        setTimerStarted(true);
+        setTimeRemaining(remaining);
+        setTimerProgress(progress);
+
+        // Set up the timer interval directly (without saving state since it's already saved)
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+        }
+
+        const updateTimer = () => {
+          const values = calculateTimerValues(expiresAt);
+          setTimeRemaining(values.remaining);
+          setTimerProgress(values.progress);
+
+          if (values.remaining <= 0) {
+            clearInterval(timerIntervalRef.current);
+            handleExpiry();
+          }
+        };
+
+        updateTimer(); // Initial update
+        timerIntervalRef.current = setInterval(updateTimer, 1000);
+      } else {
+        // Timer has expired, clear state
+        clearTimerState();
+        setTimerStarted(false);
+        setTimeRemaining(0);
+        setTimerProgress(100);
+      }
+    }
+  }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, handleExpiry]);
+
   const createPayment = async () => {
     if (!publicId) {
       setError("We couldn't find your registration details. Please go back and complete the registration form.");
@@ -119,6 +187,12 @@ export default function PaymentPage({
 
     setIsLoading(true);
     setError(null);
+
+    // Clear any existing timer state when creating a new payment
+    clearTimerState();
+    setTimerStarted(false);
+    setTimeRemaining(0);
+    setTimerProgress(100);
 
     try {
       const response = await fetch(getApiUrl('/payments/create'), {
@@ -267,6 +341,7 @@ export default function PaymentPage({
 
       setPaymentStatus("success");
       sessionStorage.removeItem("payment_id");
+      clearTimerState();
       await onPaymentComplete();
     } catch (err) {
       let errorMessage = err.message || "Payment verification failed. Please try again.";
@@ -284,6 +359,7 @@ export default function PaymentPage({
 
   const handleRetry = () => {
     sessionStorage.removeItem("payment_id");
+    clearTimerState();
     setPaymentData(null);
     setUploadFile(null);
     setPaymentStatus("pending");
