@@ -4,6 +4,11 @@ import re
 import time
 import functools
 import random
+import urllib.parse
+import hmac
+from io import BytesIO
+import base64
+from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, request, g, current_app, render_template
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -11,6 +16,11 @@ from flask_limiter.util import get_remote_address
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import NullPool
+import qrcode
+import pytesseract
+import cv2
+import numpy as np
+import boto3
 
 # ────────────────────────────────────────────────
 # Constants & Environment
@@ -32,6 +42,18 @@ PRIORITY_ROUNDS_THRESHOLD = int(os.getenv("PRIORITY_ROUNDS_THRESHOLD", "3"))
 PRIORITY_ATTENTION_THRESHOLD = float(os.getenv("PRIORITY_ATTENTION_THRESHOLD", "0.75"))
 
 PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.10"))
+
+# Payment & UPI Configuration
+UPI_VPA = os.getenv("UPI_VPA")
+UPI_NAME = os.getenv("UPI_NAME")
+PAYMENT_SECRET = os.getenv("PAYMENT_SECRET")
+PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "900"))
+
+# S3 Configuration
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
+S3_BUCKET = os.getenv("S3_BUCKET", "cognitapi")
 
 IP_HASH_SALT = os.getenv("IP_HASH_SALT")
 if not IP_HASH_SALT:
@@ -75,6 +97,14 @@ engine = create_engine(
 )
 
 SessionLocal = scoped_session(sessionmaker(bind=engine))
+
+# S3 Client Setup
+s3 = boto3.client(
+    "s3",
+    region_name=AWS_REGION,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+)
 
 def get_db():
     if "db" not in g:
@@ -153,6 +183,63 @@ def log_audit(db, event_type: str, participant_id: int | None = None, details: s
 
 def set_rls_context(db, participant_id: int):
     db.execute(text("SET LOCAL app.current_participant_id = :pid"), {"pid": participant_id})
+
+# ────────────────────────────────────────────────
+# Payment & UPI Helpers
+# ────────────────────────────────────────────────
+
+def generate_payment_signature(public_id: str, amount: str, expires_at: str) -> str:
+    payload = f"{public_id}:{amount}:{expires_at}"
+    return hmac.new(
+        PAYMENT_SECRET.encode(),
+        payload.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+def generate_upi_link(amount: float, note: str):
+    params = {
+        "pa": UPI_VPA,
+        "pn": UPI_NAME,
+        "am": f"{amount:.2f}",
+        "cu": "INR",
+        "tn": note
+    }
+    return "upi://pay?" + urllib.parse.urlencode(params)
+
+def fetch_s3_image(object_key):
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=object_key)
+    file_bytes = obj["Body"].read()
+    np_arr = np.frombuffer(file_bytes, np.uint8)
+    return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+def extract_text_from_image(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
+    return pytesseract.image_to_string(gray)
+
+def extract_upi_ref(text: str):
+    match = re.search(r"\b\d{12,16}\b", text)
+    return match.group(0) if match else None
+
+def compute_fraud_score(text: str, expected_amount: float):
+    score = 0.0
+    lower = text.lower()
+
+    # Missing amount
+    if f"{expected_amount:.2f}" not in lower:
+        score += 30
+
+    # Suspicious keywords
+    if "failed" in lower:
+        score += 40
+    if "pending" in lower:
+        score += 20
+
+    # No transaction ID
+    if not extract_upi_ref(text):
+        score += 30
+
+    return min(score, 100.0)
 
 # ────────────────────────────────────────────────
 # Performance decorator
@@ -539,6 +626,248 @@ def submit():
             return jsonify({"error": "survey round already submitted"}), 409
         current_app.logger.exception("submit failed")
         return jsonify({"error": "database error"}), 500
+
+# ────────────────────────────────────────────────
+# Payment Routes
+# ────────────────────────────────────────────────
+
+@app.route("/payments/create", methods=["POST"])
+@limiter.limit("20 per minute")
+@track_performance
+def create_payment():
+    data = request.json or {}
+    public_id = data.get("public_id")
+    amount = data.get("amount")
+
+    if not public_id or not amount:
+        return jsonify({"error": "public_id and amount required"}), 400
+
+    try:
+        amount = round(float(amount), 2)
+        if amount <= 0:
+            raise ValueError
+    except:
+        return jsonify({"error": "invalid amount"}), 400
+
+    db = get_db()
+
+    row = db.execute(text("""
+        SELECT id FROM participants
+        WHERE public_id = :pub AND is_deleted = false
+    """), {"pub": public_id}).fetchone()
+
+    if not row:
+        return jsonify({"error": "participant not found"}), 404
+
+    participant_id = row[0]
+    set_rls_context(db, participant_id)
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)
+    expires_str = expires_at.isoformat()
+
+    signature = generate_payment_signature(public_id, str(amount), expires_str)
+
+    try:
+        payment_row = db.execute(text("""
+            INSERT INTO payments (
+                participant_id, amount, signature, expires_at
+            ) VALUES (
+                :pid, :amt, :sig, :exp
+            )
+            RETURNING public_id
+        """), {
+            "pid": participant_id,
+            "amt": amount,
+            "sig": signature,
+            "exp": expires_at
+        }).fetchone()
+
+        db.commit()
+
+        # Generate UPI link and QR code
+        upi_note = f"Payment {payment_row[0]}"
+        upi_link = generate_upi_link(amount, upi_note)
+
+        qr = qrcode.make(upi_link)
+        buffer = BytesIO()
+        qr.save(buffer, format="PNG")
+        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+        return jsonify({
+            "payment_id": str(payment_row[0]),
+            "amount": amount,
+            "expires_at": expires_str,
+            "signature": signature,
+            "upi_link": upi_link,
+            "qr_base64": qr_base64
+        })
+
+    except Exception:
+        db.rollback()
+        return jsonify({"error": "payment creation failed"}), 500
+
+@app.route("/payments/<payment_public_id>/upload-url", methods=["POST"])
+@limiter.limit("20 per minute")
+@track_performance
+def generate_upload_url(payment_public_id):
+    db = get_db()
+
+    row = db.execute(text("""
+        SELECT id, participant_id, status
+        FROM payments
+        WHERE public_id = :pid
+    """), {"pid": payment_public_id}).fetchone()
+
+    if not row:
+        return jsonify({"error": "payment not found"}), 404
+
+    payment_id, participant_id, status = row
+
+    if status not in ("pending", "processing"):
+        return jsonify({"error": "invalid payment state"}), 400
+
+    set_rls_context(db, participant_id)
+
+    object_key = f"payments/{payment_public_id}.jpg"
+
+    presigned = s3.generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": S3_BUCKET,
+            "Key": object_key,
+            "ContentType": "image/jpeg"
+        },
+        ExpiresIn=300
+    )
+
+    return jsonify({
+        "upload_url": presigned,
+        "object_key": object_key
+    })
+
+@app.route("/payments/<payment_public_id>/finalize", methods=["POST"])
+@limiter.limit("20 per minute")
+@track_performance
+def finalize_payment_upload(payment_public_id):
+    data = request.json or {}
+    object_key = data.get("object_key")
+    sha256_hash = data.get("sha256")
+
+    if not object_key or not sha256_hash:
+        return jsonify({"error": "object_key and sha256 required"}), 400
+
+    if not re.match(r"^[a-f0-9]{64}$", sha256_hash):
+        return jsonify({"error": "invalid sha256"}), 400
+
+    db = get_db()
+
+    row = db.execute(text("""
+        SELECT id, participant_id, status
+        FROM payments
+        WHERE public_id = :pid
+        FOR UPDATE
+    """), {"pid": payment_public_id}).fetchone()
+
+    if not row:
+        return jsonify({"error": "payment not found"}), 404
+
+    payment_id, participant_id, status = row
+
+    if status != "pending":
+        return jsonify({"error": "invalid state"}), 400
+
+    set_rls_context(db, participant_id)
+
+    try:
+        db.execute(text("""
+            INSERT INTO payment_files (
+                payment_id, object_key, sha256
+            ) VALUES (
+                :pid, :key, :hash
+            )
+        """), {
+            "pid": payment_id,
+            "key": object_key,
+            "hash": sha256_hash
+        })
+
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'processing'
+            WHERE id = :pid
+        """), {"pid": payment_id})
+
+        db.commit()
+
+        return jsonify({"status": "uploaded"})
+
+    except Exception:
+        db.rollback()
+        return jsonify({"error": "duplicate or invalid upload"}), 400
+
+@app.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])
+@limiter.exempt
+def verify_payment(payment_public_id):
+    db = get_db()
+
+    row = db.execute(text("""
+        SELECT p.id, p.participant_id, p.amount, f.object_key
+        FROM payments p
+        JOIN payment_files f ON f.payment_id = p.id
+        WHERE p.public_id = :pid
+        FOR UPDATE
+    """), {"pid": payment_public_id}).fetchone()
+
+    if not row:
+        return jsonify({"error": "not found"}), 404
+
+    payment_id, participant_id, amount, object_key = row
+
+    image = fetch_s3_image(object_key)
+    extracted_text = extract_text_from_image(image)
+
+    upi_ref = extract_upi_ref(extracted_text)
+    fraud_score = compute_fraud_score(extracted_text, amount)
+
+    db.execute(text("""
+        UPDATE payments
+        SET extracted_text = :txt,
+            upi_txn_ref = :ref,
+            fraud_score = :fs,
+            verified_at = CURRENT_TIMESTAMP,
+            status = CASE
+                WHEN :fs < 40 THEN 'success'
+                ELSE 'rejected_fraud'
+            END
+        WHERE id = :pid
+    """), {
+        "txt": extracted_text,
+        "ref": upi_ref,
+        "fs": fraud_score,
+        "pid": payment_id
+    })
+
+    # Insert fraud signals
+    if fraud_score > 0:
+        db.execute(text("""
+            INSERT INTO payment_fraud_signals (
+                payment_id, signal_type, signal_score
+            ) VALUES (
+                :pid, :type, :score
+            ) ON CONFLICT DO NOTHING
+        """), {
+            "pid": payment_id,
+            "type": "ocr_risk",
+            "score": fraud_score
+        })
+
+    db.commit()
+
+    return jsonify({
+        "status": "verified",
+        "fraud_score": fraud_score,
+        "upi_reference": upi_ref
+    })
 
 @app.route("/")
 @limiter.limit("30 per minute")
