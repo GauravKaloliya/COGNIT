@@ -30,6 +30,7 @@ from app.utils.ocr import (
     extract_text_with_confidence,
     verify_payment_screenshot,
     TesseractNotFoundError,
+    OCRServiceError,
 )
 from app.utils.fraud import (
     check_duplicate_screenshot,
@@ -49,11 +50,13 @@ from flask import Blueprint
 payment_bp = Blueprint('payment', __name__)
 
 
-def _is_tesseract_unavailable(error: Exception) -> bool:
+def _is_ocr_unavailable(error: Exception) -> bool:
     return (
         "TesseractNotFoundError" in type(error).__name__
+        or "OCRServiceError" in type(error).__name__
         or "tesseract is not installed" in str(error).lower()
         or "tesseract not found" in str(error).lower()
+        or "textract" in str(error).lower()
     )
 
 
@@ -453,14 +456,14 @@ def finalize_payment_upload(payment_public_id):
                     "failure_reasons": failures
                 }
         except Exception as e:
-            if _is_tesseract_unavailable(e) and row:
+            if _is_ocr_unavailable(e) and row:
                 verification_details, failures = _reject_for_ocr_unavailable(db, payment_id, participant_id)
                 verification_result = {
                     "status": "rejected_fraud",
                     "verified": True,
                     "failure_reasons": failures
                 }
-                current_app.logger.warning("Tesseract not available - payment auto-rejected")
+                current_app.logger.warning("OCR service not available - payment auto-rejected")
             else:
                 current_app.logger.exception("Verification failed after upload")
                 verification_result = {
@@ -550,7 +553,7 @@ def verify_payment(payment_public_id):
         image = fetch_s3_image(object_key)
         extracted_text, confidence = extract_text_with_confidence(image)
     except Exception as e:
-        if _is_tesseract_unavailable(e):
+        if _is_ocr_unavailable(e):
             verification_details, failures = _reject_for_ocr_unavailable(db, payment_id, participant_id)
             return jsonify({
                 "status": "rejected_fraud",
