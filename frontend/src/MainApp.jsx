@@ -27,16 +27,16 @@ function MainApp() {
     };
   }, []);
 
-  if (error) {
-    return <ErrorPage error={error} resetError={() => setError(null)} />;
-  }
-
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      {error ? (
+        <ErrorPage error={error} resetError={() => setError(null)} />
+      ) : (
+        <Routes>
+          <Route path="/" element={<App />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      )}
     </Router>
   );
 }
