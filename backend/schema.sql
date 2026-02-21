@@ -259,6 +259,8 @@ CREATE TABLE IF NOT EXISTS payments (
         CHECK (status IN ('pending','processing','success','failed','rejected_fraud','expired','refunded')),
     verified_at           TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verification_details  JSONB NOT NULL DEFAULT '{}',
+    detected_app          VARCHAR(60),
 
     metadata              JSONB NOT NULL DEFAULT '{}',
     created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -544,3 +546,9 @@ WITH CHECK (
         current_setting('app.current_participant_id', true)::bigint
     )
 );
+
+-- =====================================================================
+-- ADD NEW COLUMNS FOR UPI VERIFICATION (if they don't exist)
+-- =====================================================================
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS verification_details JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS detected_app VARCHAR(60);

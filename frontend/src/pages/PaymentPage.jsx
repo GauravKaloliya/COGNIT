@@ -13,7 +13,23 @@ export default function PaymentPage({
   const [uploadFile, setUploadFile] = useState(null);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState(null);
+  const [failureReasons, setFailureReasons] = useState([]);
   const fileInputRef = useRef(null);
+
+  const getVerificationErrorMessage = (reasons) => {
+    const messages = {
+      'low_resolution': 'Screenshot resolution too low. Please upload a clearer image.',
+      'low_ocr_confidence': 'Could not read text clearly. Please retake screenshot.',
+      'unrecognized_app': 'Screenshot not from an allowed UPI app (GPay, PhonePe, Paytm, etc.).',
+      'vpa_mismatch': 'Payment not made to correct UPI ID.',
+      'note_mismatch': 'Payment note does not match session. Please use exact note shown.',
+      'amount_mismatch': 'Payment amount must be exactly ₹1.',
+      'missing_success_indicator': 'Payment success status not detected.',
+      'failure_indicator_present': 'Payment appears to have failed or is pending.',
+      'missing_transaction_id': 'Transaction ID not found in screenshot.'
+    };
+    return reasons.map(r => messages[r] || r).join('. ');
+  };
 
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState(0);
@@ -339,6 +355,33 @@ export default function PaymentPage({
         throw new Error(errorMessage);
       }
 
+      // Check payment status after finalize to see if verification passed or failed
+      const statusResponse = await fetch(
+        getApiUrl(`/payments/${paymentData.payment_id}/status`)
+      );
+      
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        
+        if (statusData.status === "rejected_fraud") {
+          // Payment was rejected due to fraud detection
+          setPaymentStatus("rejected_fraud");
+          setVerifying(false);
+          // Get failure reasons from verification_details if available
+          const reasons = statusData.verification_details?.failure_reasons || [];
+          setFailureReasons(reasons);
+          // Show specific error messages based on failure reasons
+          const specificError = getVerificationErrorMessage(reasons);
+          setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.");
+          return;
+        }
+        
+        if (statusData.status === "expired") {
+          handleExpiry();
+          throw new Error("Payment session has expired. Please create a new payment.");
+        }
+      }
+
       setPaymentStatus("success");
       sessionStorage.removeItem("payment_id");
       clearTimerState();
@@ -364,6 +407,7 @@ export default function PaymentPage({
     setUploadFile(null);
     setPaymentStatus("pending");
     setError(null);
+    setFailureReasons([]);
     setTimeRemaining(0);
     setTimerProgress(100);
     setTimerStarted(false);
@@ -434,6 +478,44 @@ export default function PaymentPage({
         <div className="page-actions">
           <button className="primary" onClick={handleRetry}>
             Create New Payment
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show rejected_fraud state
+  if (paymentStatus === "rejected_fraud") {
+    return (
+      <div className="panel payment-panel">
+        <div className="page-top-actions">
+          {onBack && (
+            <button className="ghost back-button" onClick={onBack}>
+              ← Back
+            </button>
+          )}
+        </div>
+        <div className="payment-header">
+          <div className="payment-header-emoji" aria-hidden="true">❌</div>
+          <h2 className="payment-title">Payment Verification Failed</h2>
+          <p className="payment-subtitle">We couldn't verify your payment screenshot</p>
+        </div>
+        <div className="banner warning spaced">
+          {error || "Your payment screenshot could not be verified."}
+        </div>
+        {failureReasons.length > 0 && (
+          <div className="payment-failure-details">
+            <p><strong>Verification issues:</strong></p>
+            <ul>
+              {failureReasons.map((reason, index) => (
+                <li key={index}>{getVerificationErrorMessage([reason])}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="page-actions">
+          <button className="primary" onClick={handleRetry}>
+            Try Again
           </button>
         </div>
       </div>
@@ -517,6 +599,11 @@ export default function PaymentPage({
                 </>
               )}
             </div>
+            {paymentData.upi_note && (
+              <p className="payment-note" style={{ marginTop: '10px', fontWeight: 'bold' }}>
+                Payment Note: {paymentData.upi_note}
+              </p>
+            )}
 
             <div className="payment-status-badge pending">
               <span>⏱️</span>

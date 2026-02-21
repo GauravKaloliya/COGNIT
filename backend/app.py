@@ -54,6 +54,21 @@ if not PAYMENT_SECRET:
     raise ValueError("PAYMENT_SECRET is required")
 PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 
+# UPI Screenshot Validation Configuration
+ALLOWED_APPS = {
+    "gpay": ["gpay", "google pay", "tez"],
+    "phonepe": ["phonepe"],
+    "paytm": ["paytm"],
+    "bhim": ["bhim"],
+    "amazonpay": ["amazon pay", "amazonpay"],
+    "bharatpe": ["bharatpe"]
+}
+
+SUCCESS_KEYWORDS = ["success", "successful", "completed", "paid", "payment successful", "transaction successful"]
+FAILURE_KEYWORDS = ["failed", "pending", "declined", "cancelled"]
+MIN_OCR_CONFIDENCE = 55
+MIN_IMAGE_WIDTH = 600
+
 # S3 Configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -216,19 +231,83 @@ def fetch_s3_image(object_key):
     file_bytes = obj["Body"].read()
     return Image.open(BytesIO(file_bytes))
 
-def extract_text_from_image(image):
-    # Convert to grayscale
-    if image.mode != 'L':
-        gray = image.convert('L')
-    else:
-        gray = image
+def extract_text_with_confidence(image):
+    """Extract text and calculate OCR confidence score."""
+    from pytesseract import Output
+    data = pytesseract.image_to_data(image, output_type=Output.DICT)
+    words = []
+    confidences = []
+    for i, word in enumerate(data["text"]):
+        try:
+            conf = int(data["conf"][i])
+        except:
+            continue
+        if conf > 0 and word.strip():
+            words.append(word)
+            confidences.append(conf)
+    if not words:
+        return "", 0
+    return " ".join(words), sum(confidences)/len(confidences)
+
+def detect_upi_app(text):
+    """Detect which UPI app from allowed whitelist."""
+    lower = text.lower()
+    for app, keywords in ALLOWED_APPS.items():
+        if any(k in lower for k in keywords):
+            return app
+    return None
+
+def normalize_vpa(text):
+    """Normalize VPA for comparison."""
+    return re.sub(r'[^a-z0-9@.]', '', text.lower())
+
+def verify_payment_screenshot(image, text, expected_amount, payment_note, confidence):
+    """
+    Strict validation of UPI payment screenshot.
+    Returns: (is_valid, detected_app, failure_reasons)
+    """
+    failures = []
+    lower = text.lower()
     
-    # Apply thresholding using PIL
-    # Convert to binary image - pixels above threshold become white, below become black
-    threshold = 150
-    gray = gray.point(lambda x: 255 if x > threshold else 0, '1')
+    # 1. Resolution check
+    if image.width < MIN_IMAGE_WIDTH:
+        failures.append("low_resolution")
     
-    return pytesseract.image_to_string(gray)
+    # 2. OCR confidence check
+    if confidence < MIN_OCR_CONFIDENCE:
+        failures.append("low_ocr_confidence")
+    
+    # 3. App detection
+    detected_app = detect_upi_app(text)
+    if not detected_app:
+        failures.append("unrecognized_app")
+    
+    # 4. VPA match
+    if normalize_vpa(UPI_VPA) not in normalize_vpa(lower):
+        failures.append("vpa_mismatch")
+    
+    # 5. Note binding - payment note must be in text
+    if payment_note and payment_note.lower() not in lower:
+        failures.append("note_mismatch")
+    
+    # 6. Amount match (₹1 with variations)
+    if not re.search(r"\b1(\.00)?\b", lower):
+        failures.append("amount_mismatch")
+    
+    # 7. Success keyword required
+    if not any(k in lower for k in SUCCESS_KEYWORDS):
+        failures.append("missing_success_indicator")
+    
+    # 8. Failure keywords forbidden
+    if any(k in lower for k in FAILURE_KEYWORDS):
+        failures.append("failure_indicator_present")
+    
+    # 9. Transaction ID required
+    txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", text)
+    if not txn_match:
+        failures.append("missing_transaction_id")
+    
+    return len(failures) == 0, detected_app, failures
 
 def extract_upi_ref(text: str):
     match = re.search(r"\b\d{12,16}\b", text)
@@ -754,10 +833,20 @@ def create_payment():
             "exp": expires_at
         }).fetchone()
 
+        # Generate UPI note and store in database
+        upi_note = f"COGNIT {payment_row[0]}"
+        db.execute(text("""
+            UPDATE payments
+            SET upi_note = :note
+            WHERE public_id = :pub
+        """), {
+            "note": upi_note,
+            "pub": payment_row[0]
+        })
+
         db.commit()
 
         # Generate UPI link and QR code
-        upi_note = f"Payment {payment_row[0]}"
         upi_link = generate_upi_link(amount, upi_note)
 
         qr = qrcode.make(upi_link)
@@ -771,6 +860,7 @@ def create_payment():
             "expires_at": expires_str,
             "signature": signature,
             "upi_link": upi_link,
+            "upi_note": upi_note,
             "qr_base64": qr_base64
         })
 
@@ -892,6 +982,81 @@ def finalize_payment_upload(payment_public_id):
 
         db.commit()
 
+        # Run verification immediately after finalize
+        # Fetch payment details again after commit
+        try:
+            row = db.execute(text("""
+                SELECT p.id, p.participant_id, p.amount, f.object_key, p.upi_note
+                FROM payments p
+                JOIN payment_files f ON f.payment_id = p.id
+                WHERE p.public_id = :pid
+                FOR UPDATE
+            """), {"pid": payment_public_id}).fetchone()
+
+            if row:
+                payment_id, participant_id, amount, object_key, payment_note = row
+
+                image = fetch_s3_image(object_key)
+                extracted_text, confidence = extract_text_with_confidence(image)
+
+                # Run strict validation
+                is_valid, detected_app, failures = verify_payment_screenshot(
+                    image, extracted_text, amount, payment_note, confidence
+                )
+
+                # Build verification details JSON
+                verification_details = {
+                    "ocr_confidence": confidence,
+                    "failure_reasons": failures,
+                    "extracted_text_length": len(extracted_text) if extracted_text else 0
+                }
+
+                # Extract transaction ID
+                txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", extracted_text)
+                upi_ref = txn_match.group(0) if txn_match else None
+
+                new_status = "success" if is_valid else "rejected_fraud"
+
+                db.execute(text("""
+                    UPDATE payments
+                    SET extracted_text = :txt,
+                        upi_txn_ref = :ref,
+                        fraud_score = :fs,
+                        verified_at = CURRENT_TIMESTAMP,
+                        status = :status,
+                        detected_app = :app,
+                        verification_details = :details
+                    WHERE id = :pid
+                """), {
+                    "txt": extracted_text,
+                    "ref": upi_ref,
+                    "fs": len(failures) * 10,
+                    "status": new_status,
+                    "app": detected_app,
+                    "details": verification_details,
+                    "pid": payment_id
+                })
+
+                # Insert fraud signals for each failure reason
+                for failure in failures:
+                    db.execute(text("""
+                        INSERT INTO payment_fraud_signals (
+                            payment_id, signal_type, signal_score, details
+                        ) VALUES (
+                            :pid, :type, :score, :details
+                        ) ON CONFLICT DO NOTHING
+                    """), {
+                        "pid": payment_id,
+                        "type": failure,
+                        "score": 100,
+                        "details": {"reason": failure, "confidence": confidence}
+                    })
+
+                db.commit()
+        except Exception as e:
+            current_app.logger.exception("Verification failed after upload")
+            # Don't fail the upload if verification fails - status remains processing
+
         return jsonify({"status": "uploaded"})
 
     except Exception:
@@ -906,7 +1071,7 @@ def get_payment_status(payment_public_id):
     db = get_db()
 
     row = db.execute(text("""
-        SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at
+        SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app
         FROM payments p
         WHERE p.public_id = :pid
     """), {"pid": payment_public_id}).fetchone()
@@ -914,7 +1079,7 @@ def get_payment_status(payment_public_id):
     if not row:
         return jsonify({"error": "payment not found"}), 404
 
-    payment_id, participant_id, status, expires_at, amount, verified_at = row
+    payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app = row
     set_rls_context(db, participant_id)
 
     # Check if payment should be marked as expired
@@ -931,7 +1096,7 @@ def get_payment_status(payment_public_id):
         db.commit()
         status = "expired"
 
-    return jsonify({
+    response = {
         "payment_id": payment_public_id,
         "status": status,
         "amount": float(amount) if amount else None,
@@ -939,7 +1104,15 @@ def get_payment_status(payment_public_id):
         "is_expired": status == "expired",
         "time_remaining_seconds": max(0, int((expires_at - now).total_seconds())) if expires_at and status in ("pending", "processing") else 0,
         "verified_at": verified_at.isoformat() if verified_at else None
-    })
+    }
+
+    # Add verification details if present
+    if verification_details:
+        response["verification_details"] = verification_details
+    if detected_app:
+        response["detected_app"] = detected_app
+
+    return jsonify(response)
 
 @app.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])
 @limiter.exempt
@@ -947,7 +1120,7 @@ def verify_payment(payment_public_id):
     db = get_db()
 
     row = db.execute(text("""
-        SELECT p.id, p.participant_id, p.amount, f.object_key
+        SELECT p.id, p.participant_id, p.amount, f.object_key, p.upi_note
         FROM payments p
         JOIN payment_files f ON f.payment_id = p.id
         WHERE p.public_id = :pid
@@ -957,13 +1130,31 @@ def verify_payment(payment_public_id):
     if not row:
         return jsonify({"error": "not found"}), 404
 
-    payment_id, participant_id, amount, object_key = row
+    payment_id, participant_id, amount, object_key, payment_note = row
 
     image = fetch_s3_image(object_key)
-    extracted_text = extract_text_from_image(image)
+    extracted_text, confidence = extract_text_with_confidence(image)
 
-    upi_ref = extract_upi_ref(extracted_text)
-    fraud_score = compute_fraud_score(extracted_text, amount)
+    # Run strict validation
+    is_valid, detected_app, failures = verify_payment_screenshot(
+        image, extracted_text, amount, payment_note, confidence
+    )
+
+    # Build verification details JSON
+    verification_details = {
+        "ocr_confidence": confidence,
+        "failure_reasons": failures,
+        "extracted_text_length": len(extracted_text) if extracted_text else 0
+    }
+
+    # Extract transaction ID
+    txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", extracted_text)
+    upi_ref = txn_match.group(0) if txn_match else None
+
+    if is_valid:
+        new_status = "success"
+    else:
+        new_status = "rejected_fraud"
 
     db.execute(text("""
         UPDATE payments
@@ -971,39 +1162,48 @@ def verify_payment(payment_public_id):
             upi_txn_ref = :ref,
             fraud_score = :fs,
             verified_at = CURRENT_TIMESTAMP,
-            status = CASE
-                WHEN :fs < 40 THEN 'success'
-                ELSE 'rejected_fraud'
-            END
+            status = :status,
+            detected_app = :app,
+            verification_details = :details
         WHERE id = :pid
     """), {
         "txt": extracted_text,
         "ref": upi_ref,
-        "fs": fraud_score,
+        "fs": len(failures) * 10,  # Convert failure count to score (0-90)
+        "status": new_status,
+        "app": detected_app,
+        "details": verification_details,
         "pid": payment_id
     })
 
-    # Insert fraud signals
-    if fraud_score > 0:
+    # Insert fraud signals for each failure reason
+    for failure in failures:
         db.execute(text("""
             INSERT INTO payment_fraud_signals (
-                payment_id, signal_type, signal_score
+                payment_id, signal_type, signal_score, details
             ) VALUES (
-                :pid, :type, :score
+                :pid, :type, :score, :details
             ) ON CONFLICT DO NOTHING
         """), {
             "pid": payment_id,
-            "type": "ocr_risk",
-            "score": fraud_score
+            "type": failure,
+            "score": 100,
+            "details": {"reason": failure, "confidence": confidence}
         })
 
     db.commit()
 
-    return jsonify({
-        "status": "verified",
-        "fraud_score": fraud_score,
-        "upi_reference": upi_ref
-    })
+    if is_valid:
+        return jsonify({
+            "status": "success",
+            "detected_app": detected_app
+        })
+    else:
+        return jsonify({
+            "status": "rejected_fraud",
+            "detected_app": detected_app,
+            "failure_reasons": failures
+        })
 
 @app.route("/")
 @limiter.limit("30 per minute")
