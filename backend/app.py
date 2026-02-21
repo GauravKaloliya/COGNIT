@@ -178,23 +178,35 @@ def calculate_quality_score(wc: int, att: bool | None, ts: float | None, fb_len:
     return round(score, 4)
 
 def log_audit(db, event_type: str, participant_id: int | None = None, details: str = ""):
-    db.execute(text("""
-        INSERT INTO audit_log (
-            event_type, participant_id, endpoint, http_method,
-            ip_hash, user_agent, details
-        ) VALUES (:ev, :pid, :ep, :meth, :iph, :ua, :det)
-    """), {
-        "ev": event_type,
-        "pid": participant_id,
-        "ep": request.path,
-        "meth": request.method,
-        "iph": get_ip_hash(),
-        "ua": request.headers.get("User-Agent", "")[:512],
-        "det": details[:8000]
-    })
+    try:
+        with db.begin_nested():
+            db.execute(text("""
+                INSERT INTO audit_log (
+                    event_type, participant_id, endpoint, http_method,
+                    ip_hash, user_agent, details
+                ) VALUES (:ev, :pid, :ep, :meth, :iph, :ua, :det)
+            """), {
+                "ev": event_type,
+                "pid": participant_id,
+                "ep": request.path,
+                "meth": request.method,
+                "iph": get_ip_hash(),
+                "ua": request.headers.get("User-Agent", "")[:512],
+                "det": details[:8000]
+            })
+    except Exception as exc:
+        current_app.logger.warning("audit log insert failed: %s", exc)
 
-def set_rls_context(db, participant_id: int):
+
+def set_rls_context(db, participant_id: int, public_id: str | None = None):
     db.execute(text("SET LOCAL app.current_participant_id = :pid"), {"pid": participant_id})
+    if public_id:
+        db.execute(text("SET LOCAL app.current_participant_public_id = :pub"), {"pub": public_id})
+    current_app.logger.debug(
+        "RLS context set participant_id=%s public_id=%s",
+        participant_id,
+        public_id
+    )
 
 # ────────────────────────────────────────────────
 # Payment & UPI Helpers
@@ -400,7 +412,7 @@ def create_participant():
     ua = request.headers.get("User-Agent", "")[:512]
 
     try:
-        db.execute(text("""
+        result = db.execute(text("""
             INSERT INTO participants (
                 public_id, session_id, username, email, phone,
                 gender_code, age, location, language_code, prior_experience,
@@ -408,6 +420,7 @@ def create_participant():
             ) VALUES (
                 :pub, :sid, :un, :em, :ph, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
             )
+            RETURNING id
         """), {
             "pub": public_id,
             "sid": str(data["session_id"]).strip()[:128],
@@ -422,8 +435,26 @@ def create_participant():
             "iph": iph,
             "ua": ua
         })
+        participant_id = result.scalar()
+        if participant_id is None:
+            raise RuntimeError("participant insert did not return id")
+        set_rls_context(db, participant_id, public_id)
+        current_app.logger.debug(
+            "Participant inserted id=%s public_id=%s",
+            participant_id,
+            public_id
+        )
+        visible_row = db.execute(text("""
+            SELECT id FROM participants WHERE id = :pid
+        """), {"pid": participant_id}).fetchone()
+        if not visible_row:
+            current_app.logger.warning(
+                "Participant not visible after insert id=%s public_id=%s",
+                participant_id,
+                public_id
+            )
+        log_audit(db, "participant_created", participant_id=participant_id, details=f"public_id={public_id}")
         db.commit()
-        log_audit(db, "participant_created", details=f"public_id={public_id}")
         return jsonify({"status": "created", "public_id": public_id}), 201
     except Exception as e:
         db.rollback()
@@ -612,7 +643,7 @@ def submit():
         return jsonify({"error": "consent required"}), 403
 
     participant_id = p_row[0]
-    set_rls_context(db, participant_id)
+    set_rls_context(db, participant_id, public_id)
 
     img_row = db.execute(text("SELECT id FROM images WHERE image_id = :iid"), {"iid": image_id_str}).fetchone()
     if not img_row:
@@ -670,6 +701,13 @@ def submit():
             "tf": too_fast, "qs": quality, "iph": iph, "ua": ua,
             "tsc": tab_switch_count, "pca": page_close_attempts, "nd": network_disconnects
         })
+        current_app.logger.debug(
+            "Submission inserted participant_id=%s image_id=%s survey=%s attention=%s",
+            participant_id,
+            image_id_fk,
+            is_survey,
+            is_attention
+        )
 
         if is_attention:
             passed_inc = 1 if attention_passed else 0
