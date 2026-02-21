@@ -302,6 +302,14 @@ export default function PaymentLinkPage({
 
       // Check inline verification result first (avoids extra round-trip)
       const inlineVerification = finalizeData.verification;
+
+      // Handle verification error state
+      if (inlineVerification?.status === "error") {
+        setVerifying(false);
+        setError("Payment verification failed due to a system error. Please try again or contact support if the problem persists.");
+        return;
+      }
+
       if (inlineVerification?.verified && inlineVerification.status === "rejected_fraud") {
         setPaymentStatus("rejected_fraud");
         setVerifying(false);
