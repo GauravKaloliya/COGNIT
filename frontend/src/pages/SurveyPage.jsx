@@ -49,44 +49,96 @@ export default function SurveyPage({
   const imageReady = imageLoaded && !imageError;
   const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && descriptionValid && !submitting && imageReady;
 
-  // Prevent copy-paste in survey description and comments
-  const preventCopyPaste = useCallback((e) => {
-    e.preventDefault();
-    return false;
-  }, []);
-
-  // Set up engagement tracking
+  // Set up enhanced engagement tracking
   useEffect(() => {
     // Track tab visibility changes
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
+    const handleVisibilityChange = async () => {
+      if (document.hidden && publicId) {
         setEngagementData(prev => ({
           ...prev,
           tabSwitchCount: prev.tabSwitchCount + 1
         }));
+        
+        // Send engagement event to backend
+        try {
+          await fetch(getApiUrl('/engagement/track'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              public_id: publicId,
+              event_type: 'tab_switch'
+            })
+          });
+        } catch (error) {
+          console.warn('Failed to track tab switch:', error);
+        }
       }
     };
 
     // Track page close attempts
-    const handleBeforeUnload = (e) => {
-      setEngagementData(prev => ({
-        ...prev,
-        pageCloseAttempts: prev.pageCloseAttempts + 1
-      }));
+    const handleBeforeUnload = async (e) => {
+      if (publicId) {
+        setEngagementData(prev => ({
+          ...prev,
+          pageCloseAttempts: prev.pageCloseAttempts + 1
+        }));
+        
+        // Send engagement event to backend (non-blocking)
+        fetch(getApiUrl('/engagement/track'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            public_id: publicId,
+            event_type: 'page_close_attempt'
+          })
+        }).catch(error => {
+          console.warn('Failed to track page close:', error);
+        });
+      }
       // Allow navigation but track it
       delete e['returnValue'];
     };
 
     // Track network disconnects
-    const handleOnline = () => {
-      // Network restored - could track reconnection
+    const handleOnline = async () => {
+      // Network restored
+      if (publicId) {
+        try {
+          await fetch(getApiUrl('/engagement/track'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              public_id: publicId,
+              event_type: 'network_reconnect'  // Note: different event type for online
+            })
+          });
+        } catch (error) {
+          console.warn('Failed to track network reconnect:', error);
+        }
+      }
     };
     
-    const handleOffline = () => {
-      setEngagementData(prev => ({
-        ...prev,
-        networkDisconnects: prev.networkDisconnects + 1
-      }));
+    const handleOffline = async () => {
+      if (publicId) {
+        setEngagementData(prev => ({
+          ...prev,
+          networkDisconnects: prev.networkDisconnects + 1
+        }));
+        
+        // Send engagement event to backend
+        try {
+          await fetch(getApiUrl('/engagement/track'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              public_id: publicId,
+              event_type: 'network_disconnect'
+            })
+          });
+        } catch (error) {
+          console.warn('Failed to track network disconnect:', error);
+        }
+      }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -100,9 +152,15 @@ export default function SurveyPage({
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
+  }, [publicId]);
+
+  // Copy-paste prevention for survey page only (as requested)
+  const preventCopyPaste = useCallback((e) => {
+    e.preventDefault();
+    return false;
   }, []);
 
-  // Add copy-paste prevention to textareas
+  // Add copy-paste prevention to textareas for survey page only
   useEffect(() => {
     const descTextarea = descriptionRef.current;
     const commentsTextarea = commentsRef.current;
