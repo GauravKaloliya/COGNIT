@@ -374,6 +374,10 @@ ON payment_files (object_key);
 CREATE UNIQUE INDEX idx_one_file_per_payment
 ON payment_files (payment_id);
 
+-- Index for fraud detection: fast lookup by SHA256 hash
+CREATE INDEX idx_payment_files_sha256
+ON payment_files (sha256);
+
 CREATE TABLE payment_submissions (
     payment_id    BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
     submission_id BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,

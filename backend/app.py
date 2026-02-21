@@ -72,6 +72,61 @@ FAILURE_KEYWORDS = ["failed", "pending", "declined", "cancelled"]
 MIN_OCR_CONFIDENCE = 55
 MIN_IMAGE_WIDTH = 600
 
+# Image Upload Configuration
+ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
+CONTENT_TYPE_MAP = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'webp': 'image/webp'
+}
+
+# Standardized Error Codes
+ERROR_CODES = {
+    # General errors
+    "DATABASE_ERROR": {"code": "ERR_DATABASE", "message": "An internal error occurred. Please try again later.", "status": 500},
+    "INTERNAL_ERROR": {"code": "ERR_INTERNAL", "message": "Something went wrong. Please try again.", "status": 500},
+    "RATE_LIMIT": {"code": "ERR_RATE_LIMIT", "message": "Too many requests. Please slow down.", "status": 429},
+    
+    # Validation errors
+    "MISSING_FIELDS": {"code": "ERR_MISSING_FIELDS", "message": "Required fields are missing.", "status": 400},
+    "INVALID_FORMAT": {"code": "ERR_INVALID_FORMAT", "message": "Invalid data format.", "status": 400},
+    "INVALID_UUID": {"code": "ERR_INVALID_UUID", "message": "Invalid identifier format.", "status": 400},
+    
+    # Participant errors
+    "PARTICIPANT_NOT_FOUND": {"code": "ERR_PARTICIPANT_NOT_FOUND", "message": "Registration not found. Please complete registration first.", "status": 404},
+    "PARTICIPANT_EXISTS": {"code": "ERR_PARTICIPANT_EXISTS", "message": "Username, email, or phone is already registered.", "status": 409},
+    "CONSENT_REQUIRED": {"code": "ERR_CONSENT_REQUIRED", "message": "Consent is required to continue.", "status": 403},
+    "FLAGGED_ACCOUNT": {"code": "ERR_FLAGGED_ACCOUNT", "message": "Account flagged due to low attention scores.", "status": 403},
+    
+    # Submission errors
+    "DESCRIPTION_LENGTH": {"code": "ERR_DESC_LENGTH", "message": f"Description must be {MIN_DESCRIPTION_LENGTH}-{MAX_DESCRIPTION_LENGTH} characters.", "status": 400},
+    "FEEDBACK_LENGTH": {"code": "ERR_FEEDBACK_LENGTH", "message": f"Feedback must be {MIN_FEEDBACK_LENGTH}-{MAX_FEEDBACK_LENGTH} characters.", "status": 400},
+    "RATING_INVALID": {"code": "ERR_RATING_INVALID", "message": f"Rating must be between {MIN_RATING} and {MAX_RATING}.", "status": 400},
+    "WORD_COUNT": {"code": "ERR_WORD_COUNT", "message": f"At least {MIN_WORD_COUNT} words required.", "status": 400},
+    "DUPLICATE_SUBMISSION": {"code": "ERR_DUPLICATE_SUBMISSION", "message": "You have already submitted for this image.", "status": 409},
+    "SURVEY_EXISTS": {"code": "ERR_SURVEY_EXISTS", "message": "This survey round has already been submitted.", "status": 409},
+    
+    # Payment errors
+    "PAYMENT_NOT_FOUND": {"code": "ERR_PAYMENT_NOT_FOUND", "message": "Payment session not found.", "status": 404},
+    "PAYMENT_EXPIRED": {"code": "ERR_PAYMENT_EXPIRED", "message": "Payment session has expired. Please create a new payment.", "status": 410},
+    "PAYMENT_INVALID_STATE": {"code": "ERR_PAYMENT_INVALID_STATE", "message": "This payment has already been processed.", "status": 400},
+    "INVALID_AMOUNT": {"code": "ERR_INVALID_AMOUNT", "message": "Invalid payment amount.", "status": 400},
+    "INVALID_IMAGE_TYPE": {"code": "ERR_INVALID_IMAGE_TYPE", "message": "Invalid image format. Allowed: JPG, PNG, WEBP.", "status": 400},
+    "INVALID_SHA256": {"code": "ERR_INVALID_SHA256", "message": "Invalid file hash.", "status": 400},
+    
+    # Fraud detection errors
+    "DUPLICATE_IMAGE": {"code": "ERR_DUPLICATE_IMAGE", "message": "This screenshot has already been uploaded by another user.", "status": 409},
+    "REJECTED_REUSE": {"code": "ERR_REJECTED_REUSE", "message": "This screenshot was previously rejected. Please use a fresh payment screenshot.", "status": 409},
+    "DUPLICATE_TXN": {"code": "ERR_DUPLICATE_TXN", "message": "This transaction has already been used. Each payment must be unique.", "status": 409},
+    "PAYMENT_REJECTED": {"code": "ERR_PAYMENT_REJECTED", "message": "Payment screenshot could not be verified.", "status": 400},
+    
+    # Image errors
+    "NO_IMAGES": {"code": "ERR_NO_IMAGES", "message": "No images available.", "status": 404},
+    "IMAGE_NOT_FOUND": {"code": "ERR_IMAGE_NOT_FOUND", "message": "Image not found.", "status": 404},
+    "INVALID_IMAGE_ID": {"code": "ERR_INVALID_IMAGE_ID", "message": "Invalid image identifier.", "status": 400},
+}
+
 # S3 Configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -198,6 +253,35 @@ def log_audit(db, event_type: str, participant_id: int | None = None, details: s
         current_app.logger.warning("audit log insert failed: %s", exc)
 
 
+def create_error_response(error_key: str, details: dict = None, custom_message: str = None):
+    """Create a standardized error response with code, message, and optional details."""
+    error_def = ERROR_CODES.get(error_key, ERROR_CODES["INTERNAL_ERROR"])
+    response = {
+        "error": {
+            "code": error_def["code"],
+            "message": custom_message or error_def["message"]
+        }
+    }
+    if details:
+        response["error"]["details"] = details
+    return jsonify(response), error_def["status"]
+
+
+def get_file_extension(filename: str) -> str:
+    """Extract file extension from filename."""
+    if not filename:
+        return ""
+    return filename.split('.')[-1].lower() if '.' in filename else ""
+
+
+def validate_image_extension(filename: str) -> tuple[bool, str, str]:
+    """Validate image file extension and return (is_valid, extension, content_type)."""
+    ext = get_file_extension(filename)
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return False, ext, ""
+    return True, ext, CONTENT_TYPE_MAP.get(ext, "image/jpeg")
+
+
 def set_rls_context(db, participant_id: int, public_id: str | None = None):
     db.execute(text("SET LOCAL app.current_participant_id = :pid"), {"pid": str(participant_id)})
     db.execute(
@@ -319,6 +403,84 @@ def extract_upi_ref(text: str):
     match = re.search(r"\b\d{12,16}\b", text)
     return match.group(0) if match else None
 
+
+def check_duplicate_screenshot(db, sha256_hash: str) -> tuple[bool, int | None]:
+    """
+    Check if a screenshot with the given SHA256 hash already exists.
+    Returns (is_duplicate, existing_payment_id).
+    Uses a privileged query that bypasses RLS for cross-user duplicate detection.
+    """
+    try:
+        # Use a subquery to bypass RLS for fraud detection purposes
+        result = db.execute(text("""
+            SELECT pf.payment_id, p.status
+            FROM payment_files pf
+            JOIN payments p ON p.id = pf.payment_id
+            WHERE pf.sha256 = :hash
+            LIMIT 1
+        """), {"hash": sha256_hash}).fetchone()
+        
+        if result:
+            return True, result[0]
+        return False, None
+    except Exception as e:
+        current_app.logger.warning(f"Duplicate screenshot check failed: {e}")
+        return False, None
+
+
+def check_rejected_screenshot(db, sha256_hash: str) -> bool:
+    """
+    Check if a screenshot with this hash was previously rejected.
+    This prevents users from reusing screenshots that failed verification.
+    """
+    try:
+        result = db.execute(text("""
+            SELECT 1
+            FROM payment_files pf
+            JOIN payments p ON p.id = pf.payment_id
+            WHERE pf.sha256 = :hash
+              AND p.status = 'rejected_fraud'
+            LIMIT 1
+        """), {"hash": sha256_hash}).scalar()
+        
+        return bool(result)
+    except Exception as e:
+        current_app.logger.warning(f"Rejected screenshot check failed: {e}")
+        return False
+
+
+def check_duplicate_transaction(db, upi_ref: str, exclude_payment_id: int = None) -> tuple[bool, str | None]:
+    """
+    Check if a transaction ID has been used in any previous successful payment.
+    Returns (is_duplicate, status_of_existing_payment).
+    """
+    if not upi_ref:
+        return False, None
+    
+    try:
+        query = """
+            SELECT status
+            FROM payments
+            WHERE upi_txn_ref = :ref
+        """
+        params = {"ref": upi_ref}
+        
+        if exclude_payment_id:
+            query += " AND id != :pid"
+            params["pid"] = exclude_payment_id
+        
+        query += " LIMIT 1"
+        
+        result = db.execute(text(query), params).fetchone()
+        
+        if result:
+            return True, result[0]
+        return False, None
+    except Exception as e:
+        current_app.logger.warning(f"Duplicate transaction check failed: {e}")
+        return False, None
+
+
 def compute_fraud_score(text: str, expected_amount: float):
     score = 0.0
     lower = text.lower()
@@ -403,11 +565,11 @@ def create_participant():
     required = ["public_id", "session_id", "username", "email", "phone", "gender_code", "age", "location", "language_code", "prior_experience"]
     missing = [f for f in required if f not in data or not data[f]]
     if missing:
-        return jsonify({"error": "missing required fields", "fields": missing}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": missing})
 
     public_id = str(data["public_id"]).strip()
     if not re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', public_id, re.I):
-        return jsonify({"error": "invalid UUID format for public_id"}), 400
+        return create_error_response("INVALID_UUID", {"field": "public_id"})
 
     db = get_db()
     iph = get_ip_hash()
@@ -465,9 +627,9 @@ def create_participant():
     except Exception as e:
         db.rollback()
         if "unique" in str(e).lower():
-            return jsonify({"error": "public_id, username, email, or phone already registered"}), 409
+            return create_error_response("PARTICIPANT_EXISTS")
         current_app.logger.exception("create_participant failed")
-        return jsonify({"error": "database error"}), 500
+        return create_error_response("DATABASE_ERROR")
 
 @app.route("/check-username")
 @limiter.limit("30 per minute")
@@ -475,7 +637,7 @@ def create_participant():
 def check_username():
     username = request.args.get("username", "").strip()
     if not username:
-        return jsonify({"error": "username parameter required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["username"]})
     if len(username) < 2:
         return jsonify({"available": True})
     db = get_db()
@@ -493,7 +655,7 @@ def check_username():
 def check_email():
     email = request.args.get("email", "").strip().lower()
     if not email:
-        return jsonify({"error": "email parameter required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["email"]})
     db = get_db()
     exists = db.execute(text("""
         SELECT 1 FROM participants
@@ -509,7 +671,7 @@ def check_email():
 def check_phone():
     phone = request.args.get("phone", "").strip()
     if not phone:
-        return jsonify({"error": "phone parameter required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["phone"]})
     db = get_db()
     exists = db.execute(text("""
         SELECT 1 FROM participants
@@ -526,7 +688,7 @@ def record_consent():
     data = request.json or {}
     public_id = data.get("public_id")
     if not public_id:
-        return jsonify({"error": "public_id required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
     db = get_db()
     try:
@@ -536,7 +698,7 @@ def record_consent():
             FOR UPDATE
         """), {"pub": public_id}).fetchone()
         if not row:
-            return jsonify({"error": "not found or deleted"}), 404
+            return create_error_response("PARTICIPANT_NOT_FOUND")
         pid = row[0]
 
         set_rls_context(db, pid, public_id)
@@ -551,7 +713,7 @@ def record_consent():
     except Exception:
         db.rollback()
         current_app.logger.exception("consent failed")
-        return jsonify({"error": "server error"}), 500
+        return create_error_response("INTERNAL_ERROR")
 
 @app.route("/images/random")
 @track_performance
@@ -565,7 +727,7 @@ def random_image():
 
     count = db.execute(text(f"SELECT COUNT(*) FROM images {where}"), params).scalar()
     if count == 0:
-        return jsonify({"error": "no images"}), 404
+        return create_error_response("NO_IMAGES")
 
     offset = random.randint(0, count - 1)
     row = db.execute(text(f"""
@@ -576,7 +738,7 @@ def random_image():
     """), {**params, "off": offset}).fetchone()
 
     if not row:
-        return jsonify({"error": "selection failed"}), 500
+        return create_error_response("INTERNAL_ERROR")
 
     return jsonify({"image_id": row[0], "url": row[1]})
 
@@ -587,30 +749,30 @@ def submit():
     d = request.json or {}
     public_id = d.get("public_id")
     if not public_id:
-        return jsonify({"error": "public_id required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
     image_id_str = d.get("image_id")
     if not image_id_str:
-        return jsonify({"error": "image_id required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["image_id"]})
 
     description = (d.get("description") or "").strip()
     if len(description) < MIN_DESCRIPTION_LENGTH or len(description) > MAX_DESCRIPTION_LENGTH:
-        return jsonify({"error": f"description must be {MIN_DESCRIPTION_LENGTH}–{MAX_DESCRIPTION_LENGTH} chars"}), 400
+        return create_error_response("DESCRIPTION_LENGTH")
 
     feedback = (d.get("feedback") or "").strip()
     if len(feedback) < MIN_FEEDBACK_LENGTH or len(feedback) > MAX_FEEDBACK_LENGTH:
-        return jsonify({"error": f"feedback must be {MIN_FEEDBACK_LENGTH}–{MAX_FEEDBACK_LENGTH} chars"}), 400
+        return create_error_response("FEEDBACK_LENGTH")
 
     try:
         rating = int(d["rating"])
         if not MIN_RATING <= rating <= MAX_RATING:
             raise ValueError
     except:
-        return jsonify({"error": f"rating must be {MIN_RATING}–{MAX_RATING}"}), 400
+        return create_error_response("RATING_INVALID")
 
     word_count = count_words(description)
     if word_count < MIN_WORD_COUNT:
-        return jsonify({"error": f"at least {MIN_WORD_COUNT} words required", "actual": word_count}), 400
+        return create_error_response("WORD_COUNT", {"actual": word_count})
 
     ts = d.get("time_spent_seconds")
     if ts is not None:
@@ -629,7 +791,7 @@ def submit():
             if survey_index < 0:
                 raise ValueError
         except:
-            return jsonify({"error": "survey_index must be >= 0"}), 400
+            return create_error_response("INVALID_FORMAT", {"field": "survey_index", "message": "survey_index must be >= 0"})
 
     db = get_db()
     iph = get_ip_hash()
@@ -642,9 +804,9 @@ def submit():
     """), {"pub": public_id}).fetchone()
 
     if not p_row or p_row[2]:
-        return jsonify({"error": "participant not found or deleted"}), 404
+        return create_error_response("PARTICIPANT_NOT_FOUND")
     if not p_row[1]:
-        return jsonify({"error": "consent required"}), 403
+        return create_error_response("CONSENT_REQUIRED")
 
     participant_id = p_row[0]
     set_rls_context(db, participant_id, public_id)
@@ -654,11 +816,11 @@ def submit():
         WHERE participant_id = :pid
     """), {"pid": participant_id}).scalar()
     if flagged:
-        return jsonify({"error": "flagged – low attention"}), 403
+        return create_error_response("FLAGGED_ACCOUNT")
 
     img_row = db.execute(text("SELECT id FROM images WHERE image_id = :iid"), {"iid": image_id_str}).fetchone()
     if not img_row:
-        return jsonify({"error": "invalid image_id"}), 400
+        return create_error_response("INVALID_IMAGE_ID")
     image_id_fk = img_row[0]
 
     if not is_survey:
@@ -667,7 +829,7 @@ def submit():
             WHERE participant_id = :pid AND image_id = :iid AND is_survey = false
         """), {"pid": participant_id, "iid": image_id_fk}).scalar()
         if dup:
-            return jsonify({"error": "already submitted description for this image"}), 409
+            return create_error_response("DUPLICATE_SUBMISSION")
 
     ac_row = db.execute(text("""
         SELECT expected_word, is_strict
@@ -785,9 +947,9 @@ def submit():
     except Exception as exc:
         db.rollback()
         if "unique" in str(exc).lower() and "survey_index" in str(exc):
-            return jsonify({"error": "survey round already submitted"}), 409
+            return create_error_response("SURVEY_EXISTS")
         current_app.logger.exception("submit failed")
-        return jsonify({"error": "database error"}), 500
+        return create_error_response("DATABASE_ERROR")
 
 # ────────────────────────────────────────────────
 # Engagement Tracking Routes
@@ -803,15 +965,15 @@ def track_engagement():
     event_type = data.get("event_type")
     
     if not public_id:
-        return jsonify({"error": "public_id required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
     
     if not event_type:
-        return jsonify({"error": "event_type required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["event_type"]})
     
     # Validate event_type
     allowed_events = ["tab_switch", "page_close_attempt", "network_disconnect"]
     if event_type not in allowed_events:
-        return jsonify({"error": f"invalid event_type. Allowed: {allowed_events}"}), 400
+        return create_error_response("INVALID_FORMAT", {"field": "event_type", "allowed": allowed_events})
     
     db = get_db()
     
@@ -822,7 +984,7 @@ def track_engagement():
     """), {"pub": public_id}).fetchone()
     
     if not row:
-        return jsonify({"error": "participant not found"}), 404
+        return create_error_response("PARTICIPANT_NOT_FOUND")
     
     participant_id = row[0]
     set_rls_context(db, participant_id, public_id)
@@ -884,7 +1046,7 @@ def track_engagement():
     except Exception as e:
         db.rollback()
         current_app.logger.exception("track_engagement failed")
-        return jsonify({"error": "tracking failed"}), 500
+        return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
 
 # ────────────────────────────────────────────────
 # Payment Routes
@@ -899,14 +1061,14 @@ def create_payment():
     amount = data.get("amount")
 
     if not public_id or not amount:
-        return jsonify({"error": "public_id and amount required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["public_id", "amount"]})
 
     try:
         amount = round(float(amount), 2)
         if amount <= 0:
             raise ValueError
     except:
-        return jsonify({"error": "invalid amount"}), 400
+        return create_error_response("INVALID_AMOUNT")
 
     db = get_db()
 
@@ -916,7 +1078,7 @@ def create_payment():
     """), {"pub": public_id}).fetchone()
 
     if not row:
-        return jsonify({"error": "participant not found"}), 404
+        return create_error_response("PARTICIPANT_NOT_FOUND")
 
     participant_id = row[0]
     set_rls_context(db, participant_id, public_id)
@@ -987,13 +1149,22 @@ def create_payment():
 
     except Exception:
         db.rollback()
-        return jsonify({"error": "payment creation failed"}), 500
+        return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
 @app.route("/payments/<payment_public_id>/upload-url", methods=["POST"])
 @limiter.limit("20 per minute")
 @track_performance
 def generate_upload_url(payment_public_id):
     db = get_db()
+    
+    # Get optional file extension from request
+    data = request.json or {}
+    file_extension = data.get("file_extension", "jpg").lower().strip(".")
+    
+    # Validate file extension
+    is_valid, ext, content_type = validate_image_extension(f"file.{file_extension}")
+    if not is_valid:
+        return create_error_response("INVALID_IMAGE_TYPE", {"allowed": list(ALLOWED_IMAGE_EXTENSIONS)})
 
     row = db.execute(text("""
         SELECT id, participant_id, status, expires_at
@@ -1002,7 +1173,7 @@ def generate_upload_url(payment_public_id):
     """), {"pid": payment_public_id}).fetchone()
 
     if not row:
-        return jsonify({"error": "payment not found"}), 404
+        return create_error_response("PAYMENT_NOT_FOUND")
 
     payment_id, participant_id, status, expires_at = row
 
@@ -1015,28 +1186,29 @@ def generate_upload_url(payment_public_id):
             WHERE id = :pid
         """), {"pid": payment_id})
         db.commit()
-        return jsonify({"error": "payment expired"}), 410
+        return create_error_response("PAYMENT_EXPIRED")
 
     if status not in ("pending", "processing"):
-        return jsonify({"error": "invalid payment state"}), 400
+        return create_error_response("PAYMENT_INVALID_STATE")
 
     set_rls_context(db, participant_id)
 
-    object_key = f"payments/{payment_public_id}.jpg"
+    object_key = f"payments/{payment_public_id}.{ext}"
 
     presigned = s3.generate_presigned_url(
         "put_object",
         Params={
             "Bucket": S3_BUCKET,
             "Key": object_key,
-            "ContentType": "image/jpeg"
+            "ContentType": content_type
         },
         ExpiresIn=300
     )
 
     return jsonify({
         "upload_url": presigned,
-        "object_key": object_key
+        "object_key": object_key,
+        "content_type": content_type
     })
 
 @app.route("/payments/<payment_public_id>/finalize", methods=["POST"])
@@ -1048,10 +1220,10 @@ def finalize_payment_upload(payment_public_id):
     sha256_hash = data.get("sha256")
 
     if not object_key or not sha256_hash:
-        return jsonify({"error": "object_key and sha256 required"}), 400
+        return create_error_response("MISSING_FIELDS", {"fields": ["object_key", "sha256"]})
 
     if not re.match(r"^[a-f0-9]{64}$", sha256_hash):
-        return jsonify({"error": "invalid sha256"}), 400
+        return create_error_response("INVALID_SHA256")
 
     db = get_db()
 
@@ -1063,7 +1235,7 @@ def finalize_payment_upload(payment_public_id):
     """), {"pid": payment_public_id}).fetchone()
 
     if not row:
-        return jsonify({"error": "payment not found"}), 404
+        return create_error_response("PAYMENT_NOT_FOUND")
 
     payment_id, participant_id, status, expires_at = row
 
@@ -1075,12 +1247,32 @@ def finalize_payment_upload(payment_public_id):
             WHERE id = :pid
         """), {"pid": payment_id})
         db.commit()
-        return jsonify({"error": "payment expired"}), 410
+        return create_error_response("PAYMENT_EXPIRED")
 
     if status != "pending":
-        return jsonify({"error": "invalid state"}), 400
+        return create_error_response("PAYMENT_INVALID_STATE")
 
     set_rls_context(db, participant_id)
+
+    # ────────────────────────────────────────────────
+    # Fraud Detection Checks
+    # ────────────────────────────────────────────────
+    
+    # 1. Check if this screenshot was already uploaded (duplicate detection)
+    is_duplicate, existing_payment_id = check_duplicate_screenshot(db, sha256_hash)
+    if is_duplicate:
+        log_audit(db, "fraud_detected_duplicate_image", participant_id=participant_id,
+                  details=f"SHA256 {sha256_hash[:16]}... already exists in payment {existing_payment_id}")
+        db.commit()
+        return create_error_response("DUPLICATE_IMAGE")
+    
+    # 2. Check if this screenshot was previously rejected
+    was_rejected = check_rejected_screenshot(db, sha256_hash)
+    if was_rejected:
+        log_audit(db, "fraud_detected_rejected_reuse", participant_id=participant_id,
+                  details=f"SHA256 {sha256_hash[:16]}... was previously rejected")
+        db.commit()
+        return create_error_response("REJECTED_REUSE")
 
     try:
         db.execute(text("""
@@ -1136,6 +1328,29 @@ def finalize_payment_upload(payment_public_id):
                 # Extract transaction ID
                 txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", extracted_text)
                 upi_ref = txn_match.group(0) if txn_match else None
+                
+                # 3. Check for duplicate transaction ID (if we have a valid-looking one)
+                if upi_ref and is_valid:
+                    txn_duplicate, txn_status = check_duplicate_transaction(db, upi_ref, exclude_payment_id=payment_id)
+                    if txn_duplicate:
+                        log_audit(db, "fraud_detected_duplicate_txn", participant_id=participant_id,
+                                  details=f"Transaction {upi_ref} already used in payment with status {txn_status}")
+                        # Mark as fraud and reject
+                        is_valid = False
+                        failures.append("duplicate_transaction_id")
+                        # Insert fraud signal for duplicate transaction
+                        db.execute(text("""
+                            INSERT INTO payment_fraud_signals (
+                                payment_id, signal_type, signal_score, details
+                            ) VALUES (
+                                :pid, :type, :score, :details
+                            ) ON CONFLICT DO NOTHING
+                        """), {
+                            "pid": payment_id,
+                            "type": "duplicate_transaction_id",
+                            "score": 100,
+                            "details": json.dumps({"upi_ref": upi_ref, "existing_status": txn_status})
+                        })
 
                 new_status = "success" if is_valid else "rejected_fraud"
 
@@ -1191,7 +1406,7 @@ def finalize_payment_upload(payment_public_id):
 
     except Exception:
         db.rollback()
-        return jsonify({"error": "duplicate or invalid upload"}), 400
+        return create_error_response("DUPLICATE_IMAGE")
 
 @app.route("/payments/<payment_public_id>/status", methods=["GET"])
 @limiter.limit("30 per minute")
@@ -1207,7 +1422,7 @@ def get_payment_status(payment_public_id):
     """), {"pid": payment_public_id}).fetchone()
 
     if not row:
-        return jsonify({"error": "payment not found"}), 404
+        return create_error_response("PAYMENT_NOT_FOUND")
 
     payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected = row
     set_rls_context(db, participant_id)
@@ -1259,7 +1474,7 @@ def verify_payment(payment_public_id):
     """), {"pid": payment_public_id}).fetchone()
 
     if not row:
-        return jsonify({"error": "not found"}), 404
+        return create_error_response("PAYMENT_NOT_FOUND")
 
     payment_id, participant_id, amount, object_key, payment_note = row
 

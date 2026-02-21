@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
+import { getErrorMessage } from "../utils/errors";
 
 export default function PaymentPage({ 
   onPaymentComplete, 
@@ -26,7 +27,8 @@ export default function PaymentPage({
       'amount_mismatch': 'Payment amount must be exactly ₹1.',
       'missing_success_indicator': 'Payment success status not detected.',
       'failure_indicator_present': 'Payment appears to have failed or is pending.',
-      'missing_transaction_id': 'Transaction ID not found in screenshot.'
+      'missing_transaction_id': 'Transaction ID not found in screenshot.',
+      'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.'
     };
     return reasons.map(r => messages[r] || r).join('. ');
   };
@@ -235,19 +237,7 @@ export default function PaymentPage({
         throw new Error("The payment session has expired. Please try again to create a new payment.");
       }
     } catch (err) {
-      let errorMessage = "We couldn't create the payment. Please try again.";
-      
-      // Provide user-friendly error messages
-      if (err.message.includes("participant not found")) {
-        errorMessage = "We couldn't find your registration. Please go back and complete the registration form first.";
-      } else if (err.message.includes("expired")) {
-        errorMessage = err.message; // Already user-friendly
-      } else if (err.message.includes("network") || err.message.includes("fetch")) {
-        errorMessage = "We're having trouble connecting to our servers. Please check your internet connection and try again.";
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-      
+      const errorMessage = getErrorMessage(err, "We couldn't create the payment. Please try again.");
       setError(errorMessage);
       // Clear the payment_id on error to allow retry
       sessionStorage.removeItem("payment_id");
@@ -294,19 +284,24 @@ export default function PaymentPage({
     setError(null);
 
     try {
+      // Extract file extension from uploaded file
+      const fileExtension = uploadFile.name.split('.').pop().toLowerCase();
+      
       const uploadUrlResponse = await fetch(
         getApiUrl(`/payments/${paymentData.payment_id}/upload-url`),
-        { method: "POST" }
+        { 
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file_extension: fileExtension })
+        }
       );
 
       if (!uploadUrlResponse.ok) {
         const data = await uploadUrlResponse.json();
-        // Handle expired payment (410 Gone)
-        if (uploadUrlResponse.status === 410 || data.error?.includes("expired")) {
+        if (uploadUrlResponse.status === 410) {
           handleExpiry();
-          throw new Error("Payment session has expired. Please create a new payment.");
         }
-        throw new Error(data.error || "Failed to get upload URL");
+        throw data;
       }
 
       const { upload_url, object_key } = await uploadUrlResponse.json();
@@ -334,25 +329,10 @@ export default function PaymentPage({
 
       if (!finalizeResponse.ok) {
         const data = await finalizeResponse.json();
-        let errorMessage = "We couldn't verify your payment. Please try again.";
-        
-        // Handle expired payment (410 Gone)
-        if (finalizeResponse.status === 410 || data.error?.includes("expired")) {
+        if (finalizeResponse.status === 410) {
           handleExpiry();
-          throw new Error("Payment session has expired. Please create a new payment.");
         }
-        
-        if (data.error) {
-          if (data.error.includes("invalid state")) {
-            errorMessage = "This payment has already been processed or has expired. Please start a new payment.";
-          } else if (data.error.includes("duplicate")) {
-            errorMessage = "This screenshot has already been submitted. Please use a different payment screenshot.";
-          } else {
-            errorMessage = data.error;
-          }
-        }
-        
-        throw new Error(errorMessage);
+        throw data;
       }
 
       // Check payment status after finalize to see if verification passed or failed
@@ -387,13 +367,7 @@ export default function PaymentPage({
       clearTimerState();
       await onPaymentComplete();
     } catch (err) {
-      let errorMessage = err.message || "Payment verification failed. Please try again.";
-      
-      // Additional error context for upload/finalize failures
-      if (err.message.includes("network") || err.message.includes("fetch")) {
-        errorMessage = "We're having trouble connecting. Please check your internet connection and try again.";
-      }
-      
+      const errorMessage = getErrorMessage(err, "Payment verification failed. Please try again.");
       setError(errorMessage);
     } finally {
       setVerifying(false);
