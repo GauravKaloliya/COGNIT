@@ -7,6 +7,7 @@ import functools
 import random
 import urllib.parse
 import hmac
+import traceback
 from io import BytesIO
 import base64
 from datetime import datetime, timedelta, timezone
@@ -253,18 +254,100 @@ def log_audit(db, event_type: str, participant_id: int | None = None, details: s
         current_app.logger.warning("audit log insert failed: %s", exc)
 
 
-def create_error_response(error_key: str, details: dict = None, custom_message: str = None):
-    """Create a standardized error response with code, message, and optional details."""
-    error_def = ERROR_CODES.get(error_key, ERROR_CODES["INTERNAL_ERROR"])
+def error_response(error_key, **kwargs):
+    """Generate standardized error response with support for message formatting."""
+    error_def = ERROR_CODES.get(error_key, ERROR_CODES["SYS_INTERNAL_ERROR"])
     response = {
+        "success": False,
         "error": {
             "code": error_def["code"],
-            "message": custom_message or error_def["message"]
+            "message": error_def["message"].format(**kwargs) if kwargs else error_def["message"],
+            "category": error_key.split("_")[0] if "_" in error_key else "UNKNOWN",
         }
     }
-    if details:
-        response["error"]["details"] = details
+    if "field" in error_def:
+        response["error"]["field"] = error_def["field"]
+    if "fields" in error_def:
+        response["error"]["fields"] = kwargs.get("fields", [])
+    if kwargs.get("details"):
+        response["error"]["details"] = kwargs["details"]
     return jsonify(response), error_def["status"]
+
+
+def success_response(data=None, message=None):
+    """Generate standardized success response."""
+    response = {"success": True}
+    if message:
+        response["message"] = message
+    if data:
+        response["data"] = data
+    return jsonify(response)
+
+
+def create_error_response(error_key: str, details: dict = None, custom_message: str = None):
+    """Legacy wrapper for backward compatibility."""
+    # Map to new error_response function
+    if error_key == "INTERNAL_ERROR":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "DATABASE_ERROR":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "RATE_LIMIT":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "MISSING_FIELDS":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "INVALID_FORMAT":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "INVALID_UUID":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "PARTICIPANT_NOT_FOUND":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "PARTICIPANT_EXISTS":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "CONSENT_REQUIRED":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "FLAGGED_ACCOUNT":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "DESCRIPTION_LENGTH":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "FEEDBACK_LENGTH":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "RATING_INVALID":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "WORD_COUNT":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "DUPLICATE_SUBMISSION":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "SURVEY_EXISTS":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "PAYMENT_NOT_FOUND":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "PAYMENT_EXPIRED":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "PAYMENT_INVALID_STATE":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "INVALID_AMOUNT":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "INVALID_IMAGE_TYPE":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "INVALID_SHA256":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "DUPLICATE_IMAGE":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "REJECTED_REUSE":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "DUPLICATE_TXN":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "PAYMENT_REJECTED":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "NO_IMAGES":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "IMAGE_NOT_FOUND":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    if error_key == "INVALID_IMAGE_ID":
+        return error_response(error_key, details=details, custom_message=custom_message)
+    
+    # Default fallback
+    return error_response(error_key, details=details, custom_message=custom_message)
 
 
 def get_file_extension(filename: str) -> str:
@@ -293,6 +376,77 @@ def set_rls_context(db, participant_id: int, public_id: str | None = None):
         participant_id,
         public_id
     )
+
+# ────────────────────────────────────────────────
+# Error Logging Decorator
+# ────────────────────────────────────────────────
+
+def log_errors(f):
+    """Decorator to automatically log errors to database."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            # Log to database
+            try:
+                db = get_db()
+                db.execute(text("""
+                    INSERT INTO error_log (
+                        error_code, error_message, error_type,
+                        endpoint, http_method, ip_hash, 
+                        stack_trace, participant_id
+                    ) VALUES (
+                        :code, :message, :type,
+                        :endpoint, :method, :ip,
+                        :stack, :pid
+                    )
+                """), {
+                    "code": getattr(e, 'error_code', 'SYS_001_0001'),
+                    "message": str(e)[:500],
+                    "type": type(e).__name__,
+                    "endpoint": request.path,
+                    "method": request.method,
+                    "ip": get_ip_hash(),
+                    "stack": traceback.format_exc()[:2000] if current_app.debug else None,
+                    "pid": getattr(g, 'participant_id', None)
+                })
+                db.commit()
+            except:
+                pass  # Don't fail if error logging fails
+            raise
+    return wrapper
+
+
+# ────────────────────────────────────────────────
+# Database Error Handler
+# ────────────────────────────────────────────────
+
+def handle_db_error(exc):
+    """Map database exceptions to error codes."""
+    exc_str = str(exc).lower()
+    if "unique" in exc_str:
+        if "username" in exc_str:
+            return error_response("DUP_USERNAME")
+        elif "email" in exc_str:
+            return error_response("DUP_EMAIL")
+        elif "phone" in exc_str:
+            return error_response("DUP_PHONE")
+        elif "public_id" in exc_str:
+            return error_response("DUP_PUBLIC_ID")
+        elif "survey_index" in exc_str:
+            return error_response("DUP_SURVEY_ROUND")
+    elif "check constraint" in exc_str:
+        if "age" in exc_str:
+            return error_response("VAL_AGE_INVALID")
+        elif "email" in exc_str:
+            return error_response("VAL_EMAIL_INVALID")
+        elif "phone" in exc_str:
+            return error_response("VAL_PHONE_INVALID")
+    elif "foreign key" in exc_str:
+        return error_response("NF_PARTICIPANT")
+    return error_response("SYS_DATABASE_ERROR")
+
 
 # ────────────────────────────────────────────────
 # Payment & UPI Helpers
@@ -1550,6 +1704,43 @@ def verify_payment(payment_public_id):
             "detected_app": detected_app,
             "failure_reasons": failures
         })
+
+
+# ────────────────────────────────────────────────
+# Client Error Logging Endpoint
+# ────────────────────────────────────────────────
+
+@app.route("/client-errors", methods=["POST"])
+@limiter.limit("60 per minute")
+def log_client_error():
+    """Receive and log client-side errors."""
+    data = request.json or {}
+    
+    db = get_db()
+    try:
+        db.execute(text("""
+            INSERT INTO error_log (
+                error_code, error_message, error_type,
+                endpoint, http_method, ip_hash,
+                user_agent, request_data
+            ) VALUES (
+                :code, :message, 'client_error',
+                :page, 'CLIENT', :ip,
+                :ua, :data
+            )
+        """), {
+            "code": data.get("error_code", "CLIENT_UNKNOWN"),
+            "message": data.get("error_message", "")[:500],
+            "page": data.get("page_url", "")[:255],
+            "ip": get_ip_hash(),
+            "ua": request.headers.get("User-Agent", "")[:512],
+            "data": json.dumps(data.get("extra_data", {}))
+        })
+        db.commit()
+        return success_response(message="Error logged")
+    except:
+        return success_response(message="Error logging failed silently")
+
 
 @app.route("/")
 @limiter.limit("30 per minute")
