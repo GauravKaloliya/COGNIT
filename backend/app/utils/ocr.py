@@ -24,6 +24,15 @@ from app.extensions import s3
 
 
 # ────────────────────────────────────────────────
+# Custom Exception for Tesseract
+# ────────────────────────────────────────────────
+
+class TesseractNotFoundError(Exception):
+    """Custom exception raised when Tesseract OCR is not available."""
+    pass
+
+
+# ────────────────────────────────────────────────
 # Tesseract Availability Check (Lazy)
 # ───────────────────────────────────────────────-
 
@@ -38,9 +47,9 @@ def _check_tesseract():
             _tesseract_available = True
         except Exception:
             _tesseract_available = False
-            raise pytesseract.TesseractNotFoundError
+            raise TesseractNotFoundError("Tesseract OCR is not installed or not in PATH")
     if not _tesseract_available:
-        raise pytesseract.TesseractNotFoundError
+        raise TesseractNotFoundError("Tesseract OCR is not installed or not in PATH")
 
 
 # ────────────────────────────────────────────────
