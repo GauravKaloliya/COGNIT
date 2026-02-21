@@ -383,7 +383,7 @@ def health():
 @track_performance
 def create_participant():
     data = request.json or {}
-    required = ["public_id", "session_id", "username", "gender_code", "age", "location", "language_code", "prior_experience"]
+    required = ["public_id", "session_id", "username", "email", "phone", "gender_code", "age", "location", "language_code", "prior_experience"]
     missing = [f for f in required if f not in data or not data[f]]
     if missing:
         return jsonify({"error": "missing required fields", "fields": missing}), 400
@@ -409,8 +409,8 @@ def create_participant():
             "pub": public_id,
             "sid": str(data["session_id"]).strip()[:128],
             "un": str(data["username"]).strip()[:50],
-            "em": data.get("email", "").strip()[:255] or None,
-            "ph": data.get("phone", "").strip()[:20] or None,
+            "em": email[:255],
+            "ph": phone[:20],
             "gc": str(data["gender_code"]).strip().lower()[:32],
             "age": int(data["age"]),
             "loc": str(data["location"]).strip()[:120],
@@ -424,8 +424,17 @@ def create_participant():
         return jsonify({"status": "created", "public_id": public_id}), 201
     except Exception as e:
         db.rollback()
-        if "unique" in str(e).lower():
-            return jsonify({"error": "public_id or username conflict"}), 409
+        error_msg = str(e).lower()
+        if "unique" in error_msg:
+            if "public_id" in error_msg:
+                return jsonify({"error": "public_id already exists"}), 409
+            elif "username" in error_msg:
+                return jsonify({"error": "username already taken"}), 409
+            elif "email" in error_msg:
+                return jsonify({"error": "email already registered"}), 409
+            elif "phone" in error_msg:
+                return jsonify({"error": "phone number already registered"}), 409
+            return jsonify({"error": "unique constraint violation"}), 409
         current_app.logger.exception("create_participant failed")
         return jsonify({"error": "database error"}), 500
 
@@ -1343,8 +1352,8 @@ def api_docs():
                     "location": "ahmedabad",
                     "language_code": "en",
                     "prior_experience": "some experience",
-                    "email": "optional@example.com",
-                    "phone": "optional"
+                    "email": "required@example.com",
+                    "phone": "+919876543210"
                 },
                 "rate_limit": "30/min"
             },

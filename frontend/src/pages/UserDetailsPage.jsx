@@ -6,6 +6,12 @@ const AGE_MIN = parseInt(import.meta.env.VITE_AGE_MIN || "13", 10);
 const AGE_MAX = parseInt(import.meta.env.VITE_AGE_MAX || "100", 10);
 const LOCATION_MIN_LENGTH = parseInt(import.meta.env.VITE_LOCATION_MIN_LENGTH || "2", 10);
 
+// Email validation pattern - matches backend schema
+const EMAIL_REGEX = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+
+// Phone validation pattern - matches backend schema (8-15 digits, can include +, -, and spaces)
+const PHONE_REGEX = /^[0-9+ -]{8,15}$/;
+
 export default function UserDetailsPage({
   demographics,
   setDemographics,
@@ -32,35 +38,23 @@ export default function UserDetailsPage({
       newErrors.username = "Username can only contain letters, numbers, and underscores (no spaces or special characters)";
     }
     
-    // Email validation - only Gmail, Microsoft (Outlook/Hotmail), Apple (iCloud)
-    const allowedEmailDomains = ['gmail.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'me.com', 'mac.com'];
+    // Email validation - matches backend schema pattern
     if (!demographics.email) {
       newErrors.email = "Email is required";
     } else {
       const emailLower = demographics.email.toLowerCase().trim();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(emailLower)) {
+      if (!EMAIL_REGEX.test(emailLower)) {
         newErrors.email = "Please enter a valid email address";
-      } else {
-        const domain = emailLower.split('@')[1];
-        if (!allowedEmailDomains.includes(domain)) {
-          newErrors.email = "Only Gmail, Outlook, Hotmail, and iCloud email addresses are allowed";
-        }
       }
     }
-    
-    // Phone validation - Indian numbers only (10 digits, starts with 6-9)
+
+    // Phone validation - matches backend schema pattern (8-15 digits, can include +, -, and spaces)
     if (!demographics.phone) {
       newErrors.phone = "Phone number is required";
     } else {
-      // Remove all non-digit characters
-      const phoneDigits = demographics.phone.replace(/\D/g, '');
-      // Indian mobile numbers: 10 digits starting with 6, 7, 8, or 9
-      // Also handle +91 prefix (12 digits total)
-      const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
-                            (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
-      if (!isValidIndian) {
-        newErrors.phone = "Please enter a valid 10-digit Indian mobile number";
+      const phoneStr = demographics.phone.trim();
+      if (!PHONE_REGEX.test(phoneStr)) {
+        newErrors.phone = "Please enter a valid phone number (8-15 digits, can include +, -, and spaces)";
       }
     }
     
@@ -116,29 +110,24 @@ export default function UserDetailsPage({
         );
       }
       
-      if (demographics.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(demographics.email.trim())) {
+      if (demographics.email && EMAIL_REGEX.test(demographics.email.trim().toLowerCase())) {
         checks.push(
-          fetch(`${getApiUrl('/check-email')}?email=${encodeURIComponent(demographics.email.trim())}`)
+          fetch(`${getApiUrl('/check-email')}?email=${encodeURIComponent(demographics.email.trim().toLowerCase())}`)
             .then(res => res.json())
             .then(data => ({ field: 'email', available: data.available }))
             .catch(() => ({ field: 'email', available: true }))
         );
       }
       
-      if (demographics.phone) {
-        const phoneDigits = demographics.phone.replace(/\D/g, '');
-        const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
-                              (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
-        if (isValidIndian) {
-          checks.push(
-            fetch(`${getApiUrl('/check-phone')}?phone=${encodeURIComponent(phoneDigits)}`)
-              .then(res => res.json())
-              .then(data => ({ field: 'phone', available: data.available }))
-              .catch(() => ({ field: 'phone', available: true }))
-          );
-        }
+      if (demographics.phone && PHONE_REGEX.test(demographics.phone.trim())) {
+        checks.push(
+          fetch(`${getApiUrl('/check-phone')}?phone=${encodeURIComponent(demographics.phone.trim())}`)
+            .then(res => res.json())
+            .then(data => ({ field: 'phone', available: data.available }))
+            .catch(() => ({ field: 'phone', available: true }))
+        );
       }
-      
+
       const results = await Promise.all(checks);
       
       const newErrors = {};
@@ -177,21 +166,18 @@ export default function UserDetailsPage({
     // Don't check if basic validation fails
     if (field === "username" && value.trim().length < USERNAME_MIN_LENGTH) return;
     if (field === "email") {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(value.trim())) return;
+      if (!EMAIL_REGEX.test(value.trim().toLowerCase())) return;
     }
     if (field === "phone") {
-      const phoneDigits = value.replace(/\D/g, '');
-      const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
-                            (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
-      if (!isValidIndian) return;
+      if (!PHONE_REGEX.test(value.trim())) return;
     }
 
     setChecking(prev => ({ ...prev, [field]: true }));
     
     try {
       const endpoint = field === "username" ? "check-username" : field === "email" ? "check-email" : "check-phone";
-      const response = await fetch(`${getApiUrl(`/${endpoint}`)}?${field}=${encodeURIComponent(value.trim())}`);
+      const paramValue = field === "email" ? value.trim().toLowerCase() : value.trim();
+      const response = await fetch(`${getApiUrl(`/${endpoint}`)}?${field}=${encodeURIComponent(paramValue)}`);
       const data = await response.json();
       
       if (!data.available) {
