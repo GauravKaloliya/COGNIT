@@ -159,9 +159,9 @@ def count_words(text: str) -> int:
     words = re.findall(r"\b\w+\b", text.strip(), re.UNICODE)
     return len([w for w in words if re.search(r"[^\W\d_]", w, re.UNICODE)])
 
-# AI detection removed - using attention checks for quality control instead
+# AI detection completely removed - using attention checks for quality control only
 def detect_bot_like_content(text: str, wc: int) -> tuple[bool, str]:
-    # Always return False - AI detection disabled
+    # Always return False - AI detection completely disabled
     return False, ""
 
 def calculate_quality_score(wc: int, att: bool | None, ts: float | None, fb_len: int, bot: bool) -> float:
@@ -667,7 +667,7 @@ def submit():
         attention_passed = bool(re.search(rf"\b{re.escape(expected)}\b", dlow)) if strict else (expected in dlow)
 
     too_fast = ts is not None and ts < TOO_FAST_SECONDS
-    # Removed AI detection - using attention check only
+    # AI detection completely removed - using attention check only
     quality = calculate_quality_score(word_count, attention_passed, ts, len(feedback), False)
 
     # Get engagement tracking data
@@ -766,6 +766,104 @@ def submit():
         return jsonify({"error": "database error"}), 500
 
 # ────────────────────────────────────────────────
+# Engagement Tracking Routes
+# ────────────────────────────────────────────────
+
+@app.route("/engagement/track", methods=["POST"])
+@limiter.limit("60 per minute")
+@track_performance
+def track_engagement():
+    """Track engagement events: tab switches, page close attempts, network disconnects."""
+    data = request.json or {}
+    public_id = data.get("public_id")
+    event_type = data.get("event_type")
+    
+    if not public_id:
+        return jsonify({"error": "public_id required"}), 400
+    
+    if not event_type:
+        return jsonify({"error": "event_type required"}), 400
+    
+    # Validate event_type
+    allowed_events = ["tab_switch", "page_close_attempt", "network_disconnect"]
+    if event_type not in allowed_events:
+        return jsonify({"error": f"invalid event_type. Allowed: {allowed_events}"}), 400
+    
+    db = get_db()
+    
+    # Get participant
+    row = db.execute(text("""
+        SELECT id FROM participants
+        WHERE public_id = :pub AND is_deleted = false
+    """), {"pub": public_id}).fetchone()
+    
+    if not row:
+        return jsonify({"error": "participant not found"}), 404
+    
+    participant_id = row[0]
+    
+    # Store engagement data in extra_metadata JSON field
+    try:
+        # Get current metadata
+        current_meta = db.execute(text("""
+            SELECT extra_metadata FROM participants WHERE id = :pid
+        """), {"pid": participant_id}).scalar() or {}
+        
+        if isinstance(current_meta, str):
+            import json
+            current_meta = json.loads(current_meta)
+        
+        # Initialize engagement tracking if not exists
+        if "engagement_tracking" not in current_meta:
+            current_meta["engagement_tracking"] = {
+                "tab_switches": 0,
+                "page_close_attempts": 0,
+                "network_disconnects": 0,
+                "total_events": 0,
+                "events": []
+            }
+        
+        # Update the specific counter
+        if event_type == "tab_switch":
+            current_meta["engagement_tracking"]["tab_switches"] += 1
+        elif event_type == "page_close_attempt":
+            current_meta["engagement_tracking"]["page_close_attempts"] += 1
+        elif event_type == "network_disconnect":
+            current_meta["engagement_tracking"]["network_disconnects"] += 1
+        
+        current_meta["engagement_tracking"]["total_events"] += 1
+        current_meta["engagement_tracking"]["events"].append({
+            "type": event_type,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+        # Keep only last 100 events to prevent unbounded growth
+        if len(current_meta["engagement_tracking"]["events"]) > 100:
+            current_meta["engagement_tracking"]["events"] = current_meta["engagement_tracking"]["events"][-100:]
+        
+        db.execute(text("""
+            UPDATE participants
+            SET extra_metadata = :meta, updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {
+            "meta": current_meta,
+            "pid": participant_id
+        })
+        
+        db.commit()
+        
+        return jsonify({
+            "status": "tracked",
+            "event_type": event_type,
+            "total_events": current_meta["engagement_tracking"]["total_events"]
+        })
+        
+    except Exception as e:
+        db.rollback()
+        current_app.logger.exception("track_engagement failed")
+        return jsonify({"error": "tracking failed"}), 500
+
+# ────────────────────────────────────────────────
 # Payment Routes
 # ────────────────────────────────────────────────
 
@@ -809,6 +907,7 @@ def create_payment():
           AND status IN ('pending', 'processing')
     """), {"pid": participant_id})
 
+    # Timer starts immediately when payment is created (as requested)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)
     expires_str = expires_at.isoformat()
 
@@ -817,16 +916,17 @@ def create_payment():
     try:
         payment_row = db.execute(text("""
             INSERT INTO payments (
-                participant_id, amount, signature, expires_at
+                participant_id, amount, signature, expires_at, timer_activated_at
             ) VALUES (
-                :pid, :amt, :sig, :exp
+                :pid, :amt, :sig, :exp, :timer_time
             )
             RETURNING public_id
         """), {
             "pid": participant_id,
             "amt": amount,
             "sig": signature,
-            "exp": expires_at
+            "exp": expires_at,
+            "timer_time": datetime.now(timezone.utc)  # Timer starts immediately
         }).fetchone()
 
         # Generate UPI note and store in database
@@ -857,7 +957,9 @@ def create_payment():
             "signature": signature,
             "upi_link": upi_link,
             "upi_note": upi_note,
-            "qr_base64": qr_base64
+            "qr_base64": qr_base64,
+            "timer_activated": True,
+            "time_remaining_seconds": PAYMENT_EXPIRY_SECONDS
         })
 
     except Exception:

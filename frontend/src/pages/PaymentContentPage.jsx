@@ -1,8 +1,16 @@
 import React from "react";
 
-export default function PaymentContentPage({ onNext }) {
+export default function PaymentContentPage({ onNext, onBack }) {
   return (
     <div className="panel payment-panel">
+      <div className="page-top-actions">
+        {onBack && (
+          <button className="ghost back-button" onClick={onBack}>
+            ← Back
+          </button>
+        )}
+      </div>
+
       <div className="payment-header">
         <div className="payment-header-emoji" aria-hidden="true">🎁</div>
         <h2 className="payment-title">Win ₹10</h2>
