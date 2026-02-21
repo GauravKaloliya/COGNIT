@@ -456,17 +456,6 @@ def validate_image_extension(filename: str) -> tuple[bool, str, str]:
     return True, ext, CONTENT_TYPE_MAP.get(ext, "image/jpeg")
 
 
-def set_rls_context(db, participant_id: int, public_id: str | None = None):
-    db.execute(text("SET LOCAL app.current_participant_id = :pid"), {"pid": str(participant_id)})
-    db.execute(
-        text("SET LOCAL app.current_participant_public_id = :pub"),
-        {"pub": str(public_id) if public_id else ""}
-    )
-    current_app.logger.debug(
-        "RLS context set participant_id=%s public_id=%s",
-        participant_id,
-        public_id
-    )
 
 # ────────────────────────────────────────────────
 # Error Logging Decorator
@@ -825,10 +814,6 @@ def create_participant():
     ua = request.headers.get("User-Agent", "")[:512]
 
     try:
-        db.execute(
-            text("SET LOCAL app.current_participant_public_id = :pub"),
-            {"pub": public_id}
-        )
         result = db.execute(text("""
             INSERT INTO participants (
                 public_id, session_id, username, email, phone,
@@ -855,7 +840,6 @@ def create_participant():
         participant_id = result.scalar()
         if participant_id is None:
             raise RuntimeError("participant insert did not return id")
-        set_rls_context(db, participant_id, public_id)
         current_app.logger.debug(
             "Participant inserted id=%s public_id=%s",
             participant_id,
@@ -950,7 +934,6 @@ def record_consent():
             return create_error_response("PARTICIPANT_NOT_FOUND")
         pid = row[0]
 
-        set_rls_context(db, pid, public_id)
         db.execute(text("""
             UPDATE participants
             SET consent_given = true, consent_at = CURRENT_TIMESTAMP
@@ -1058,7 +1041,6 @@ def submit():
         return create_error_response("CONSENT_REQUIRED")
 
     participant_id = p_row[0]
-    set_rls_context(db, participant_id, public_id)
 
     flagged = db.execute(text("""
         SELECT is_flagged FROM participant_attention_stats
@@ -1236,7 +1218,6 @@ def track_engagement():
         return create_error_response("PARTICIPANT_NOT_FOUND")
     
     participant_id = row[0]
-    set_rls_context(db, participant_id, public_id)
 
     try:
         # Get current metadata
@@ -1330,7 +1311,6 @@ def create_payment():
         return create_error_response("PARTICIPANT_NOT_FOUND")
 
     participant_id = row[0]
-    set_rls_context(db, participant_id, public_id)
 
     # Mark any existing pending/processing payments as failed to allow new payment creation
     db.execute(text("""
@@ -1440,7 +1420,6 @@ def generate_upload_url(payment_public_id):
     if status not in ("pending", "processing"):
         return create_error_response("PAYMENT_INVALID_STATE")
 
-    set_rls_context(db, participant_id)
 
     object_key = f"payments/{payment_public_id}.{ext}"
 
@@ -1501,7 +1480,6 @@ def finalize_payment_upload(payment_public_id):
     if status != "pending":
         return create_error_response("PAYMENT_INVALID_STATE")
 
-    set_rls_context(db, participant_id)
 
     # ────────────────────────────────────────────────
     # Fraud Detection Checks
@@ -1674,7 +1652,6 @@ def get_payment_status(payment_public_id):
         return create_error_response("PAYMENT_NOT_FOUND")
 
     payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected = row
-    set_rls_context(db, participant_id)
 
     # Check if payment should be marked as expired
     now = datetime.now(timezone.utc)
@@ -1855,7 +1832,7 @@ def api_docs():
         "description": "Cognitive Image & Text Research Platform backend API. Collects high-quality image descriptions with attention checks and anti-abuse measures.",
         "version": "1.0.0",
         "base_url": base_url,
-        "authentication": "None (public_id based participant isolation via RLS)",
+        "authentication": "None (public_id based participant identification)",
         "endpoints": [
             {
                 "path": "/health",
