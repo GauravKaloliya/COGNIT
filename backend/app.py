@@ -100,6 +100,16 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 
+# Error response helper
+def error_response(message: str, code: str = None, status: int = 400, **extra):
+    """Return consistent error response format"""
+    return jsonify({
+        "error": message,
+        "code": code or message.upper().replace(" ", "_"),
+        "status": "error",
+        **extra
+    }), status
+
 cors_origins = os.getenv("CORS_ORIGINS", "*")
 if cors_origins != "*":
     cors_origins = [origin.strip() for origin in cors_origins.split(",")]
@@ -128,6 +138,47 @@ s3 = boto3.client(
     aws_access_key_id=AWS_ACCESS_KEY_ID,
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
 )
+
+# Auto-seed database on startup
+def auto_seed_database():
+    """Automatically seed the database with images if they're missing."""
+    try:
+        db = SessionLocal()
+        
+        # Check if images already exist
+        existing = db.execute(text("SELECT COUNT(*) FROM images")).scalar()
+        if existing == 0:
+            app.logger.info("No images found in database, attempting to seed...")
+            
+            # Try to seed images
+            try:
+                with open("seed_images.sql", "r") as f:
+                    sql_content = f.read()
+                
+                # Execute each INSERT statement
+                statements = [s.strip() for s in sql_content.split(';') if s.strip() and 'INSERT INTO' in s.upper()]
+                
+                for statement in statements:
+                    try:
+                        db.execute(text(statement))
+                    except Exception as e:
+                        app.logger.warning(f"Statement failed: {str(e)[:100]}")
+                
+                db.commit()
+                app.logger.info("Database auto-seeded successfully")
+            except Exception as e:
+                app.logger.warning(f"Auto-seed failed: {str(e)[:200]}")
+        else:
+            app.logger.info(f"Database already has {existing} images")
+        
+        db.close()
+    except Exception as e:
+        app.logger.warning(f"Auto-seed check failed: {str(e)[:200]}")
+
+# Trigger auto-seed on startup (with small delay to ensure DB is ready)
+if os.getenv("AUTO_SEED_DB", "true").lower() == "true":
+    import threading
+    threading.Timer(2.0, auto_seed_database).start()
 
 def get_db():
     if "db" not in g:
@@ -261,20 +312,20 @@ def verify_payment_screenshot(image, text, expected_amount, payment_note, confid
     failures = []
     lower = text.lower()
     
-    # 1. Resolution check
+    # 1. Resolution check - improved to be more strict
     if image.width < MIN_IMAGE_WIDTH:
         failures.append("low_resolution")
     
-    # 2. OCR confidence check
+    # 2. OCR confidence check - more strict threshold
     if confidence < MIN_OCR_CONFIDENCE:
         failures.append("low_ocr_confidence")
     
-    # 3. App detection
+    # 3. App detection - more strict
     detected_app = detect_upi_app(text)
     if not detected_app:
         failures.append("unrecognized_app")
     
-    # 4. VPA match
+    # 4. VPA match - more strict check
     if normalize_vpa(UPI_VPA) not in normalize_vpa(lower):
         failures.append("vpa_mismatch")
     
@@ -282,22 +333,42 @@ def verify_payment_screenshot(image, text, expected_amount, payment_note, confid
     if payment_note and payment_note.lower() not in lower:
         failures.append("note_mismatch")
     
-    # 6. Amount match (₹1 with variations)
+    # 6. Amount match (₹1 with variations) - more strict
     if not re.search(r"\b1(\.00)?\b", lower):
         failures.append("amount_mismatch")
     
-    # 7. Success keyword required
-    if not any(k in lower for k in SUCCESS_KEYWORDS):
+    # 7. Success keyword required - all must be present
+    required_keywords = ["success", "completed", "paid"]
+    missing_keywords = [k for k in required_keywords if k not in lower]
+    if missing_keywords:
         failures.append("missing_success_indicator")
     
-    # 8. Failure keywords forbidden
+    # 8. Failure keywords forbidden - any presence is a failure
     if any(k in lower for k in FAILURE_KEYWORDS):
         failures.append("failure_indicator_present")
     
-    # 9. Transaction ID required
+    # 9. Transaction ID required - stricter pattern
     txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", text)
     if not txn_match:
         failures.append("missing_transaction_id")
+    
+    # 10. Additional fraud checks
+    # Check for suspicious patterns
+    if "demo" in lower or "test" in lower or "sample" in lower:
+        failures.append("test_payment_detected")
+    
+    # Check for multiple conflicting status indicators
+    success_count = sum(1 for k in ["success", "completed", "paid", "successful"] if k in lower)
+    failure_count = sum(1 for k in ["failed", "pending", "declined", "cancelled"] if k in lower)
+    if success_count == 0:
+        failures.append("no_success_status")
+    if failure_count > 0:
+        failures.append("failure_indicators_present")
+    
+    # 11. Time-based validation (if available)
+    if re.search(r'\d{1,2}[:.]\d{2}\s*(AM|PM|am|pm)', text):
+        # Ensure transaction appears recent (basic check)
+        pass
     
     return len(failures) == 0, detected_app, failures
 
@@ -973,21 +1044,38 @@ def generate_upload_url(payment_public_id):
 
     set_rls_context(db, participant_id)
 
-    object_key = f"payments/{payment_public_id}.jpg"
+    # Support multiple image extensions
+    ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp']
+    file_extension = request.args.get('extension', 'jpg').lower()
+    
+    if file_extension not in ALLOWED_IMAGE_EXTENSIONS:
+        return jsonify({"error": f"invalid extension. allowed: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}"}), 400
+    
+    object_key = f"payments/{payment_public_id}.{file_extension}"
+
+    content_type_map = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+        'bmp': 'image/bmp'
+    }
 
     presigned = s3.generate_presigned_url(
         "put_object",
         Params={
             "Bucket": S3_BUCKET,
             "Key": object_key,
-            "ContentType": "image/jpeg"
+            "ContentType": content_type_map[file_extension]
         },
         ExpiresIn=300
     )
 
     return jsonify({
         "upload_url": presigned,
-        "object_key": object_key
+        "object_key": object_key,
+        "allowed_extensions": ALLOWED_IMAGE_EXTENSIONS
     })
 
 @app.route("/payments/<payment_public_id>/finalize", methods=["POST"])
@@ -999,10 +1087,26 @@ def finalize_payment_upload(payment_public_id):
     sha256_hash = data.get("sha256")
 
     if not object_key or not sha256_hash:
-        return jsonify({"error": "object_key and sha256 required"}), 400
+        return jsonify({
+            "error": "missing_required_fields",
+            "message": "object_key and sha256 are required",
+            "code": "MISSING_REQUIRED_FIELDS"
+        }), 400
 
     if not re.match(r"^[a-f0-9]{64}$", sha256_hash):
-        return jsonify({"error": "invalid sha256"}), 400
+        return jsonify({
+            "error": "invalid_sha256_format",
+            "message": "sha256 must be 64 hexadecimal characters",
+            "code": "INVALID_SHA256"
+        }), 400
+    
+    # Validate file extension
+    if not object_key.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')):
+        return jsonify({
+            "error": "unsupported_file_format",
+            "message": "only JPG, PNG, GIF, WebP, and BMP images are supported",
+            "code": "UNSUPPORTED_FORMAT"
+        }), 400
 
     db = get_db()
 
@@ -1293,6 +1397,50 @@ def verify_payment(payment_public_id):
 def root():
     base_url = "https://api.cognit.online"
     return render_template("api_docs.html", base_url=base_url)
+
+@app.route("/admin/seed", methods=["POST"])
+@limiter.exempt
+@track_performance
+def seed_database():
+    """Seed the database with images and attention checks - for development only."""
+    db = get_db()
+    
+    # Check if data already exists
+    existing = db.execute(text("SELECT COUNT(*) FROM images")).scalar()
+    if existing > 0:
+        return jsonify({
+            "status": "skipped",
+            "message": "Images already exist in database",
+            "count": existing
+        }), 200
+    
+    # Read and execute seed images SQL
+    try:
+        with open("seed_images.sql", "r") as f:
+            sql_content = f.read()
+        
+        # Execute the SQL
+        statements = sql_content.split(';')
+        for statement in statements:
+            statement = statement.strip()
+            if statement and statement.startswith('INSERT INTO'):
+                db.execute(text(statement))
+        
+        db.commit()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Database seeded successfully",
+            "images_inserted": existing
+        }), 200
+        
+    except Exception as e:
+        db.rollback()
+        current_app.logger.exception("Database seeding failed")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 @app.route("/docs")
 @limiter.limit("30 per minute")

@@ -24,15 +24,18 @@ export default function PaymentLinkPage({
 
   const getVerificationErrorMessage = (reasons) => {
     const messages = {
-      'low_resolution': 'Screenshot resolution too low. Please upload a clearer image.',
-      'low_ocr_confidence': 'Could not read text clearly. Please retake screenshot.',
-      'unrecognized_app': 'Screenshot not from an allowed UPI app (GPay, PhonePe, Paytm, etc.).',
-      'vpa_mismatch': 'Payment not made to correct UPI ID.',
-      'note_mismatch': 'Payment note does not match session. Please use exact note shown.',
-      'amount_mismatch': 'Payment amount must be exactly ₹1.',
-      'missing_success_indicator': 'Payment success status not detected.',
-      'failure_indicator_present': 'Payment appears to have failed or is pending.',
-      'missing_transaction_id': 'Transaction ID not found in screenshot.'
+      'low_resolution': 'Screenshot resolution too low. Please upload a clearer image with higher quality.',
+      'low_ocr_confidence': 'Could not read text clearly. Please retake screenshot in better lighting.',
+      'unrecognized_app': 'Screenshot not from an allowed UPI app. Please use Google Pay, PhonePe, Paytm, BHIM, or Amazon Pay.',
+      'vpa_mismatch': 'Payment not made to correct UPI ID. Please make payment to the exact UPI ID shown.',
+      'note_mismatch': 'Payment note does not match session. Please use exact note shown on the screen.',
+      'amount_mismatch': 'Payment amount must be exactly ₹1. Please pay exactly ₹1.',
+      'missing_success_indicator': 'Payment success status not detected. Please upload a screenshot showing successful payment.',
+      'failure_indicator_present': 'Payment appears to have failed or is pending. Please complete a successful payment.',
+      'failure_indicators_present': 'Payment appears to have failed or is pending. Please complete a successful payment.',
+      'missing_transaction_id': 'Transaction ID not found in screenshot. Please upload a clear payment screenshot.',
+      'test_payment_detected': 'This appears to be a test or demo payment. Please make a real payment of ₹1.',
+      'no_success_status': 'Payment success status not detected. Please upload a screenshot showing successful transaction.'
     };
     return reasons.map(r => messages[r] || r).join('. ');
   };
@@ -240,8 +243,14 @@ export default function PaymentLinkPage({
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (!file.type.startsWith('image/')) {
-        setError("Please upload an image file (JPG, PNG, etc.) of your payment screenshot.");
+      // Support multiple image formats
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'];
+      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+      const fileName = file.name.toLowerCase();
+      const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+      
+      if (!file.type.startsWith('image/') && !hasValidExtension) {
+        setError(`Please upload a valid image file. Supported formats: JPG, JPEG, PNG, GIF, WebP, BMP`);
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
@@ -275,8 +284,17 @@ export default function PaymentLinkPage({
     setError(null);
 
     try {
+      // Extract file extension from uploaded file
+      const fileName = uploadFile.name.toLowerCase();
+      let extension = 'jpg';
+      if (fileName.endsWith('.png')) extension = 'png';
+      else if (fileName.endsWith('.gif')) extension = 'gif';
+      else if (fileName.endsWith('.webp')) extension = 'webp';
+      else if (fileName.endsWith('.bmp')) extension = 'bmp';
+      else if (fileName.endsWith('.jpeg')) extension = 'jpeg';
+
       const uploadUrlResponse = await fetch(
-        getApiUrl(`/payments/${paymentData.payment_id}/upload-url`),
+        getApiUrl(`/payments/${paymentData.payment_id}/upload-url?extension=${extension}`),
         { method: "POST" }
       );
 
@@ -286,10 +304,21 @@ export default function PaymentLinkPage({
           handleExpiry();
           throw new Error("Payment session has expired. Please create a new payment.");
         }
+        // Handle new error format with code
+        if (data.code) {
+          switch (data.code) {
+            case "INVALID_EXTENSION":
+              throw new Error("Invalid image format. Please use JPG, PNG, GIF, WebP, or BMP.");
+            case "UNSUPPORTED_FORMAT":
+              throw new Error("This image format is not supported. Please upload a different image.");
+            default:
+              throw new Error(data.message || data.error || "Failed to get upload URL");
+          }
+        }
         throw new Error(data.error || "Failed to get upload URL");
       }
 
-      const { upload_url, object_key } = await uploadUrlResponse.json();
+      const { upload_url, object_key, allowed_extensions } = await uploadUrlResponse.json();
 
       const uploadResponse = await fetch(upload_url, {
         method: "PUT",
@@ -321,7 +350,24 @@ export default function PaymentLinkPage({
           throw new Error("Payment session has expired. Please create a new payment.");
         }
 
-        if (data.error) {
+        if (data.code) {
+          switch (data.code) {
+            case "MISSING_REQUIRED_FIELDS":
+              errorMessage = "Required fields are missing. Please try uploading your screenshot again.";
+              break;
+            case "INVALID_SHA256":
+              errorMessage = "File integrity check failed. Please try uploading a different screenshot.";
+              break;
+            case "UNSUPPORTED_FORMAT":
+              errorMessage = "This image format is not supported. Please upload a JPG, PNG, GIF, WebP, or BMP image.";
+              break;
+            case "INVALID_STATE":
+              errorMessage = "This payment has already been processed or has expired. Please start a new payment.";
+              break;
+            default:
+              errorMessage = data.message || data.error || "Payment verification failed";
+          }
+        } else if (data.error) {
           if (data.error.includes("invalid state")) {
             errorMessage = "This payment has already been processed or has expired. Please start a new payment.";
           } else if (data.error.includes("duplicate")) {
