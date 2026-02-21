@@ -11,6 +11,12 @@ from PIL import Image
 import pytesseract
 from pytesseract import Output
 
+
+try:
+    pytesseract.get_tesseract_version()
+except Exception as exc:
+    raise RuntimeError("Tesseract OCR is required for payment verification") from exc
+
 from app.config import (
     MIN_IMAGE_WIDTH,
     MIN_OCR_CONFIDENCE,
