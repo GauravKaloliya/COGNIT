@@ -199,9 +199,11 @@ def log_audit(db, event_type: str, participant_id: int | None = None, details: s
 
 
 def set_rls_context(db, participant_id: int, public_id: str | None = None):
-    db.execute(text("SET LOCAL app.current_participant_id = :pid"), {"pid": participant_id})
-    if public_id:
-        db.execute(text("SET LOCAL app.current_participant_public_id = :pub"), {"pub": public_id})
+    db.execute(text("SET LOCAL app.current_participant_id = :pid"), {"pid": str(participant_id)})
+    db.execute(
+        text("SET LOCAL app.current_participant_public_id = :pub"),
+        {"pub": str(public_id) if public_id else ""}
+    )
     current_app.logger.debug(
         "RLS context set participant_id=%s public_id=%s",
         participant_id,
@@ -412,6 +414,10 @@ def create_participant():
     ua = request.headers.get("User-Agent", "")[:512]
 
     try:
+        db.execute(
+            text("SET LOCAL app.current_participant_public_id = :pub"),
+            {"pub": public_id}
+        )
         result = db.execute(text("""
             INSERT INTO participants (
                 public_id, session_id, username, email, phone,
@@ -533,6 +539,7 @@ def record_consent():
             return jsonify({"error": "not found or deleted"}), 404
         pid = row[0]
 
+        set_rls_context(db, pid, public_id)
         db.execute(text("""
             UPDATE participants
             SET consent_given = true, consent_at = CURRENT_TIMESTAMP
@@ -629,21 +636,25 @@ def submit():
     ua = request.headers.get("User-Agent", "")[:512]
 
     p_row = db.execute(text("""
-        SELECT p.id, p.consent_given, p.is_deleted, s.is_flagged
-        FROM participants p
-        LEFT JOIN participant_attention_stats s ON s.participant_id = p.id
-        WHERE p.public_id = :pub
+        SELECT id, consent_given, is_deleted
+        FROM participants
+        WHERE public_id = :pub
     """), {"pub": public_id}).fetchone()
 
     if not p_row or p_row[2]:
         return jsonify({"error": "participant not found or deleted"}), 404
-    if p_row[3]:
-        return jsonify({"error": "flagged – low attention"}), 403
     if not p_row[1]:
         return jsonify({"error": "consent required"}), 403
 
     participant_id = p_row[0]
     set_rls_context(db, participant_id, public_id)
+
+    flagged = db.execute(text("""
+        SELECT is_flagged FROM participant_attention_stats
+        WHERE participant_id = :pid
+    """), {"pid": participant_id}).scalar()
+    if flagged:
+        return jsonify({"error": "flagged – low attention"}), 403
 
     img_row = db.execute(text("SELECT id FROM images WHERE image_id = :iid"), {"iid": image_id_str}).fetchone()
     if not img_row:
@@ -814,8 +825,8 @@ def track_engagement():
         return jsonify({"error": "participant not found"}), 404
     
     participant_id = row[0]
-    
-    # Store engagement data in extra_metadata JSON field
+    set_rls_context(db, participant_id, public_id)
+
     try:
         # Get current metadata
         current_meta = db.execute(text("""
@@ -908,7 +919,7 @@ def create_payment():
         return jsonify({"error": "participant not found"}), 404
 
     participant_id = row[0]
-    set_rls_context(db, participant_id)
+    set_rls_context(db, participant_id, public_id)
 
     # Mark any existing pending/processing payments as failed to allow new payment creation
     db.execute(text("""
