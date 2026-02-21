@@ -29,6 +29,7 @@ from app.utils.ocr import (
     fetch_s3_image,
     extract_text_with_confidence,
     verify_payment_screenshot,
+    TesseractNotFoundError,
 )
 from app.utils.fraud import (
     check_duplicate_screenshot,
