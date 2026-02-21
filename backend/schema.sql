@@ -137,10 +137,6 @@ CREATE INDEX idx_images_image_id   ON images (image_id);
 CREATE INDEX idx_images_random_key ON images (random_key);
 CREATE INDEX idx_images_difficulty ON images (difficulty);
 
-CREATE POLICY participants_owner_policy ON participants
-    USING (id = current_setting('app.current_participant_id', true)::bigint)
-    WITH CHECK (id = current_setting('app.current_participant_id', true)::bigint);
-
 CREATE OR REPLACE FUNCTION prevent_random_key_update()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -532,14 +528,32 @@ ALTER TABLE payment_files FORCE ROW LEVEL SECURITY;
 ALTER TABLE payment_submissions FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY participants_active_policy ON participants
-    USING (is_deleted = false)
-    WITH CHECK (is_deleted = false);
+    FOR SELECT
+    USING (is_deleted = false);
+
+CREATE POLICY participants_insert_policy ON participants
+    FOR INSERT
+    WITH CHECK (
+        is_deleted = false
+        AND public_id = NULLIF(current_setting('app.current_participant_public_id', true), '')::uuid
+    );
+
+CREATE POLICY participants_update_policy ON participants
+    FOR UPDATE
+    USING (
+        id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
+        AND is_deleted = false
+    )
+    WITH CHECK (
+        id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
+        AND is_deleted = false
+    );
 
 ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY submissions_owner_policy ON submissions
-    USING (participant_id = current_setting('app.current_participant_id', true)::bigint)
-    WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+    USING (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint)
+    WITH CHECK (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint);
 
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
@@ -547,11 +561,11 @@ CREATE POLICY payments_owner_policy
 ON payments
 USING (
     participant_id =
-    current_setting('app.current_participant_id', true)::bigint
+    COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
 )
 WITH CHECK (
     participant_id =
-    current_setting('app.current_participant_id', true)::bigint
+    COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
 );
 
 ALTER TABLE payment_files ENABLE ROW LEVEL SECURITY;
@@ -562,14 +576,14 @@ USING (
     payment_id IN (
         SELECT id FROM payments
         WHERE participant_id =
-        current_setting('app.current_participant_id', true)::bigint
+        COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
     )
 )
 WITH CHECK (
     payment_id IN (
         SELECT id FROM payments
         WHERE participant_id =
-        current_setting('app.current_participant_id', true)::bigint
+        COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
     )
 );
 
@@ -581,14 +595,14 @@ USING (
     payment_id IN (
         SELECT id FROM payments
         WHERE participant_id =
-        current_setting('app.current_participant_id', true)::bigint
+        COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
     )
 )
 WITH CHECK (
     payment_id IN (
         SELECT id FROM payments
         WHERE participant_id =
-        current_setting('app.current_participant_id', true)::bigint
+        COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint
     )
 );
 
@@ -637,16 +651,16 @@ CREATE POLICY attention_checks_write_deny ON attention_checks
 
 -- 4. Participant-owned stats & rewards — only owner can read/write their own rows
 CREATE POLICY participant_attention_stats_owner ON participant_attention_stats
-    USING  (participant_id = current_setting('app.current_participant_id', true)::bigint)
-    WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+    USING  (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint)
+    WITH CHECK (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint);
 
 CREATE POLICY participant_activity_stats_owner ON participant_activity_stats
-    USING  (participant_id = current_setting('app.current_participant_id', true)::bigint)
-    WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+    USING  (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint)
+    WITH CHECK (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint);
 
 CREATE POLICY reward_winners_owner ON reward_winners
-    USING  (participant_id = current_setting('app.current_participant_id', true)::bigint)
-    WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+    USING  (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint)
+    WITH CHECK (participant_id = COALESCE(NULLIF(current_setting('app.current_participant_id', true), ''), '0')::bigint);
 
 -- 5. Audit & metrics — allow audit inserts, deny read access
 CREATE POLICY audit_log_insert_policy ON audit_log
@@ -657,9 +671,13 @@ CREATE POLICY audit_log_select_deny ON audit_log
     FOR SELECT
     USING (false);
 
-CREATE POLICY performance_metrics_deny_all ON performance_metrics
-    USING (false)
-    WITH CHECK (false);
+CREATE POLICY performance_metrics_insert_policy ON performance_metrics
+    FOR INSERT
+    WITH CHECK (true);
+
+CREATE POLICY performance_metrics_select_deny ON performance_metrics
+    FOR SELECT
+    USING (false);
 
 -- 6. Lookup tables — no RLS needed (public read access)
 ALTER TABLE genders   DISABLE ROW LEVEL SECURITY;
