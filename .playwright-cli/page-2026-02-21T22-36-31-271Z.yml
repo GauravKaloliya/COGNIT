@@ -1,0 +1,13 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - heading "C.O.G.N.I.T." [level=1] [ref=e6]
+      - paragraph [ref=e7]: Describe each image with as much detail as possible
+    - generic [ref=e8]:
+      - button "🌙" [ref=e9] [cursor=pointer]
+      - generic [ref=e10]: Online
+  - generic [ref=e11]:
+    - heading "System Error" [level=2] [ref=e12]
+    - paragraph [ref=e13]: Unable to connect to the server. Please check your connection.
+    - button "Retry" [ref=e14] [cursor=pointer]
+  - generic [ref=e15]: Created by Gaurav Kaloliya
