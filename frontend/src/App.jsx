@@ -32,7 +32,7 @@ function saveStoredValue(key, value) {
 // Stage order for secure navigation (CONSOLIDATED - NEW)
 const STAGE_ORDER = ["consent", "user-details", "payment", "survey", "finished"];
 
-const validateStageTransition = (currentStage, targetStage) => {
+const validateStageTransition = (currentStage, targetStage, paymentVerified = false) => {
   const currentIndex = STAGE_ORDER.indexOf(currentStage);
   const targetIndex = STAGE_ORDER.indexOf(targetStage);
   
@@ -48,7 +48,8 @@ const validateStageTransition = (currentStage, targetStage) => {
     case "user-details":
       return targetStage === "payment";
     case "payment":
-      return targetStage === "survey";
+      // Require payment verification before allowing survey access
+      return targetStage === "survey" && paymentVerified;
     case "survey":
       return targetStage === "finished";
     default:
@@ -132,6 +133,7 @@ export default function App() {
   const [publicId] = useState(() => getStoredValue("publicId", createId()));
   const [sessionId] = useState(() => getStoredValue("sessionId", createId()));
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
+  const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue("paymentVerified", false));
   
   // Demographics state - using new API field names
   const [demographics, setDemographics] = useState(
@@ -162,6 +164,7 @@ export default function App() {
   useEffect(() => { saveStoredValue("publicId", publicId); }, [publicId]);
   useEffect(() => { saveStoredValue("sessionId", sessionId); }, [sessionId]);
   useEffect(() => { saveStoredValue("consentGiven", consentGiven); }, [consentGiven]);
+  useEffect(() => { saveStoredValue("paymentVerified", paymentVerified); }, [paymentVerified]);
   useEffect(() => { saveStoredValue("demographics", demographics); }, [demographics]);
   useEffect(() => { saveStoredValue("stage", stage); }, [stage]);
   useEffect(() => { saveStoredValue("survey", survey); }, [survey]);
@@ -210,6 +213,31 @@ export default function App() {
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Verify payment status when accessing survey stage directly (prevent unauthorized access)
+  useEffect(() => {
+    const verifyPaymentForSurvey = async () => {
+      // Only check if we're at survey stage and haven't verified payment yet
+      if (stage === 'survey' && !paymentVerified && systemReady) {
+        try {
+          const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId);
+          if (paymentStatus.is_verified) {
+            setPaymentVerified(true);
+          } else {
+            // Redirect to payment page if payment is not verified
+            addToast("Please complete payment before accessing the survey.", "error");
+            setStage("payment");
+          }
+        } catch (error) {
+          // Redirect to payment page on error
+          addToast("Payment verification failed. Please complete payment first.", "error");
+          setStage("payment");
+        }
+      }
+    };
+
+    verifyPaymentForSurvey();
+  }, [stage, systemReady, paymentVerified, publicId, addToast]);
 
   const addToast = useCallback((message, type = "info", action) => {
     const id = createId();
@@ -307,23 +335,47 @@ export default function App() {
     addToast("Consent recorded successfully", "success");
   };
 
+  // Handle back from user details to consent
+  const handleUserDetailsBack = () => {
+    setStage("consent");
+  };
+
   // Handle payment completion with secure navigation
   const handlePaymentComplete = async () => {
-    if (validateStageTransition("payment", "survey")) {
-      setStage("survey");
-    }
-    setSurveyFeedbackReady(false);
+    // Verify payment status with backend before allowing survey access
     try {
-      await fetchImage();
-      addToast("Participation confirmed successfully", "success");
-    } catch (err) {
-      addToast("Failed to load first survey image. Please try again.", "error");
+      const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId);
+      if (paymentStatus.is_verified) {
+        setPaymentVerified(true);
+        if (validateStageTransition("payment", "survey", true)) {
+          setStage("survey");
+        }
+        setSurveyFeedbackReady(false);
+        try {
+          await fetchImage();
+          addToast("Participation confirmed successfully", "success");
+        } catch (err) {
+          addToast("Failed to load first survey image. Please try again.", "error");
+        }
+      } else {
+        addToast("Payment verification failed. Please complete payment first.", "error");
+      }
+    } catch (error) {
+      // Payment not verified - redirect back to payment page
+      const errorMessage = error.message || "Payment not verified. Please complete payment first.";
+      addToast(errorMessage, "error");
+      setPaymentVerified(false);
+      // Ensure we stay on payment page if verification fails
+      if (stage !== "payment") {
+        setStage("payment");
+      }
     }
   };
 
   // Handle payment back navigation
   const handlePaymentBack = () => {
     setStage("user-details");
+    setPaymentVerified(false);
   };
 
   // Fetch image using standardized API wrapper
@@ -469,9 +521,10 @@ export default function App() {
             demographics={demographics}
             setDemographics={setDemographics}
             onSubmit={handleUserDetailsSubmit}
-            onBack={handlePaymentContentBack}
+            onBack={handleUserDetailsBack}
             systemReady={systemReady}
-          );
+          />
+        );
       
       case "payment":
         return (

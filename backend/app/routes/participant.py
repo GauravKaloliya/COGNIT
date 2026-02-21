@@ -177,3 +177,53 @@ def record_consent():
         from flask import current_app
         current_app.logger.exception("consent failed")
         return create_error_response("INTERNAL_ERROR")
+
+
+@participant_bp.route("/participants/<public_id>/payment-status")
+@limiter.limit("30 per minute")
+@track_performance
+def get_participant_payment_status(public_id):
+    """
+    Get participant's payment status for frontend access control.
+    Returns payment verification status to prevent unauthorized survey access.
+    """
+    if not public_id:
+        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
+    
+    db = get_db()
+    
+    row = db.execute(text("""
+        SELECT id, payment_status, current_stage
+        FROM participants
+        WHERE public_id = :pub AND is_deleted = false
+    """), {"pub": public_id}).fetchone()
+    
+    if not row:
+        return create_error_response("PARTICIPANT_NOT_FOUND")
+    
+    participant_id, payment_status, current_stage = row
+    
+    # Check for successful payment
+    is_paid = payment_status == 'paid'
+    
+    # If payment is not verified, return error
+    if not is_paid:
+        return create_error_response("PAYMENT_NOT_VERIFIED")
+    
+    # Check for any successful payment record
+    payment_row = db.execute(text("""
+        SELECT public_id, status, verified_at, detected_app
+        FROM payments
+        WHERE participant_id = :pid AND status = 'success'
+        ORDER BY created_at DESC
+        LIMIT 1
+    """), {"pid": participant_id}).fetchone()
+    
+    return jsonify({
+        "payment_status": payment_status,
+        "is_verified": True,
+        "current_stage": current_stage,
+        "payment_id": str(payment_row[0]) if payment_row else None,
+        "verified_at": payment_row[2].isoformat() if payment_row and payment_row[2] else None,
+        "detected_app": payment_row[3] if payment_row else None
+    })

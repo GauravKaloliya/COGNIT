@@ -166,35 +166,78 @@ def verify_payment_screenshot(
     if confidence < MIN_OCR_CONFIDENCE:
         failures.append("low_ocr_confidence")
     
-    # 3. App detection
+    # 3. App detection - must be from allowed UPI app
     detected_app = detect_upi_app(text)
     if not detected_app:
         failures.append("unrecognized_app")
     
-    # 4. VPA match
+    # 4. UPI keyword check - must contain "UPI" indicator
+    upi_indicators = ['upi', 'upi id', 'upi payment', '@']
+    if not any(indicator in lower for indicator in upi_indicators):
+        failures.append("not_upi_payment")
+    
+    # 5. VPA match - must pay to correct VPA
     if normalize_vpa(UPI_VPA) not in normalize_vpa(lower):
         failures.append("vpa_mismatch")
     
-    # 5. Note binding - payment note must be in text
+    # 6. Note binding - payment note must be in text
     if payment_note and payment_note.lower() not in lower:
         failures.append("note_mismatch")
     
-    # 6. Amount match (₹1 with variations)
-    if not re.search(r"\b1(\.00)?\b", lower):
-        failures.append("amount_mismatch")
+    # 7. Amount match - must show ₹1 with proper currency indicator
+    # Check for rupee symbol (₹), "rs", "inr", or "₹" followed by amount
+    amount_patterns = [
+        r'₹\s*1(\.00)?\b',           # ₹1 or ₹1.00
+        r'rs\.?\s*1(\.00)?\b',       # Rs 1, Rs. 1, Rs.1
+        r'inr\s*1(\.00)?\b',         # INR 1
+        r'\b1(\.00)?\s*rs\b',        # 1 Rs
+        r'\b1(\.00)?\s*₹\b',         # 1 ₹
+    ]
+    amount_found = any(re.search(pattern, lower) for pattern in amount_patterns)
+    if not amount_found:
+        # Also check for standalone "1" with currency context nearby
+        if not re.search(r'\b1(\.00)?\b', lower):
+            failures.append("amount_mismatch")
+        elif not any(cur in lower for cur in ['₹', 'rs', 'inr']):
+            failures.append("amount_mismatch")
     
-    # 7. Success keyword required
+    # 8. Success keyword required - must indicate successful payment
     if not any(k in lower for k in SUCCESS_KEYWORDS):
         failures.append("missing_success_indicator")
     
-    # 8. Failure keywords forbidden
+    # 9. Failure keywords forbidden - must not show failed/pending
     if any(k in lower for k in FAILURE_KEYWORDS):
         failures.append("failure_indicator_present")
     
-    # 9. Transaction ID required
+    # 10. Transaction ID required - must have a valid txn reference
     txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", text)
     if not txn_match:
         failures.append("missing_transaction_id")
+    
+    # 11. Payment recipient indicators - should show "paid to" or "to" with VPA
+    recipient_indicators = ['paid to', 'to:', 'sent to', 'paid']
+    if not any(indicator in lower for indicator in recipient_indicators):
+        failures.append("missing_recipient_indicator")
+    
+    # 12. Timestamp presence - real payment screenshots have date/time
+    # Check for date patterns (DD/MM/YYYY, DD-MM-YYYY, MM/DD/YYYY, etc.)
+    date_patterns = [
+        r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}',      # DD/MM/YYYY or MM/DD/YYYY
+        r'\d{4}[/\-]\d{1,2}[/\-]\d{1,2}',        # YYYY/MM/DD
+        r'\d{1,2}\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*\d{2,4}',  # DD Month YYYY
+        r'(today|yesterday)',                     # Relative dates
+    ]
+    time_patterns = [
+        r'\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?',     # HH:MM:SS AM/PM
+        r'\d{1,2}\s*(am|pm)',                     # HH AM/PM
+    ]
+    
+    has_date = any(re.search(pattern, lower) for pattern in date_patterns)
+    has_time = any(re.search(pattern, lower) for pattern in time_patterns)
+    
+    # Must have at least a date or time indicator
+    if not has_date and not has_time:
+        failures.append("missing_timestamp")
     
     return len(failures) == 0, detected_app, failures
 
