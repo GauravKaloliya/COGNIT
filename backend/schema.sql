@@ -167,10 +167,13 @@ CREATE TABLE IF NOT EXISTS submissions (
     attention_passed   BOOLEAN,
     flagged_too_fast   BOOLEAN NOT NULL DEFAULT FALSE,
     quality_score      NUMERIC(5,4) CHECK (quality_score BETWEEN 0 AND 1),
-    ai_suspected       BOOLEAN NOT NULL DEFAULT FALSE,
     ip_hash            CHAR(64) NOT NULL,
     user_agent         VARCHAR(512),
     extra_metadata     JSONB NOT NULL DEFAULT '{}',
+    -- Engagement tracking
+    tab_switch_count   INTEGER NOT NULL DEFAULT 0,
+    page_close_attempts INTEGER NOT NULL DEFAULT 0,
+    network_disconnects INTEGER NOT NULL DEFAULT 0,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
     CONSTRAINT chk_attention_passed_consistent CHECK (
@@ -184,7 +187,6 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 CREATE INDEX idx_submissions_participant_created  ON submissions (participant_id, created_at DESC);
 CREATE INDEX idx_submissions_participant_quality  ON submissions (participant_id, quality_score DESC, created_at DESC) WHERE is_survey = true;
-CREATE INDEX idx_submissions_ai_suspected         ON submissions (ai_suspected) WHERE ai_suspected = true;
 CREATE INDEX idx_submissions_attention            ON submissions (is_attention_check, attention_passed);
 
 
@@ -552,3 +554,10 @@ WITH CHECK (
 -- =====================================================================
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS verification_details JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS detected_app VARCHAR(60);
+
+-- =====================================================================
+-- ADD ENGAGEMENT TRACKING COLUMNS (if they don't exist)
+-- =====================================================================
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS tab_switch_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS page_close_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS network_disconnects INTEGER NOT NULL DEFAULT 0;

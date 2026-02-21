@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
 
 const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
@@ -31,14 +31,111 @@ export default function SurveyPage({
   const [imageError, setImageError] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
 
+  // Engagement tracking state
+  const [engagementData, setEngagementData] = useState({
+    tabSwitchCount: 0,
+    pageCloseAttempts: 0,
+    networkDisconnects: 0
+  });
+
   const surveyStartTime = useRef(Date.now());
   const timerIntervalRef = useRef(null);
+  const descriptionRef = useRef(null);
+  const commentsRef = useRef(null);
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
   const charCount = description.length;
   const descriptionValid = description.length >= MIN_DESCRIPTION_LENGTH && description.length <= MAX_DESCRIPTION_LENGTH;
   const commentsValid = comments.trim().length >= MIN_FEEDBACK_LENGTH && comments.trim().length <= MAX_FEEDBACK_LENGTH;
   const imageReady = imageLoaded && !imageError;
   const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && descriptionValid && !submitting && imageReady;
+
+  // Prevent copy-paste in survey description and comments
+  const preventCopyPaste = useCallback((e) => {
+    e.preventDefault();
+    return false;
+  }, []);
+
+  // Set up engagement tracking
+  useEffect(() => {
+    // Track tab visibility changes
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setEngagementData(prev => ({
+          ...prev,
+          tabSwitchCount: prev.tabSwitchCount + 1
+        }));
+      }
+    };
+
+    // Track page close attempts
+    const handleBeforeUnload = (e) => {
+      setEngagementData(prev => ({
+        ...prev,
+        pageCloseAttempts: prev.pageCloseAttempts + 1
+      }));
+      // Allow navigation but track it
+      delete e['returnValue'];
+    };
+
+    // Track network disconnects
+    const handleOnline = () => {
+      // Network restored - could track reconnection
+    };
+    
+    const handleOffline = () => {
+      setEngagementData(prev => ({
+        ...prev,
+        networkDisconnects: prev.networkDisconnects + 1
+      }));
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Add copy-paste prevention to textareas
+  useEffect(() => {
+    const descTextarea = descriptionRef.current;
+    const commentsTextarea = commentsRef.current;
+
+    if (descTextarea) {
+      descTextarea.addEventListener('copy', preventCopyPaste);
+      descTextarea.addEventListener('cut', preventCopyPaste);
+      descTextarea.addEventListener('paste', preventCopyPaste);
+      descTextarea.addEventListener('contextmenu', preventCopyPaste);
+    }
+
+    if (commentsTextarea) {
+      commentsTextarea.addEventListener('copy', preventCopyPaste);
+      commentsTextarea.addEventListener('cut', preventCopyPaste);
+      commentsTextarea.addEventListener('paste', preventCopyPaste);
+      commentsTextarea.addEventListener('contextmenu', preventCopyPaste);
+    }
+
+    return () => {
+      if (descTextarea) {
+        descTextarea.removeEventListener('copy', preventCopyPaste);
+        descTextarea.removeEventListener('cut', preventCopyPaste);
+        descTextarea.removeEventListener('paste', preventCopyPaste);
+        descTextarea.removeEventListener('contextmenu', preventCopyPaste);
+      }
+      if (commentsTextarea) {
+        commentsTextarea.removeEventListener('copy', preventCopyPaste);
+        commentsTextarea.removeEventListener('cut', preventCopyPaste);
+        commentsTextarea.removeEventListener('paste', preventCopyPaste);
+        commentsTextarea.removeEventListener('contextmenu', preventCopyPaste);
+      }
+    };
+  }, [preventCopyPaste]);
 
   const handleRetryImage = () => {
     setImageError(false);
@@ -114,13 +211,19 @@ export default function SurveyPage({
         description,
         rating,
         comments,
-        timeSpentSeconds
+        timeSpentSeconds,
+        engagementData
       });
 
-      // Reset form after successful submission
+      // Reset form and engagement data after successful submission
       setDescription("");
       setRating(0);
       setComments("");
+      setEngagementData({
+        tabSwitchCount: 0,
+        pageCloseAttempts: 0,
+        networkDisconnects: 0
+      });
     } catch (error) {
       setSubmitError(error?.message || "Submission failed. Please try again.");
     } finally {
@@ -289,6 +392,7 @@ export default function SurveyPage({
       <div className="field">
         <label>Description</label>
         <textarea
+          ref={descriptionRef}
           className={!isSurvey && description.length > 0 && (
             description.length < MIN_DESCRIPTION_LENGTH ||
             description.length > MAX_DESCRIPTION_LENGTH
@@ -341,6 +445,7 @@ export default function SurveyPage({
       <div className="field">
         <label>Comments</label>
         <textarea
+          ref={commentsRef}
           className={!isSurvey && comments.length > 0 && (
             comments.length < MIN_FEEDBACK_LENGTH ||
             comments.length > MAX_FEEDBACK_LENGTH

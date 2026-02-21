@@ -159,20 +159,9 @@ def count_words(text: str) -> int:
     words = re.findall(r"\b\w+\b", text.strip(), re.UNICODE)
     return len([w for w in words if re.search(r"[^\W\d_]", w, re.UNICODE)])
 
+# AI detection removed - using attention checks for quality control instead
 def detect_bot_like_content(text: str, wc: int) -> tuple[bool, str]:
-    if wc == 0:
-        return True, "empty"
-    lower = text.lower()
-    words = [w for w in re.findall(r"\b\w+\b", lower, re.UNICODE) if re.search(r"[^\W\d_]", w)]
-    if len(words) > 10:
-        from collections import Counter
-        top = Counter(words).most_common(1)
-        if top and top[0][1] / len(words) > 0.30:
-            return True, "repetition"
-    if len(words) > 20 and len(set(words)) / len(words) < 0.30:
-        return True, "low diversity"
-    if re.search(r"(.)\1{5,}", lower):
-        return True, "char spam"
+    # Always return False - AI detection disabled
     return False, ""
 
 def calculate_quality_score(wc: int, att: bool | None, ts: float | None, fb_len: int, bot: bool) -> float:
@@ -678,25 +667,33 @@ def submit():
         attention_passed = bool(re.search(rf"\b{re.escape(expected)}\b", dlow)) if strict else (expected in dlow)
 
     too_fast = ts is not None and ts < TOO_FAST_SECONDS
-    is_bot, _ = detect_bot_like_content(description, word_count)
-    quality = calculate_quality_score(word_count, attention_passed, ts, len(feedback), is_bot)
+    # Removed AI detection - using attention check only
+    quality = calculate_quality_score(word_count, attention_passed, ts, len(feedback), False)
+
+    # Get engagement tracking data
+    tab_switch_count = d.get("tab_switch_count", 0)
+    page_close_attempts = d.get("page_close_attempts", 0)
+    network_disconnects = d.get("network_disconnects", 0)
 
     try:
         db.execute(text("""
             INSERT INTO submissions (
                 participant_id, image_id, survey_index, description, word_count,
                 rating, feedback, time_spent_seconds, is_survey, is_attention_check,
-                attention_passed, flagged_too_fast, quality_score, ai_suspected,
-                ip_hash, user_agent, extra_metadata
+                attention_passed, flagged_too_fast, quality_score,
+                ip_hash, user_agent, extra_metadata,
+                tab_switch_count, page_close_attempts, network_disconnects
             ) VALUES (
                 :pid, :iid, :sidx, :desc, :wc, :rt, :fb, :ts, :isv, :isa,
-                :ap, :tf, :qs, :ais, :iph, :ua, '{}'
+                :ap, :tf, :qs, :iph, :ua, '{}',
+                :tsc, :pca, :nd
             )
         """), {
             "pid": participant_id, "iid": image_id_fk, "sidx": survey_index,
             "desc": description, "wc": word_count, "rt": rating, "fb": feedback,
             "ts": ts, "isv": is_survey, "isa": is_attention, "ap": attention_passed,
-            "tf": too_fast, "qs": quality, "ais": is_bot, "iph": iph, "ua": ua
+            "tf": too_fast, "qs": quality, "iph": iph, "ua": ua,
+            "tsc": tab_switch_count, "pca": page_close_attempts, "nd": network_disconnects
         })
 
         if is_attention:
@@ -758,8 +755,7 @@ def submit():
             "word_count": word_count,
             "quality_score": quality,
             "attention_passed": attention_passed,
-            "flagged_too_fast": too_fast,
-            "ai_suspected": is_bot
+            "flagged_too_fast": too_fast
         })
 
     except Exception as exc:
