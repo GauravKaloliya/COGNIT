@@ -11,12 +11,6 @@ from PIL import Image
 import pytesseract
 from pytesseract import Output
 
-
-try:
-    pytesseract.get_tesseract_version()
-except Exception as exc:
-    raise RuntimeError("Tesseract OCR is required for payment verification") from exc
-
 from app.config import (
     MIN_IMAGE_WIDTH,
     MIN_OCR_CONFIDENCE,
@@ -27,6 +21,26 @@ from app.config import (
     S3_BUCKET,
 )
 from app.extensions import s3
+
+
+# ────────────────────────────────────────────────
+# Tesseract Availability Check (Lazy)
+# ───────────────────────────────────────────────-
+
+_tesseract_available = None
+
+def _check_tesseract():
+    """Lazy check for tesseract availability. Raises TesseractNotFoundError if not available."""
+    global _tesseract_available
+    if _tesseract_available is None:
+        try:
+            pytesseract.get_tesseract_version()
+            _tesseract_available = True
+        except Exception as exc:
+            _tesseract_available = False
+            raise pytesseract.TesseractNotFoundError("Tesseract OCR is not installed or not in PATH") from exc
+    if not _tesseract_available:
+        raise pytesseract.TesseractNotFoundError("Tesseract OCR is not installed or not in PATH")
 
 
 # ────────────────────────────────────────────────
@@ -62,6 +76,7 @@ def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
     Returns:
         Tuple of (extracted_text, average_confidence)
     """
+    _check_tesseract()
     data = pytesseract.image_to_data(image, output_type=Output.DICT)
     words = []
     confidences = []
