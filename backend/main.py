@@ -256,12 +256,19 @@ def api_docs():
 
 def create_app():
     """
-    Application factory for Gunicorn and testing.
-    
+    Application factory for Vercel serverless and testing.
+
     Returns:
         Flask application instance
     """
     return app
+
+
+# ────────────────────────────────────────────────
+# Vercel Serverless Export
+# ────────────────────────────────────────────────
+
+app = create_app()
 
 
 # ────────────────────────────────────────────────
