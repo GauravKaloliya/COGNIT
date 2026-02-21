@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
-import PaymentPage from "./pages/PaymentPage.jsx";
+import PaymentContentPage from "./pages/PaymentContentPage.jsx";
+import PaymentVerifyPage from "./pages/PaymentVerifyPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
@@ -316,6 +317,9 @@ export default function App() {
 
   // Handle submission
   const handleSubmit = async (formData) => {
+    // Extract engagement data if provided
+    const engagementData = formData.engagementData || {};
+    
     const payload = {
       public_id: publicId,
       image_id: survey.image_id,
@@ -324,7 +328,10 @@ export default function App() {
       feedback: formData.comments,
       time_spent_seconds: formData.timeSpentSeconds,
       is_survey: surveyCompleted === 0,
-      survey_index: surveyCompleted === 0 ? 0 : surveyCompleted
+      survey_index: surveyCompleted === 0 ? 0 : surveyCompleted,
+      tab_switch_count: engagementData.tabSwitchCount || 0,
+      page_close_attempts: engagementData.pageCloseAttempts || 0,
+      network_disconnects: engagementData.networkDisconnects || 0
     };
 
     const response = await fetch(getApiUrl('/submit'), {
@@ -446,9 +453,16 @@ export default function App() {
       
       case "payment":
         return (
-          <PaymentPage
+          <PaymentContentPage
+            onNext={() => setStage("payment-verify")}
+          />
+        );
+      
+      case "payment-verify":
+        return (
+          <PaymentVerifyPage
             onPaymentComplete={handlePaymentComplete}
-            onBack={() => setStage("user-details")}
+            onBack={() => setStage("payment")}
             systemReady={systemReady}
             publicId={publicId}
           />
