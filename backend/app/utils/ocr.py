@@ -1,15 +1,15 @@
 """
 OCR utilities module for C.O.G.N.I.T. backend.
 Provides text extraction, UPI app detection, and payment screenshot verification.
+Uses Amazon Textract for OCR processing.
 """
 
 import re
 from io import BytesIO
 from typing import List, Optional, Tuple
 
+import boto3
 from PIL import Image
-import pytesseract
-from pytesseract import Output
 
 from app.config import (
     MIN_IMAGE_WIDTH,
@@ -19,37 +19,45 @@ from app.config import (
     FAILURE_KEYWORDS,
     UPI_VPA,
     S3_BUCKET,
+    AWS_REGION,
+    AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY,
 )
 from app.extensions import s3
 
 
 # ────────────────────────────────────────────────
-# Custom Exception for Tesseract
+# Textract Client Setup
+# ────────────────────────────────────────────────
+
+_textract_client = None
+
+
+def _get_textract_client():
+    """Lazy initialization of Textract client."""
+    global _textract_client
+    if _textract_client is None:
+        _textract_client = boto3.client(
+            "textract",
+            region_name=AWS_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        )
+    return _textract_client
+
+
+# ────────────────────────────────────────────────
+# Custom Exception for OCR Service
 # ────────────────────────────────────────────────
 
 class TesseractNotFoundError(Exception):
-    """Custom exception raised when Tesseract OCR is not available."""
+    """Custom exception raised when OCR service is not available."""
     pass
 
 
-# ────────────────────────────────────────────────
-# Tesseract Availability Check (Lazy)
-# ───────────────────────────────────────────────-
-
-_tesseract_available = None
-
-def _check_tesseract():
-    """Lazy check for tesseract availability. Raises TesseractNotFoundError if not available."""
-    global _tesseract_available
-    if _tesseract_available is None:
-        try:
-            pytesseract.get_tesseract_version()
-            _tesseract_available = True
-        except Exception:
-            _tesseract_available = False
-            raise TesseractNotFoundError("Tesseract OCR is not installed or not in PATH")
-    if not _tesseract_available:
-        raise TesseractNotFoundError("Tesseract OCR is not installed or not in PATH")
+class OCRServiceError(Exception):
+    """Custom exception raised when OCR service fails."""
+    pass
 
 
 # ────────────────────────────────────────────────
@@ -59,10 +67,10 @@ def _check_tesseract():
 def fetch_s3_image(object_key: str) -> Image.Image:
     """
     Fetch image from S3 bucket.
-    
+
     Args:
         object_key: S3 object key path
-        
+
     Returns:
         PIL Image object
     """
@@ -72,34 +80,101 @@ def fetch_s3_image(object_key: str) -> Image.Image:
 
 
 # ────────────────────────────────────────────────
-# Text Extraction with Confidence
+# Text Extraction with Confidence using Textract
 # ────────────────────────────────────────────────
 
 def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
     """
-    Extract text from image with OCR confidence score.
-    
+    Extract text from image using Amazon Textract with confidence score.
+
     Args:
         image: PIL Image object
-        
+
     Returns:
         Tuple of (extracted_text, average_confidence)
     """
-    _check_tesseract()
-    data = pytesseract.image_to_data(image, output_type=Output.DICT)
-    words = []
-    confidences = []
-    for i, word in enumerate(data["text"]):
-        try:
-            conf = int(data["conf"][i])
-        except:
-            continue
-        if conf > 0 and word.strip():
-            words.append(word)
-            confidences.append(conf)
-    if not words:
-        return "", 0
-    return " ".join(words), sum(confidences) / len(confidences)
+    try:
+        textract = _get_textract_client()
+
+        # Convert PIL image to bytes
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        image_bytes = buffer.getvalue()
+
+        response = textract.detect_document_text(
+            Document={"Bytes": image_bytes}
+        )
+
+        blocks = response["Blocks"]
+
+        words = []
+        confidences = []
+
+        for block in blocks:
+            if block["BlockType"] == "WORD":
+                text = block.get("Text", "").strip()
+                confidence = block.get("Confidence", 0)
+                if text:
+                    words.append(text)
+                    confidences.append(confidence)
+
+        if not words:
+            return "", 0.0
+
+        extracted_text = " ".join(words)
+        avg_confidence = sum(confidences) / len(confidences)
+
+        return extracted_text, avg_confidence
+
+    except Exception as e:
+        raise OCRServiceError(f"Textract OCR failed: {str(e)}")
+
+
+def extract_text_from_s3(object_key: str) -> Tuple[str, float]:
+    """
+    Extract text directly from S3 image using Amazon Textract.
+
+    Args:
+        object_key: S3 object key path in the configured bucket
+
+    Returns:
+        Tuple of (extracted_text, average_confidence)
+    """
+    try:
+        textract = _get_textract_client()
+
+        response = textract.detect_document_text(
+            Document={
+                "S3Object": {
+                    "Bucket": S3_BUCKET,
+                    "Name": object_key
+                }
+            }
+        )
+
+        blocks = response["Blocks"]
+
+        words = []
+        confidences = []
+
+        for block in blocks:
+            if block["BlockType"] == "WORD":
+                text = block.get("Text", "").strip()
+                confidence = block.get("Confidence", 0)
+                if text:
+                    words.append(text)
+                    confidences.append(confidence)
+
+        if not words:
+            return "", 0.0
+
+        extracted_text = " ".join(words)
+        avg_confidence = sum(confidences) / len(confidences)
+
+        return extracted_text, avg_confidence
+
+    except Exception as e:
+        raise OCRServiceError(f"Textract OCR failed for S3 object {object_key}: {str(e)}")
 
 
 # ────────────────────────────────────────────────
@@ -109,10 +184,10 @@ def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
 def detect_upi_app(text: str) -> Optional[str]:
     """
     Detect which UPI app from the allowed whitelist.
-    
+
     Args:
         text: OCR extracted text
-        
+
     Returns:
         App name key or None if unrecognized
     """
@@ -130,10 +205,10 @@ def detect_upi_app(text: str) -> Optional[str]:
 def normalize_vpa(text: str) -> str:
     """
     Normalize VPA for comparison by removing special characters.
-    
+
     Args:
         text: Text containing VPA
-        
+
     Returns:
         Normalized lowercase VPA string
     """
@@ -145,54 +220,54 @@ def normalize_vpa(text: str) -> str:
 # ────────────────────────────────────────────────
 
 def verify_payment_screenshot(
-    image: Image.Image, 
-    text: str, 
-    expected_amount: float, 
-    payment_note: str, 
+    image: Image.Image,
+    text: str,
+    expected_amount: float,
+    payment_note: str,
     confidence: float
 ) -> Tuple[bool, Optional[str], List[str]]:
     """
     Strict validation of UPI payment screenshot.
-    
+
     Args:
         image: PIL Image object
         text: OCR extracted text
         expected_amount: Expected payment amount
         payment_note: Expected payment note/reference
         confidence: OCR confidence score
-        
+
     Returns:
         Tuple of (is_valid, detected_app, failure_reasons)
     """
     failures = []
     lower = text.lower()
-    
+
     # 1. Resolution check
     if image.width < MIN_IMAGE_WIDTH:
         failures.append("low_resolution")
-    
+
     # 2. OCR confidence check
     if confidence < MIN_OCR_CONFIDENCE:
         failures.append("low_ocr_confidence")
-    
+
     # 3. App detection - must be from allowed UPI app
     detected_app = detect_upi_app(text)
     if not detected_app:
         failures.append("unrecognized_app")
-    
+
     # 4. UPI keyword check - must contain "UPI" indicator
     upi_indicators = ['upi', 'upi id', 'upi payment', '@']
     if not any(indicator in lower for indicator in upi_indicators):
         failures.append("not_upi_payment")
-    
+
     # 5. VPA match - must pay to correct VPA
     if normalize_vpa(UPI_VPA) not in normalize_vpa(lower):
         failures.append("vpa_mismatch")
-    
+
     # 6. Note binding - payment note must be in text
     if payment_note and payment_note.lower() not in lower:
         failures.append("note_mismatch")
-    
+
     # 7. Amount match - must show ₹1 with proper currency indicator
     # Check for rupee symbol (₹), "rs", "inr", or "₹" followed by amount
     amount_patterns = [
@@ -209,25 +284,25 @@ def verify_payment_screenshot(
             failures.append("amount_mismatch")
         elif not any(cur in lower for cur in ['₹', 'rs', 'inr']):
             failures.append("amount_mismatch")
-    
+
     # 8. Success keyword required - must indicate successful payment
     if not any(k in lower for k in SUCCESS_KEYWORDS):
         failures.append("missing_success_indicator")
-    
+
     # 9. Failure keywords forbidden - must not show failed/pending
     if any(k in lower for k in FAILURE_KEYWORDS):
         failures.append("failure_indicator_present")
-    
+
     # 10. Transaction ID required - must have a valid txn reference
     txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", text)
     if not txn_match:
         failures.append("missing_transaction_id")
-    
+
     # 11. Payment recipient indicators - should show "paid to" or "to" with VPA
     recipient_indicators = ['paid to', 'to:', 'sent to', 'paid']
     if not any(indicator in lower for indicator in recipient_indicators):
         failures.append("missing_recipient_indicator")
-    
+
     # 12. Timestamp presence - real payment screenshots have date/time
     # Check for date patterns (DD/MM/YYYY, DD-MM-YYYY, MM/DD/YYYY, etc.)
     date_patterns = [
@@ -240,14 +315,14 @@ def verify_payment_screenshot(
         r'\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?',     # HH:MM:SS AM/PM
         r'\d{1,2}\s*(am|pm)',                     # HH AM/PM
     ]
-    
+
     has_date = any(re.search(pattern, lower) for pattern in date_patterns)
     has_time = any(re.search(pattern, lower) for pattern in time_patterns)
-    
+
     # Must have at least a date or time indicator
     if not has_date and not has_time:
         failures.append("missing_timestamp")
-    
+
     return len(failures) == 0, detected_app, failures
 
 
@@ -258,10 +333,10 @@ def verify_payment_screenshot(
 def extract_upi_ref(text: str) -> Optional[str]:
     """
     Extract UPI transaction reference from OCR text.
-    
+
     Args:
         text: OCR extracted text
-        
+
     Returns:
         UPI reference number or None
     """
