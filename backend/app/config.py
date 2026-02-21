@@ -6,6 +6,19 @@ Centralized configuration management following 2025 best practices.
 import os
 from typing import Dict, Any
 
+# Load environment variables from .env file
+# Try to load from .env file in the backend directory
+from pathlib import Path
+backend_dir = Path(__file__).parent.parent
+env_file = backend_dir / ".env"
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(env_file)
+except ImportError:
+    # If python-dotenv is not available, continue without it
+    pass
+
 
 # ────────────────────────────────────────────────
 # Application Constants
@@ -35,15 +48,9 @@ PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.
 # Payment & UPI Configuration
 # ────────────────────────────────────────────────
 
-UPI_VPA = os.getenv("UPI_VPA")
-if not UPI_VPA:
-    raise ValueError("UPI_VPA is required")
-UPI_NAME = os.getenv("UPI_NAME")
-if not UPI_NAME:
-    raise ValueError("UPI_NAME is required")
-PAYMENT_SECRET = os.getenv("PAYMENT_SECRET")
-if not PAYMENT_SECRET:
-    raise ValueError("PAYMENT_SECRET is required")
+UPI_VPA = os.getenv("UPI_VPA", "test@upi")
+UPI_NAME = os.getenv("UPI_NAME", "Test User")
+PAYMENT_SECRET = os.getenv("PAYMENT_SECRET", "dev-payment-secret")
 PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 
 
@@ -222,8 +229,8 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
 # AWS S3 Configuration
 # ────────────────────────────────────────────────
 
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "test-access-key")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 S3_BUCKET = os.getenv("S3_BUCKET", "cognitapi")
 
@@ -232,18 +239,14 @@ S3_BUCKET = os.getenv("S3_BUCKET", "cognitapi")
 # Security Configuration
 # ────────────────────────────────────────────────
 
-IP_HASH_SALT = os.getenv("IP_HASH_SALT")
-if not IP_HASH_SALT:
-    raise ValueError("IP_HASH_SALT is required")
+IP_HASH_SALT = os.getenv("IP_HASH_SALT", "dev-ip-hash-salt")
 
 
 # ────────────────────────────────────────────────
 # Database Configuration
 # ────────────────────────────────────────────────
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is required")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://cognit:cognit_password@localhost:5432/cognit_db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -252,9 +255,7 @@ if DATABASE_URL.startswith("postgres://"):
 # Flask App Configuration
 # ────────────────────────────────────────────────
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    raise ValueError("SECRET_KEY is required")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-32-characters-minimum-for-development")
 
 
 # ────────────────────────────────────────────────
