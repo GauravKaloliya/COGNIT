@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import re
 import time
@@ -784,7 +785,6 @@ def track_engagement():
         """), {"pid": participant_id}).scalar() or {}
         
         if isinstance(current_meta, str):
-            import json
             current_meta = json.loads(current_meta)
         
         # Initialize engagement tracking if not exists
@@ -820,7 +820,7 @@ def track_engagement():
             SET extra_metadata = :meta, updated_at = CURRENT_TIMESTAMP
             WHERE id = :pid
         """), {
-            "meta": current_meta,
+            "meta": json.dumps(current_meta),
             "pid": participant_id
         })
         
@@ -1056,6 +1056,7 @@ def finalize_payment_upload(payment_public_id):
 
         # Run verification immediately after finalize
         # Fetch payment details again after commit
+        verification_result = {"status": "processing", "verified": False}
         try:
             row = db.execute(text("""
                 SELECT p.id, p.participant_id, p.amount, f.object_key, p.upi_note
@@ -1105,7 +1106,7 @@ def finalize_payment_upload(payment_public_id):
                     "fs": len(failures) * 10,
                     "status": new_status,
                     "app": detected_app,
-                    "details": verification_details,
+                    "details": json.dumps(verification_details),
                     "pid": payment_id
                 })
 
@@ -1121,15 +1122,23 @@ def finalize_payment_upload(payment_public_id):
                         "pid": payment_id,
                         "type": failure,
                         "score": 100,
-                        "details": {"reason": failure, "confidence": confidence}
+                        "details": json.dumps({"reason": failure, "confidence": confidence})
                     })
 
                 db.commit()
+                verification_result = {
+                    "status": new_status,
+                    "verified": True,
+                    "failure_reasons": failures
+                }
         except Exception as e:
-            current_app.logger.exception("Verification failed after upload")
+            if "TesseractNotFoundError" in type(e).__name__ or "tesseract is not installed" in str(e).lower():
+                current_app.logger.warning("Tesseract not available - skipping OCR verification")
+            else:
+                current_app.logger.exception("Verification failed after upload")
             # Don't fail the upload if verification fails - status remains processing
 
-        return jsonify({"status": "uploaded"})
+        return jsonify({"status": "uploaded", "verification": verification_result})
 
     except Exception:
         db.rollback()
@@ -1242,10 +1251,10 @@ def verify_payment(payment_public_id):
     """), {
         "txt": extracted_text,
         "ref": upi_ref,
-        "fs": len(failures) * 10,  # Convert failure count to score (0-90)
+        "fs": len(failures) * 10,
         "status": new_status,
         "app": detected_app,
-        "details": verification_details,
+        "details": json.dumps(verification_details),
         "pid": payment_id
     })
 
@@ -1261,7 +1270,7 @@ def verify_payment(payment_public_id):
             "pid": payment_id,
             "type": failure,
             "score": 100,
-            "details": {"reason": failure, "confidence": confidence}
+            "details": json.dumps({"reason": failure, "confidence": confidence})
         })
 
     db.commit()

@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS participants (
     email            VARCHAR(255) NOT NULL UNIQUE,
     phone            VARCHAR(20) NOT NULL UNIQUE CHECK (phone ~ '^[0-9+ -]{8,15}$'),
     gender_code      VARCHAR(32) REFERENCES genders(code),
-    age              SMALLINT CHECK (age >= 13 AND age <= 120),
+    age              SMALLINT CHECK (age >= 13 AND age <= 100),
     location         VARCHAR(120),
     language_code    VARCHAR(20) REFERENCES languages(code),
     prior_experience VARCHAR(120),

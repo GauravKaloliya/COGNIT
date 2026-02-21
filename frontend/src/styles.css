@@ -2100,6 +2100,34 @@ body.dark .payment-status-badge.success {
   color: #34d399;
 }
 
+.payment-failure-details {
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0.75rem 0;
+}
+
+.payment-failure-details ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.payment-failure-details li {
+  color: #c53030;
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+}
+
+body.dark .payment-failure-details {
+  background: rgba(229, 62, 62, 0.1);
+  border-color: rgba(229, 62, 62, 0.3);
+}
+
+body.dark .payment-failure-details li {
+  color: #fc8181;
+}
+
 /* --------------------------------------------------------------------------
    Payment Timer with Border Filling Animation
    -------------------------------------------------------------------------- */
