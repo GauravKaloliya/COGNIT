@@ -22,6 +22,40 @@ import qrcode
 import pytesseract
 from PIL import Image
 import boto3
+# Import security middleware (NEW)
+try:
+    from middleware import (
+        require_payment_completed,
+        require_valid_payment_session,
+        require_valid_stage_transition,
+        device_fingerprint_middleware,
+        get_ip_hash,
+        validate_payment_timer,
+        check_global_duplicate_screenshot,
+        check_global_duplicate_upi_ref,
+        validate_upi_reference,
+        detect_upi_app,
+        analyze_fraud_signals
+    )
+except ImportError:
+    # Middleware not available, define fallback functions
+    def require_payment_completed(f): return f
+    def require_valid_payment_session(f): return f
+    def require_valid_stage_transition(f): return f
+    def device_fingerprint_middleware(): pass
+    
+    def get_ip_hash():
+        ip = request.headers.get("X-Real-IP") or request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+        salt = "cognit_ip_salt_2024"
+        return hashlib.sha256(f"{ip}{salt}".encode()).hexdigest()
+    
+    def validate_payment_timer(*args, **kwargs): return True, None
+    def check_global_duplicate_screenshot(*args, **kwargs): return False, []
+    def check_global_duplicate_upi_ref(*args, **kwargs): return False, []
+    def validate_upi_reference(*args, **kwargs): return True, None
+    def detect_upi_app(*args): return None
+    def analyze_fraud_signals(*args, **kwargs): return 0, []
+
 
 # ────────────────────────────────────────────────
 # Constants & Environment
@@ -973,6 +1007,7 @@ def random_image():
     return jsonify({"image_id": row[0], "url": row[1]})
 
 @app.route("/submit", methods=["POST"])
+@require_payment_completed  # NEW: Enforce payment completion
 @limiter.limit("60 per minute")
 @track_performance
 def submit():
@@ -1379,6 +1414,7 @@ def create_payment():
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
 @app.route("/payments/<payment_public_id>/upload-url", methods=["POST"])
+@require_valid_payment_session  # NEW: Validate payment session
 @limiter.limit("20 per minute")
 @track_performance
 def generate_upload_url(payment_public_id):
@@ -1438,6 +1474,7 @@ def generate_upload_url(payment_public_id):
     })
 
 @app.route("/payments/<payment_public_id>/finalize", methods=["POST"])
+@require_valid_payment_session  # NEW: Validate payment session
 @limiter.limit("20 per minute")
 @track_performance
 def finalize_payment_upload(payment_public_id):

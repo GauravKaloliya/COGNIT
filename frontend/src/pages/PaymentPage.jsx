@@ -3,9 +3,8 @@ import { getApiUrl } from "../utils/apiBase";
 import { getErrorMessage } from "../utils/errors";
 
 export default function PaymentPage({ 
-  onPaymentComplete, 
+  onNext, 
   onBack,
-  systemReady,
   publicId
 }) {
   const [paymentData, setPaymentData] = useState(null);
@@ -365,7 +364,7 @@ export default function PaymentPage({
       setPaymentStatus("success");
       sessionStorage.removeItem("payment_id");
       clearTimerState();
-      await onPaymentComplete();
+      await onNext();
     } catch (err) {
       const errorMessage = getErrorMessage(err, "Payment verification failed. Please try again.");
       setError(errorMessage);

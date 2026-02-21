@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
-import PaymentContentPage from "./pages/PaymentContentPage.jsx";
-import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
+import PaymentPage from "./pages/PaymentPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
@@ -30,8 +29,8 @@ function saveStoredValue(key, value) {
   sessionStorage.setItem(key, JSON.stringify(value));
 }
 
-// Stage validation for secure navigation
-const STAGE_ORDER = ["consent", "user-details", "payment-content", "payment-link", "survey", "finished"];
+// Stage order for secure navigation (CONSOLIDATED - NEW)
+const STAGE_ORDER = ["consent", "user-details", "payment", "survey", "finished"];
 
 const validateStageTransition = (currentStage, targetStage) => {
   const currentIndex = STAGE_ORDER.indexOf(currentStage);
@@ -47,10 +46,8 @@ const validateStageTransition = (currentStage, targetStage) => {
     case "consent":
       return targetStage === "user-details";
     case "user-details":
-      return targetStage === "payment-content";
-    case "payment-content":
-      return targetStage === "payment-link";
-    case "payment-link":
+      return targetStage === "payment";
+    case "payment":
       return targetStage === "survey";
     case "survey":
       return targetStage === "finished";
@@ -290,8 +287,8 @@ export default function App() {
         await recordConsent();
       }
       // Secure navigation: validate transition before moving
-      if (validateStageTransition("user-details", "payment-content")) {
-        setStage("payment-content");
+      if (validateStageTransition("user-details", "payment")) {
+        setStage("payment");
       }
       addToast("Details submitted successfully", "success");
     } catch (err) {
@@ -312,7 +309,7 @@ export default function App() {
 
   // Handle payment completion with secure navigation
   const handlePaymentComplete = async () => {
-    if (validateStageTransition("payment-link", "survey")) {
+    if (validateStageTransition("payment", "survey")) {
       setStage("survey");
     }
     setSurveyFeedbackReady(false);
@@ -324,21 +321,9 @@ export default function App() {
     }
   };
 
-  // Handle payment link navigation
-  const handlePaymentLinkNext = () => {
-    if (validateStageTransition("payment-content", "payment-link")) {
-      setStage("payment-link");
-    }
-  };
-
-  // Handle payment content back navigation
-  const handlePaymentContentBack = () => {
+  // Handle payment back navigation
+  const handlePaymentBack = () => {
     setStage("user-details");
-  };
-
-  // Handle payment link back navigation
-  const handlePaymentLinkBack = () => {
-    setStage("payment-content");
   };
 
   // Fetch image using standardized API wrapper
@@ -486,22 +471,13 @@ export default function App() {
             onSubmit={handleUserDetailsSubmit}
             onBack={handlePaymentContentBack}
             systemReady={systemReady}
-          />
-        );
+          );
       
-      case "payment-content":
+      case "payment":
         return (
-          <PaymentContentPage
-            onNext={handlePaymentLinkNext}
-            onBack={handlePaymentContentBack}
-          />
-        );
-
-      case "payment-link":
-        return (
-          <PaymentLinkPage
+          <PaymentPage
             onNext={handlePaymentComplete}
-            onBack={handlePaymentLinkBack}
+            onBack={handlePaymentBack}
             publicId={publicId}
           />
         );
