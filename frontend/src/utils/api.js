@@ -112,6 +112,7 @@ export const endpoints = {
     amount
   }),
   getPaymentStatus: (paymentId) => api.get(`/payments/${paymentId}/status`),
+  getParticipantPaymentStatus: (publicId) => api.get(`/participants/${publicId}/payment-status`),
   generateUploadUrl: (paymentId, fileExtension = 'jpg') => api.post(`/payments/${paymentId}/upload-url`, {
     file_extension: fileExtension
   }),

@@ -34,7 +34,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION sync_participant_payment_status()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $
 BEGIN
     UPDATE participants
     SET payment_status = CASE
@@ -42,6 +42,15 @@ BEGIN
         WHEN NEW.status IN ('failed', 'expired', 'rejected_fraud') THEN 'failed'
         WHEN NEW.status = 'refunded' THEN 'refunded'
         ELSE payment_status
+    END,
+    current_stage = CASE
+        WHEN NEW.status = 'success' THEN 'survey'
+        WHEN NEW.status IN ('failed', 'expired', 'rejected_fraud') THEN 'payment'
+        ELSE current_stage
+    END,
+    stage_updated_at = CASE
+        WHEN NEW.status = 'success' OR NEW.status IN ('failed', 'expired', 'rejected_fraud') THEN CURRENT_TIMESTAMP
+        ELSE stage_updated_at
     END
     WHERE id = NEW.participant_id;
     RETURN NEW;
