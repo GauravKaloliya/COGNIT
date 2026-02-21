@@ -462,6 +462,11 @@ def finalize_payment_upload(payment_public_id):
                 current_app.logger.warning("Tesseract not available - payment auto-rejected")
             else:
                 current_app.logger.exception("Verification failed after upload")
+                verification_result = {
+                    "status": "error",
+                    "verified": False,
+                    "error": "verification_failed"
+                }
 
         return jsonify({"status": "uploaded", "verification": verification_result})
 
