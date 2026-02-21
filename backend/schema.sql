@@ -686,3 +686,56 @@ CREATE POLICY performance_metrics_select_deny ON performance_metrics
 -- 6. Lookup tables — no RLS needed (public read access)
 ALTER TABLE genders   DISABLE ROW LEVEL SECURITY;
 ALTER TABLE languages DISABLE ROW LEVEL SECURITY;
+
+-- =====================================================================
+-- ERROR LOGGING
+-- =====================================================================
+
+-- Error logging table for comprehensive error tracking
+CREATE TABLE IF NOT EXISTS error_log (
+    id              BIGSERIAL PRIMARY KEY,
+    error_code      VARCHAR(20) NOT NULL,
+    error_message   TEXT,
+    error_type      VARCHAR(100),
+    endpoint        VARCHAR(120),
+    http_method     VARCHAR(10),
+    status_code     SMALLINT,
+    ip_hash         CHAR(64),
+    user_agent      VARCHAR(512),
+    stack_trace     TEXT,
+    participant_id  BIGINT REFERENCES participants(id) ON DELETE SET NULL,
+    request_data    JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for error logging performance
+CREATE INDEX IF NOT EXISTS idx_error_log_created ON error_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_error_log_code ON error_log (error_code);
+CREATE INDEX IF NOT EXISTS idx_error_log_participant ON error_log (participant_id);
+CREATE INDEX IF NOT EXISTS idx_error_log_endpoint ON error_log (endpoint, created_at DESC);
+
+-- RLS Policies for error_log
+CREATE POLICY error_log_insert_policy ON error_log
+    FOR INSERT
+    WITH CHECK (true);
+
+CREATE POLICY error_log_select_deny ON error_log
+    FOR SELECT
+    USING (false);
+
+-- Error analytics materialized view (optional, for dashboards)
+CREATE MATERIALIZED VIEW IF NOT EXISTS error_analytics AS
+SELECT 
+    error_code,
+    DATE_TRUNC('hour', created_at) as hour,
+    COUNT(*) as count,
+    COUNT(DISTINCT participant_id) as unique_users
+FROM error_log
+WHERE created_at > NOW() - INTERVAL '7 days'
+GROUP BY error_code, DATE_TRUNC('hour', created_at);
+
+CREATE INDEX IF NOT EXISTS idx_error_analytics_hour ON error_analytics (hour);
+
+-- Refresh the materialized view every 5 minutes
+-- This can be done with a cron job or external scheduler
+-- SELECT refresh_error_analytics(); -- Manual refresh function
