@@ -173,7 +173,7 @@ const TRANSLATIONS = {
 };
 
 // Error categories with severity levels and suggested actions
-const ERROR_CATEGORIES = {
+export const ERROR_CATEGORIES = {
   VAL: { severity: 'warning', action: 'fix_input' },
   DUP: { severity: 'warning', action: 'change_input' },
   AUTH: { severity: 'error', action: 'reauthenticate' },
