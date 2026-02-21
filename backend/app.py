@@ -39,6 +39,8 @@ ATTENTION_FLAG_MIN_CHECKS = int(os.getenv("ATTENTION_FLAG_MIN_CHECKS", "3"))
 PRIORITY_WORD_THRESHOLD = int(os.getenv("PRIORITY_WORD_THRESHOLD", "500"))
 PRIORITY_ROUNDS_THRESHOLD = int(os.getenv("PRIORITY_ROUNDS_THRESHOLD", "3"))
 PRIORITY_ATTENTION_THRESHOLD = float(os.getenv("PRIORITY_ATTENTION_THRESHOLD", "0.75"))
+PRIORITY_MIN_SUBMISSIONS = int(os.getenv("PRIORITY_MIN_SUBMISSIONS", "3"))
+SURVEY_ROUNDS = int(os.getenv("SURVEY_ROUNDS", "1"))
 
 PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.10"))
 
@@ -428,34 +430,6 @@ def create_participant():
             return jsonify({"error": "public_id, username, email, or phone already registered"}), 409
         current_app.logger.exception("create_participant failed")
         return jsonify({"error": "database error"}), 500
-
-@app.route("/participants/<public_id>")
-@limiter.limit("10 per minute")
-@track_performance
-def get_participant(public_id):
-    db = get_db()
-    row = db.execute(text("""
-        SELECT username, email, phone, gender_code, age, location, language_code,
-               prior_experience, consent_given, consent_at
-        FROM participants
-        WHERE public_id = :pub AND is_deleted = false
-    """), {"pub": public_id}).fetchone()
-    if not row:
-        return jsonify({"error": "not found or deleted"}), 404
-
-    return jsonify({
-        "public_id": public_id,
-        "username": row[0],
-        "email": row[1],
-        "phone": row[2],
-        "gender_code": row[3],
-        "age": row[4],
-        "location": row[5],
-        "language_code": row[6],
-        "prior_experience": row[7],
-        "consent_given": bool(row[8]),
-        "consent_at": row[9].isoformat() if row[9] else None
-    })
 
 @app.route("/check-username")
 @limiter.limit("30 per minute")
