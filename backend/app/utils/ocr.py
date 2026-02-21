@@ -36,11 +36,11 @@ def _check_tesseract():
         try:
             pytesseract.get_tesseract_version()
             _tesseract_available = True
-        except Exception as exc:
+        except Exception:
             _tesseract_available = False
-            raise pytesseract.TesseractNotFoundError("Tesseract OCR is not installed or not in PATH") from exc
+            raise pytesseract.TesseractNotFoundError
     if not _tesseract_available:
-        raise pytesseract.TesseractNotFoundError("Tesseract OCR is not installed or not in PATH")
+        raise pytesseract.TesseractNotFoundError
 
 
 # ────────────────────────────────────────────────
