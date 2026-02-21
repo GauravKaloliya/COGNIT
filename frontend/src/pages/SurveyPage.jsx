@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
+import { endpoints } from "../utils/api.js";
 
 const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
 const MIN_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MIN_DESCRIPTION_LENGTH || "60", 10);
@@ -58,16 +59,12 @@ export default function SurveyPage({
           ...prev,
           tabSwitchCount: prev.tabSwitchCount + 1
         }));
-        
-        // Send engagement event to backend
+
+        // Send engagement event to backend using API wrapper
         try {
-          await fetch(getApiUrl('/engagement/track'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              public_id: publicId,
-              event_type: 'tab_switch'
-            })
+          await endpoints.trackEngagement({
+            public_id: publicId,
+            event_type: 'tab_switch'
           });
         } catch (error) {
           console.warn('Failed to track tab switch:', error);
@@ -82,15 +79,11 @@ export default function SurveyPage({
           ...prev,
           pageCloseAttempts: prev.pageCloseAttempts + 1
         }));
-        
-        // Send engagement event to backend (non-blocking)
-        fetch(getApiUrl('/engagement/track'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            public_id: publicId,
-            event_type: 'page_close_attempt'
-          })
+
+        // Send engagement event to backend using API wrapper (non-blocking)
+        endpoints.trackEngagement({
+          public_id: publicId,
+          event_type: 'page_close_attempt'
         }).catch(error => {
           console.warn('Failed to track page close:', error);
         });
@@ -104,36 +97,28 @@ export default function SurveyPage({
       // Network restored
       if (publicId) {
         try {
-          await fetch(getApiUrl('/engagement/track'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              public_id: publicId,
-              event_type: 'network_reconnect'  // Note: different event type for online
-            })
+          await endpoints.trackEngagement({
+            public_id: publicId,
+            event_type: 'network_reconnect'  // Note: different event type for online
           });
         } catch (error) {
           console.warn('Failed to track network reconnect:', error);
         }
       }
     };
-    
+
     const handleOffline = async () => {
       if (publicId) {
         setEngagementData(prev => ({
           ...prev,
           networkDisconnects: prev.networkDisconnects + 1
         }));
-        
-        // Send engagement event to backend
+
+        // Send engagement event to backend using API wrapper
         try {
-          await fetch(getApiUrl('/engagement/track'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              public_id: publicId,
-              event_type: 'network_disconnect'
-            })
+          await endpoints.trackEngagement({
+            public_id: publicId,
+            event_type: 'network_disconnect'
           });
         } catch (error) {
           console.warn('Failed to track network disconnect:', error);

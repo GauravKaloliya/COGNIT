@@ -6,7 +6,8 @@ import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
-import { getErrorMessage } from "./utils/errors";
+import { api, endpoints } from "./utils/api.js";
+import { getErrorMessage, parseErrorResponse } from "./utils/errors";
 
 function createId() {
   if (crypto?.randomUUID) {
@@ -221,12 +222,10 @@ export default function App() {
     }, 4000);
   }, []);
 
-  // Create participant in database
+  // Create participant in database using standardized API wrapper
   const createParticipant = async () => {
-    const response = await fetch(getApiUrl('/participants'), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const data = await endpoints.createParticipant({
         public_id: publicId,
         session_id: sessionId,
         username: demographics.username,
@@ -237,35 +236,50 @@ export default function App() {
         location: demographics.location,
         language_code: demographics.language_code,
         prior_experience: demographics.prior_experience
-      })
-    });
-
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      const errorMessage = getErrorMessage(data, "Failed to create participant. Please try again.");
+      });
+      return data;
+    } catch (error) {
+      // Log error to backend for analytics
+      if (error.code) {
+        endpoints.logClientError({
+          error_code: error.code,
+          error_message: error.message,
+          page_url: window.location.href,
+          extra_data: {
+            category: error.category,
+            severity: error.severity,
+            action: error.action,
+            field: error.field
+          }
+        }).catch(() => {}); // Silent fail
+      }
+      const errorMessage = getErrorMessage(error, "Failed to create participant. Please try again.");
       throw new Error(errorMessage);
     }
-
-    return response.json();
   };
 
-  // Record consent in database
+  // Record consent in database using standardized API wrapper
   const recordConsent = async () => {
-    const response = await fetch(getApiUrl('/consent'), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        public_id: publicId
-      })
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      const errorMessage = getErrorMessage(data, "Failed to record consent. Please try again.");
+    try {
+      const data = await endpoints.recordConsent(publicId);
+      return data;
+    } catch (error) {
+      // Log error to backend for analytics
+      if (error.code) {
+        endpoints.logClientError({
+          error_code: error.code,
+          error_message: error.message,
+          page_url: window.location.href,
+          extra_data: {
+            category: error.category,
+            severity: error.severity,
+            action: error.action
+          }
+        }).catch(() => {});
+      }
+      const errorMessage = getErrorMessage(error, "Failed to record consent. Please try again.");
       throw new Error(errorMessage);
     }
-
-    return response.json();
   };
 
   // Handle user details submission with secure navigation
@@ -327,29 +341,30 @@ export default function App() {
     setStage("payment-content");
   };
 
-  // Fetch image
+  // Fetch image using standardized API wrapper
   const fetchImage = async () => {
     setSurveyFeedbackReady(false);
     setImageError(null);
 
     try {
-      // Build URL with excluded images to prevent duplicates
-      let url = getApiUrl('/images/random');
-      if (shownImages.length > 0) {
-        url += `?exclude=${encodeURIComponent(shownImages.join(','))}`;
-      }
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Unable to fetch image");
-      }
-      const data = await response.json();
-
+      const data = await endpoints.getRandomImage(shownImages);
       // Track this image as shown
       setShownImages(prev => [...prev, data.image_id]);
       setSurvey(data);
     } catch (error) {
+      // Log error to backend for analytics
+      if (error.code) {
+        endpoints.logClientError({
+          error_code: error.code,
+          error_message: error.message,
+          page_url: window.location.href,
+          extra_data: {
+            category: error.category,
+            severity: error.severity,
+            action: error.action
+          }
+        }).catch(() => {});
+      }
       const errorMessage = error.message || "Failed to load image";
       addToast(errorMessage, "error");
       setImageError(errorMessage);
@@ -357,54 +372,59 @@ export default function App() {
     }
   };
 
-  // Handle submission
+  // Handle submission using standardized API wrapper
   const handleSubmit = async (formData) => {
     // Extract engagement data if provided
     const engagementData = formData.engagementData || {};
-    
-    const payload = {
-      public_id: publicId,
-      image_id: survey.image_id,
-      description: formData.description,
-      rating: formData.rating,
-      feedback: formData.comments,
-      time_spent_seconds: formData.timeSpentSeconds,
-      is_survey: surveyCompleted === 0,
-      survey_index: surveyCompleted === 0 ? 0 : surveyCompleted,
-      tab_switch_count: engagementData.tabSwitchCount || 0,
-      page_close_attempts: engagementData.pageCloseAttempts || 0,
-      network_disconnects: engagementData.networkDisconnects || 0
-    };
 
-    const response = await fetch(getApiUrl('/submit'), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const result = await endpoints.submitDescription({
+        public_id: publicId,
+        image_id: survey.image_id,
+        description: formData.description,
+        rating: formData.rating,
+        feedback: formData.comments,
+        time_spent_seconds: formData.timeSpentSeconds,
+        is_survey: surveyCompleted === 0,
+        survey_index: surveyCompleted === 0 ? 0 : surveyCompleted,
+        tab_switch_count: engagementData.tabSwitchCount || 0,
+        page_close_attempts: engagementData.pageCloseAttempts || 0,
+        network_disconnects: engagementData.networkDisconnects || 0
+      });
 
-    if (!response.ok) {
-      const data = await response.json();
-      const errorMessage = getErrorMessage(data, "Submission failed. Please try again.");
+      if (result.attention_passed === false) {
+        addToast("Please follow the special instructions next time!", "warning");
+      } else {
+        addToast("Your response was saved!", "success");
+      }
+
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 1200);
+
+      // Update survey completed count
+      setSurveyCompleted((prev) => prev + 1);
+
+      // Show feedback screen after first practice survey
+      if (surveyCompleted === 0) {
+        setSurveyFeedbackReady(true);
+      }
+    } catch (error) {
+      // Log error to backend for analytics
+      if (error.code) {
+        endpoints.logClientError({
+          error_code: error.code,
+          error_message: error.message,
+          page_url: window.location.href,
+          extra_data: {
+            category: error.category,
+            severity: error.severity,
+            action: error.action,
+            field: error.field
+          }
+        }).catch(() => {});
+      }
+      const errorMessage = getErrorMessage(error, "Submission failed. Please try again.");
       throw new Error(errorMessage);
-    }
-
-    const result = await response.json();
-
-    if (result.attention_passed === false) {
-      addToast("Please follow the special instructions next time!", "warning");
-    } else {
-      addToast("Your response was saved!", "success");
-    }
-
-    setShowConfetti(true);
-    setTimeout(() => setShowConfetti(false), 1200);
-
-    // Update survey completed count
-    setSurveyCompleted((prev) => prev + 1);
-
-    // Show feedback screen after first practice survey
-    if (surveyCompleted === 0) {
-      setSurveyFeedbackReady(true);
     }
   };
 
