@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
-import PaymentPage from "./pages/PaymentPage.jsx";
+import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
@@ -529,7 +529,7 @@ export default function App() {
       
       case "payment":
         return (
-          <PaymentPage
+          <PaymentLinkPage
             onNext={handlePaymentComplete}
             onBack={handlePaymentBack}
             publicId={publicId}
