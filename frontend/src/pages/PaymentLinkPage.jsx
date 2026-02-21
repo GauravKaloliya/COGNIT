@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
-import { getErrorMessage, handleApiError } from "../utils/errors";
+import { endpoints } from "../utils/api.js";
+import { getErrorMessage, handleApiError, parseErrorResponse } from "../utils/errors";
 
 export default function PaymentLinkPage({ 
   onNext, 
@@ -196,21 +197,7 @@ export default function PaymentLinkPage({
     setError(null);
 
     try {
-      const response = await fetch(getApiUrl('/payments/create'), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          public_id: publicId,
-          amount: 1
-        })
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to create payment");
-      }
-
-      const data = await response.json();
+      const data = await endpoints.createPayment(publicId, 1);
       setPaymentData(data);
       sessionStorage.setItem("payment_id", data.payment_id);
 
@@ -220,6 +207,19 @@ export default function PaymentLinkPage({
         throw new Error("The payment session has expired. Please try again to create a new payment.");
       }
     } catch (err) {
+      // Log error to backend for analytics
+      if (err.code) {
+        endpoints.logClientError({
+          error_code: err.code,
+          error_message: err.message,
+          page_url: window.location.href,
+          extra_data: {
+            category: err.category,
+            severity: err.severity,
+            action: err.action
+          }
+        }).catch(() => {});
+      }
       const errorMessage = getErrorMessage(err, "We couldn't create the payment. Please try again.");
       setError(errorMessage);
       sessionStorage.removeItem("payment_id");
@@ -268,26 +268,14 @@ export default function PaymentLinkPage({
     try {
       // Extract file extension from uploaded file
       const fileExtension = uploadFile.name.split('.').pop().toLowerCase();
-      
-      const uploadUrlResponse = await fetch(
-        getApiUrl(`/payments/${paymentData.payment_id}/upload-url`),
-        { 
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_extension: fileExtension })
-        }
+
+      // Step 1: Get upload URL using API wrapper
+      const { upload_url, object_key } = await endpoints.generateUploadUrl(
+        paymentData.payment_id,
+        fileExtension
       );
 
-      if (!uploadUrlResponse.ok) {
-        const data = await uploadUrlResponse.json();
-        if (uploadUrlResponse.status === 410) {
-          handleExpiry();
-        }
-        throw data;
-      }
-
-      const { upload_url, object_key } = await uploadUrlResponse.json();
-
+      // Step 2: Upload file to S3
       const uploadResponse = await fetch(upload_url, {
         method: "PUT",
         headers: { "Content-Type": uploadFile.type },
@@ -298,26 +286,13 @@ export default function PaymentLinkPage({
         throw new Error("We couldn't upload your screenshot. Please check your internet connection and try again.");
       }
 
+      // Step 3: Calculate SHA256 and finalize
       const sha256 = await calculateSha256(uploadFile);
-
-      const finalizeResponse = await fetch(
-        getApiUrl(`/payments/${paymentData.payment_id}/finalize`),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ object_key, sha256 })
-        }
+      const finalizeData = await endpoints.finalizePayment(
+        paymentData.payment_id,
+        object_key,
+        sha256
       );
-
-      if (!finalizeResponse.ok) {
-        const data = await finalizeResponse.json();
-        if (finalizeResponse.status === 410) {
-          handleExpiry();
-        }
-        throw data;
-      }
-
-      const finalizeData = await finalizeResponse.json();
 
       // Check inline verification result first (avoids extra round-trip)
       const inlineVerification = finalizeData.verification;
@@ -340,27 +315,21 @@ export default function PaymentLinkPage({
       }
 
       // Fall back to polling status endpoint
-      const statusResponse = await fetch(
-        getApiUrl(`/payments/${paymentData.payment_id}/status`)
-      );
+      const statusData = await endpoints.getPaymentStatus(paymentData.payment_id);
 
-      if (statusResponse.ok) {
-        const statusData = await statusResponse.json();
+      if (statusData.status === "rejected_fraud") {
+        setPaymentStatus("rejected_fraud");
+        setVerifying(false);
+        const reasons = statusData.verification_details?.failure_reasons || [];
+        setFailureReasons(reasons);
+        const specificError = getVerificationErrorMessage(reasons);
+        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.");
+        return;
+      }
 
-        if (statusData.status === "rejected_fraud") {
-          setPaymentStatus("rejected_fraud");
-          setVerifying(false);
-          const reasons = statusData.verification_details?.failure_reasons || [];
-          setFailureReasons(reasons);
-          const specificError = getVerificationErrorMessage(reasons);
-          setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.");
-          return;
-        }
-
-        if (statusData.status === "expired") {
-          handleExpiry();
-          throw new Error("Payment session has expired. Please create a new payment.");
-        }
+      if (statusData.status === "expired") {
+        handleExpiry();
+        throw new Error("Payment session has expired. Please create a new payment.");
       }
 
       setPaymentStatus("success");
@@ -368,6 +337,26 @@ export default function PaymentLinkPage({
       clearTimerState();
       await onNext();
     } catch (err) {
+      // Handle specific error codes
+      if (err.code === 'PAY_001_0001' || err.code === 'ERR_PAYMENT_EXPIRED') {
+        handleExpiry();
+      }
+
+      // Log error to backend for analytics
+      if (err.code) {
+        endpoints.logClientError({
+          error_code: err.code,
+          error_message: err.message,
+          page_url: window.location.href,
+          extra_data: {
+            category: err.category,
+            severity: err.severity,
+            action: err.action,
+            failure_reasons: failureReasons
+          }
+        }).catch(() => {});
+      }
+
       const errorMessage = getErrorMessage(err, "Payment verification failed. Please try again.");
       setError(errorMessage);
     } finally {

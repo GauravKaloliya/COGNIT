@@ -378,6 +378,10 @@ ON payment_files (payment_id);
 CREATE INDEX idx_payment_files_sha256
 ON payment_files (sha256);
 
+-- Unique constraint to prevent duplicate screenshot uploads (fraud prevention)
+CREATE UNIQUE INDEX idx_payment_files_sha256_unique
+ON payment_files (sha256);
+
 CREATE TABLE payment_submissions (
     payment_id    BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
     submission_id BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
