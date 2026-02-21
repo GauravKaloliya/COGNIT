@@ -17,7 +17,9 @@ from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 # Flask Application
 # ────────────────────────────────────────────────
 
-app = Flask(__name__)
+import os
+template_dir = os.path.join(os.path.dirname(__file__), '..', 'templates')
+app = Flask(__name__, template_folder=template_dir)
 app.url_map.strict_slashes = False
 app.config["SECRET_KEY"] = SECRET_KEY
 app.config["SESSION_COOKIE_SECURE"] = True
