@@ -172,6 +172,15 @@ export default function App() {
   useEffect(() => { saveStoredValue("surveyFeedbackReady", surveyFeedbackReady); }, [surveyFeedbackReady]);
   useEffect(() => { saveStoredValue("shownImages", shownImages); }, [shownImages]);
   useEffect(() => { saveStoredValue("darkMode", darkMode); document.body.classList.toggle("dark", darkMode); }, [darkMode]);
+
+  // Define addToast early since it's used in useEffect below
+  const addToast = useCallback((message, type = "info", action) => {
+    const id = createId();
+    setToasts((prev) => [...prev, { id, message, type, action }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 4000);
+  }, []);
   
   // Online/offline detection
   useEffect(() => {
@@ -238,14 +247,6 @@ export default function App() {
 
     verifyPaymentForSurvey();
   }, [stage, systemReady, paymentVerified, publicId, addToast]);
-
-  const addToast = useCallback((message, type = "info", action) => {
-    const id = createId();
-    setToasts((prev) => [...prev, { id, message, type, action }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, 4000);
-  }, []);
 
   // Create participant in database using standardized API wrapper
   const createParticipant = async () => {
