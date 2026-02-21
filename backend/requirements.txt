@@ -13,3 +13,7 @@ pytesseract==0.3.10
 qrcode==7.4.2
 boto3==1.34.93
 celery==5.3.6
+# Enhanced Security & Image Processing (NEW)
+opencv-python-headless==4.9.0.80
+numpy==1.26.4
+imagehash==4.3.1
