@@ -248,9 +248,8 @@ export default function App() {
       const data = await response.json().catch(() => ({}));
       let errorMessage = data.error || "Failed to create participant";
 
-      // Specific handling for 409 Conflict (duplicate participant)
       if (response.status === 409) {
-        errorMessage = "Participant already exists. Please use a different username, email, or phone number.";
+        errorMessage = "Username, email, or phone number is already registered. Please use different details.";
       }
 
       throw new Error(errorMessage);
@@ -291,14 +290,8 @@ export default function App() {
       }
       addToast("Details submitted successfully", "success");
     } catch (err) {
-      // If participant already exists (409), show error message and do NOT continue
-      if (err.message && (err.message.includes("already exists") || err.message.includes("different username"))) {
-        addToast(err.message, "error");
-        throw err;
-      } else {
-        addToast(err.message, "error");
-        throw err;
-      }
+      addToast(err.message, "error");
+      throw err;
     }
   };
 
