@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
 import { endpoints } from "../utils/api.js";
-import { getErrorMessage, handleApiError, parseErrorResponse } from "../utils/errors";
+import { parseErrorResponse } from "../utils/errorRegistry.js";
+import { handleApiError } from "../utils/api.js";
 
 export default function PaymentLinkPage({ 
   onNext, 
@@ -283,7 +284,12 @@ export default function PaymentLinkPage({
       });
 
       if (!uploadResponse.ok) {
-        throw new Error("We couldn't upload your screenshot. Please check your internet connection and try again.");
+        if (uploadResponse.status === 413) {
+          setError("The file is too large. Please upload an image smaller than 5MB.");
+        } else {
+          setError("We couldn't upload your screenshot. Please check your internet connection and try again.");
+        }
+        return;
       }
 
       // Step 3: Calculate SHA256 and finalize
@@ -329,7 +335,7 @@ export default function PaymentLinkPage({
 
       if (statusData.status === "expired") {
         handleExpiry();
-        throw new Error("Payment session has expired. Please create a new payment.");
+        return;
       }
 
       setPaymentStatus("success");
@@ -337,9 +343,53 @@ export default function PaymentLinkPage({
       clearTimerState();
       await onNext();
     } catch (err) {
-      // Handle specific error codes
+      // Handle specific error codes with better messaging
       if (err.code === 'PAY_001_0001' || err.code === 'ERR_PAYMENT_EXPIRED') {
         handleExpiry();
+        return;
+      }
+
+      if (err.code === 'ERR_PAYMENT_NOT_FOUND') {
+        setError("Payment session not found. Please create a new payment.");
+        return;
+      }
+
+      if (err.code === 'ERR_INVALID_IMAGE_TYPE') {
+        setError("Invalid image format. Please upload JPG, PNG, or WEBP images only.");
+        return;
+      }
+
+      if (err.code === 'ERR_DUPLICATE_IMAGE' || err.code === 'FRAUD_003_0001') {
+        setError("This screenshot has already been submitted by another user. Please use a fresh payment screenshot.");
+        return;
+      }
+
+      if (err.code === 'ERR_REJECTED_REUSE' || err.code === 'FRAUD_003_0002') {
+        setError("This screenshot was previously rejected. Please use a fresh payment screenshot.");
+        return;
+      }
+
+      if (err.code === 'ERR_DUPLICATE_TXN' || err.code === 'DUP_003_0002') {
+        setError("This transaction has already been used. Each payment must be unique.");
+        return;
+      }
+
+      // Handle network and other errors
+      if (err.message && err.message.includes('fetch')) {
+        setError("Unable to connect to server. Please check your internet connection and try again.");
+        return;
+      }
+
+      if (err.message && err.message.includes('timeout')) {
+        setError("The request took too long. Please try again.");
+        return;
+      }
+
+      // For any other errors, provide a more helpful message
+      if (err.code) {
+        setError(`Payment verification failed (${err.code}). Please try again or contact support if the problem persists.`);
+      } else {
+        setError("Payment verification failed. Please try again.");
       }
 
       // Log error to backend for analytics
@@ -356,9 +406,6 @@ export default function PaymentLinkPage({
           }
         }).catch(() => {});
       }
-
-      const errorMessage = getErrorMessage(err, "Payment verification failed. Please try again.");
-      setError(errorMessage);
     } finally {
       setVerifying(false);
     }
