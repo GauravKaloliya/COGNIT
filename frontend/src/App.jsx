@@ -6,6 +6,7 @@ import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
+import { getErrorMessage } from "./utils/errors";
 
 function createId() {
   if (crypto?.randomUUID) {
@@ -241,12 +242,7 @@ export default function App() {
 
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      let errorMessage = data.error || "Failed to create participant";
-
-      if (response.status === 409) {
-        errorMessage = "Username, email, or phone number is already registered. Please use different details.";
-      }
-
+      const errorMessage = getErrorMessage(data, "Failed to create participant. Please try again.");
       throw new Error(errorMessage);
     }
 
@@ -265,7 +261,7 @@ export default function App() {
 
     if (!response.ok) {
       const data = await response.json();
-      const errorMessage = data.error || "Failed to record consent";
+      const errorMessage = getErrorMessage(data, "Failed to record consent. Please try again.");
       throw new Error(errorMessage);
     }
 
@@ -388,31 +384,7 @@ export default function App() {
 
     if (!response.ok) {
       const data = await response.json();
-      let errorMessage = data.error || "Submission failed";
-
-      // Provide more specific error messages for common issues
-      if (response.status === 400) {
-        if (data.error && data.error.includes("public_id is required")) {
-          errorMessage = "Public ID is missing. Please refresh the page and start again.";
-        } else if (data.error && data.error.includes("not found")) {
-          errorMessage = "Participant not found. Please complete the registration process first.";
-        } else if (data.error && data.error.includes("words required")) {
-          errorMessage = data.error; // Keep the original word count error
-        } else if (data.error && data.error.includes("rating")) {
-          errorMessage = "Please select a rating for the image.";
-        } else if (data.error && data.error.includes("feedback")) {
-          errorMessage = "Feedback must be at least 5 characters long.";
-        }
-      } else if (response.status === 403) {
-        if (data.error && data.error.includes("consent")) {
-          errorMessage = "Consent is required. Please complete the consent process first.";
-        } else if (data.error && data.error.includes("flagged")) {
-          errorMessage = "Your account has been flagged due to low attention scores.";
-        }
-      } else if (response.status === 409) {
-        errorMessage = "This submission has already been recorded.";
-      }
-
+      const errorMessage = getErrorMessage(data, "Submission failed. Please try again.");
       throw new Error(errorMessage);
     }
 
