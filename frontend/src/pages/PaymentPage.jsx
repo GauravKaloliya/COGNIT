@@ -21,13 +21,16 @@ export default function PaymentPage({
       'low_resolution': 'Screenshot resolution too low. Please upload a clearer image.',
       'low_ocr_confidence': 'Could not read text clearly. Please retake screenshot.',
       'unrecognized_app': 'Screenshot not from an allowed UPI app (GPay, PhonePe, Paytm, etc.).',
+      'not_upi_payment': 'Screenshot does not appear to be a UPI payment. Please use a valid UPI app.',
       'vpa_mismatch': 'Payment not made to correct UPI ID.',
       'note_mismatch': 'Payment note does not match session. Please use exact note shown.',
-      'amount_mismatch': 'Payment amount must be exactly ₹1.',
+      'amount_mismatch': 'Payment amount must be exactly ₹1 with currency indicator (₹, Rs, INR).',
       'missing_success_indicator': 'Payment success status not detected.',
       'failure_indicator_present': 'Payment appears to have failed or is pending.',
       'missing_transaction_id': 'Transaction ID not found in screenshot.',
-      'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.'
+      'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.',
+      'missing_recipient_indicator': 'Payment recipient details not found. Screenshot must show who received payment.',
+      'missing_timestamp': 'Payment date/time not found in screenshot. Real payment screenshots include timestamps.'
     };
     return reasons.map(r => messages[r] || r).join('. ');
   };

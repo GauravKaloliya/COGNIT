@@ -128,7 +128,7 @@ export function extractErrorCode(error) {
  * @param {string} defaultMessage - Fallback message if error code not found
  * @returns {string} - User-friendly error message
  */
-export function getErrorMessage(error, defaultMessage = 'Something went wrong. Please try again.') {
+export function getErrorMessageFromCode(error, defaultMessage = 'Something went wrong. Please try again.') {
   // If it's a network error
   if (error?.message?.includes('network') || error?.message?.includes('fetch')) {
     return 'We\'re having trouble connecting. Please check your internet connection and try again.';
@@ -197,7 +197,7 @@ export function handleApiError(error, options = {}) {
     console.error(`Error in ${context}:`, error);
   }
   
-  const message = getErrorMessage(error);
+  const message = getErrorMessageFromCode(error);
   
   if (onError) {
     onError(message, error);

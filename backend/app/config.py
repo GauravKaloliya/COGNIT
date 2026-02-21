@@ -223,6 +223,10 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "FRAUD_DUPLICATE_TXN_ID": {"code": "FRAUD_002_0007", "message": "This transaction has already been used. Please make a fresh payment.", "status": 409, "category": "FRAUD"},
     "FRAUD_DUPLICATE_IMAGE": {"code": "FRAUD_003_0001", "message": "This screenshot was already submitted by another user", "status": 409, "category": "FRAUD"},
     "FRAUD_REJECTED_REUSE": {"code": "FRAUD_003_0002", "message": "This screenshot was previously rejected", "status": 409, "category": "FRAUD"},
+    "FRAUD_NOT_UPI_PAYMENT": {"code": "FRAUD_002_0008", "message": "Screenshot does not appear to be a UPI payment", "status": 400, "category": "FRAUD"},
+    "FRAUD_MISSING_RECIPIENT": {"code": "FRAUD_002_0009", "message": "Payment recipient details not found in screenshot", "status": 400, "category": "FRAUD"},
+    "FRAUD_MISSING_TIMESTAMP": {"code": "FRAUD_002_0010", "message": "Payment date/time not found in screenshot", "status": 400, "category": "FRAUD"},
+    "PAYMENT_NOT_VERIFIED": {"code": "PAY_001_0007", "message": "Payment not verified. Please complete payment first.", "status": 403, "category": "PAY"},
     # Legacy fraud aliases
     "DUPLICATE_IMAGE": {"code": "ERR_DUPLICATE_IMAGE", "message": "This screenshot has already been uploaded by another user.", "status": 409, "category": "FRAUD"},
     "REJECTED_REUSE": {"code": "ERR_REJECTED_REUSE", "message": "This screenshot was previously rejected. Please use a fresh payment screenshot.", "status": 409, "category": "FRAUD"},
