@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
 import PaymentContentPage from "./pages/PaymentContentPage.jsx";
 import PaymentVerifyPage from "./pages/PaymentVerifyPage.jsx";
+import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import { getApiUrl } from "./utils/apiBase";
@@ -27,6 +28,39 @@ function getStoredValue(key, fallback) {
 function saveStoredValue(key, value) {
   sessionStorage.setItem(key, JSON.stringify(value));
 }
+
+// Stage validation for secure navigation
+const STAGE_ORDER = ["consent", "user-details", "payment-content", "payment-link", "payment-verify", "survey", "finished"];
+
+const validateStageTransition = (currentStage, targetStage) => {
+  const currentIndex = STAGE_ORDER.indexOf(currentStage);
+  const targetIndex = STAGE_ORDER.indexOf(targetStage);
+  
+  // Allow going back to previous stages
+  if (targetIndex <= currentIndex) {
+    return true;
+  }
+  
+  // Only allow moving forward to next stage if current stage is complete
+  switch (currentStage) {
+    case "consent":
+      // Consent must be given
+      return targetStage === "user-details";
+    case "user-details":
+      // Demographics must be submitted (validated in UserDetailsPage)
+      return targetStage === "payment-content";
+    case "payment-content":
+      return targetStage === "payment-link";
+    case "payment-link":
+      return targetStage === "payment-verify";
+    case "payment-verify":
+      return targetStage === "survey";
+    case "survey":
+      return targetStage === "finished";
+    default:
+      return false;
+  }
+};
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -244,14 +278,17 @@ export default function App() {
     return response.json();
   };
 
-  // Handle user details submission
+  // Handle user details submission with secure navigation
   const handleUserDetailsSubmit = async () => {
     try {
       await createParticipant();
       if (consentGiven) {
         await recordConsent();
       }
-      setStage("payment");
+      // Secure navigation: validate transition before moving
+      if (validateStageTransition("user-details", "payment-content")) {
+        setStage("payment-content");
+      }
       addToast("Details submitted successfully", "success");
     } catch (err) {
       // If participant already exists (409), show error message and do NOT continue
@@ -265,16 +302,22 @@ export default function App() {
     }
   };
 
-  // Handle consent given
+  // Handle consent given with secure navigation
   const handleConsentGiven = async () => {
     setConsentGiven(true);
-    setStage("user-details");
+    // Secure navigation: validate transition before moving
+    if (validateStageTransition("consent", "user-details")) {
+      setStage("user-details");
+    }
     addToast("Consent recorded successfully", "success");
   };
 
-  // Handle payment completion
+  // Handle payment completion with secure navigation
   const handlePaymentComplete = async () => {
-    setStage("survey");
+    // Secure navigation: validate transition before moving
+    if (validateStageTransition("payment-verify", "survey")) {
+      setStage("survey");
+    }
     setSurveyFeedbackReady(false); // Reset feedback state for new survey session
     try {
       await fetchImage();
@@ -283,6 +326,35 @@ export default function App() {
       addToast("Failed to load first survey image. Please try again.", "error");
       // Stay on survey page but show error
     }
+  };
+
+  // Handle payment link navigation
+  const handlePaymentLinkNext = () => {
+    if (validateStageTransition("payment-content", "payment-link")) {
+      setStage("payment-link");
+    }
+  };
+
+  // Handle payment verify navigation
+  const handlePaymentVerifyNext = () => {
+    if (validateStageTransition("payment-link", "payment-verify")) {
+      setStage("payment-verify");
+    }
+  };
+
+  // Handle payment content back navigation
+  const handlePaymentContentBack = () => {
+    setStage("user-details");
+  };
+
+  // Handle payment link back navigation
+  const handlePaymentLinkBack = () => {
+    setStage("payment-content");
+  };
+
+  // Handle payment verify back navigation
+  const handlePaymentVerifyBack = () => {
+    setStage("payment-link");
   };
 
   // Fetch image
@@ -446,15 +518,25 @@ export default function App() {
             demographics={demographics}
             setDemographics={setDemographics}
             onSubmit={handleUserDetailsSubmit}
-            onBack={() => setStage("consent")}
+            onBack={handlePaymentContentBack}
             systemReady={systemReady}
           />
         );
       
-      case "payment":
+      case "payment-content":
         return (
           <PaymentContentPage
-            onNext={() => setStage("payment-verify")}
+            onNext={handlePaymentLinkNext}
+            onBack={handlePaymentContentBack}
+          />
+        );
+
+      case "payment-link":
+        return (
+          <PaymentLinkPage
+            onNext={handlePaymentVerifyNext}
+            onBack={handlePaymentLinkBack}
+            publicId={publicId}
           />
         );
       
@@ -462,7 +544,7 @@ export default function App() {
         return (
           <PaymentVerifyPage
             onPaymentComplete={handlePaymentComplete}
-            onBack={() => setStage("payment")}
+            onBack={handlePaymentVerifyBack}
             systemReady={systemReady}
             publicId={publicId}
           />
@@ -489,7 +571,8 @@ export default function App() {
         return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} />;
       
       default:
-        return <UserDetailsPage demographics={demographics} setDemographics={setDemographics} onSubmit={handleUserDetailsSubmit} onBack={() => setStage("consent")} systemReady={systemReady} />;
+        // Secure default: redirect to consent if stage is invalid
+        return <ConsentPage onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
     }
   };
 
