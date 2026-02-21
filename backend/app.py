@@ -646,10 +646,8 @@ def check_duplicate_screenshot(db, sha256_hash: str) -> tuple[bool, int | None]:
     """
     Check if a screenshot with the given SHA256 hash already exists.
     Returns (is_duplicate, existing_payment_id).
-    Uses a privileged query that bypasses RLS for cross-user duplicate detection.
     """
     try:
-        # Use a subquery to bypass RLS for fraud detection purposes
         result = db.execute(text("""
             SELECT pf.payment_id, p.status
             FROM payment_files pf
