@@ -37,10 +37,8 @@ def require_payment_completed(f):
         if not public_id:
             return error_response("VAL_MISSING_FIELDS", fields=["public_id"])
         
-        # Check database
-        db = getattr(g, 'db', None)
-        if not db:
-            return error_response("SYS_DATABASE_ERROR")
+        from app.database import get_db
+        db = get_db()
         
         # Get participant with payment status
         result = db.execute(text("""
@@ -103,9 +101,8 @@ def require_valid_payment_session(f):
         if not payment_public_id:
             return error_response("VAL_MISSING_FIELDS", fields=["payment_public_id"])
         
-        db = getattr(g, 'db', None)
-        if not db:
-            return error_response("SYS_DATABASE_ERROR")
+        from app.database import get_db
+        db = get_db()
         
         # Get payment details
         result = db.execute(text("""
@@ -123,7 +120,7 @@ def require_valid_payment_session(f):
         current_route = request.endpoint
         valid_states = []
         
-        if 'upload-url' in current_route:
+        if 'upload_url' in current_route or 'upload-url' in current_route:
             # Can generate upload URL for pending payments only
             valid_states = ['pending']
         elif 'finalize' in current_route:
@@ -200,9 +197,8 @@ def require_valid_stage_transition(f):
         if not public_id:
             return error_response("VAL_MISSING_FIELDS", fields=["public_id"])
         
-        db = getattr(g, 'db', None)
-        if not db:
-            return error_response("SYS_DATABASE_ERROR")
+        from app.database import get_db
+        db = get_db()
         
         # Get current stage
         result = db.execute(text("""
