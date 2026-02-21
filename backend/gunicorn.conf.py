@@ -1,10 +1,15 @@
 """
 Gunicorn configuration file for C.O.G.N.I.T. backend
 This file provides production-optimized Gunicorn settings for deployment.
+
+Updated for modular app structure - now uses application factory pattern.
 """
 
 import os
 import multiprocessing
+
+# WSGI application entry point (modular structure)
+wsgi_app = 'main:app'
 
 # Server socket
 bind = os.getenv("GUNICORN_BIND", "0.0.0.0:5000")
