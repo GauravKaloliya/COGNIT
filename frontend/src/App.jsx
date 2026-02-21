@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
 import PaymentContentPage from "./pages/PaymentContentPage.jsx";
-import PaymentVerifyPage from "./pages/PaymentVerifyPage.jsx";
 import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
@@ -30,7 +29,7 @@ function saveStoredValue(key, value) {
 }
 
 // Stage validation for secure navigation
-const STAGE_ORDER = ["consent", "user-details", "payment-content", "payment-link", "payment-verify", "survey", "finished"];
+const STAGE_ORDER = ["consent", "user-details", "payment-content", "payment-link", "survey", "finished"];
 
 const validateStageTransition = (currentStage, targetStage) => {
   const currentIndex = STAGE_ORDER.indexOf(currentStage);
@@ -44,16 +43,12 @@ const validateStageTransition = (currentStage, targetStage) => {
   // Only allow moving forward to next stage if current stage is complete
   switch (currentStage) {
     case "consent":
-      // Consent must be given
       return targetStage === "user-details";
     case "user-details":
-      // Demographics must be submitted (validated in UserDetailsPage)
       return targetStage === "payment-content";
     case "payment-content":
       return targetStage === "payment-link";
     case "payment-link":
-      return targetStage === "payment-verify";
-    case "payment-verify":
       return targetStage === "survey";
     case "survey":
       return targetStage === "finished";
@@ -307,17 +302,15 @@ export default function App() {
 
   // Handle payment completion with secure navigation
   const handlePaymentComplete = async () => {
-    // Secure navigation: validate transition before moving
-    if (validateStageTransition("payment-verify", "survey")) {
+    if (validateStageTransition("payment-link", "survey")) {
       setStage("survey");
     }
-    setSurveyFeedbackReady(false); // Reset feedback state for new survey session
+    setSurveyFeedbackReady(false);
     try {
       await fetchImage();
       addToast("Participation confirmed successfully", "success");
     } catch (err) {
       addToast("Failed to load first survey image. Please try again.", "error");
-      // Stay on survey page but show error
     }
   };
 
@@ -325,13 +318,6 @@ export default function App() {
   const handlePaymentLinkNext = () => {
     if (validateStageTransition("payment-content", "payment-link")) {
       setStage("payment-link");
-    }
-  };
-
-  // Handle payment verify navigation
-  const handlePaymentVerifyNext = () => {
-    if (validateStageTransition("payment-link", "payment-verify")) {
-      setStage("payment-verify");
     }
   };
 
@@ -343,11 +329,6 @@ export default function App() {
   // Handle payment link back navigation
   const handlePaymentLinkBack = () => {
     setStage("payment-content");
-  };
-
-  // Handle payment verify back navigation
-  const handlePaymentVerifyBack = () => {
-    setStage("payment-link");
   };
 
   // Fetch image
@@ -527,18 +508,8 @@ export default function App() {
       case "payment-link":
         return (
           <PaymentLinkPage
-            onNext={handlePaymentVerifyNext}
+            onNext={handlePaymentComplete}
             onBack={handlePaymentLinkBack}
-            publicId={publicId}
-          />
-        );
-      
-      case "payment-verify":
-        return (
-          <PaymentVerifyPage
-            onPaymentComplete={handlePaymentComplete}
-            onBack={handlePaymentVerifyBack}
-            systemReady={systemReady}
             publicId={publicId}
           />
         );
