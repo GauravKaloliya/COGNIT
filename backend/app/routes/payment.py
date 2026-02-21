@@ -48,6 +48,58 @@ from flask import Blueprint
 payment_bp = Blueprint('payment', __name__)
 
 
+def _is_tesseract_unavailable(error: Exception) -> bool:
+    return (
+        "TesseractNotFoundError" in type(error).__name__
+        or "tesseract is not installed" in str(error).lower()
+        or "tesseract not found" in str(error).lower()
+    )
+
+
+def _reject_for_ocr_unavailable(db, payment_id: int, participant_id: int):
+    failures = ["ocr_unavailable"]
+    verification_details = {
+        "ocr_confidence": 0,
+        "failure_reasons": failures,
+        "extracted_text_length": 0
+    }
+
+    db.execute(text("""
+        UPDATE payments
+        SET extracted_text = '',
+            upi_txn_ref = NULL,
+            fraud_score = :fs,
+            verified_at = CURRENT_TIMESTAMP,
+            status = 'rejected_fraud',
+            detected_app = NULL,
+            auto_rejected = true,
+            verification_details = :details
+        WHERE id = :pid
+    """), {
+        "fs": len(failures) * 10,
+        "details": json.dumps(verification_details),
+        "pid": payment_id
+    })
+
+    db.execute(text("""
+        INSERT INTO payment_fraud_signals (
+            payment_id, signal_type, signal_score, details
+        ) VALUES (
+            :pid, :type, :score, :details
+        ) ON CONFLICT DO NOTHING
+    """), {
+        "pid": payment_id,
+        "type": "ocr_unavailable",
+        "score": 100,
+        "details": json.dumps({"reason": "ocr_unavailable"})
+    })
+
+    log_audit(db, "payment_ocr_unavailable", participant_id=participant_id,
+              details=f"Payment {payment_id} auto-rejected due to missing OCR")
+    db.commit()
+    return verification_details, failures
+
+
 # Import middleware if available
 try:
     from middleware import require_valid_payment_session
@@ -303,6 +355,7 @@ def finalize_payment_upload(payment_public_id):
 
         # Run verification immediately after finalize
         verification_result = {"status": "processing", "verified": False}
+        row = None
         try:
             row = db.execute(text("""
                 SELECT p.id, p.participant_id, p.amount, f.object_key, p.upi_note
@@ -399,8 +452,14 @@ def finalize_payment_upload(payment_public_id):
                     "failure_reasons": failures
                 }
         except Exception as e:
-            if "TesseractNotFoundError" in type(e).__name__ or "tesseract is not installed" in str(e).lower():
-                current_app.logger.warning("Tesseract not available - skipping OCR verification")
+            if _is_tesseract_unavailable(e) and row:
+                verification_details, failures = _reject_for_ocr_unavailable(db, payment_id, participant_id)
+                verification_result = {
+                    "status": "rejected_fraud",
+                    "verified": True,
+                    "failure_reasons": failures
+                }
+                current_app.logger.warning("Tesseract not available - payment auto-rejected")
             else:
                 current_app.logger.exception("Verification failed after upload")
 
@@ -481,8 +540,20 @@ def verify_payment(payment_public_id):
 
     payment_id, participant_id, amount, object_key, payment_note = row
 
-    image = fetch_s3_image(object_key)
-    extracted_text, confidence = extract_text_with_confidence(image)
+    try:
+        image = fetch_s3_image(object_key)
+        extracted_text, confidence = extract_text_with_confidence(image)
+    except Exception as e:
+        if _is_tesseract_unavailable(e):
+            verification_details, failures = _reject_for_ocr_unavailable(db, payment_id, participant_id)
+            return jsonify({
+                "status": "rejected_fraud",
+                "detected_app": None,
+                "failure_reasons": failures,
+                "auto_rejected": True
+            })
+        current_app.logger.exception("Verification failed due to OCR error")
+        return create_error_response("SYS_SERVICE_UNAVAILABLE")
 
     # Run strict validation
     is_valid, detected_app, failures = verify_payment_screenshot(
