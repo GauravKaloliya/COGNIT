@@ -6,6 +6,7 @@ psycopg2-binary==2.9.9
 SQLAlchemy==2.0.25
 redis==5.0.4
 setuptools==70.0.0
+python-dotenv==1.0.0
 # Payment System Dependencies
 pillow==10.3.0
 pytesseract==0.3.10
