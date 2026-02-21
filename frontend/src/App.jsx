@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
+import PaymentContentPage from "./pages/PaymentContentPage.jsx";
 import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
@@ -130,6 +131,7 @@ export default function App() {
   
   // Flow state
   const [stage, setStage] = useState(getStoredValue("stage", "consent"));
+  const [paymentSubStage, setPaymentSubStage] = useState(getStoredValue("paymentSubStage", "content"));
   const [publicId] = useState(() => getStoredValue("publicId", createId()));
   const [sessionId] = useState(() => getStoredValue("sessionId", createId()));
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
@@ -167,6 +169,7 @@ export default function App() {
   useEffect(() => { saveStoredValue("paymentVerified", paymentVerified); }, [paymentVerified]);
   useEffect(() => { saveStoredValue("demographics", demographics); }, [demographics]);
   useEffect(() => { saveStoredValue("stage", stage); }, [stage]);
+  useEffect(() => { saveStoredValue("paymentSubStage", paymentSubStage); }, [paymentSubStage]);
   useEffect(() => { saveStoredValue("survey", survey); }, [survey]);
   useEffect(() => { saveStoredValue("surveyCompleted", surveyCompleted); }, [surveyCompleted]);
   useEffect(() => { saveStoredValue("surveyFeedbackReady", surveyFeedbackReady); }, [surveyFeedbackReady]);
@@ -236,11 +239,13 @@ export default function App() {
             // Redirect to payment page if payment is not verified
             addToast("Please complete payment before accessing the survey.", "error");
             setStage("payment");
+            setPaymentSubStage("content");
           }
         } catch (error) {
           // Redirect to payment page on error
           addToast("Payment verification failed. Please complete payment first.", "error");
           setStage("payment");
+          setPaymentSubStage("content");
         }
       }
     };
@@ -348,6 +353,7 @@ export default function App() {
       const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId);
       if (paymentStatus.is_verified) {
         setPaymentVerified(true);
+        setPaymentSubStage("content"); // Reset to content for next time
         if (validateStageTransition("payment", "survey", true)) {
           setStage("survey");
         }
@@ -369,14 +375,25 @@ export default function App() {
       // Ensure we stay on payment page if verification fails
       if (stage !== "payment") {
         setStage("payment");
+        setPaymentSubStage("content");
       }
     }
   };
 
+  // Handle payment content to payment link navigation
+  const handlePaymentContentToLink = () => {
+    setPaymentSubStage("link");
+  };
+
   // Handle payment back navigation
   const handlePaymentBack = () => {
-    setStage("user-details");
-    setPaymentVerified(false);
+    if (paymentSubStage === "link") {
+      setPaymentSubStage("content");
+    } else {
+      setStage("user-details");
+      setPaymentVerified(false);
+      setPaymentSubStage("content");
+    }
   };
 
   // Fetch image using standardized API wrapper
@@ -528,13 +545,22 @@ export default function App() {
         );
       
       case "payment":
-        return (
-          <PaymentLinkPage
-            onNext={handlePaymentComplete}
-            onBack={handlePaymentBack}
-            publicId={publicId}
-          />
-        );
+        if (paymentSubStage === "content") {
+          return (
+            <PaymentContentPage
+              onNext={handlePaymentContentToLink}
+              onBack={handlePaymentBack}
+            />
+          );
+        } else {
+          return (
+            <PaymentLinkPage
+              onNext={handlePaymentComplete}
+              onBack={handlePaymentBack}
+              publicId={publicId}
+            />
+          );
+        }
       
       case "survey":
         return (
