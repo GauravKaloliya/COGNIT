@@ -13,15 +13,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist",
-    sourcemap: mode === "development",
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ["react", "react-dom", "react-router-dom"],
-          charts: ["chart.js", "react-chartjs-2"]
-        }
-      }
-    }
+    sourcemap: mode === "development"
   },
   preview: {
     port: 4173,
