@@ -1,7 +1,27 @@
 /**
  * Standardized error code mappings for frontend display.
  * These should match the ERROR_CODES defined in the backend.
+ * 
+ * @deprecated Use errorRegistry.js instead for new code.
+ * This file is kept for backward compatibility.
  */
+
+import { 
+  getErrorMessage, 
+  parseErrorResponse, 
+  logErrorToBackend,
+  ERROR_CATEGORIES
+} from './errorRegistry';
+
+// Re-export from errorRegistry for backward compatibility
+export { 
+  getErrorMessage, 
+  parseErrorResponse, 
+  logErrorToBackend,
+  ERROR_CATEGORIES
+};
+
+// Legacy export for backward compatibility
 export const ERROR_MESSAGES = {
   // General errors
   'ERR_DATABASE': 'Something went wrong on our end. Please try again later.',
