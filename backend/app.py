@@ -383,7 +383,7 @@ def health():
 @track_performance
 def create_participant():
     data = request.json or {}
-    required = ["public_id", "session_id", "username", "gender_code", "age", "location", "language_code", "prior_experience"]
+    required = ["public_id", "session_id", "username", "email", "phone", "gender_code", "age", "location", "language_code", "prior_experience"]
     missing = [f for f in required if f not in data or not data[f]]
     if missing:
         return jsonify({"error": "missing required fields", "fields": missing}), 400
@@ -409,8 +409,8 @@ def create_participant():
             "pub": public_id,
             "sid": str(data["session_id"]).strip()[:128],
             "un": str(data["username"]).strip()[:50],
-            "em": data.get("email", "").strip()[:255] or None,
-            "ph": data.get("phone", "").strip()[:20] or None,
+            "em": str(data["email"]).strip().lower()[:255],
+            "ph": str(data["phone"]).strip()[:20],
             "gc": str(data["gender_code"]).strip().lower()[:32],
             "age": int(data["age"]),
             "loc": str(data["location"]).strip()[:120],
@@ -425,7 +425,7 @@ def create_participant():
     except Exception as e:
         db.rollback()
         if "unique" in str(e).lower():
-            return jsonify({"error": "public_id or username conflict"}), 409
+            return jsonify({"error": "public_id, username, email, or phone already registered"}), 409
         current_app.logger.exception("create_participant failed")
         return jsonify({"error": "database error"}), 500
 
@@ -1169,7 +1169,7 @@ def get_payment_status(payment_public_id):
     db = get_db()
 
     row = db.execute(text("""
-        SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app
+        SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app, p.auto_rejected
         FROM payments p
         WHERE p.public_id = :pid
     """), {"pid": payment_public_id}).fetchone()
@@ -1177,7 +1177,7 @@ def get_payment_status(payment_public_id):
     if not row:
         return jsonify({"error": "payment not found"}), 404
 
-    payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app = row
+    payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected = row
     set_rls_context(db, participant_id)
 
     # Check if payment should be marked as expired
@@ -1204,11 +1204,12 @@ def get_payment_status(payment_public_id):
         "verified_at": verified_at.isoformat() if verified_at else None
     }
 
-    # Add verification details if present
     if verification_details:
         response["verification_details"] = verification_details
     if detected_app:
         response["detected_app"] = detected_app
+    if auto_rejected:
+        response["auto_rejected"] = True
 
     return jsonify(response)
 
@@ -1338,13 +1339,13 @@ def api_docs():
                     "public_id": "550e8400-e29b-41d4-a716-446655440000",
                     "session_id": "sess_abc123xyz",
                     "username": "user123",
+                    "email": "user@gmail.com",
+                    "phone": "9876543210",
                     "gender_code": "male",
                     "age": 25,
                     "location": "ahmedabad",
                     "language_code": "en",
-                    "prior_experience": "some experience",
-                    "email": "optional@example.com",
-                    "phone": "optional"
+                    "prior_experience": "some experience"
                 },
                 "rate_limit": "30/min"
             },
