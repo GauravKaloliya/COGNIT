@@ -15,7 +15,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
 -- =====================================================================
 -- LOOKUP TABLES
 -- =====================================================================
@@ -66,9 +65,9 @@ CREATE TABLE IF NOT EXISTS participants (
     id               BIGSERIAL PRIMARY KEY,
     public_id        UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
     session_id       VARCHAR(128) NOT NULL,
-    username         VARCHAR(50) NOT NULL,
-    email            VARCHAR(255),
-    phone            VARCHAR(20),
+    username         VARCHAR(50) NOT NULL UNIQUE,
+    email            VARCHAR(255) NOT NULL UNIQUE,
+    phone            VARCHAR(20) NOT NULL UNIQUE CHECK (phone ~ '^[0-9+ -]{8,15}$'),
     gender_code      VARCHAR(32) REFERENCES genders(code),
     age              SMALLINT CHECK (age >= 13 AND age <= 120),
     location         VARCHAR(120),
@@ -104,6 +103,14 @@ CREATE UNIQUE INDEX idx_participants_active_username
     ON participants (username)
     WHERE is_deleted = false;
 
+CREATE UNIQUE INDEX idx_participants_active_email
+    ON participants (email)
+    WHERE is_deleted = false;
+
+CREATE UNIQUE INDEX idx_participants_active_phone_number
+    ON participants (phone)
+    WHERE is_deleted = false;
+
 
 -- =====================================================================
 -- IMAGES
@@ -130,6 +137,23 @@ CREATE INDEX idx_images_image_id   ON images (image_id);
 CREATE INDEX idx_images_random_key ON images (random_key);
 CREATE INDEX idx_images_difficulty ON images (difficulty);
 
+CREATE POLICY participants_owner_policy ON participants
+    USING (public_id = current_setting('app.current_participant_public_id', true)::uuid)
+    WITH CHECK (public_id = current_setting('app.current_participant_public_id', true)::uuid);
+
+CREATE OR REPLACE FUNCTION prevent_random_key_update()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.random_key IS DISTINCT FROM OLD.random_key THEN
+        RAISE EXCEPTION 'random_key cannot be updated';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_prevent_random_key_change
+BEFORE UPDATE ON images
+FOR EACH ROW EXECUTE FUNCTION prevent_random_key_update();
 
 -- =====================================================================
 -- ATTENTION CHECKS
@@ -253,6 +277,7 @@ CREATE TABLE IF NOT EXISTS payments (
     upi_txn_ref           VARCHAR(120),
     extracted_text        TEXT,
     fraud_score           NUMERIC(5,2) DEFAULT 0 CHECK (fraud_score >= 0),
+    auto_rejected BOOLEAN DEFAULT FALSE,
     verification_attempts SMALLINT DEFAULT 0 CHECK (verification_attempts >= 0),
     signature             CHAR(64) NOT NULL CHECK (length(signature) = 64),
     expires_at            TIMESTAMPTZ NOT NULL,
@@ -262,8 +287,9 @@ CREATE TABLE IF NOT EXISTS payments (
         CHECK (status IN ('pending','processing','success','failed','rejected_fraud','expired','refunded')),
     verified_at           TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    verification_details  JSONB NOT NULL DEFAULT '{}',
     detected_app          VARCHAR(60),
+
+    verification_details JSONB NOT NULL DEFAULT '{}',
 
     metadata              JSONB NOT NULL DEFAULT '{}',
     created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -287,6 +313,25 @@ CREATE UNIQUE INDEX idx_payments_one_active_per_participant
 
 CREATE INDEX idx_payments_participant ON payments (participant_id);
 CREATE INDEX idx_payments_status ON payments (status);
+
+CREATE OR REPLACE FUNCTION check_payment_fraud_threshold()
+RETURNS TRIGGER AS $$    
+BEGIN
+    IF NEW.fraud_score >= 75 OR EXISTS (
+        SELECT 1 FROM payment_fraud_signals
+        WHERE payment_id = NEW.id AND signal_score >= 40 AND signal_type IN ('device_mismatch', 'location_jump', 'rapid_attempts', 'high_risk_vpa')
+    ) THEN
+        NEW.status := 'rejected_fraud';
+        NEW.auto_rejected := TRUE;
+    END IF;
+    RETURN NEW;
+END;
+    $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_check_fraud_threshold
+BEFORE UPDATE OF fraud_score, status ON payments
+FOR EACH ROW WHEN (NEW.status = 'processing')
+EXECUTE FUNCTION check_payment_fraud_threshold();
 
 -- =====================================================================
 -- PAYMENT FILES (S3-backed secure storage)
@@ -321,10 +366,6 @@ CREATE TABLE IF NOT EXISTS payment_files (
 CREATE TRIGGER trg_payments_updated_at
 BEFORE UPDATE ON payments
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- Prevent same file being reused across payments
-CREATE UNIQUE INDEX idx_payment_files_sha256_unique
-ON payment_files (sha256);
 
 -- Fast lookup by payment
 CREATE INDEX idx_payment_files_payment
@@ -551,15 +592,71 @@ WITH CHECK (
     )
 );
 
--- =====================================================================
--- ADD NEW COLUMNS FOR UPI VERIFICATION (if they don't exist)
--- =====================================================================
-ALTER TABLE payments ADD COLUMN IF NOT EXISTS verification_details JSONB NOT NULL DEFAULT '{}';
-ALTER TABLE payments ADD COLUMN IF NOT EXISTS detected_app VARCHAR(60);
+-- 1. Enable Row Level Security on all relevant tables
+ALTER TABLE images                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE images                    FORCE ROW LEVEL SECURITY;
 
--- =====================================================================
--- ADD ENGAGEMENT TRACKING COLUMNS (if they don't exist)
--- =====================================================================
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS tab_switch_count INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS page_close_attempts INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE submissions ADD COLUMN IF NOT EXISTS network_disconnects INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE attention_checks          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attention_checks          FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE participant_attention_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE participant_attention_stats FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE participant_activity_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE participant_activity_stats FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE reward_winners            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reward_winners            FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE audit_log                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_log                 FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE performance_metrics       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE performance_metrics       FORCE ROW LEVEL SECURITY;
+
+-- 2. Read policy — images and attention_checks are world-readable (SELECT only)
+CREATE POLICY images_read_all ON images
+    FOR SELECT
+    USING (true);
+
+CREATE POLICY attention_checks_read_all ON attention_checks
+    FOR SELECT
+    USING (true);
+
+-- 3. Write policies — default-deny writes (INSERT/UPDATE/DELETE) on images & attention_checks
+--    → only possible via functions / roles that bypass RLS or have special policies
+CREATE POLICY images_write_deny ON images
+    FOR ALL        -- or explicitly: INSERT, UPDATE, DELETE
+    USING (false)
+    WITH CHECK (false);
+
+CREATE POLICY attention_checks_write_deny ON attention_checks
+    FOR ALL
+    USING (false)
+    WITH CHECK (false);
+
+-- 4. Participant-owned stats & rewards — only owner can read/write their own rows
+CREATE POLICY participant_attention_stats_owner ON participant_attention_stats
+    USING  (participant_id = current_setting('app.current_participant_id', true)::bigint)
+    WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+
+CREATE POLICY participant_activity_stats_owner ON participant_activity_stats
+    USING  (participant_id = current_setting('app.current_participant_id', true)::bigint)
+    WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+
+CREATE POLICY reward_winners_owner ON reward_winners
+    USING  (participant_id = current_setting('app.current_participant_id', true)::bigint)
+    WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
+
+-- 5. Audit & metrics — completely locked (even SELECT denied to normal users)
+CREATE POLICY audit_log_deny_all ON audit_log
+    USING (false)
+    WITH CHECK (false);
+
+CREATE POLICY performance_metrics_deny_all ON performance_metrics
+    USING (false)
+    WITH CHECK (false);
+
+-- 6. Lookup tables — no RLS needed (public read access)
+ALTER TABLE genders   DISABLE ROW LEVEL SECURITY;
+ALTER TABLE languages DISABLE ROW LEVEL SECURITY;
