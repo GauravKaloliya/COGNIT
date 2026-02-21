@@ -82,50 +82,141 @@ CONTENT_TYPE_MAP = {
     'webp': 'image/webp'
 }
 
-# Standardized Error Codes
+# Standardized Error Codes - Comprehensive unified error management system
+# Categories: SYS (System), RATE (Rate Limit), VAL (Validation), DUP (Duplicate),
+#             AUTH (Auth), NF (Not Found), PAY (Payment), FRAUD (Fraud)
 ERROR_CODES = {
-    # General errors
-    "DATABASE_ERROR": {"code": "ERR_DATABASE", "message": "An internal error occurred. Please try again later.", "status": 500},
-    "INTERNAL_ERROR": {"code": "ERR_INTERNAL", "message": "Something went wrong. Please try again.", "status": 500},
-    "RATE_LIMIT": {"code": "ERR_RATE_LIMIT", "message": "Too many requests. Please slow down.", "status": 429},
-    
-    # Validation errors
-    "MISSING_FIELDS": {"code": "ERR_MISSING_FIELDS", "message": "Required fields are missing.", "status": 400},
-    "INVALID_FORMAT": {"code": "ERR_INVALID_FORMAT", "message": "Invalid data format.", "status": 400},
-    "INVALID_UUID": {"code": "ERR_INVALID_UUID", "message": "Invalid identifier format.", "status": 400},
-    
-    # Participant errors
-    "PARTICIPANT_NOT_FOUND": {"code": "ERR_PARTICIPANT_NOT_FOUND", "message": "Registration not found. Please complete registration first.", "status": 404},
-    "PARTICIPANT_EXISTS": {"code": "ERR_PARTICIPANT_EXISTS", "message": "Username, email, or phone is already registered.", "status": 409},
-    "CONSENT_REQUIRED": {"code": "ERR_CONSENT_REQUIRED", "message": "Consent is required to continue.", "status": 403},
-    "FLAGGED_ACCOUNT": {"code": "ERR_FLAGGED_ACCOUNT", "message": "Account flagged due to low attention scores.", "status": 403},
-    
-    # Submission errors
-    "DESCRIPTION_LENGTH": {"code": "ERR_DESC_LENGTH", "message": f"Description must be {MIN_DESCRIPTION_LENGTH}-{MAX_DESCRIPTION_LENGTH} characters.", "status": 400},
-    "FEEDBACK_LENGTH": {"code": "ERR_FEEDBACK_LENGTH", "message": f"Feedback must be {MIN_FEEDBACK_LENGTH}-{MAX_FEEDBACK_LENGTH} characters.", "status": 400},
-    "RATING_INVALID": {"code": "ERR_RATING_INVALID", "message": f"Rating must be between {MIN_RATING} and {MAX_RATING}.", "status": 400},
-    "WORD_COUNT": {"code": "ERR_WORD_COUNT", "message": f"At least {MIN_WORD_COUNT} words required.", "status": 400},
-    "DUPLICATE_SUBMISSION": {"code": "ERR_DUPLICATE_SUBMISSION", "message": "You have already submitted for this image.", "status": 409},
-    "SURVEY_EXISTS": {"code": "ERR_SURVEY_EXISTS", "message": "This survey round has already been submitted.", "status": 409},
-    
-    # Payment errors
-    "PAYMENT_NOT_FOUND": {"code": "ERR_PAYMENT_NOT_FOUND", "message": "Payment session not found.", "status": 404},
-    "PAYMENT_EXPIRED": {"code": "ERR_PAYMENT_EXPIRED", "message": "Payment session has expired. Please create a new payment.", "status": 410},
-    "PAYMENT_INVALID_STATE": {"code": "ERR_PAYMENT_INVALID_STATE", "message": "This payment has already been processed.", "status": 400},
-    "INVALID_AMOUNT": {"code": "ERR_INVALID_AMOUNT", "message": "Invalid payment amount.", "status": 400},
-    "INVALID_IMAGE_TYPE": {"code": "ERR_INVALID_IMAGE_TYPE", "message": "Invalid image format. Allowed: JPG, PNG, WEBP.", "status": 400},
-    "INVALID_SHA256": {"code": "ERR_INVALID_SHA256", "message": "Invalid file hash.", "status": 400},
-    
-    # Fraud detection errors
-    "DUPLICATE_IMAGE": {"code": "ERR_DUPLICATE_IMAGE", "message": "This screenshot has already been uploaded by another user.", "status": 409},
-    "REJECTED_REUSE": {"code": "ERR_REJECTED_REUSE", "message": "This screenshot was previously rejected. Please use a fresh payment screenshot.", "status": 409},
-    "DUPLICATE_TXN": {"code": "ERR_DUPLICATE_TXN", "message": "This transaction has already been used. Each payment must be unique.", "status": 409},
-    "PAYMENT_REJECTED": {"code": "ERR_PAYMENT_REJECTED", "message": "Payment screenshot could not be verified.", "status": 400},
-    
-    # Image errors
-    "NO_IMAGES": {"code": "ERR_NO_IMAGES", "message": "No images available.", "status": 404},
-    "IMAGE_NOT_FOUND": {"code": "ERR_IMAGE_NOT_FOUND", "message": "Image not found.", "status": 404},
-    "INVALID_IMAGE_ID": {"code": "ERR_INVALID_IMAGE_ID", "message": "Invalid image identifier.", "status": 400},
+    # =====================================================================
+    # SYSTEM ERRORS (SYS)
+    # =====================================================================
+    "SYS_INTERNAL_ERROR": {"code": "SYS_001_0001", "message": "Something went wrong. Please try again.", "status": 500, "category": "SYS"},
+    "SYS_DATABASE_ERROR": {"code": "SYS_001_0002", "message": "Database error occurred. Please try again later.", "status": 500, "category": "SYS"},
+    "SYS_SERVICE_UNAVAILABLE": {"code": "SYS_001_0003", "message": "Service temporarily unavailable. Please try later.", "status": 503, "category": "SYS"},
+    "SYS_CONFIG_ERROR": {"code": "SYS_001_0004", "message": "Configuration error. Please contact support.", "status": 500, "category": "SYS"},
+    # Legacy system error aliases
+    "DATABASE_ERROR": {"code": "ERR_DATABASE", "message": "An internal error occurred. Please try again later.", "status": 500, "category": "SYS"},
+    "INTERNAL_ERROR": {"code": "ERR_INTERNAL", "message": "Something went wrong. Please try again.", "status": 500, "category": "SYS"},
+
+    # =====================================================================
+    # RATE LIMIT ERRORS (RATE)
+    # =====================================================================
+    "RATE_LIMIT_EXCEEDED": {"code": "RATE_001_0001", "message": "Too many attempts. Please wait a moment.", "status": 429, "category": "RATE"},
+    "RATE_TOO_MANY_REQUESTS": {"code": "RATE_001_0002", "message": "Rate limit exceeded. Please slow down.", "status": 429, "category": "RATE"},
+    # Legacy rate limit aliases
+    "RATE_LIMIT": {"code": "ERR_RATE_LIMIT", "message": "Too many requests. Please slow down.", "status": 429, "category": "RATE"},
+
+    # =====================================================================
+    # VALIDATION ERRORS (VAL)
+    # =====================================================================
+    "VAL_MISSING_FIELDS": {"code": "VAL_003_0001", "message": "Please fill in all required fields", "status": 400, "category": "VAL", "field": "general"},
+    "VAL_INVALID_FORMAT": {"code": "VAL_003_0002", "message": "Invalid request format", "status": 400, "category": "VAL"},
+    "VAL_INVALID_REQUEST_ID": {"code": "VAL_003_0003", "message": "Invalid request ID format", "status": 400, "category": "VAL"},
+    # Participant validation
+    "VAL_USERNAME_INVALID": {"code": "VAL_001_0001", "message": "Username must be at least 2 characters and contain only letters, numbers, and underscores", "status": 400, "category": "VAL", "field": "username"},
+    "VAL_EMAIL_INVALID": {"code": "VAL_001_0002", "message": "Please enter a valid email address from Gmail, Outlook, Hotmail, or iCloud", "status": 400, "category": "VAL", "field": "email"},
+    "VAL_PHONE_INVALID": {"code": "VAL_001_0003", "message": "Please enter a valid 10-digit Indian mobile number", "status": 400, "category": "VAL", "field": "phone"},
+    "VAL_AGE_INVALID": {"code": "VAL_001_0004", "message": "Age must be between 13 and 100", "status": 400, "category": "VAL", "field": "age"},
+    "VAL_GENDER_REQUIRED": {"code": "VAL_001_0005", "message": "Please select a gender", "status": 400, "category": "VAL", "field": "gender_code"},
+    "VAL_LOCATION_REQUIRED": {"code": "VAL_001_0006", "message": "Please enter your location", "status": 400, "category": "VAL", "field": "location"},
+    "VAL_LANGUAGE_REQUIRED": {"code": "VAL_001_0007", "message": "Please select your native language", "status": 400, "category": "VAL", "field": "language_code"},
+    "VAL_EXPERIENCE_REQUIRED": {"code": "VAL_001_0008", "message": "Please select your prior experience", "status": 400, "category": "VAL", "field": "prior_experience"},
+    # Submission validation
+    "VAL_DESC_LENGTH": {"code": "VAL_002_0001", "message": f"Description must be {MIN_DESCRIPTION_LENGTH}-{MAX_DESCRIPTION_LENGTH} characters", "status": 400, "category": "VAL", "field": "description"},
+    "VAL_DESC_TOO_SHORT": {"code": "VAL_002_0002", "message": f"Description must be at least {MIN_DESCRIPTION_LENGTH} characters", "status": 400, "category": "VAL", "field": "description"},
+    "VAL_DESC_TOO_LONG": {"code": "VAL_002_0003", "message": f"Description cannot exceed {MAX_DESCRIPTION_LENGTH} characters", "status": 400, "category": "VAL", "field": "description"},
+    "VAL_WORD_COUNT": {"code": "VAL_002_0004", "message": f"At least {MIN_WORD_COUNT} words required", "status": 400, "category": "VAL", "field": "description"},
+    "VAL_FEEDBACK_LENGTH": {"code": "VAL_002_0005", "message": f"Feedback must be {MIN_FEEDBACK_LENGTH}-{MAX_FEEDBACK_LENGTH} characters", "status": 400, "category": "VAL", "field": "feedback"},
+    "VAL_FEEDBACK_TOO_SHORT": {"code": "VAL_002_0006", "message": f"Feedback must be at least {MIN_FEEDBACK_LENGTH} characters", "status": 400, "category": "VAL", "field": "feedback"},
+    "VAL_FEEDBACK_TOO_LONG": {"code": "VAL_002_0007", "message": f"Feedback cannot exceed {MAX_FEEDBACK_LENGTH} characters", "status": 400, "category": "VAL", "field": "feedback"},
+    "VAL_RATING_INVALID": {"code": "VAL_002_0008", "message": f"Rating must be between {MIN_RATING} and {MAX_RATING}", "status": 400, "category": "VAL", "field": "rating"},
+    "VAL_SURVEY_INDEX": {"code": "VAL_002_0011", "message": "Invalid survey index", "status": 400, "category": "VAL", "field": "survey_index"},
+    # Legacy validation aliases
+    "MISSING_FIELDS": {"code": "ERR_MISSING_FIELDS", "message": "Required fields are missing.", "status": 400, "category": "VAL"},
+    "INVALID_FORMAT": {"code": "ERR_INVALID_FORMAT", "message": "Invalid data format.", "status": 400, "category": "VAL"},
+    "INVALID_UUID": {"code": "ERR_INVALID_UUID", "message": "Invalid identifier format.", "status": 400, "category": "VAL"},
+    "DESCRIPTION_LENGTH": {"code": "ERR_DESC_LENGTH", "message": f"Description must be {MIN_DESCRIPTION_LENGTH}-{MAX_DESCRIPTION_LENGTH} characters.", "status": 400, "category": "VAL"},
+    "FEEDBACK_LENGTH": {"code": "ERR_FEEDBACK_LENGTH", "message": f"Feedback must be {MIN_FEEDBACK_LENGTH}-{MAX_FEEDBACK_LENGTH} characters.", "status": 400, "category": "VAL"},
+    "RATING_INVALID": {"code": "ERR_RATING_INVALID", "message": f"Rating must be between {MIN_RATING} and {MAX_RATING}.", "status": 400, "category": "VAL"},
+    "WORD_COUNT": {"code": "ERR_WORD_COUNT", "message": f"At least {MIN_WORD_COUNT} words required.", "status": 400, "category": "VAL"},
+    "INVALID_IMAGE_ID": {"code": "ERR_INVALID_IMAGE_ID", "message": "Invalid image identifier.", "status": 400, "category": "VAL"},
+
+    # =====================================================================
+    # DUPLICATE/CONFLICT ERRORS (DUP)
+    # =====================================================================
+    "DUP_USERNAME": {"code": "DUP_001_0001", "message": "This username is already taken", "status": 409, "category": "DUP", "field": "username"},
+    "DUP_EMAIL": {"code": "DUP_001_0002", "message": "This email is already registered", "status": 409, "category": "DUP", "field": "email"},
+    "DUP_PHONE": {"code": "DUP_001_0003", "message": "This phone number is already registered", "status": 409, "category": "DUP", "field": "phone"},
+    "DUP_PUBLIC_ID": {"code": "DUP_001_0004", "message": "You have already registered", "status": 409, "category": "DUP"},
+    "DUP_SUBMISSION": {"code": "DUP_002_0001", "message": "You have already described this image", "status": 409, "category": "DUP"},
+    "DUP_SURVEY_ROUND": {"code": "DUP_002_0002", "message": "You have already completed this survey round", "status": 409, "category": "DUP"},
+    "DUP_PAYMENT_IMAGE": {"code": "DUP_003_0001", "message": "This screenshot has already been submitted", "status": 409, "category": "DUP"},
+    "DUP_TRANSACTION": {"code": "DUP_003_0002", "message": "This transaction has already been used", "status": 409, "category": "DUP"},
+    "DUP_IMAGE_OTHER_USER": {"code": "DUP_003_0003", "message": "This screenshot was already used by another user", "status": 409, "category": "DUP"},
+    # Legacy duplicate aliases
+    "DUPLICATE_SUBMISSION": {"code": "ERR_DUPLICATE_SUBMISSION", "message": "You have already submitted for this image.", "status": 409, "category": "DUP"},
+    "SURVEY_EXISTS": {"code": "ERR_SURVEY_EXISTS", "message": "This survey round has already been submitted.", "status": 409, "category": "DUP"},
+    "PARTICIPANT_EXISTS": {"code": "ERR_PARTICIPANT_EXISTS", "message": "Username, email, or phone is already registered.", "status": 409, "category": "DUP"},
+
+    # =====================================================================
+    # AUTH/PERMISSION ERRORS (AUTH)
+    # =====================================================================
+    "AUTH_CONSENT_REQUIRED": {"code": "AUTH_001_0001", "message": "Please agree to the consent terms to continue", "status": 403, "category": "AUTH"},
+    "AUTH_ACCOUNT_FLAGGED": {"code": "AUTH_001_0002", "message": "Your account has been flagged. Contact support.", "status": 403, "category": "AUTH"},
+    "AUTH_ACCOUNT_DEACTIVATED": {"code": "AUTH_001_0003", "message": "Account has been deactivated", "status": 403, "category": "AUTH"},
+    "AUTH_ACCESS_DENIED": {"code": "AUTH_002_0001", "message": "Access denied", "status": 403, "category": "AUTH"},
+    # Legacy auth aliases
+    "CONSENT_REQUIRED": {"code": "ERR_CONSENT_REQUIRED", "message": "Consent is required to continue.", "status": 403, "category": "AUTH"},
+    "FLAGGED_ACCOUNT": {"code": "ERR_FLAGGED_ACCOUNT", "message": "Account flagged due to low attention scores.", "status": 403, "category": "AUTH"},
+
+    # =====================================================================
+    # NOT FOUND ERRORS (NF)
+    # =====================================================================
+    "NF_PARTICIPANT": {"code": "NF_001_0001", "message": "Account not found. Please register first.", "status": 404, "category": "NF"},
+    "NF_IMAGE": {"code": "NF_001_0002", "message": "Image not found", "status": 404, "category": "NF"},
+    "NF_PAYMENT": {"code": "NF_001_0003", "message": "Payment not found", "status": 404, "category": "NF"},
+    "NF_CONSENT": {"code": "NF_001_0004", "message": "Consent record not found", "status": 404, "category": "NF"},
+    # Legacy not found aliases
+    "PARTICIPANT_NOT_FOUND": {"code": "ERR_PARTICIPANT_NOT_FOUND", "message": "Registration not found. Please complete registration first.", "status": 404, "category": "NF"},
+    "NO_IMAGES": {"code": "ERR_NO_IMAGES", "message": "No images available.", "status": 404, "category": "NF"},
+    "IMAGE_NOT_FOUND": {"code": "ERR_IMAGE_NOT_FOUND", "message": "Image not found.", "status": 404, "category": "NF"},
+    "PAYMENT_NOT_FOUND": {"code": "ERR_PAYMENT_NOT_FOUND", "message": "Payment session not found.", "status": 404, "category": "NF"},
+
+    # =====================================================================
+    # PAYMENT ERRORS (PAY)
+    # =====================================================================
+    "PAY_EXPIRED": {"code": "PAY_001_0001", "message": "Payment session expired. Please start a new payment.", "status": 410, "category": "PAY"},
+    "PAY_INVALID_STATE": {"code": "PAY_001_0002", "message": "Payment cannot be processed in current state", "status": 400, "category": "PAY"},
+    "PAY_INVALID_AMOUNT": {"code": "PAY_001_0003", "message": "Invalid payment amount", "status": 400, "category": "PAY"},
+    "PAY_ALREADY_PROCESSED": {"code": "PAY_001_0004", "message": "Payment has already been processed", "status": 400, "category": "PAY"},
+    "PAY_INVALID_IMAGE_TYPE": {"code": "PAY_001_0005", "message": "Invalid image format. Allowed: JPG, PNG, WEBP", "status": 400, "category": "PAY"},
+    "PAY_INVALID_SHA256": {"code": "PAY_001_0006", "message": "Invalid file hash", "status": 400, "category": "PAY"},
+    # Legacy payment aliases
+    "PAYMENT_EXPIRED": {"code": "ERR_PAYMENT_EXPIRED", "message": "Payment session has expired. Please create a new payment.", "status": 410, "category": "PAY"},
+    "PAYMENT_INVALID_STATE": {"code": "ERR_PAYMENT_INVALID_STATE", "message": "This payment has already been processed.", "status": 400, "category": "PAY"},
+    "INVALID_AMOUNT": {"code": "ERR_INVALID_AMOUNT", "message": "Invalid payment amount.", "status": 400, "category": "PAY"},
+    "INVALID_IMAGE_TYPE": {"code": "ERR_INVALID_IMAGE_TYPE", "message": "Invalid image format. Allowed: JPG, PNG, WEBP.", "status": 400, "category": "PAY"},
+    "INVALID_SHA256": {"code": "ERR_INVALID_SHA256", "message": "Invalid file hash.", "status": 400, "category": "PAY"},
+
+    # =====================================================================
+    # FRAUD DETECTION ERRORS (FRAUD)
+    # =====================================================================
+    "FRAUD_LOW_RESOLUTION": {"code": "FRAUD_001_0001", "message": "Screenshot is too blurry. Please upload a clearer image.", "status": 400, "category": "FRAUD"},
+    "FRAUD_LOW_OCR_CONFIDENCE": {"code": "FRAUD_001_0002", "message": "Could not read the screenshot text. Please retake.", "status": 400, "category": "FRAUD"},
+    "FRAUD_UNRECOGNIZED_APP": {"code": "FRAUD_001_0003", "message": "Please use GPay, PhonePe, Paytm, or other approved apps", "status": 400, "category": "FRAUD"},
+    "FRAUD_VPA_MISMATCH": {"code": "FRAUD_002_0001", "message": "Payment not made to correct UPI ID", "status": 400, "category": "FRAUD"},
+    "FRAUD_NOTE_MISMATCH": {"code": "FRAUD_002_0002", "message": "Payment note does not match. Use the exact note shown.", "status": 400, "category": "FRAUD"},
+    "FRAUD_AMOUNT_MISMATCH": {"code": "FRAUD_002_0003", "message": "Payment amount must be exactly ₹1", "status": 400, "category": "FRAUD"},
+    "FRAUD_MISSING_SUCCESS": {"code": "FRAUD_002_0004", "message": "Payment success not detected in screenshot", "status": 400, "category": "FRAUD"},
+    "FRAUD_FAILURE_INDICATOR": {"code": "FRAUD_002_0005", "message": "Payment appears to have failed. Check your UPI app.", "status": 400, "category": "FRAUD"},
+    "FRAUD_MISSING_TXN_ID": {"code": "FRAUD_002_0006", "message": "Transaction ID not found in screenshot", "status": 400, "category": "FRAUD"},
+    "FRAUD_DUPLICATE_TXN_ID": {"code": "FRAUD_002_0007", "message": "This transaction has already been used. Please make a fresh payment.", "status": 409, "category": "FRAUD"},
+    "FRAUD_DUPLICATE_IMAGE": {"code": "FRAUD_003_0001", "message": "This screenshot was already submitted by another user", "status": 409, "category": "FRAUD"},
+    "FRAUD_REJECTED_REUSE": {"code": "FRAUD_003_0002", "message": "This screenshot was previously rejected", "status": 409, "category": "FRAUD"},
+    # Legacy fraud aliases
+    "DUPLICATE_IMAGE": {"code": "ERR_DUPLICATE_IMAGE", "message": "This screenshot has already been uploaded by another user.", "status": 409, "category": "FRAUD"},
+    "REJECTED_REUSE": {"code": "ERR_REJECTED_REUSE", "message": "This screenshot was previously rejected. Please use a fresh payment screenshot.", "status": 409, "category": "FRAUD"},
+    "DUPLICATE_TXN": {"code": "ERR_DUPLICATE_TXN", "message": "This transaction has already been used. Each payment must be unique.", "status": 409, "category": "FRAUD"},
+    "PAYMENT_REJECTED": {"code": "ERR_PAYMENT_REJECTED", "message": "Payment screenshot could not be verified.", "status": 400, "category": "FRAUD"},
 }
 
 # S3 Configuration
@@ -423,7 +514,7 @@ def log_errors(f):
 # ────────────────────────────────────────────────
 
 def handle_db_error(exc):
-    """Map database exceptions to error codes."""
+    """Map database exceptions to standardized error codes."""
     exc_str = str(exc).lower()
     if "unique" in exc_str:
         if "username" in exc_str:
@@ -436,6 +527,8 @@ def handle_db_error(exc):
             return error_response("DUP_PUBLIC_ID")
         elif "survey_index" in exc_str:
             return error_response("DUP_SURVEY_ROUND")
+        elif "sha256" in exc_str or "idx_payment_files_sha256" in exc_str:
+            return error_response("FRAUD_DUPLICATE_IMAGE")
     elif "check constraint" in exc_str:
         if "age" in exc_str:
             return error_response("VAL_AGE_INVALID")
@@ -443,6 +536,8 @@ def handle_db_error(exc):
             return error_response("VAL_EMAIL_INVALID")
         elif "phone" in exc_str:
             return error_response("VAL_PHONE_INVALID")
+        elif "chk_valid_email" in exc_str:
+            return error_response("VAL_EMAIL_INVALID")
     elif "foreign key" in exc_str:
         return error_response("NF_PARTICIPANT")
     return error_response("SYS_DATABASE_ERROR")
