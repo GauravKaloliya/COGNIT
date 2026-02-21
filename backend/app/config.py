@@ -6,6 +6,19 @@ Centralized configuration management following 2025 best practices.
 import os
 from typing import Dict, Any
 
+# Load environment variables from .env file
+# Try to load from .env file in the backend directory
+from pathlib import Path
+backend_dir = Path(__file__).parent.parent
+env_file = backend_dir / ".env"
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(env_file)
+except ImportError:
+    # If python-dotenv is not available, continue without it
+    pass
+
 
 # ────────────────────────────────────────────────
 # Application Constants
@@ -223,7 +236,11 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
 # ────────────────────────────────────────────────
 
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+if not AWS_ACCESS_KEY_ID:
+    raise ValueError("AWS_ACCESS_KEY_ID is required")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+if not AWS_SECRET_ACCESS_KEY:
+    raise ValueError("AWS_SECRET_ACCESS_KEY is required")
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 S3_BUCKET = os.getenv("S3_BUCKET", "cognitapi")
 
