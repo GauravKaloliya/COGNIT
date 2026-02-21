@@ -256,6 +256,7 @@ CREATE TABLE IF NOT EXISTS payments (
     verification_attempts SMALLINT DEFAULT 0 CHECK (verification_attempts >= 0),
     signature             CHAR(64) NOT NULL CHECK (length(signature) = 64),
     expires_at            TIMESTAMPTZ NOT NULL,
+    timer_activated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     gateway               VARCHAR(60),
     status                VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending','processing','success','failed','rejected_fraud','expired','refunded')),
@@ -268,7 +269,8 @@ CREATE TABLE IF NOT EXISTS payments (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- Expiry checks (moved here for clarity)
-    CONSTRAINT chk_expires_after_create  CHECK (expires_at > created_at)
+    CONSTRAINT chk_expires_after_create  CHECK (expires_at > created_at),
+    CONSTRAINT chk_timer_after_create  CHECK (timer_activated_at >= created_at)
 );
 
 CREATE UNIQUE INDEX idx_payments_unique_upi_ref
