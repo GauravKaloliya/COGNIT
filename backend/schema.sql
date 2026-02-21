@@ -138,8 +138,8 @@ CREATE INDEX idx_images_random_key ON images (random_key);
 CREATE INDEX idx_images_difficulty ON images (difficulty);
 
 CREATE POLICY participants_owner_policy ON participants
-    USING (public_id = current_setting('app.current_participant_public_id', true)::uuid)
-    WITH CHECK (public_id = current_setting('app.current_participant_public_id', true)::uuid);
+    USING (id = current_setting('app.current_participant_id', true)::bigint)
+    WITH CHECK (id = current_setting('app.current_participant_id', true)::bigint);
 
 CREATE OR REPLACE FUNCTION prevent_random_key_update()
 RETURNS TRIGGER AS $$
@@ -648,10 +648,14 @@ CREATE POLICY reward_winners_owner ON reward_winners
     USING  (participant_id = current_setting('app.current_participant_id', true)::bigint)
     WITH CHECK (participant_id = current_setting('app.current_participant_id', true)::bigint);
 
--- 5. Audit & metrics — completely locked (even SELECT denied to normal users)
-CREATE POLICY audit_log_deny_all ON audit_log
-    USING (false)
-    WITH CHECK (false);
+-- 5. Audit & metrics — allow audit inserts, deny read access
+CREATE POLICY audit_log_insert_policy ON audit_log
+    FOR INSERT
+    WITH CHECK (true);
+
+CREATE POLICY audit_log_select_deny ON audit_log
+    FOR SELECT
+    USING (false);
 
 CREATE POLICY performance_metrics_deny_all ON performance_metrics
     USING (false)
