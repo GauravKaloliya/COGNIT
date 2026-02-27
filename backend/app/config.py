@@ -71,8 +71,7 @@ ALLOWED_APPS: Dict[str, list] = {
     "phonepe": ["phonepe"],
     "paytm": ["paytm"],
     "bhim": ["bhim"],
-    "amazonpay": ["amazon pay", "amazonpay"],
-    "bharatpe": ["bharatpe"]
+    "amazonpay": ["amazon pay", "amazonpay"]
 }
 
 SUCCESS_KEYWORDS = ["success", "successful", "completed", "paid", "payment successful", "transaction successful"]
@@ -218,7 +217,7 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     # =====================================================================
     "FRAUD_LOW_RESOLUTION": {"code": "FRAUD_001_0001", "message": "Screenshot is too blurry. Please upload a clearer image.", "status": 400, "category": "FRAUD"},
     "FRAUD_LOW_OCR_CONFIDENCE": {"code": "FRAUD_001_0002", "message": "Could not read the screenshot text. Please retake.", "status": 400, "category": "FRAUD"},
-    "FRAUD_UNRECOGNIZED_APP": {"code": "FRAUD_001_0003", "message": "Please use GPay, PhonePe, Paytm, or other approved apps", "status": 400, "category": "FRAUD"},
+    "FRAUD_UNRECOGNIZED_APP": {"code": "FRAUD_001_0003", "message": "Please use Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM", "status": 400, "category": "FRAUD"},
     "FRAUD_VPA_MISMATCH": {"code": "FRAUD_002_0001", "message": "Payment not made to correct UPI ID", "status": 400, "category": "FRAUD"},
     "FRAUD_NOTE_MISMATCH": {"code": "FRAUD_002_0002", "message": "Payment note does not match. Use the exact note shown.", "status": 400, "category": "FRAUD"},
     "FRAUD_AMOUNT_MISMATCH": {"code": "FRAUD_002_0003", "message": "Payment amount must be exactly ₹1", "status": 400, "category": "FRAUD"},
