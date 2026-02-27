@@ -10,7 +10,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from app.config import SECRET_KEY, CORS_ORIGINS, RATELIMIT_STORAGE_URI
-from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, LOG_LEVEL
 
 
 # ────────────────────────────────────────────────
@@ -19,9 +19,12 @@ from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 
 import os
 template_dir = os.path.join(os.path.dirname(__file__), '..', 'templates')
+import logging
+
 app = Flask(__name__, template_folder=template_dir)
 app.url_map.strict_slashes = False
 app.config["SECRET_KEY"] = SECRET_KEY
+app.logger.setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
