@@ -27,15 +27,7 @@ export default function PaymentLinkPage({
 
   const getVerificationErrorMessage = (reasons) => {
     const messages = {
-      'low_resolution': 'Screenshot resolution too low. Please upload a clearer image.',
-      'low_ocr_confidence': 'Could not read text clearly. Please retake screenshot.',
-      'unrecognized_app': 'Screenshot not from an allowed UPI app (GPay, PhonePe, Paytm, etc.).',
-      'vpa_mismatch': 'Payment not made to correct UPI ID.',
-      'note_mismatch': 'Payment note does not match session. Please use exact note shown.',
-      'amount_mismatch': 'Payment amount must be exactly ₹1.',
-      'missing_success_indicator': 'Payment success status not detected.',
-      'failure_indicator_present': 'Payment appears to have failed or is pending.',
-      'missing_transaction_id': 'Transaction ID not found in screenshot.',
+      'unrecognized_app': 'Screenshot not from an allowed UPI app. Please use Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.',
       'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.'
     };
     return reasons.map(r => messages[r] || r).join('. ');
@@ -316,7 +308,7 @@ export default function PaymentLinkPage({
         const reasons = inlineVerification.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.");
+        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.");
         return;
       }
 
@@ -337,7 +329,7 @@ export default function PaymentLinkPage({
         const reasons = statusData.verification_details?.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.");
+        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.");
         return;
       }
 
@@ -621,7 +613,7 @@ export default function PaymentLinkPage({
               <span className="payment-card-emoji" aria-hidden="true">📤</span>
               Upload Payment Screenshot
             </h3>
-            <p>After completing the payment, upload a screenshot of the transaction.</p>
+            <p>After completing the payment, upload a screenshot from Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.</p>
 
             <div
               className="payment-upload-area"
@@ -664,6 +656,7 @@ export default function PaymentLinkPage({
           </h3>
           <ul className="payment-steps">
             <li>Pay exactly ₹1 using a UPI app</li>
+            <li>Use only: Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM</li>
             <li>Take a screenshot immediately after payment</li>
             <li>Upload the screenshot above to verify</li>
             <li>Payment session expires in {formatTime(timeRemaining)}</li>
