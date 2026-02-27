@@ -19,7 +19,7 @@ from app.config import (
     SUCCESS_KEYWORDS,
     FAILURE_KEYWORDS,
     UPI_VPA,
-    S3_BUCKET,
+    S3_BUCKET_NAME,
     AWS_REGION,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
@@ -85,7 +85,7 @@ def fetch_s3_image(object_key: str) -> Image.Image:
     Returns:
         PIL Image object
     """
-    obj = s3.get_object(Bucket=S3_BUCKET, Key=object_key)
+    obj = s3.get_object(Bucket=S3_BUCKET_NAME, Key=object_key)
     file_bytes = obj["Body"].read()
     return Image.open(BytesIO(file_bytes))
 
@@ -182,7 +182,7 @@ def extract_text_from_s3(object_key: str) -> Tuple[str, float]:
         response = textract.detect_document_text(
             Document={
                 "S3Object": {
-                    "Bucket": S3_BUCKET,
+                    "Bucket": S3_BUCKET_NAME,
                     "Name": object_key
                 }
             }
