@@ -5,6 +5,7 @@ import PaymentContentPage from "./pages/PaymentContentPage.jsx";
 import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
+import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import { getApiUrl } from "./utils/apiBase";
 import { api, endpoints } from "./utils/api.js";
 import { getErrorMessage, parseErrorResponse } from "./utils/errors";
@@ -126,6 +127,8 @@ export default function App() {
   // System state
   const [systemReady, setSystemReady] = useState(false);
   const [systemError, setSystemError] = useState(null);
+  const [systemChecking, setSystemChecking] = useState(true);
+  const [retryTrigger, setRetryTrigger] = useState(0);
   const [online, setOnline] = useState(navigator.onLine);
   const [darkMode, setDarkMode] = useState(getStoredValue("darkMode", false));
   
@@ -197,11 +200,22 @@ export default function App() {
     };
   }, []);
 
-  // Health check on mount
+  // Health check on mount and on manual retry
   useEffect(() => {
+    let cancelled = false;
+
     const checkHealth = async () => {
+      setSystemChecking(true);
       try {
-        const response = await fetch(getApiUrl('/health'));
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        let response;
+        try {
+          response = await fetch(getApiUrl('/health'), { signal: controller.signal });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        if (cancelled) return;
         if (response.ok) {
           const data = await response.json();
           if (data.status === 'healthy' && data.database === 'connected') {
@@ -209,22 +223,36 @@ export default function App() {
             setSystemError(null);
           } else {
             setSystemReady(false);
-            setSystemError('System is degraded. Please try again later.');
+            setSystemError(
+              data.error
+                ? `Service degraded: ${data.error}`
+                : 'The system is currently degraded. Please try again later.'
+            );
           }
         } else {
           setSystemReady(false);
-          setSystemError('Unable to connect to the server.');
+          setSystemError(`Server returned an error (HTTP ${response.status}). Please try again later.`);
         }
       } catch (err) {
+        if (cancelled) return;
         setSystemReady(false);
-        setSystemError('Unable to connect to the server. Please check your connection.');
+        if (err.name === 'AbortError') {
+          setSystemError('The server is taking too long to respond. Please check your connection and try again.');
+        } else {
+          setSystemError('Unable to connect to the server. Please check your internet connection.');
+        }
+      } finally {
+        if (!cancelled) setSystemChecking(false);
       }
     };
 
     checkHealth();
     const interval = setInterval(checkHealth, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [retryTrigger]);
 
   // Verify payment status when accessing survey stage directly (prevent unauthorized access)
   useEffect(() => {
@@ -502,7 +530,7 @@ export default function App() {
 
   // Render based on stage
   const renderContent = () => {
-    if (!systemReady && !systemError) {
+    if (systemChecking && !systemReady) {
       return (
         <div className="panel status-panel">
           <h2>Loading C.O.G.N.I.T.</h2>
@@ -512,16 +540,8 @@ export default function App() {
       );
     }
 
-    if (systemError) {
-      return (
-        <div className="panel status-panel">
-          <h2>System Error</h2>
-          <p className="status-message">{systemError}</p>
-          <button className="primary small" onClick={() => window.location.reload()}>
-            Retry
-          </button>
-        </div>
-      );
+    if (systemError && !systemReady) {
+      return null;
     }
 
     switch (stage) {
@@ -587,6 +607,18 @@ export default function App() {
         return <ConsentPage onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
     }
   };
+
+  if (systemError && !systemReady && !systemChecking) {
+    return (
+      <ErrorBoundary onError={() => {}}>
+        <ServiceUnavailablePage
+          error={systemError}
+          onRetry={() => setRetryTrigger((prev) => prev + 1)}
+          isRetrying={systemChecking}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <ErrorBoundary onError={() => addToast("Unexpected error occurred.", "error")}>

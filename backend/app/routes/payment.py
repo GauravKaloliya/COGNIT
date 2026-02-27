@@ -40,7 +40,7 @@ from app.utils.fraud import (
 )
 from app.utils.decorators import track_performance
 from app.extensions import s3, app
-from app.config import S3_BUCKET
+from app.config import S3_BUCKET_NAME
 
 
 # ────────────────────────────────────────────────
@@ -267,7 +267,7 @@ def generate_upload_url(payment_public_id):
     presigned = s3.generate_presigned_url(
         "put_object",
         Params={
-            "Bucket": S3_BUCKET,
+            "Bucket": S3_BUCKET_NAME,
             "Key": object_key,
             "ContentType": content_type
         },
