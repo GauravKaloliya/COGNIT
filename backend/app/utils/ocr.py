@@ -1,7 +1,7 @@
 """
 OCR utilities module for C.O.G.N.I.T. backend.
 Provides text extraction, UPI app detection, and payment screenshot verification.
-Uses Amazon Textract for OCR processing.
+Uses Amazon Textract for OCR processing (no local Tesseract dependency).
 """
 
 import re
@@ -9,6 +9,7 @@ from io import BytesIO
 from typing import List, Optional, Tuple
 
 import boto3
+from botocore.exceptions import ClientError, BotoCoreError
 from PIL import Image
 
 from app.config import (
@@ -34,29 +35,39 @@ _textract_client = None
 
 
 def _get_textract_client():
-    """Lazy initialization of Textract client."""
+    """Lazy initialization of Textract client with proper error handling."""
     global _textract_client
     if _textract_client is None:
-        _textract_client = boto3.client(
-            "textract",
-            region_name=AWS_REGION,
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        )
+        if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+            raise OCRServiceUnavailableError("AWS credentials not configured")
+        try:
+            _textract_client = boto3.client(
+                "textract",
+                region_name=AWS_REGION,
+                aws_access_key_id=AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            )
+        except (ClientError, BotoCoreError) as e:
+            raise OCRServiceUnavailableError(f"Failed to initialize Textract client: {str(e)}")
     return _textract_client
 
 
 # ────────────────────────────────────────────────
-# Custom Exception for OCR Service
+# Custom Exceptions for OCR Service
 # ────────────────────────────────────────────────
 
-class TesseractNotFoundError(Exception):
-    """Custom exception raised when OCR service is not available."""
+class OCRServiceUnavailableError(Exception):
+    """Raised when OCR service is not available (AWS Textract unreachable or misconfigured)."""
     pass
 
 
 class OCRServiceError(Exception):
-    """Custom exception raised when OCR service fails."""
+    """Raised when OCR service fails during text extraction."""
+    pass
+
+
+class TesseractNotFoundError(OCRServiceUnavailableError):
+    """Legacy alias for OCRServiceUnavailableError for backward compatibility."""
     pass
 
 
@@ -92,10 +103,19 @@ def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
 
     Returns:
         Tuple of (extracted_text, average_confidence)
+
+    Raises:
+        OCRServiceUnavailableError: If Textract service is not reachable
+        OCRServiceError: If text extraction fails
     """
     try:
         textract = _get_textract_client()
+    except OCRServiceUnavailableError:
+        raise
+    except Exception as e:
+        raise OCRServiceUnavailableError(f"Textract client initialization failed: {str(e)}")
 
+    try:
         # Convert PIL image to bytes
         buffer = BytesIO()
         image.save(buffer, format="PNG")
@@ -105,13 +125,13 @@ def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
             Document={"Bytes": image_bytes}
         )
 
-        blocks = response["Blocks"]
+        blocks = response.get("Blocks", [])
 
         words = []
         confidences = []
 
         for block in blocks:
-            if block["BlockType"] == "WORD":
+            if block.get("BlockType") == "WORD":
                 text = block.get("Text", "").strip()
                 confidence = block.get("Confidence", 0)
                 if text:
@@ -126,6 +146,13 @@ def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
 
         return extracted_text, avg_confidence
 
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        if error_code in ("ThrottlingException", "ProvisionedThroughputExceededException"):
+            raise OCRServiceUnavailableError(f"Textract rate limited: {error_code}")
+        raise OCRServiceError(f"Textract API error: {error_code}")
+    except BotoCoreError as e:
+        raise OCRServiceUnavailableError(f"Textract connection error: {str(e)}")
     except Exception as e:
         raise OCRServiceError(f"Textract OCR failed: {str(e)}")
 
@@ -139,10 +166,19 @@ def extract_text_from_s3(object_key: str) -> Tuple[str, float]:
 
     Returns:
         Tuple of (extracted_text, average_confidence)
+
+    Raises:
+        OCRServiceUnavailableError: If Textract service is not reachable
+        OCRServiceError: If text extraction fails
     """
     try:
         textract = _get_textract_client()
+    except OCRServiceUnavailableError:
+        raise
+    except Exception as e:
+        raise OCRServiceUnavailableError(f"Textract client initialization failed: {str(e)}")
 
+    try:
         response = textract.detect_document_text(
             Document={
                 "S3Object": {
@@ -152,13 +188,13 @@ def extract_text_from_s3(object_key: str) -> Tuple[str, float]:
             }
         )
 
-        blocks = response["Blocks"]
+        blocks = response.get("Blocks", [])
 
         words = []
         confidences = []
 
         for block in blocks:
-            if block["BlockType"] == "WORD":
+            if block.get("BlockType") == "WORD":
                 text = block.get("Text", "").strip()
                 confidence = block.get("Confidence", 0)
                 if text:
@@ -173,6 +209,13 @@ def extract_text_from_s3(object_key: str) -> Tuple[str, float]:
 
         return extracted_text, avg_confidence
 
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        if error_code in ("ThrottlingException", "ProvisionedThroughputExceededException"):
+            raise OCRServiceUnavailableError(f"Textract rate limited: {error_code}")
+        raise OCRServiceError(f"Textract API error for S3 object {object_key}: {error_code}")
+    except BotoCoreError as e:
+        raise OCRServiceUnavailableError(f"Textract connection error: {str(e)}")
     except Exception as e:
         raise OCRServiceError(f"Textract OCR failed for S3 object {object_key}: {str(e)}")
 
