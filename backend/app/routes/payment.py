@@ -29,6 +29,7 @@ from app.utils.ocr import (
     fetch_s3_image,
     extract_text_with_confidence,
     verify_payment_screenshot,
+    OCRServiceUnavailableError,
     TesseractNotFoundError,
     OCRServiceError,
 )
@@ -51,12 +52,16 @@ payment_bp = Blueprint('payment', __name__)
 
 
 def _is_ocr_unavailable(error: Exception) -> bool:
+    """Check if the error indicates OCR service is unavailable."""
     return (
-        "TesseractNotFoundError" in type(error).__name__
-        or "OCRServiceError" in type(error).__name__
-        or "tesseract is not installed" in str(error).lower()
-        or "tesseract not found" in str(error).lower()
-        or "textract" in str(error).lower()
+        isinstance(error, (OCRServiceUnavailableError, TesseractNotFoundError))
+        or "OCRServiceUnavailableError" in type(error).__name__
+        or "TesseractNotFoundError" in type(error).__name__
+        or "ocr unavailable" in str(error).lower()
+        or "textract client" in str(error).lower()
+        or "aws credentials" in str(error).lower()
+        or "rate limited" in str(error).lower()
+        or "connection error" in str(error).lower()
     )
 
 
