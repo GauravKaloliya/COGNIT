@@ -67,12 +67,12 @@ PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 # ────────────────────────────────────────────────
 
 ALLOWED_APPS: Dict[str, list] = {
-    "gpay": ["gpay", "google pay", "tez"],
-    "phonepe": ["phonepe"],
-    "paytm": ["paytm"],
-    "bhim": ["bhim"],
+    "gpay": ["gpay", "google pay", "googlepay", "tez", "g pay"],
+    "phonepe": ["phonepe", "phone pe", "phone pay"],
+    "paytm": ["paytm", "pay tm"],
+    "bhim": ["bhim", "bhim upi"],
     "amazonpay": ["amazon pay", "amazonpay"],
-    "bharatpe": ["bharatpe"]
+    "bharatpe": ["bharatpe", "bharat pe"]
 }
 
 SUCCESS_KEYWORDS = ["success", "successful", "completed", "paid", "payment successful", "transaction successful"]

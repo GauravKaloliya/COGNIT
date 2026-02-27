@@ -224,9 +224,45 @@ def extract_text_from_s3(object_key: str) -> Tuple[str, float]:
 # UPI App Detection
 # ────────────────────────────────────────────────
 
+# Extended app patterns for better OCR tolerance
+APP_DETECTION_PATTERNS = {
+    'gpay': [
+        r'g[\s\-]*pay',
+        r'goo[gl]*[\s\-]*pay',
+        r'google[\s\-]*pay',
+        r'g[\s]*pay',
+        r'tez',
+        r'googlepay',
+        r'gpay[\s]*business',
+    ],
+    'phonepe': [
+        r'phone[\s\-]*pe',
+        r'phonepe',
+        r'phone[\s]*pay',
+    ],
+    'paytm': [
+        r'paytm',
+        r'pay[\s]*tm',
+    ],
+    'bhim': [
+        r'bhim',
+        r'bhim[\s\-]*upi',
+    ],
+    'amazonpay': [
+        r'amazon[\s\-]*pay',
+        r'amazonpay',
+    ],
+    'bharatpe': [
+        r'bharat[\s\-]*pe',
+        r'bharatpe',
+    ],
+}
+
+
 def detect_upi_app(text: str) -> Optional[str]:
     """
     Detect which UPI app from the allowed whitelist.
+    Uses both keyword matching and regex patterns for better OCR tolerance.
 
     Args:
         text: OCR extracted text
@@ -235,9 +271,18 @@ def detect_upi_app(text: str) -> Optional[str]:
         App name key or None if unrecognized
     """
     lower = text.lower()
+
+    # First try exact keyword matching from config
     for app, keywords in ALLOWED_APPS.items():
         if any(k in lower for k in keywords):
             return app
+
+    # Then try regex patterns for better OCR tolerance
+    for app, patterns in APP_DETECTION_PATTERNS.items():
+        for pattern in patterns:
+            if re.search(pattern, lower, re.IGNORECASE):
+                return app
+
     return None
 
 
@@ -294,42 +339,35 @@ def verify_payment_screenshot(
         failures.append("low_ocr_confidence")
 
     # 3. App detection - must be from allowed UPI app
-    # Use fuzzy matching for app detection to handle OCR variations
+    # Uses APP_DETECTION_PATTERNS in detect_upi_app for fuzzy matching
     detected_app = detect_upi_app(text)
     if not detected_app:
-        # If strict detection fails, try to detect from common app patterns
-        # Google Pay: "google", "gpay", "tez"
-        # PhonePe: "phonepe", "phone pe"
-        # Paytm: "paytm"
-        # BHIM: "bhim"
-        # Amazon Pay: "amazon", "amazonpay"
-        # BharatPe: "bharatpe", "bharat pe"
-        app_patterns = {
-            'gpay': [r'g[ -]*pay', r'goo[gl]*[ -]*pay', r'tez'],
-            'phonepe': [r'phone[ -]*pe'],
-            'paytm': [r'paytm'],
-            'bhim': [r'bhim'],
-            'amazonpay': [r'amazon[ -]*pay'],
-            'bharatpe': [r'bharat[ -]*pe']
-        }
-        for app_name, patterns in app_patterns.items():
-            for pattern in patterns:
-                if re.search(pattern, lower, re.IGNORECASE):
-                    detected_app = app_name
-                    break
-            if detected_app:
-                break
-        if not detected_app:
-            failures.append("unrecognized_app")
+        failures.append("unrecognized_app")
 
     # 4. UPI keyword check - must contain "UPI" indicator
-    # Make this more flexible - check for various UPI-related terms
+    # Make this more flexible - check for various UPI-related terms and patterns
     upi_indicators = [
         'upi', 'upi id', 'upi payment', '@',
         'vpa', 'virtual payment address',
         'unified payments interface',
+        'pay', 'payment', 'transfer', 'sent', 'paid',
+        'transaction', 'txn', 'debit', 'credit',
     ]
-    if not any(indicator in lower for indicator in upi_indicators):
+    upi_patterns = [
+        r'\bupi\b',
+        r'[a-z0-9]+@[a-z]+',  # VPA pattern like user@okaxis
+        r'@\w+',  # Any @ followed by word
+        r'transaction\s*(id|ref|number)?',
+        r'txn\s*(id|ref)?',
+        r'payment\s*(successful|completed|done)',
+        r'paid\s*to',
+        r'sent\s*to',
+    ]
+
+    has_upi_indicator = any(indicator in lower for indicator in upi_indicators)
+    has_upi_pattern = any(re.search(pattern, lower) for pattern in upi_patterns)
+
+    if not (has_upi_indicator or has_upi_pattern):
         failures.append("not_upi_payment")
 
     # 5. VPA match - must pay to correct VPA
@@ -380,15 +418,36 @@ def verify_payment_screenshot(
             # Split note into parts and check if key parts exist
             note_parts = note_lower.split()
             if len(note_parts) >= 2:
-                # For "COGNIT XXXXX", check if both "cognit" and the ID exist
+                # For "COGNIT XXXXX", check if "cognit" exists
                 cognit_found = 'cognit' in lower
-                # Try to find a numeric ID or alphanumeric ID
-                id_pattern = re.search(r'\b[a-z0-9]{5,}\b', lower)
-                if cognit_found and id_pattern:
+
+                # Extract the payment ID part (after COGNIT)
+                payment_id_part = note_parts[-1] if note_parts else ""
+
+                # Try to find the payment ID or a similar pattern
+                # Payment IDs are typically UUIDs or alphanumeric
+                id_found = False
+                if payment_id_part:
+                    # Check for payment ID with some tolerance for OCR errors
+                    # Allow for missing or extra characters
+                    id_patterns = [
+                        r'\b' + re.escape(payment_id_part[:8]) + r'[a-z0-9\-]*\b',  # First 8 chars + more
+                        r'\b[a-f0-9\-]{20,}\b',  # UUID-like pattern
+                        r'\b[a-z0-9]{8,}[\s\-]*[a-z0-9]{4,}',  # Generic alphanumeric ID
+                    ]
+                    for pattern in id_patterns:
+                        if re.search(pattern, lower):
+                            id_found = True
+                            break
+
+                # Note matches if cognit is found and we have some ID-like pattern
+                if cognit_found and id_found:
                     note_found = True
-                # If only cognit found, check if it appears near other text
-                elif cognit_found:
-                    # Check if "cognit" is present (good enough for fuzzy match)
+                # If cognit is found near a UUID-like pattern, that's good enough
+                elif cognit_found and re.search(r'[a-f0-9]{8}[-\s]?[a-f0-9]{4}', lower):
+                    note_found = True
+                # If only "cognit" is clearly found with some ID nearby
+                elif cognit_found and re.search(r'\b\d{3,}\b|\b[a-f0-9]{6,}\b', lower):
                     note_found = True
 
         if not note_found:
@@ -424,11 +483,15 @@ def verify_payment_screenshot(
     # PhonePe: 12-16 character alphanumeric
     # Paytm: 12-16 character alphanumeric
     # BHIM: 12-16 character alphanumeric
-    # Handle OCR variations: spaces, dashes, etc.
+    # Handle OCR variations: spaces, dashes, colons, etc.
     txn_patterns = [
-        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
+        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay standard)
+        r'\b\d{10,16}\b',                 # 10-16 digit numeric (flexible)
+        r'\b\d{8,16}\b',                  # 8-16 digit numeric (very flexible)
         r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
-        r'\b\d{10,16}\b',                 # 10-16 digit numeric
+        r'\b[a-zA-Z0-9]{10,20}\b',        # 10-20 alphanumeric (very flexible)
+        r'TXN[\s\-]*[A-Z0-9]{6,}',         # TXN prefix patterns
+        r'UPI[\s\-]*REF[\s\-]*[A-Z0-9]{6,}',  # UPI REF patterns
     ]
 
     txn_match = None
@@ -437,14 +500,20 @@ def verify_payment_screenshot(
         if txn_match:
             break
 
-    # If still not found, try with spaces/dashes removed
+    # If still not found, try with spaces/dashes/commas/colons removed
     if not txn_match:
         # Remove common separators and try again
-        cleaned_text = re.sub(r'[\s\-]', '', text)
+        cleaned_text = re.sub(r'[\s\-,;:]', '', text)
         for pattern in txn_patterns:
             txn_match = re.search(pattern, cleaned_text)
             if txn_match:
                 break
+
+    # Last resort: look for any sequence of 8+ digits that might be transaction ID
+    if not txn_match:
+        long_number_match = re.search(r'\b\d{8,}\b', text)
+        if long_number_match:
+            txn_match = long_number_match
 
     if not txn_match:
         failures.append("missing_transaction_id")
@@ -503,9 +572,13 @@ def extract_upi_ref(text: str) -> Optional[str]:
     # Paytm: 12-16 character alphanumeric
     # BHIM: 12-16 character alphanumeric
     txn_patterns = [
-        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
+        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay standard)
+        r'\b\d{10,16}\b',                 # 10-16 digit numeric (flexible)
+        r'\b\d{8,16}\b',                  # 8-16 digit numeric (very flexible)
         r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
-        r'\b\d{10,16}\b',                 # 10-16 digit numeric
+        r'\b[a-zA-Z0-9]{10,20}\b',        # 10-20 alphanumeric (very flexible)
+        r'TXN[\s\-]*[A-Z0-9]{6,}',         # TXN prefix patterns
+        r'UPI[\s\-]*REF[\s\-]*[A-Z0-9]{6,}',  # UPI REF patterns
     ]
 
     for pattern in txn_patterns:
@@ -513,11 +586,16 @@ def extract_upi_ref(text: str) -> Optional[str]:
         if match:
             return match.group(0)
 
-    # If not found, try with spaces/dashes removed
-    cleaned_text = re.sub(r'[\s\-]', '', text)
+    # If not found, try with spaces/dashes/commas/colons removed
+    cleaned_text = re.sub(r'[\s\-,;:]', '', text)
     for pattern in txn_patterns:
         match = re.search(pattern, cleaned_text)
         if match:
             return match.group(0)
+
+    # Last resort: look for any sequence of 8+ digits
+    long_number_match = re.search(r'\b\d{8,}\b', text)
+    if long_number_match:
+        return long_number_match.group(0)
 
     return None

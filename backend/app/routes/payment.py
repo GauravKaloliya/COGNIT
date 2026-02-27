@@ -394,9 +394,13 @@ def finalize_payment_upload(payment_public_id):
 
                 # Extract transaction ID using the same patterns as verify_payment_screenshot
                 txn_patterns = [
-                    r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
+                    r'\b\d{12}\b',                    # 12-digit numeric (Google Pay standard)
+                    r'\b\d{10,16}\b',                 # 10-16 digit numeric (flexible)
+                    r'\b\d{8,16}\b',                  # 8-16 digit numeric (very flexible)
                     r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
-                    r'\b\d{10,16}\b',                 # 10-16 digit numeric
+                    r'\b[a-zA-Z0-9]{10,20}\b',        # 10-20 alphanumeric (very flexible)
+                    r'TXN[\s\-]*[A-Z0-9]{6,}',         # TXN prefix patterns
+                    r'UPI[\s\-]*REF[\s\-]*[A-Z0-9]{6,}',  # UPI REF patterns
                 ]
 
                 txn_match = None
@@ -405,13 +409,17 @@ def finalize_payment_upload(payment_public_id):
                     if txn_match:
                         break
 
-                # If still not found, try with spaces/dashes removed
+                # If still not found, try with spaces/dashes/commas/colons removed
                 if not txn_match:
-                    cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
+                    cleaned_text = re.sub(r'[\s\-,;:]', '', extracted_text)
                     for pattern in txn_patterns:
                         txn_match = re.search(pattern, cleaned_text)
                         if txn_match:
                             break
+
+                # Last resort: look for any sequence of 8+ digits
+                if not txn_match:
+                    txn_match = re.search(r'\b\d{8,}\b', extracted_text)
 
                 upi_ref = txn_match.group(0) if txn_match else None
                 
@@ -602,9 +610,13 @@ def verify_payment(payment_public_id):
 
     # Extract transaction ID using the same patterns as verify_payment_screenshot
     txn_patterns = [
-        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
+        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay standard)
+        r'\b\d{10,16}\b',                 # 10-16 digit numeric (flexible)
+        r'\b\d{8,16}\b',                  # 8-16 digit numeric (very flexible)
         r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
-        r'\b\d{10,16}\b',                 # 10-16 digit numeric
+        r'\b[a-zA-Z0-9]{10,20}\b',        # 10-20 alphanumeric (very flexible)
+        r'TXN[\s\-]*[A-Z0-9]{6,}',         # TXN prefix patterns
+        r'UPI[\s\-]*REF[\s\-]*[A-Z0-9]{6,}',  # UPI REF patterns
     ]
 
     txn_match = None
@@ -613,13 +625,17 @@ def verify_payment(payment_public_id):
         if txn_match:
             break
 
-    # If still not found, try with spaces/dashes removed
+    # If still not found, try with spaces/dashes/commas/colons removed
     if not txn_match:
-        cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
+        cleaned_text = re.sub(r'[\s\-,;:]', '', extracted_text)
         for pattern in txn_patterns:
             txn_match = re.search(pattern, cleaned_text)
             if txn_match:
                 break
+
+    # Last resort: look for any sequence of 8+ digits
+    if not txn_match:
+        txn_match = re.search(r'\b\d{8,}\b', extracted_text)
 
     upi_ref = txn_match.group(0) if txn_match else None
 
