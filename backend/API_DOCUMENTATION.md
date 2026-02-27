@@ -446,6 +446,45 @@ Finalize payment after proof upload.
 
 ---
 
+#### POST /payments/{payment_public_id}/verify-url
+
+Verify payment using an external screenshot URL (for testing/demo purposes).
+
+**Rate Limit:** 20 per minute
+
+**Path Parameters:**
+- `payment_public_id` (required): Payment UUID
+
+**Request Body:**
+```json
+{
+    "screenshot_url": "string (URL)"
+}
+```
+
+**Success Response (200):**
+```json
+{
+    "status": "success",
+    "detected_app": "string (gpay|phonepe|paytm|bhim|amazonpay)",
+    "verified": true
+}
+```
+
+**Error Responses:**
+- `400`: Invalid URL or URL not in allowed list
+- `404`: Payment not found
+- `410`: Payment expired
+
+**Allowed Test URLs:**
+- `https://www.paytmpayments.com/s3assets//images/upi/MaskGroup203.webp`
+- `https://i.pinimg.com/736x/19/ed/bb/19edbb6b69d1b5c15dd1bc7ace4b58f0.jpg`
+- `https://mir-s3-cdn-cf.behance.net/project_modules/disp_webp/0e355377420365.5c875be22c057.png`
+- `https://www.bhimupi.org.in/images/bhim/SCREEN_6.png`
+- `https://media.licdn.com/dms/image/v2/D5622AQGk0E7f5cBmMA/feedshare-shrink_800/B56Zm_pzXhJwAk-/0/1759857032098`
+
+---
+
 #### GET /payments/{payment_public_id}/status
 
 Get payment status.
@@ -803,6 +842,7 @@ Currently not implemented. Payment verification is done via internal API.
 | /payments/create | 10/min |
 | /payments/{id}/upload-url | 10/min |
 | /payments/{id}/finalize | 10/min |
+| /payments/{id}/verify-url | 20/min |
 | /payments/{id}/status | 30/min |
 | /client-errors | 30/min |
 

@@ -72,8 +72,15 @@ ALLOWED_APPS: Dict[str, list] = {
     "paytm": ["paytm"],
     "bhim": ["bhim"],
     "amazonpay": ["amazon pay", "amazonpay"],
-    "bharatpe": ["bharatpe"]
 }
+
+ALLOWED_TEST_URLS = [
+    "https://www.paytmpayments.com/s3assets//images/upi/MaskGroup203.webp",
+    "https://i.pinimg.com/736x/19/ed/bb/19edbb6b69d1b5c15dd1bc7ace4b58f0.jpg",
+    "https://mir-s3-cdn-cf.behance.net/project_modules/disp_webp/0e355377420365.5c875be22c057.png",
+    "https://www.bhimupi.org.in/images/bhim/SCREEN_6.png",
+    "https://media.licdn.com/dms/image/v2/D5622AQGk0E7f5cBmMA/feedshare-shrink_800/B56Zm_pzXhJwAk-/0/1759857032098",
+]
 
 SUCCESS_KEYWORDS = ["success", "successful", "completed", "paid", "payment successful", "transaction successful"]
 FAILURE_KEYWORDS = ["failed", "pending", "declined", "cancelled"]

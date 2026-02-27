@@ -16,6 +16,7 @@ from app.config import (
     MIN_IMAGE_WIDTH,
     MIN_OCR_CONFIDENCE,
     ALLOWED_APPS,
+    ALLOWED_TEST_URLS,
     SUCCESS_KEYWORDS,
     FAILURE_KEYWORDS,
     UPI_VPA,
@@ -25,6 +26,31 @@ from app.config import (
     AWS_SECRET_ACCESS_KEY,
 )
 from app.extensions import s3
+
+
+def is_allowed_test_url(url: str) -> bool:
+    """
+    Check if a URL is in the allowed test/demo screenshot whitelist.
+
+    Args:
+        url: The URL to check
+
+    Returns:
+        True if URL is in the allowed test URLs list
+    """
+    if not url:
+        return False
+    from urllib.parse import urlparse, parse_qs
+
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+    for allowed_url in ALLOWED_TEST_URLS:
+        allowed_parsed = urlparse(allowed_url)
+        allowed_base = f"{allowed_parsed.scheme}://{allowed_parsed.netloc}{allowed_parsed.path}"
+        if base_url == allowed_base:
+            return True
+    return False
 
 
 # ────────────────────────────────────────────────
@@ -303,14 +329,12 @@ def verify_payment_screenshot(
         # Paytm: "paytm"
         # BHIM: "bhim"
         # Amazon Pay: "amazon", "amazonpay"
-        # BharatPe: "bharatpe", "bharat pe"
         app_patterns = {
             'gpay': [r'g[ -]*pay', r'goo[gl]*[ -]*pay', r'tez'],
             'phonepe': [r'phone[ -]*pe'],
             'paytm': [r'paytm'],
             'bhim': [r'bhim'],
             'amazonpay': [r'amazon[ -]*pay'],
-            'bharatpe': [r'bharat[ -]*pe']
         }
         for app_name, patterns in app_patterns.items():
             for pattern in patterns:

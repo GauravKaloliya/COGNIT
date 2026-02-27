@@ -29,6 +29,7 @@ from app.utils.ocr import (
     fetch_s3_image,
     extract_text_with_confidence,
     verify_payment_screenshot,
+    is_allowed_test_url,
     OCRServiceUnavailableError,
     TesseractNotFoundError,
     OCRServiceError,
@@ -501,6 +502,171 @@ def finalize_payment_upload(payment_public_id):
     except Exception:
         db.rollback()
         return create_error_response("DUPLICATE_IMAGE")
+
+
+@payment_bp.route("/payments/<payment_public_id>/verify-url", methods=["POST"])
+@require_valid_payment_session
+@limiter.limit("20 per minute")
+@track_performance
+def verify_payment_url(payment_public_id):
+    """Verify payment using an external screenshot URL (for test/demo purposes)."""
+    import requests
+    from PIL import Image as PILImage
+
+    data = request.json or {}
+    screenshot_url = data.get("screenshot_url")
+
+    if not screenshot_url:
+        return create_error_response("MISSING_FIELDS", {"fields": ["screenshot_url"]})
+
+    # Check if URL is in the allowed test URLs list
+    if not is_allowed_test_url(screenshot_url):
+        return create_error_response("FRAUD_UNRECOGNIZED_APP", 
+            custom_message="Screenshot URL not in allowed list. Please use an approved UPI app.")
+
+    db = get_db()
+
+    row = db.execute(text("""
+        SELECT id, participant_id, status, expires_at, amount, upi_note
+        FROM payments
+        WHERE public_id = :pid
+        FOR UPDATE
+    """), {"pid": payment_public_id}).fetchone()
+
+    if not row:
+        return create_error_response("PAYMENT_NOT_FOUND")
+
+    payment_id, participant_id, status, expires_at, amount, payment_note = row
+
+    # Check if payment has expired
+    if expires_at and datetime.now(timezone.utc) > expires_at:
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {"pid": payment_id})
+        db.commit()
+        return create_error_response("PAYMENT_EXPIRED")
+
+    if status != "pending":
+        return create_error_response("PAYMENT_INVALID_STATE")
+
+    try:
+        # Fetch the image from the external URL
+        response = requests.get(screenshot_url, timeout=30)
+        response.raise_for_status()
+
+        image = PILImage.open(BytesIO(response.content))
+        extracted_text, confidence = extract_text_with_confidence(image)
+
+        # Run strict validation
+        is_valid, detected_app, failures = verify_payment_screenshot(
+            image, extracted_text, amount, payment_note, confidence
+        )
+
+        # Build verification details JSON
+        verification_details = {
+            "ocr_confidence": confidence,
+            "failure_reasons": failures,
+            "extracted_text_length": len(extracted_text) if extracted_text else 0,
+            "external_url": screenshot_url
+        }
+
+        # Extract transaction ID
+        txn_patterns = [
+            r'\b\d{12}\b',
+            r'\b[a-zA-Z0-9]{12,16}\b',
+            r'\b\d{10,16}\b',
+        ]
+
+        txn_match = None
+        for pattern in txn_patterns:
+            txn_match = re.search(pattern, extracted_text)
+            if txn_match:
+                break
+
+        if not txn_match:
+            cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
+            for pattern in txn_patterns:
+                txn_match = re.search(pattern, cleaned_text)
+                if txn_match:
+                    break
+
+        upi_ref = txn_match.group(0) if txn_match else None
+
+        # Check for duplicate transaction ID
+        if upi_ref and is_valid:
+            txn_duplicate, txn_status = check_duplicate_transaction(db, upi_ref, exclude_payment_id=payment_id)
+            if txn_duplicate:
+                log_audit(db, "fraud_detected_duplicate_txn", participant_id=participant_id,
+                          details=f"Transaction {upi_ref} already used in payment with status {txn_status}")
+                is_valid = False
+                failures.append("duplicate_transaction_id")
+
+        new_status = "success" if is_valid else "rejected_fraud"
+
+        # Store the external URL as the object_key for reference
+        db.execute(text("""
+            UPDATE payments
+            SET extracted_text = :txt,
+                upi_txn_ref = :ref,
+                fraud_score = :fs,
+                verified_at = CURRENT_TIMESTAMP,
+                status = :status,
+                detected_app = :app,
+                verification_details = :details
+            WHERE id = :pid
+        """), {
+            "txt": extracted_text,
+            "ref": upi_ref,
+            "fs": len(failures) * 10,
+            "status": new_status,
+            "app": detected_app,
+            "details": json.dumps(verification_details),
+            "pid": payment_id
+        })
+
+        # Insert fraud signals for each failure reason
+        for failure in failures:
+            db.execute(text("""
+                INSERT INTO payment_fraud_signals (
+                    payment_id, signal_type, signal_score, details
+                ) VALUES (
+                    :pid, :type, :score, :details
+                ) ON CONFLICT DO NOTHING
+            """), {
+                "pid": payment_id,
+                "type": failure,
+                "score": 100,
+                "details": json.dumps({"reason": failure, "confidence": confidence})
+            })
+
+        db.commit()
+
+        if is_valid:
+            log_audit(db, "payment_verified_url", participant_id=participant_id,
+                      details=f"Payment {payment_id} verified via external URL")
+            return jsonify({
+                "status": "success",
+                "detected_app": detected_app,
+                "verified": True
+            })
+        else:
+            return jsonify({
+                "status": "rejected_fraud",
+                "detected_app": detected_app,
+                "failure_reasons": failures,
+                "verified": True
+            })
+
+    except requests.RequestException as e:
+        current_app.logger.exception(f"Failed to fetch external URL: {screenshot_url}")
+        return create_error_response("SYS_SERVICE_UNAVAILABLE", 
+            custom_message="Failed to fetch the screenshot. Please try again.")
+    except Exception as e:
+        current_app.logger.exception("URL verification failed")
+        return create_error_response("INTERNAL_ERROR", 
+            custom_message="Verification failed. Please try again.")
 
 
 @payment_bp.route("/payments/<payment_public_id>/status", methods=["GET"])

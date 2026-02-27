@@ -120,6 +120,9 @@ export const endpoints = {
     object_key: objectKey,
     sha256: sha256
   }),
+  verifyPaymentUrl: (paymentId, screenshotUrl) => api.post(`/payments/${paymentId}/verify-url`, {
+    screenshot_url: screenshotUrl
+  }),
   
   // Error logging
   logClientError: (errorData) => api.post('/client-errors', errorData)

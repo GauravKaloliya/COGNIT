@@ -13,6 +13,7 @@ export default function PaymentLinkPage({
   const [isLoading, setIsLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [uploadFile, setUploadFile] = useState(null);
+  const [screenshotUrl, setScreenshotUrl] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState(null);
   const [failureReasons, setFailureReasons] = useState([]);
@@ -252,6 +253,56 @@ export default function PaymentLinkPage({
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   };
 
+  const handleUrlVerify = async () => {
+    if (!screenshotUrl.trim()) {
+      setError("Please enter a screenshot URL.");
+      return;
+    }
+
+    if (!paymentData?.payment_id) {
+      setError("We couldn't find your payment details. Please try again.");
+      return;
+    }
+
+    setVerifying(true);
+    setError(null);
+
+    try {
+      const result = await endpoints.verifyPaymentUrl(paymentData.payment_id, screenshotUrl.trim());
+
+      if (result.verified && result.status === "success") {
+        setPaymentStatus("success");
+        sessionStorage.removeItem("payment_id");
+        clearTimerState();
+        await onNext();
+        return;
+      }
+
+      if (result.verified && result.status === "rejected_fraud") {
+        setPaymentStatus("rejected_fraud");
+        setVerifying(false);
+        const reasons = result.failure_reasons || [];
+        setFailureReasons(reasons);
+        const specificError = getVerificationErrorMessage(reasons);
+        setError(specificError || "Your payment screenshot could not be verified.");
+        return;
+      }
+    } catch (err) {
+      setVerifying(false);
+      if (err.code === 'FRAUD_001_0003') {
+        setError("This screenshot URL is not in the allowed list. Please use an approved UPI app screenshot.");
+      } else if (err.code === 'PAY_001_0001' || err.code === 'ERR_PAYMENT_EXPIRED') {
+        handleExpiry();
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError("Verification failed. Please try again.");
+      }
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const handleUploadAndFinalize = async () => {
     if (!uploadFile) {
       setError("Please upload a screenshot of your payment first.");
@@ -424,6 +475,7 @@ export default function PaymentLinkPage({
     clearTimerState();
     setPaymentData(null);
     setUploadFile(null);
+    setScreenshotUrl("");
     setPaymentStatus("pending");
     setError(null);
     setFailureReasons([]);
@@ -653,6 +705,40 @@ export default function PaymentLinkPage({
               disabled={!uploadFile || verifying}
             >
               {verifying ? "Verifying..." : "Confirm Payment"}
+            </button>
+          </section>
+        )}
+
+        {paymentStatus === "pending" && (
+          <section className="payment-card">
+            <h3>
+              <span className="payment-card-emoji" aria-hidden="true">🔗</span>
+              Or Use Screenshot URL (Testing)
+            </h3>
+            <p>Paste a payment screenshot URL for verification.</p>
+
+            <input
+              type="url"
+              className="payment-url-input"
+              placeholder="https://example.com/screenshot.png"
+              value={screenshotUrl}
+              onChange={(e) => setScreenshotUrl(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                fontSize: '14px',
+                marginBottom: '12px'
+              }}
+            />
+
+            <button
+              className="primary"
+              onClick={handleUrlVerify}
+              disabled={!screenshotUrl.trim() || verifying}
+            >
+              {verifying ? "Verifying..." : "Verify URL"}
             </button>
           </section>
         )}
