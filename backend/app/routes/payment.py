@@ -392,8 +392,27 @@ def finalize_payment_upload(payment_public_id):
                     "extracted_text_length": len(extracted_text) if extracted_text else 0
                 }
 
-                # Extract transaction ID
-                txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", extracted_text)
+                # Extract transaction ID using the same patterns as verify_payment_screenshot
+                txn_patterns = [
+                    r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
+                    r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
+                    r'\b\d{10,16}\b',                 # 10-16 digit numeric
+                ]
+
+                txn_match = None
+                for pattern in txn_patterns:
+                    txn_match = re.search(pattern, extracted_text)
+                    if txn_match:
+                        break
+
+                # If still not found, try with spaces/dashes removed
+                if not txn_match:
+                    cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
+                    for pattern in txn_patterns:
+                        txn_match = re.search(pattern, cleaned_text)
+                        if txn_match:
+                            break
+
                 upi_ref = txn_match.group(0) if txn_match else None
                 
                 # 3. Check for duplicate transaction ID
@@ -581,8 +600,27 @@ def verify_payment(payment_public_id):
         "extracted_text_length": len(extracted_text) if extracted_text else 0
     }
 
-    # Extract transaction ID
-    txn_match = re.search(r"\b[a-zA-Z0-9]{12,30}\b", extracted_text)
+    # Extract transaction ID using the same patterns as verify_payment_screenshot
+    txn_patterns = [
+        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
+        r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
+        r'\b\d{10,16}\b',                 # 10-16 digit numeric
+    ]
+
+    txn_match = None
+    for pattern in txn_patterns:
+        txn_match = re.search(pattern, extracted_text)
+        if txn_match:
+            break
+
+    # If still not found, try with spaces/dashes removed
+    if not txn_match:
+        cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
+        for pattern in txn_patterns:
+            txn_match = re.search(pattern, cleaned_text)
+            if txn_match:
+                break
+
     upi_ref = txn_match.group(0) if txn_match else None
 
     if is_valid:
