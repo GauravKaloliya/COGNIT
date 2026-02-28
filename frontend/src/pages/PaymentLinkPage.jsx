@@ -27,7 +27,7 @@ export default function PaymentLinkPage({
 
   const getVerificationErrorMessage = (reasons) => {
     const messages = {
-      'unrecognized_app': 'Screenshot not from an allowed UPI app. Please use Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.',
+      'unrecognized_app': 'Screenshot not from an allowed UPI app. Please use Google Pay, Paytm, or BHIM.',
       'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.'
     };
     return reasons.map(r => messages[r] || r).join('. ');
@@ -81,28 +81,36 @@ export default function PaymentLinkPage({
     };
   };
 
-  // Get QR code container wrapper style with border filling animation
+  // Get QR code container wrapper style with animated border
   const getQrBorderWrapperStyle = () => {
     const color = getTimerColor();
-    const borderColor = 'var(--border)';
     return {
-      borderRadius: '14px',
-      padding: '3px',
-      background: `conic-gradient(from 0deg, ${color} 0% ${timerProgress}%, ${borderColor} ${timerProgress}% 100%)`,
-      boxShadow: `0 0 12px ${color}40`,
-      transition: 'box-shadow 1s linear',
-      animation: timerProgress <= 15 ? 'timer-pulse 1s ease-in-out infinite' : 'none',
+      borderRadius: '16px',
+      padding: '4px',
+      background: `linear-gradient(135deg, ${color}20 0%, ${color}40 50%, ${color}20 100%)`,
+      boxShadow: `0 0 20px ${color}30, 0 4px 12px rgba(0,0,0,0.1), inset 0 0 20px ${color}15`,
+      transition: 'box-shadow 0.5s ease, background 0.5s ease',
+      animation: timerProgress <= 30 ? `qr-glow 1.5s ease-in-out infinite, ${timerProgress <= 15 ? 'timer-pulse 1s ease-in-out infinite' : 'none'}` : 'none',
       display: 'inline-flex',
       width: '100%',
+      position: 'relative',
+      overflow: 'hidden',
     };
   };
 
-  // Get QR code container style with border filling animation
+  // Get QR code container style with animated border
   const getQrContainerStyle = () => {
+    const color = getTimerColor();
     return {
       borderRadius: '12px',
       background: 'var(--panel)',
       width: '100%',
+      position: 'relative',
+      boxShadow: 'inset 0 0 0 2px transparent',
+      backgroundImage: `linear-gradient(var(--panel), var(--panel)), linear-gradient(90deg, ${color} 0%, ${color} ${timerProgress}%, var(--border-light) ${timerProgress}%, var(--border-light) 100%)`,
+      backgroundOrigin: 'border-box',
+      backgroundClip: 'padding-box, border-box',
+      border: '3px solid transparent',
     };
   };
 
@@ -319,7 +327,7 @@ export default function PaymentLinkPage({
         const reasons = inlineVerification.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.");
+        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.");
         return;
       }
 
@@ -340,7 +348,7 @@ export default function PaymentLinkPage({
         const reasons = statusData.verification_details?.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.");
+        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.");
         return;
       }
 
@@ -621,12 +629,28 @@ export default function PaymentLinkPage({
         )}
 
         {paymentStatus === "pending" && (
+          <section className="payment-card highlight">
+            <h3>
+              <span className="payment-card-emoji" aria-hidden="true">⚠️</span>
+              Important Instructions
+            </h3>
+            <ul className="payment-steps">
+              <li>Pay exactly ₹1 using a UPI app</li>
+              <li><strong>Use only: Google Pay, Paytm, or BHIM</strong></li>
+              <li>Take a screenshot immediately after payment</li>
+              <li>Upload the screenshot below to verify</li>
+              <li>Payment session expires in {formatTime(timeRemaining)}</li>
+            </ul>
+          </section>
+        )}
+
+        {paymentStatus === "pending" && (
           <section className="payment-card">
             <h3>
               <span className="payment-card-emoji" aria-hidden="true">📤</span>
               Upload Payment Screenshot
             </h3>
-            <p>After completing the payment, upload a screenshot from Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.</p>
+            <p>After completing the payment, upload a screenshot from Google Pay, Paytm, or BHIM.</p>
 
             <div
               className="payment-upload-area"
@@ -661,20 +685,6 @@ export default function PaymentLinkPage({
             </button>
           </section>
         )}
-
-        <section className="payment-card">
-          <h3>
-            <span className="payment-card-emoji" aria-hidden="true">⚠️</span>
-            Important
-          </h3>
-          <ul className="payment-steps">
-            <li>Pay exactly ₹1 using a UPI app</li>
-            <li>Use only: Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM</li>
-            <li>Take a screenshot immediately after payment</li>
-            <li>Upload the screenshot above to verify</li>
-            <li>Payment session expires in {formatTime(timeRemaining)}</li>
-          </ul>
-        </section>
       </div>
     </div>
   );
