@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
 import { endpoints } from "../utils/api.js";
+import { getErrorMessage } from "../utils/errorRegistry.js";
 
 const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
 const MIN_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MIN_DESCRIPTION_LENGTH || "60", 10);
@@ -241,7 +242,7 @@ export default function SurveyPage({
 
     // Additional validation before submit
     if (!survey || !survey.image_id) {
-      setSubmitError("Image not loaded properly. Please wait or refresh.");
+      setSubmitError(getErrorMessage('SYS_002_0004'));
       return;
     }
 
@@ -268,7 +269,11 @@ export default function SurveyPage({
         networkDisconnects: 0
       });
     } catch (error) {
-      setSubmitError(error?.message || "Submission failed. Please try again.");
+      if (error?.code) {
+        setSubmitError(getErrorMessage(error.code));
+      } else {
+        setSubmitError(getErrorMessage('SYS_002_0006'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -287,15 +292,17 @@ export default function SurveyPage({
   };
 
   const getSubmitTooltip = () => {
-    if (!imageReady) return "Waiting for image to load...";
+    if (!imageReady) return getErrorMessage('SYS_002_0018');
     if (submitting) return "Submitting...";
-    if (wordCount < MIN_WORDS) return `Need at least ${MIN_WORDS} words (currently ${wordCount})`;
-    if (description.length < MIN_DESCRIPTION_LENGTH) return `Description must be at least ${MIN_DESCRIPTION_LENGTH} characters`;
-    if (description.length > MAX_DESCRIPTION_LENGTH) return `Description exceeds ${MAX_DESCRIPTION_LENGTH} characters`;
-    if (rating === 0) return "Please select a rating";
+    if (wordCount < MIN_WORDS) {
+      return getErrorMessage('VAL_002_0004', 'en', { min_words: MIN_WORDS, actual: wordCount });
+    }
+    if (description.length < MIN_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0002');
+    if (description.length > MAX_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0003');
+    if (rating === 0) return getErrorMessage('VAL_002_0008');
     const commentsLength = comments.trim().length;
-    if (commentsLength < MIN_FEEDBACK_LENGTH) return `Comments must be at least ${MIN_FEEDBACK_LENGTH} characters`;
-    if (commentsLength > MAX_FEEDBACK_LENGTH) return `Comments exceeds ${MAX_FEEDBACK_LENGTH} characters`;
+    if (commentsLength < MIN_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0006');
+    if (commentsLength > MAX_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0007');
     return "Submit your response";
   };
 
@@ -404,7 +411,7 @@ export default function SurveyPage({
           />
         ) : (
           <div className="image-error">
-            <p>Image failed to load.</p>
+            <p>{getErrorMessage('SYS_002_0005')}</p>
             <button
               className="primary small button-top"
               onClick={handleRetryImage}

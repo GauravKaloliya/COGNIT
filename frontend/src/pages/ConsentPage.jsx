@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { getErrorMessage } from "../utils/errorRegistry.js";
 
 export default function ConsentPage({ 
   onConsentGiven, 
@@ -12,22 +13,25 @@ export default function ConsentPage({
     document.title = "Consent Form - C.O.G.N.I.T.";
   }, []);
 
-  const getErrorMessage = (err) => {
+  const resolveConsentError = (err) => {
     const message = err?.message || "";
     if (message.toLowerCase().includes("expected pattern")) {
-      return "Unable to reach the server. Please check your connection and try again.";
+      return getErrorMessage('SYS_002_0001');
     }
-    return message || "Failed to record consent. Please try again.";
+    if (err?.code) {
+      return getErrorMessage(err.code);
+    }
+    return getErrorMessage('SYS_002_0002');
   };
 
   const handleSubmit = async () => {
     if (!systemReady) {
-      setError("System is not ready. Please wait for the connection to be established.");
+      setError(getErrorMessage('SYS_002_0003'));
       return;
     }
 
     if (!consentChecked) {
-      setError("You must consent to participate in this research");
+      setError(getErrorMessage('AUTH_001_0001'));
       return;
     }
 
@@ -37,7 +41,7 @@ export default function ConsentPage({
     try {
       await onConsentGiven();
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(resolveConsentError(err));
     } finally {
       setSubmitting(false);
     }

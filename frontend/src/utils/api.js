@@ -1,5 +1,5 @@
 import { getApiUrl } from './apiBase';
-import { parseErrorResponse, logErrorToBackend } from './errorRegistry';
+import { parseErrorResponse, logErrorToBackend, getErrorMessage } from './errorRegistry';
 
 /**
  * Enhanced fetch wrapper with standardized error handling
@@ -43,11 +43,11 @@ export async function apiFetch(endpoint, options = {}) {
   } catch (error) {
     // Network errors or other fetch failures
     if (!error.code) {
-      error.code = 'SYS_001_0001';
+      error.code = 'SYS_002_0007';
       error.category = 'SYS';
       error.severity = 'error';
       error.action = 'retry';
-      error.message = 'Unable to connect to server. Please check your internet connection.';
+      error.message = getErrorMessage('SYS_002_0007');
     }
     throw error;
   }
@@ -85,7 +85,7 @@ export const api = {
  */
 export const endpoints = {
   // Health and info
-  health: () => api.get('/health'),
+  health: (options = {}) => api.get('/health', options),
   
   // Participant management
   createParticipant: (data) => api.post('/participants', data),
