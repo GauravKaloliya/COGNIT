@@ -24,7 +24,7 @@ export default function ErrorPage({ error, resetError }) {
 
           {error?.stack && import.meta.env.DEV && (
             <details style={{ marginBottom: '32px', textAlign: 'left' }}>
-              <summary style={{ cursor: 'pointer', marginBottom: '16px' }}>Error Details (Development)</summary>
+              <summary style={{ cursor: 'pointer', marginBottom: '16px' }}>Error Details</summary>
               <pre style={{ 
                 background: 'var(--bg)', 
                 padding: '16px', 

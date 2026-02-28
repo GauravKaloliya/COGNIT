@@ -65,9 +65,7 @@ export default function PaymentContentPage({ onNext, onBack }) {
           </h3>
           <ul className="payment-checklist">
             <li><span aria-hidden="true">✔</span> Google Pay</li>
-            <li><span aria-hidden="true">✔</span> PhonePe</li>
             <li><span aria-hidden="true">✔</span> Paytm</li>
-            <li><span aria-hidden="true">✔</span> Amazon Pay</li>
             <li><span aria-hidden="true">✔</span> BHIM</li>
           </ul>
           <p className="payment-note">Only screenshots from approved UPI apps will be accepted.</p>
