@@ -4,6 +4,8 @@
  * Supports multiple languages and automatic translation
  */
 
+import { getApiUrl } from './apiBase';
+
 const DEFAULT_LANGUAGE = 'en';
 
 // Error message translations
@@ -16,7 +18,25 @@ const TRANSLATIONS = {
     // Field requirements
     'VAL_003_0001': 'Please fill in all required fields',
     'VAL_003_0002': 'Invalid request ID format',
-    
+    'VAL_003_0004': 'Please upload an image file (JPG, PNG, etc.) of your payment screenshot.',
+    'VAL_003_0005': 'The file is too large. Please upload an image smaller than 5MB.',
+    'VAL_003_0006': 'Please upload a screenshot of your payment first.',
+
+    // User detail validation
+    'VAL_001_0010': 'Username is required (min {min} characters)',
+    'VAL_001_0011': 'Username can only contain letters, numbers, and underscores (no spaces or special characters)',
+    'VAL_001_0012': 'Email is required',
+    'VAL_001_0013': 'Please enter a valid email address',
+    'VAL_001_0014': 'Only Gmail, Outlook, Hotmail, and iCloud email addresses are allowed',
+    'VAL_001_0015': 'Phone number is required',
+    'VAL_001_0016': 'Please enter a valid 10-digit Indian mobile number',
+    'VAL_001_0017': 'Gender is required',
+    'VAL_001_0018': 'Age is required',
+    'VAL_001_0019': 'Age must be between {min} and {max}',
+    'VAL_001_0020': 'Place/Location is required',
+    'VAL_001_0021': 'Native language is required',
+    'VAL_001_0022': 'Prior experience is required',
+
     // Content validation
     'VAL_002_0001': 'Description must be 60-10,000 characters',
     'VAL_002_0002': 'Description must be at least 60 characters',
@@ -74,6 +94,7 @@ const TRANSLATIONS = {
     'PAY_001_0002': 'Payment cannot be processed in current state',
     'PAY_001_0003': 'Invalid payment amount',
     'PAY_001_0004': 'Payment has already been processed',
+    'PAY_001_0005': 'Please complete payment before accessing the survey.',
     
     // =====================================================================
     // FRAUD DETECTION ERRORS (FRAUD)
@@ -91,6 +112,9 @@ const TRANSLATIONS = {
     'FRAUD_002_0004': 'Payment success not detected in screenshot',
     'FRAUD_002_0005': 'Payment appears to have failed. Check your UPI app.',
     'FRAUD_002_0006': 'Transaction ID not found in screenshot',
+    'FRAUD_002_0007': 'Payment timestamp could not be verified. Please upload a recent screenshot.',
+    'FRAUD_002_0008': 'Payment time is outside the allowed window. Please upload a recent screenshot.',
+    'FRAUD_002_0009': 'Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.',
     
     // Reuse detection
     'FRAUD_003_0001': 'This screenshot was already submitted by another user',
@@ -105,6 +129,29 @@ const TRANSLATIONS = {
     'SYS_001_0003': 'Image processing failed. Please try a different image.',
     'SYS_001_0004': 'Service temporarily unavailable. Please try later.',
     'SYS_001_0005': 'Internal server error. Our team has been notified.',
+    'SYS_002_0001': 'Unable to reach the server. Please check your connection and try again.',
+    'SYS_002_0002': 'Failed to record consent. Please try again.',
+    'SYS_002_0003': 'System is not ready. Please wait for the connection to be established.',
+    'SYS_002_0004': 'Image not loaded properly. Please wait or refresh.',
+    'SYS_002_0005': 'Image failed to load.',
+    'SYS_002_0006': 'Submission failed. Please try again.',
+    'SYS_002_0007': 'Unable to connect to server. Please check your internet connection and try again.',
+    'SYS_002_0008': 'The request took too long. Please try again.',
+    'SYS_002_0009': 'We couldn\'t create the payment. Please try again.',
+    'SYS_002_0010': 'We couldn\'t find your registration details. Please go back and complete the registration form.',
+    'SYS_002_0011': 'We couldn\'t find your payment details. Please try again.',
+    'SYS_002_0012': 'Payment verification failed due to a system error. Please try again or contact support if the problem persists.',
+    'SYS_002_0013': 'Payment verification failed. Please try again.',
+    'SYS_002_0014': 'Payment verification failed ({code}). Please try again or contact support if the problem persists.',
+    'SYS_002_0015': 'Failed to load first survey image. Please try again.',
+    'SYS_002_0016': 'Failed to load image. Please try again.',
+    'SYS_002_0017': 'Unexpected error occurred.',
+    'SYS_002_0018': 'Waiting for image to load...',
+    'SYS_002_0019': 'Server returned an error (HTTP {status}). Please try again later.',
+    'SYS_002_0020': 'Service degraded: {error}',
+    'SYS_002_0021': 'The system is currently degraded. Please try again later.',
+    'SYS_002_0022': 'Failed to create participant. Please try again.',
+    'SYS_002_0023': 'Please refresh the page to continue.',
     
     // =====================================================================
     // RATE LIMIT ERRORS (RATE)
@@ -237,7 +284,7 @@ export function parseErrorResponse(response) {
  */
 export async function logErrorToBackend(errorData) {
   try {
-    await fetch('/client-errors', {
+    await fetch(getApiUrl('/client-errors'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
 import PaymentContentPage from "./pages/PaymentContentPage.jsx";
@@ -7,7 +7,8 @@ import SurveyPage from "./pages/SurveyPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import { getApiUrl } from "./utils/apiBase";
-import { api, endpoints } from "./utils/api.js";
+import { endpoints } from "./utils/api.js";
+import { getErrorMessage } from "./utils/errorRegistry.js";
 
 function createId() {
   if (crypto?.randomUUID) {
@@ -76,8 +77,8 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="panel">
-          <h1>Something went wrong</h1>
-          <p>Please refresh the page to continue.</p>
+          <h1>{getErrorMessage('SYS_001_0001')}</h1>
+          <p>{getErrorMessage('SYS_002_0023')}</p>
         </div>
       );
     }
@@ -224,21 +225,31 @@ export default function App() {
             setSystemReady(false);
             setSystemError(
               data.error
-                ? `Service degraded: ${data.error}`
-                : 'The system is currently degraded. Please try again later.'
+                ? getErrorMessage('SYS_002_0020', 'en', { error: data.error })
+                : getErrorMessage('SYS_002_0021')
             );
           }
         } else {
+          let data = null;
+          try {
+            data = await response.json();
+          } catch (parseError) {
+            data = null;
+          }
           setSystemReady(false);
-          setSystemError(`Server returned an error (HTTP ${response.status}). Please try again later.`);
+          setSystemError(
+            data?.error
+              ? getErrorMessage('SYS_002_0020', 'en', { error: data.error })
+              : getErrorMessage('SYS_002_0019', 'en', { status: response.status })
+          );
         }
       } catch (err) {
         if (cancelled) return;
         setSystemReady(false);
         if (err.name === 'AbortError') {
-          setSystemError('The server is taking too long to respond. Please check your connection and try again.');
+          setSystemError(getErrorMessage('SYS_002_0008'));
         } else {
-          setSystemError('Unable to connect to the server. Please check your internet connection.');
+          setSystemError(getErrorMessage('SYS_002_0001'));
         }
       } finally {
         if (!cancelled) setSystemChecking(false);
@@ -264,13 +275,13 @@ export default function App() {
             setPaymentVerified(true);
           } else {
             // Redirect to payment page if payment is not verified
-            addToast("Please complete payment before accessing the survey.", "error");
+            addToast(getErrorMessage('PAY_001_0005'), "error");
             setStage("payment");
             setPaymentSubStage("content");
           }
         } catch (error) {
           // Redirect to payment page on error
-          addToast("Payment verification failed. Please complete payment first.", "error");
+          addToast(getErrorMessage('PAY_001_0005'), "error");
           setStage("payment");
           setPaymentSubStage("content");
         }
@@ -311,7 +322,7 @@ export default function App() {
           }
         }).catch(() => {}); // Silent fail
       }
-      const errorMessage = error.message || "Failed to create participant. Please try again.";
+      const errorMessage = error.message || getErrorMessage('SYS_002_0022');
       throw new Error(errorMessage);
     }
   };
@@ -335,7 +346,7 @@ export default function App() {
           }
         }).catch(() => {});
       }
-      const errorMessage = error.message || "Failed to record consent. Please try again.";
+      const errorMessage = error.message || getErrorMessage('SYS_002_0002');
       throw new Error(errorMessage);
     }
   };
@@ -389,14 +400,14 @@ export default function App() {
           await fetchImage();
           addToast("Participation confirmed successfully", "success");
         } catch (err) {
-          addToast("Failed to load first survey image. Please try again.", "error");
+          addToast(getErrorMessage('SYS_002_0015'), "error");
         }
       } else {
-        addToast("Payment verification failed. Please complete payment first.", "error");
+        addToast(getErrorMessage('PAY_001_0005'), "error");
       }
     } catch (error) {
       // Payment not verified - redirect back to payment page
-      const errorMessage = error.message || "Payment not verified. Please complete payment first.";
+      const errorMessage = error.message || getErrorMessage('PAY_001_0005');
       addToast(errorMessage, "error");
       setPaymentVerified(false);
       // Ensure we stay on payment page if verification fails
@@ -447,7 +458,7 @@ export default function App() {
           }
         }).catch(() => {});
       }
-      const errorMessage = error.message || "Failed to load image";
+      const errorMessage = error.message || getErrorMessage('SYS_002_0016');
       addToast(errorMessage, "error");
       setImageError(errorMessage);
       setSurvey(null);
@@ -505,7 +516,7 @@ export default function App() {
           }
         }).catch(() => {});
       }
-      const errorMessage = error.message || "Submission failed. Please try again.";
+      const errorMessage = error.message || getErrorMessage('SYS_002_0006');
       throw new Error(errorMessage);
     }
   };
@@ -620,7 +631,7 @@ export default function App() {
   }
 
   return (
-    <ErrorBoundary onError={() => addToast("Unexpected error occurred.", "error")}>
+    <ErrorBoundary onError={() => addToast(getErrorMessage('SYS_002_0017'), "error")}>
       <div className="app">
         <header className="header">
           <div className="brand">

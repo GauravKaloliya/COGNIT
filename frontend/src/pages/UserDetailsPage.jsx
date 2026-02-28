@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { getApiUrl } from "../utils/apiBase";
+import { endpoints } from "../utils/api.js";
+import { getErrorMessage } from "../utils/errorRegistry.js";
 
 const USERNAME_MIN_LENGTH = parseInt(import.meta.env.VITE_USERNAME_MIN_LENGTH || "2", 10);
 const AGE_MIN = parseInt(import.meta.env.VITE_AGE_MIN || "13", 10);
 const AGE_MAX = parseInt(import.meta.env.VITE_AGE_MAX || "100", 10);
 const LOCATION_MIN_LENGTH = parseInt(import.meta.env.VITE_LOCATION_MIN_LENGTH || "2", 10);
+
+const DUPLICATE_ERROR_CODES = {
+  username: 'DUP_001_0001',
+  email: 'DUP_001_0002',
+  phone: 'DUP_001_0003'
+};
 
 export default function UserDetailsPage({
   demographics,
@@ -27,31 +34,31 @@ export default function UserDetailsPage({
 
     // Username validation - no spaces, no special chars except underscore
     if (!demographics.username || demographics.username.trim().length < USERNAME_MIN_LENGTH) {
-      newErrors.username = `Username is required (min ${USERNAME_MIN_LENGTH} characters)`;
+      newErrors.username = getErrorMessage('VAL_001_0010', 'en', { min: USERNAME_MIN_LENGTH });
     } else if (!/^[a-zA-Z0-9_]+$/.test(demographics.username)) {
-      newErrors.username = "Username can only contain letters, numbers, and underscores (no spaces or special characters)";
+      newErrors.username = getErrorMessage('VAL_001_0011');
     }
     
     // Email validation - only Gmail, Microsoft (Outlook/Hotmail), Apple (iCloud)
     const allowedEmailDomains = ['gmail.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'me.com', 'mac.com'];
     if (!demographics.email) {
-      newErrors.email = "Email is required";
+      newErrors.email = getErrorMessage('VAL_001_0012');
     } else {
       const emailLower = demographics.email.toLowerCase().trim();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(emailLower)) {
-        newErrors.email = "Please enter a valid email address";
+        newErrors.email = getErrorMessage('VAL_001_0013');
       } else {
         const domain = emailLower.split('@')[1];
         if (!allowedEmailDomains.includes(domain)) {
-          newErrors.email = "Only Gmail, Outlook, Hotmail, and iCloud email addresses are allowed";
+          newErrors.email = getErrorMessage('VAL_001_0014');
         }
       }
     }
     
     // Phone validation - Indian numbers only (10 digits, starts with 6-9)
     if (!demographics.phone) {
-      newErrors.phone = "Phone number is required";
+      newErrors.phone = getErrorMessage('VAL_001_0015');
     } else {
       // Remove all non-digit characters
       const phoneDigits = demographics.phone.replace(/\D/g, '');
@@ -60,34 +67,34 @@ export default function UserDetailsPage({
       const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
                             (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
       if (!isValidIndian) {
-        newErrors.phone = "Please enter a valid 10-digit Indian mobile number";
+        newErrors.phone = getErrorMessage('VAL_001_0016');
       }
     }
     
     if (!demographics.gender_code) {
-      newErrors.gender_code = "Gender is required";
+      newErrors.gender_code = getErrorMessage('VAL_001_0017');
     }
     
     // Age validation - AGE_MIN to AGE_MAX only
     if (!demographics.age) {
-      newErrors.age = "Age is required";
+      newErrors.age = getErrorMessage('VAL_001_0018');
     } else {
       const ageNum = parseInt(demographics.age);
       if (isNaN(ageNum) || ageNum < AGE_MIN || ageNum > AGE_MAX) {
-        newErrors.age = `Age must be between ${AGE_MIN} and ${AGE_MAX}`;
+        newErrors.age = getErrorMessage('VAL_001_0019', 'en', { min: AGE_MIN, max: AGE_MAX });
       }
     }
 
     if (!demographics.location || demographics.location.trim().length < LOCATION_MIN_LENGTH) {
-      newErrors.location = "Place/Location is required";
+      newErrors.location = getErrorMessage('VAL_001_0020');
     }
     
     if (!demographics.language_code) {
-      newErrors.language_code = "Native language is required";
+      newErrors.language_code = getErrorMessage('VAL_001_0021');
     }
     
     if (!demographics.prior_experience) {
-      newErrors.prior_experience = "Prior experience is required";
+      newErrors.prior_experience = getErrorMessage('VAL_001_0022');
     }
     
     setErrors(newErrors);
@@ -109,18 +116,16 @@ export default function UserDetailsPage({
       
       if (demographics.username && demographics.username.trim().length >= USERNAME_MIN_LENGTH) {
         checks.push(
-          fetch(`${getApiUrl('/check-username')}?username=${encodeURIComponent(demographics.username.trim())}`)
-            .then(res => res.json())
-            .then(data => ({ field: 'username', available: data.available }))
-            .catch(() => ({ field: 'username', available: true })) // Assume available on network error
+          endpoints.checkUsername(demographics.username.trim())
+            .then((data) => ({ field: 'username', available: data.available }))
+            .catch(() => ({ field: 'username', available: true }))
         );
       }
       
       if (demographics.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(demographics.email.trim())) {
         checks.push(
-          fetch(`${getApiUrl('/check-email')}?email=${encodeURIComponent(demographics.email.trim())}`)
-            .then(res => res.json())
-            .then(data => ({ field: 'email', available: data.available }))
+          endpoints.checkEmail(demographics.email.trim())
+            .then((data) => ({ field: 'email', available: data.available }))
             .catch(() => ({ field: 'email', available: true }))
         );
       }
@@ -131,9 +136,8 @@ export default function UserDetailsPage({
                               (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
         if (isValidIndian) {
           checks.push(
-            fetch(`${getApiUrl('/check-phone')}?phone=${encodeURIComponent(phoneDigits)}`)
-              .then(res => res.json())
-              .then(data => ({ field: 'phone', available: data.available }))
+            endpoints.checkPhone(phoneDigits)
+              .then((data) => ({ field: 'phone', available: data.available }))
               .catch(() => ({ field: 'phone', available: true }))
           );
         }
@@ -144,7 +148,8 @@ export default function UserDetailsPage({
       const newErrors = {};
       results.forEach(result => {
         if (!result.available) {
-          newErrors[result.field] = `This ${result.field} is already registered`;
+          const errorCode = DUPLICATE_ERROR_CODES[result.field] || 'DUP_001_0004';
+          newErrors[result.field] = getErrorMessage(errorCode);
         }
       });
       
@@ -190,14 +195,18 @@ export default function UserDetailsPage({
     setChecking(prev => ({ ...prev, [field]: true }));
     
     try {
-      const endpoint = field === "username" ? "check-username" : field === "email" ? "check-email" : "check-phone";
-      const response = await fetch(`${getApiUrl(`/${endpoint}`)}?${field}=${encodeURIComponent(value.trim())}`);
-      const data = await response.json();
+      const request = field === "username"
+        ? endpoints.checkUsername(value.trim())
+        : field === "email"
+          ? endpoints.checkEmail(value.trim())
+          : endpoints.checkPhone(value.trim());
+      const data = await request;
       
       if (!data.available) {
+        const errorCode = DUPLICATE_ERROR_CODES[field] || 'DUP_001_0004';
         setErrors(prev => ({
           ...prev,
-          [field]: `This ${field} is already registered`
+          [field]: getErrorMessage(errorCode)
         }));
       }
     } catch (error) {

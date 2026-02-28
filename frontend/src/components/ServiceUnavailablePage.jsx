@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getErrorMessage } from '../utils/errorRegistry.js';
 
 export default function ServiceUnavailablePage({ error, onRetry, isRetrying }) {
   const [retryCount, setRetryCount] = useState(0);
@@ -23,7 +24,7 @@ export default function ServiceUnavailablePage({ error, onRetry, isRetrying }) {
           <h1 className="hero-title warning">Something Went Wrong</h1>
           <h2 className="hero-subtitle">Service Unavailable</h2>
           <p className="hero-message">
-            {error || 'We are unable to connect to the server right now. This may be due to a network issue or scheduled maintenance.'}
+            {error || getErrorMessage('SYS_001_0004')}
           </p>
 
           <div
