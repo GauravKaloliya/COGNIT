@@ -262,6 +262,67 @@ def normalize_vpa(text: str) -> str:
 # Payment Screenshot Verification
 # ────────────────────────────────────────────────
 
+def _extract_timestamp(text: str) -> Optional[Tuple[int, int, int, int, int]]:
+    """
+    Extract date and time from OCR text.
+    
+    Returns:
+        Tuple of (day, month, year, hour, minute) or None if not found
+    """
+    lower = text.lower()
+    
+    # Common patterns for date/time in UPI screenshots
+    # Pattern: DD/MM/YYYY or DD-MM-YYYY or DD MMM YYYY
+    date_patterns = [
+        r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})',  # DD/MM/YYYY or DD-MM-YYYY
+        r'(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{2,4})',  # DD MMM YYYY
+    ]
+    
+    # Pattern: HH:MM or HH:MM AM/PM
+    time_patterns = [
+        r'(\d{1,2}):(\d{2})\s*(am|pm)?',
+        r'(\d{1,2})\.(\d{2})\s*(am|pm)?',
+    ]
+    
+    # Try to find date
+    day, month, year = None, None, None
+    for pattern in date_patterns:
+        match = re.search(pattern, lower, re.IGNORECASE)
+        if match:
+            groups = match.groups()
+            day = int(groups[0])
+            if groups[1].isalpha():
+                # Month name
+                month_names = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 
+                              'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+                month = month_names.index(groups[1].lower()[:3]) + 1
+            else:
+                month = int(groups[1])
+            year = int(groups[2])
+            if year < 100:
+                year += 2000
+            break
+    
+    # Try to find time
+    hour, minute = None, None
+    for pattern in time_patterns:
+        match = re.search(pattern, lower, re.IGNORECASE)
+        if match:
+            groups = match.groups()
+            hour = int(groups[0])
+            minute = int(groups[1])
+            if len(groups) > 2 and groups[2] and groups[2].lower() == 'pm' and hour != 12:
+                hour += 12
+            elif len(groups) > 2 and groups[2] and groups[2].lower() == 'am' and hour == 12:
+                hour = 0
+            break
+    
+    if day is not None and hour is not None:
+        return (day, month or 1, year or 2024, hour, minute)
+    
+    return None
+
+
 def verify_payment_screenshot(
     image: Image.Image,
     text: str,
@@ -270,15 +331,17 @@ def verify_payment_screenshot(
     confidence: float
 ) -> Tuple[bool, Optional[str], List[str]]:
     """
-    Simplified validation of UPI payment screenshot.
-    Only verifies that the screenshot is from an allowed UPI app.
+    Validate UPI payment screenshot with three checks:
+    1. Banking name must include "Gaurav"
+    2. Amount must be 1 rupee
+    3. Transaction time must be within 5 minutes
 
     Args:
         image: PIL Image object
         text: OCR extracted text
-        expected_amount: Expected payment amount (not used in simplified validation)
-        payment_note: Expected payment note/reference (not used in simplified validation)
-        confidence: OCR confidence score (not used in simplified validation)
+        expected_amount: Expected payment amount
+        payment_note: Expected payment note/reference
+        confidence: OCR confidence score
 
     Returns:
         Tuple of (is_valid, detected_app, failure_reasons)
@@ -286,16 +349,14 @@ def verify_payment_screenshot(
     failures = []
     lower = text.lower()
 
-    # App detection - must be from allowed UPI app
+    # App detection - must be from allowed UPI app (Google Pay, Paytm, BHIM only)
     detected_app = detect_upi_app(text)
     if not detected_app:
         # Try fuzzy matching for app detection to handle OCR variations
         app_patterns = {
             'gpay': [r'g[ -]*pay', r'goo[gl]*[ -]*pay', r'tez'],
-            'phonepe': [r'phone[ -]*pe'],
             'paytm': [r'paytm'],
-            'bhim': [r'bhim'],
-            'amazonpay': [r'amazon[ -]*pay']
+            'bhim': [r'bhim']
         }
         for app_name, patterns in app_patterns.items():
             for pattern in patterns:
@@ -306,6 +367,44 @@ def verify_payment_screenshot(
                 break
         if not detected_app:
             failures.append("unrecognized_app")
+
+    # Check 1: Banking name must include "Gaurav"
+    if 'gaurav' not in lower:
+        failures.append("invalid_banking_name")
+
+    # Check 2: Amount must be 1 rupee
+    # Look for amount patterns like "₹1", "Rs.1", "Rs 1", "1.00", "INR 1"
+    amount_patterns = [
+        r'[₹rs\.\s]*1[\.\s]*00?',  # ₹1, Rs.1, Rs 1, 1.00
+        r'inr[\s]*1[\.\s]*00?',     # INR 1
+        r'1[\.\s]*00?\s*rs',        # 1 Rs
+    ]
+    amount_found = False
+    for pattern in amount_patterns:
+        if re.search(pattern, lower):
+            amount_found = True
+            break
+    
+    if not amount_found:
+        failures.append("invalid_amount")
+
+    # Check 3: Time must be within 5 minutes
+    timestamp = _extract_timestamp(text)
+    if timestamp:
+        from datetime import datetime, timezone, timedelta
+        day, month, year, hour, minute = timestamp
+        try:
+            transaction_time = datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            time_diff = abs((now - transaction_time).total_seconds())
+            if time_diff > 300:  # 5 minutes = 300 seconds
+                failures.append("time_out_of_range")
+        except ValueError:
+            # Invalid date/time extracted
+            failures.append("invalid_timestamp")
+    else:
+        # Could not extract timestamp - consider it a failure
+        failures.append("missing_timestamp")
 
     return len(failures) == 0, detected_app, failures
 
