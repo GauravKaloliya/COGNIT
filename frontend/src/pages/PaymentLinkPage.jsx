@@ -81,20 +81,21 @@ export default function PaymentLinkPage({
     };
   };
 
-  // Get QR code container style with animated border and glow
+  // Get QR code container style with animated border filling from top clockwise
   const getQrContainerStyle = () => {
     const color = getTimerColor();
+    const deg = (timerProgress / 100) * 360;
     return {
       borderRadius: '16px',
       background: 'var(--panel)',
       width: '100%',
       position: 'relative',
-      backgroundImage: `linear-gradient(var(--panel), var(--panel)), linear-gradient(90deg, ${color} 0%, ${color} ${timerProgress}%, var(--border-light) ${timerProgress}%, var(--border-light) 100%)`,
+      backgroundImage: `linear-gradient(var(--panel), var(--panel)), conic-gradient(from -90deg, ${color} 0deg, ${color} ${deg}deg, var(--border-light) ${deg}deg, var(--border-light) 360deg)`,
       backgroundOrigin: 'border-box',
       backgroundClip: 'padding-box, border-box',
       border: '3px solid transparent',
       boxShadow: `0 0 20px ${color}30, 0 4px 12px rgba(0,0,0,0.1)`,
-      transition: 'box-shadow 0.5s ease, background 0.5s ease',
+      transition: 'box-shadow 0.5s ease',
       animation: timerProgress <= 30 ? `qr-glow 1.5s ease-in-out infinite${timerProgress <= 15 ? ', timer-pulse 1s ease-in-out infinite' : ''}` : 'none',
       overflow: 'hidden',
     };
@@ -284,16 +285,8 @@ export default function PaymentLinkPage({
       // Check inline verification result first (avoids extra round-trip)
       const inlineVerification = finalizeData.verification;
 
-      // Handle verification error state
-      if (inlineVerification?.status === "error") {
-        setVerifying(false);
-        setError("Payment verification failed due to a system error. Please try again or contact support if the problem persists.");
-        return;
-      }
-
       if (inlineVerification?.verified && inlineVerification.status === "rejected_fraud") {
         setPaymentStatus("rejected_fraud");
-        setVerifying(false);
         const reasons = inlineVerification.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
@@ -314,7 +307,6 @@ export default function PaymentLinkPage({
 
       if (statusData.status === "rejected_fraud") {
         setPaymentStatus("rejected_fraud");
-        setVerifying(false);
         const reasons = statusData.verification_details?.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
@@ -360,6 +352,11 @@ export default function PaymentLinkPage({
 
       if (err.code === 'ERR_DUPLICATE_TXN' || err.code === 'DUP_003_0002') {
         setError("This transaction has already been used. Each payment must be unique.");
+        return;
+      }
+
+      if (err.code === 'SYS_001_0001' || (err.status >= 500 && err.status < 600)) {
+        setError("A server error occurred while verifying your payment. Please try again.");
         return;
       }
 

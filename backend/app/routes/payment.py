@@ -552,11 +552,7 @@ def finalize_payment_upload(payment_public_id):
                     s3.delete_object(Bucket=S3_BUCKET_NAME, Key=object_key)
                 except Exception:
                     pass
-                verification_result = {
-                    "status": "error",
-                    "verified": False,
-                    "error": "verification_failed"
-                }
+                return create_error_response("SYS_INTERNAL_ERROR", custom_message="Payment verification encountered a system error. Please try again.")
 
         return jsonify({"status": "uploaded", "verification": verification_result})
 
@@ -567,7 +563,7 @@ def finalize_payment_upload(payment_public_id):
             s3.delete_object(Bucket=S3_BUCKET_NAME, Key=object_key)
         except Exception:
             pass
-        return create_error_response("DUPLICATE_IMAGE")
+        return create_error_response("SYS_INTERNAL_ERROR", custom_message="An unexpected error occurred. Please try again.")
 
 
 @payment_bp.route("/payments/<payment_public_id>/status", methods=["GET"])
