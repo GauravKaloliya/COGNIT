@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getErrorMessage } from '../utils/errorRegistry.js';
 
 export default function ErrorPage({ error, resetError }) {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export default function ErrorPage({ error, resetError }) {
           <h1 className="hero-title warning">Oops!</h1>
           <h2 className="hero-subtitle">Something went wrong</h2>
           <p className="hero-message">
-            {error?.message || "An unexpected error occurred. Please try again."}
+            {error?.message || getErrorMessage('SYS_002_0017')}
           </p>
 
           {error?.stack && import.meta.env.DEV && (

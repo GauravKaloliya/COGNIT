@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { getApiUrl } from "../utils/apiBase";
 import { endpoints } from "../utils/api.js";
-import { parseErrorResponse, getErrorMessage } from "../utils/errorRegistry.js";
-import { handleApiError } from "../utils/api.js";
+import { getErrorMessage } from "../utils/errorRegistry.js";
+
+const VERIFICATION_REASON_CODES = {
+  unrecognized_app: 'FRAUD_001_0003',
+  duplicate_transaction_id: 'DUP_003_0002',
+  invalid_banking_name: 'FRAUD_002_0001',
+  invalid_amount: 'FRAUD_002_0003',
+  time_out_of_range: 'FRAUD_002_0008',
+  invalid_timestamp: 'FRAUD_002_0007',
+  missing_timestamp: 'FRAUD_002_0007',
+  ocr_unavailable: 'SYS_001_0004'
+};
 
 export default function PaymentLinkPage({ 
   onNext, 
@@ -25,12 +34,14 @@ export default function PaymentLinkPage({
 
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-  const getVerificationErrorMessage = (reasons) => {
-    const messages = {
-      'unrecognized_app': 'Screenshot not from an allowed UPI app. Please use Google Pay, Paytm, or BHIM.',
-      'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.'
-    };
-    return reasons.map(r => messages[r] || r).join('. ');
+  const getVerificationErrorMessage = (reasons = []) => {
+    if (!reasons.length) return "";
+    return reasons
+      .map((reason) => {
+        const errorCode = VERIFICATION_REASON_CODES[reason];
+        return errorCode ? getErrorMessage(errorCode) : reason;
+      })
+      .join('. ');
   };
 
   // Timer state persistence helpers
@@ -84,12 +95,13 @@ export default function PaymentLinkPage({
   // Get QR code container style with animated border and glow
   const getQrContainerStyle = () => {
     const color = getTimerColor();
+    const progressAngle = Math.max(0, Math.min(360, (timerProgress / 100) * 360));
     return {
       borderRadius: '16px',
       background: 'var(--panel)',
       width: '100%',
       position: 'relative',
-      backgroundImage: `linear-gradient(var(--panel), var(--panel)), linear-gradient(90deg, ${color} 0%, ${color} ${timerProgress}%, var(--border-light) ${timerProgress}%, var(--border-light) 100%)`,
+      backgroundImage: `linear-gradient(var(--panel), var(--panel)), conic-gradient(from -90deg, ${color} 0deg ${progressAngle}deg, var(--border-light) ${progressAngle}deg 360deg)`,
       backgroundOrigin: 'border-box',
       backgroundClip: 'padding-box, border-box',
       border: '3px solid transparent',
@@ -103,7 +115,7 @@ export default function PaymentLinkPage({
   // Handle payment expiry
   const handleExpiry = useCallback(() => {
     setPaymentStatus("expired");
-    setError("Payment session has expired. Please create a new payment to continue.");
+    setError(getErrorMessage('PAY_001_0001'));
     sessionStorage.removeItem("payment_id");
     clearTimerState();
     if (timerIntervalRef.current) {
@@ -169,7 +181,7 @@ export default function PaymentLinkPage({
 
   const createPayment = async () => {
     if (!publicId) {
-      setError("We couldn't find your registration details. Please go back and complete the registration form.");
+      setError(getErrorMessage('SYS_002_0010'));
       return;
     }
 
@@ -183,7 +195,7 @@ export default function PaymentLinkPage({
       const expiresAt = new Date(data.expires_at);
       const now = new Date();
       if (expiresAt <= now) {
-        throw new Error("The payment session has expired. Please try again to create a new payment.");
+        throw new Error(getErrorMessage('PAY_001_0001'));
       }
 
       setPaymentData(data);
@@ -202,7 +214,9 @@ export default function PaymentLinkPage({
           }
         }).catch(() => {});
       }
-      const errorMessage = err.message || "We couldn't create the payment. Please try again.";
+      const errorMessage = err.code
+        ? getErrorMessage(err.code)
+        : err.message || getErrorMessage('SYS_002_0009');
       setError(errorMessage);
       sessionStorage.removeItem("payment_id");
     } finally {
@@ -214,11 +228,11 @@ export default function PaymentLinkPage({
     const file = e.target.files[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        setError("Please upload an image file (JPG, PNG, etc.) of your payment screenshot.");
+        setError(getErrorMessage('VAL_003_0004'));
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        setError("The file is too large. Please upload an image smaller than 5MB.");
+        setError(getErrorMessage('VAL_003_0005'));
         return;
       }
       setUploadFile(file);
@@ -235,12 +249,12 @@ export default function PaymentLinkPage({
 
   const handleUploadAndFinalize = async () => {
     if (!uploadFile) {
-      setError("Please upload a screenshot of your payment first.");
+      setError(getErrorMessage('VAL_003_0006'));
       return;
     }
 
     if (!paymentData?.payment_id) {
-      setError("We couldn't find your payment details. Please try again.");
+      setError(getErrorMessage('SYS_002_0011'));
       return;
     }
 
@@ -266,9 +280,9 @@ export default function PaymentLinkPage({
 
       if (!uploadResponse.ok) {
         if (uploadResponse.status === 413) {
-          setError("The file is too large. Please upload an image smaller than 5MB.");
+          setError(getErrorMessage('VAL_003_0005'));
         } else {
-          setError("We couldn't upload your screenshot. Please check your internet connection and try again.");
+          setError(getErrorMessage('SYS_001_0002'));
         }
         return;
       }
@@ -284,20 +298,13 @@ export default function PaymentLinkPage({
       // Check inline verification result first (avoids extra round-trip)
       const inlineVerification = finalizeData.verification;
 
-      // Handle verification error state
-      if (inlineVerification?.status === "error") {
-        setVerifying(false);
-        setError("Payment verification failed due to a system error. Please try again or contact support if the problem persists.");
-        return;
-      }
-
       if (inlineVerification?.verified && inlineVerification.status === "rejected_fraud") {
         setPaymentStatus("rejected_fraud");
         setVerifying(false);
         const reasons = inlineVerification.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.");
+        setError(specificError || getErrorMessage('FRAUD_002_0009'));
         return;
       }
 
@@ -318,7 +325,7 @@ export default function PaymentLinkPage({
         const reasons = statusData.verification_details?.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.");
+        setError(specificError || getErrorMessage('FRAUD_002_0009'));
         return;
       }
 
@@ -327,10 +334,22 @@ export default function PaymentLinkPage({
         return;
       }
 
-      setPaymentStatus("success");
-      sessionStorage.removeItem("payment_id");
-      clearTimerState();
-      await onNext();
+      if (statusData.status === "success") {
+        setPaymentStatus("success");
+        sessionStorage.removeItem("payment_id");
+        clearTimerState();
+        await onNext();
+        return;
+      }
+
+      if (inlineVerification?.status === "error") {
+        setVerifying(false);
+        setError(getErrorMessage('SYS_002_0012'));
+        return;
+      }
+
+      setVerifying(false);
+      setError(getErrorMessage('SYS_002_0013'));
     } catch (err) {
       // Handle specific error codes with better messaging
       if (err.code === 'PAY_001_0001' || err.code === 'ERR_PAYMENT_EXPIRED') {
@@ -338,47 +357,14 @@ export default function PaymentLinkPage({
         return;
       }
 
-      if (err.code === 'ERR_PAYMENT_NOT_FOUND') {
-        setError("Payment session not found. Please create a new payment.");
-        return;
-      }
-
-      if (err.code === 'ERR_INVALID_IMAGE_TYPE') {
-        setError("Invalid image format. Please upload JPG, PNG, or WEBP images only.");
-        return;
-      }
-
-      if (err.code === 'ERR_DUPLICATE_IMAGE' || err.code === 'FRAUD_003_0001') {
-        setError("This screenshot has already been submitted by another user. Please use a fresh payment screenshot.");
-        return;
-      }
-
-      if (err.code === 'ERR_REJECTED_REUSE' || err.code === 'FRAUD_003_0002') {
-        setError("This screenshot was previously rejected. Please use a fresh payment screenshot.");
-        return;
-      }
-
-      if (err.code === 'ERR_DUPLICATE_TXN' || err.code === 'DUP_003_0002') {
-        setError("This transaction has already been used. Each payment must be unique.");
-        return;
-      }
-
-      // Handle network and other errors
-      if (err.message && err.message.includes('fetch')) {
-        setError("Unable to connect to server. Please check your internet connection and try again.");
-        return;
-      }
-
-      if (err.message && err.message.includes('timeout')) {
-        setError("The request took too long. Please try again.");
-        return;
-      }
-
-      // For any other errors, provide a more helpful message
       if (err.code) {
-        setError(`Payment verification failed (${err.code}). Please try again or contact support if the problem persists.`);
+        setError(getErrorMessage(err.code));
+      } else if (err.message && err.message.toLowerCase().includes('timeout')) {
+        setError(getErrorMessage('SYS_002_0008'));
+      } else if (err.message && err.message.toLowerCase().includes('fetch')) {
+        setError(getErrorMessage('SYS_002_0007'));
       } else {
-        setError("Payment verification failed. Please try again.");
+        setError(getErrorMessage('SYS_002_0013'));
       }
 
       // Log error to backend for analytics
@@ -471,7 +457,7 @@ export default function PaymentLinkPage({
           <p className="payment-subtitle">Your payment session has timed out</p>
         </div>
         <div className="banner warning spaced">
-          {error || "The payment session has expired. Please create a new payment to continue."}
+          {error || getErrorMessage('PAY_001_0001')}
         </div>
         <div className="page-actions">
           <button className="primary" onClick={handleRetry}>
@@ -498,7 +484,7 @@ export default function PaymentLinkPage({
           <p className="payment-subtitle">We couldn't verify your payment screenshot</p>
         </div>
         <div className="banner warning spaced">
-          {error || "Your payment screenshot could not be verified."}
+          {error || getErrorMessage('FRAUD_002_0009')}
         </div>
         {failureReasons.length > 0 && (
           <div className="payment-failure-details">
