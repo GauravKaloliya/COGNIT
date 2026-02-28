@@ -81,36 +81,22 @@ export default function PaymentLinkPage({
     };
   };
 
-  // Get QR code container wrapper style with animated border
-  const getQrBorderWrapperStyle = () => {
-    const color = getTimerColor();
-    return {
-      borderRadius: '16px',
-      padding: '4px',
-      background: `linear-gradient(135deg, ${color}20 0%, ${color}40 50%, ${color}20 100%)`,
-      boxShadow: `0 0 20px ${color}30, 0 4px 12px rgba(0,0,0,0.1), inset 0 0 20px ${color}15`,
-      transition: 'box-shadow 0.5s ease, background 0.5s ease',
-      animation: timerProgress <= 30 ? `qr-glow 1.5s ease-in-out infinite, ${timerProgress <= 15 ? 'timer-pulse 1s ease-in-out infinite' : 'none'}` : 'none',
-      display: 'inline-flex',
-      width: '100%',
-      position: 'relative',
-      overflow: 'hidden',
-    };
-  };
-
-  // Get QR code container style with animated border
+  // Get QR code container style with animated border and glow
   const getQrContainerStyle = () => {
     const color = getTimerColor();
     return {
-      borderRadius: '12px',
+      borderRadius: '16px',
       background: 'var(--panel)',
       width: '100%',
       position: 'relative',
-      boxShadow: 'inset 0 0 0 2px transparent',
       backgroundImage: `linear-gradient(var(--panel), var(--panel)), linear-gradient(90deg, ${color} 0%, ${color} ${timerProgress}%, var(--border-light) ${timerProgress}%, var(--border-light) 100%)`,
       backgroundOrigin: 'border-box',
       backgroundClip: 'padding-box, border-box',
       border: '3px solid transparent',
+      boxShadow: `0 0 20px ${color}30, 0 4px 12px rgba(0,0,0,0.1)`,
+      transition: 'box-shadow 0.5s ease, background 0.5s ease',
+      animation: timerProgress <= 30 ? `qr-glow 1.5s ease-in-out infinite${timerProgress <= 15 ? ', timer-pulse 1s ease-in-out infinite' : ''}` : 'none',
+      overflow: 'hidden',
     };
   };
 
@@ -159,44 +145,26 @@ export default function PaymentLinkPage({
     };
   }, []);
 
-  // Restore timer state from sessionStorage on mount and when payment data changes
+  // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
-    if (!paymentData) return;
+    if (!paymentData || timerIntervalRef.current) return;
 
     const expiresAt = getTimerState();
-
     if (expiresAt) {
-      const { remaining, progress } = calculateTimerValues(expiresAt);
-
-      if (remaining > 0 && progress > 0) {
-        setTimeRemaining(remaining);
-        setTimerProgress(progress);
-
-        if (timerIntervalRef.current) {
-          clearInterval(timerIntervalRef.current);
-        }
-
-        const updateTimer = () => {
-          const values = calculateTimerValues(expiresAt);
-          setTimeRemaining(values.remaining);
-          setTimerProgress(values.progress);
-
-          if (values.remaining <= 0) {
-            clearInterval(timerIntervalRef.current);
-            handleExpiry();
-          }
-        };
-
-        updateTimer();
-        timerIntervalRef.current = setInterval(updateTimer, 1000);
+      const { remaining } = calculateTimerValues(expiresAt);
+      if (remaining > 0) {
+        startTimer(expiresAt);
       } else {
         clearTimerState();
-        setTimeRemaining(0);
-        setTimerProgress(100);
+        handleExpiry();
       }
-    } else if (paymentData?.expires_at) {
-      startTimer(paymentData.expires_at);
     }
+
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    };
   }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, startTimer, handleExpiry]);
 
   const createPayment = async () => {
@@ -210,7 +178,6 @@ export default function PaymentLinkPage({
 
     try {
       const data = await endpoints.createPayment(publicId, 1);
-      setPaymentData(data);
       sessionStorage.setItem("payment_id", data.payment_id);
 
       const expiresAt = new Date(data.expires_at);
@@ -218,6 +185,9 @@ export default function PaymentLinkPage({
       if (expiresAt <= now) {
         throw new Error("The payment session has expired. Please try again to create a new payment.");
       }
+
+      setPaymentData(data);
+      startTimer(data.expires_at);
     } catch (err) {
       // Log error to backend for analytics
       if (err.code) {
@@ -583,36 +553,34 @@ export default function PaymentLinkPage({
               {isMobile ? "Pay with UPI" : "Scan QR Code"}
             </h3>
 
-            <div style={!isMobile ? getQrBorderWrapperStyle() : undefined}>
-              <div className="payment-qr-container" style={!isMobile ? getQrContainerStyle() : undefined}>
-                {isMobile ? (
-                  <a
-                    href={paymentData.upi_link}
-                    className="payment-upi-button"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={getButtonStyle()}
-                  >
-                    <span>💳</span>
-                    <span>Pay ₹1 with UPI</span>
-                    <span className="payment-upi-timer">
-                      {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
-                    </span>
-                  </a>
-                ) : (
-                  <>
-                    <img
-                      src={`data:image/png;base64,${paymentData.qr_base64}`}
-                      alt="Payment QR Code"
-                      className="payment-qr-code"
-                    />
-                    <p className="payment-note">Scan with any UPI app to pay ₹1</p>
-                    <p className="payment-note" style={{ fontWeight: 600, color: getTimerColor() }}>
-                      {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
-                    </p>
-                  </>
-                )}
-              </div>
+            <div className="payment-qr-container" style={!isMobile ? getQrContainerStyle() : undefined}>
+              {isMobile ? (
+                <a
+                  href={paymentData.upi_link}
+                  className="payment-upi-button"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={getButtonStyle()}
+                >
+                  <span>💳</span>
+                  <span>Pay ₹1 with UPI</span>
+                  <span className="payment-upi-timer">
+                    {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
+                  </span>
+                </a>
+              ) : (
+                <>
+                  <img
+                    src={`data:image/png;base64,${paymentData.qr_base64}`}
+                    alt="Payment QR Code"
+                    className="payment-qr-code"
+                  />
+                  <p className="payment-note">Scan with any UPI app to pay ₹1</p>
+                  <p className="payment-note" style={{ fontWeight: 600, color: getTimerColor() }}>
+                    {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
+                  </p>
+                </>
+              )}
             </div>
 
             {paymentData.upi_note && (
