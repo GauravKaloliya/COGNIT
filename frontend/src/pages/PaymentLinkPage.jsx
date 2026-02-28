@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
 import { endpoints } from "../utils/api.js";
-import { parseErrorResponse } from "../utils/errorRegistry.js";
+import { parseErrorResponse, getErrorMessage } from "../utils/errorRegistry.js";
 import { handleApiError } from "../utils/api.js";
 
 export default function PaymentLinkPage({ 

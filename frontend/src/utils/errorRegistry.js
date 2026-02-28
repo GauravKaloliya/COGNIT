@@ -237,7 +237,7 @@ export function parseErrorResponse(response) {
  */
 export async function logErrorToBackend(errorData) {
   try {
-    await fetch('/api/client-errors', {
+    await fetch('/client-errors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
