@@ -12,23 +12,22 @@ export default function PaymentContentPage({ onNext, onBack }) {
       </div>
 
       <div className="payment-header">
-        <div className="payment-header-emoji" aria-hidden="true">💸</div>
-        <h2 className="payment-title">Payment Verification</h2>
-        <p className="payment-subtitle">A small ₹1 fee verifies your identity</p>
-        <p className="payment-tagline">Verified participants get paid for their work.</p>
+        <div className="payment-header-emoji" aria-hidden="true">🎁</div>
+        <h2 className="payment-title">Win ₹10</h2>
+        <p className="payment-subtitle">Participate → Get a chance to receive ₹10</p>
+        <p className="payment-tagline">₹1 entry. Real reward.</p>
       </div>
 
       <div className="payment-content">
         <section className="payment-card">
           <h3>
-            <span className="payment-card-emoji" aria-hidden="true">🔐</span>
-            Why ₹1?
+            <span className="payment-card-emoji" aria-hidden="true">💰</span>
+            ₹1 Participation
           </h3>
-          <p>The ₹1 payment is used to verify your UPI identity and prevent duplicate or bot submissions.</p>
+          <p>Your ₹1 entry enters you into the reward pool.</p>
           <ul className="payment-list">
-            <li>Confirms your UPI ID is active</li>
-            <li>Links your payment identity to your responses</li>
-            <li>Enables us to pay you directly</li>
+            <li>Entry fee: ₹1</li>
+            <li>Chance to win ₹10 via UPI</li>
           </ul>
         </section>
 
@@ -38,37 +37,39 @@ export default function PaymentContentPage({ onNext, onBack }) {
             How It Works
           </h3>
           <ol className="payment-steps">
-            <li><span className="payment-step-emoji" aria-hidden="true">1️⃣</span> Pay ₹1 via UPI to verify your identity</li>
-            <li><span className="payment-step-emoji" aria-hidden="true">2️⃣</span> Upload your payment screenshot</li>
-            <li><span className="payment-step-emoji" aria-hidden="true">3️⃣</span> Complete the image description survey</li>
-            <li><span className="payment-step-emoji" aria-hidden="true">4️⃣</span> Receive payment directly to your UPI within 24–48 hours</li>
+            <li><span className="payment-step-emoji" aria-hidden="true">1️⃣</span> Pay ₹1 via UPI</li>
+            <li><span className="payment-step-emoji" aria-hidden="true">2️⃣</span> Upload payment screenshot</li>
+            <li><span className="payment-step-emoji" aria-hidden="true">3️⃣</span> Your entry is added to the pool</li>
+            <li><span className="payment-step-emoji" aria-hidden="true">4️⃣</span> Winners receive ₹10 (24–48 hours)</li>
           </ol>
+          <p className="payment-note">Clean. Direct. Transparent.</p>
+        </section>
+
+        <section className="payment-card">
+          <h3>
+            <span className="payment-card-emoji" aria-hidden="true">🔥</span>
+            Increase Your Odds
+          </h3>
+          <p>Participants who engage more receive higher selection priority.</p>
+          <p className="payment-callout">Unlock Priority Status by:</p>
+          <ul className="payment-checklist">
+            <li><span aria-hidden="true">✔</span> Writing 120+ total words</li>
+            <li><span aria-hidden="true">✔</span> Completing 3+ rounds</li>
+          </ul>
+          <p className="payment-note">More contribution → Higher probability.</p>
         </section>
 
         <section className="payment-card highlight">
           <h3>
             <span className="payment-card-emoji" aria-hidden="true">🎯</span>
-            Earnings
+            Reward Details
           </h3>
           <ul className="payment-list">
-            <li>₹10 per completed survey round</li>
-            <li>Paid directly to your verified UPI ID</li>
-            <li>Processed within 24–48 hours of completion</li>
-            <li>No minimum withdrawal — instant transfer</li>
+            <li>₹10 per selected entry</li>
+            <li>Direct UPI transfer</li>
+            <li>Processed within 24–48 hours</li>
+            <li>No minimum withdrawal</li>
           </ul>
-        </section>
-
-        <section className="payment-card">
-          <h3>
-            <span className="payment-card-emoji" aria-hidden="true">✅</span>
-            Accepted UPI Apps
-          </h3>
-          <ul className="payment-checklist">
-            <li><span aria-hidden="true">✔</span> Google Pay</li>
-            <li><span aria-hidden="true">✔</span> Paytm</li>
-            <li><span aria-hidden="true">✔</span> BHIM</li>
-          </ul>
-          <p className="payment-note">Only screenshots from approved UPI apps will be accepted.</p>
         </section>
       </div>
 
