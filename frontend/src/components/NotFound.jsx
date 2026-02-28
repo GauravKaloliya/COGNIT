@@ -81,13 +81,13 @@ export default function NotFound() {
               <ellipse cx="120" cy="55" rx="6" ry="4" fill="#d4956f" opacity="0.6"/>
             </svg>
           </div>
-          <h1 className="hero-title primary">404</h1>
+          <h1 className="hero-title">404</h1>
           <h2 className="hero-subtitle">Page Not Found</h2>
           <p className="hero-message">
             Oops! The page you're looking for doesn't exist.
           </p>
           <div className="page-actions">
-            <button className="ghost" onClick={() => navigate('/')}>
+            <button type="button" className="ghost" onClick={() => navigate('/')}>
               Go Home
             </button>
           </div>

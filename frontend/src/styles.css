@@ -1983,6 +1983,15 @@ body.dark .toast.warning {
   display: block;
 }
 
+.error-page-centered {
+  justify-content: center;
+  align-items: center;
+}
+
+.error-page-centered .panel {
+  width: 100%;
+}
+
 /* --------------------------------------------------------------------------
    Payment QR & Upload Styles
    -------------------------------------------------------------------------- */
