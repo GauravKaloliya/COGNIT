@@ -1606,7 +1606,7 @@ body.dark .toast.warning {
   text-align: center;
   padding: var(--space-5) var(--space-3);
   border-radius: var(--radius-lg);
-  background: var(--gradient-primary);
+  background: var(--primary);
   color: #fff;
   box-shadow: var(--shadow-sm);
   margin: 0 var(--space-3);
@@ -2603,6 +2603,24 @@ select option {
   }
   50% {
     opacity: 0.85;
+  }
+}
+
+@keyframes qr-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(24, 119, 242, 0.3), 0 4px 12px rgba(0,0,0,0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(24, 119, 242, 0.5), 0 4px 16px rgba(0,0,0,0.15);
+  }
+}
+
+@keyframes qr-border-fill {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 100% 0%;
   }
 }
 
