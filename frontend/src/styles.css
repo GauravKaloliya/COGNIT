@@ -2606,3 +2606,254 @@ select option {
   }
 }
 
+/* --------------------------------------------------------------------------
+   Payment Notice Card
+   -------------------------------------------------------------------------- */
+.payment-notice-card {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border: 2px solid #f97316;
+  border-radius: var(--radius-lg);
+}
+
+body.dark .payment-notice-card {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(249, 115, 22, 0.08) 100%);
+  border-color: #f97316;
+}
+
+.payment-notice-card h3 {
+  color: #c2410c;
+}
+
+body.dark .payment-notice-card h3 {
+  color: #fb923c;
+}
+
+.payment-notice-content {
+  margin-top: var(--space-2);
+}
+
+.payment-notice-content p {
+  margin: 0 0 var(--space-3);
+  color: #9a3412;
+}
+
+body.dark .payment-notice-content p {
+  color: #fdba74;
+}
+
+.payment-notice-content ul {
+  margin: var(--space-2) 0 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.payment-notice-content li {
+  padding: var(--space-1) 0;
+  color: #7c2d12;
+}
+
+body.dark .payment-notice-content li {
+  color: #fed7aa;
+}
+
+/* --------------------------------------------------------------------------
+   Verification Progress Animation - Filling Order Style
+   -------------------------------------------------------------------------- */
+.verification-progress-container {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border-radius: var(--radius-lg);
+  border: 1px solid #bfdbfe;
+}
+
+body.dark .verification-progress-container {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.verification-progress-bar {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+body.dark .verification-progress-bar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.verification-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.verification-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.verification-progress-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.verification-spinner-ring {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.verification-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e2e8f0;
+  border-top: 4px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+body.dark .verification-spinner {
+  border-color: rgba(255, 255, 255, 0.1);
+  border-top-color: #3b82f6;
+}
+
+.verification-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.verification-title {
+  font-weight: var(--font-semibold);
+  color: #1e40af;
+  font-size: var(--text-base);
+}
+
+body.dark .verification-title {
+  color: #60a5fa;
+}
+
+.verification-status {
+  font-size: var(--text-sm);
+  color: #64748b;
+}
+
+body.dark .verification-status {
+  color: #94a3b8;
+}
+
+.verification-percentage {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: #3b82f6;
+  min-width: 50px;
+  text-align: right;
+}
+
+body.dark .verification-percentage {
+  color: #60a5fa;
+}
+
+/* Filling order animation variant */
+.verification-progress-container.filling-order {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: #86efac;
+}
+
+body.dark .verification-progress-container.filling-order {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.verification-progress-container.filling-order .verification-progress-fill {
+  background: linear-gradient(90deg, #22c55e 0%, #16a34a 50%, #15803d 100%);
+}
+
+.verification-progress-container.filling-order .verification-spinner {
+  border-color: #dcfce7;
+  border-top-color: #22c55e;
+}
+
+body.dark .verification-progress-container.filling-order .verification-spinner {
+  border-color: rgba(255, 255, 255, 0.1);
+  border-top-color: #22c55e;
+}
+
+.verification-progress-container.filling-order .verification-title {
+  color: #166534;
+}
+
+body.dark .verification-progress-container.filling-order .verification-title {
+  color: #86efac;
+}
+
+.verification-progress-container.filling-order .verification-percentage {
+  color: #22c55e;
+}
+
+body.dark .verification-progress-container.filling-order .verification-percentage {
+  color: #86efac;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive adjustments for verification progress
+   -------------------------------------------------------------------------- */
+@media (max-width: 480px) {
+  .verification-progress-container {
+    padding: var(--space-3);
+  }
+
+  .verification-spinner-ring {
+    width: 40px;
+    height: 40px;
+  }
+
+  .verification-spinner {
+    width: 40px;
+    height: 40px;
+    border-width: 3px;
+  }
+
+  .verification-title {
+    font-size: var(--text-sm);
+  }
+
+  .verification-status {
+    font-size: var(--text-xs);
+  }
+
+  .verification-percentage {
+    font-size: var(--text-base);
+    min-width: 40px;
+  }
+}
+

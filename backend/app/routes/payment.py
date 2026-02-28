@@ -4,6 +4,7 @@ Handles payment creation, screenshot upload, verification, and status.
 """
 
 import base64
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ from io import BytesIO
 from flask import jsonify, request, current_app
 from sqlalchemy import text
 import qrcode
+from PIL import Image
 
 from app.config import PAYMENT_EXPIRY_SECONDS
 from app.extensions import limiter
@@ -552,6 +554,225 @@ def get_payment_status(payment_public_id):
         response["auto_rejected"] = True
 
     return jsonify(response)
+
+
+@payment_bp.route("/payments/<payment_public_id>/verify-and-upload", methods=["POST"])
+@require_valid_payment_session
+@limiter.limit("10 per minute")
+@track_performance
+def verify_and_upload_payment(payment_public_id):
+    """Verify payment screenshot first, then upload to S3 and store in database only if verified."""
+    data = request.json or {}
+    image_base64 = data.get("image_base64")
+    file_extension = data.get("file_extension", "jpg").lower().strip(".")
+    
+    if not image_base64:
+        return create_error_response("MISSING_FIELDS", {"fields": ["image_base64"]})
+    
+    # Validate file extension
+    is_valid, ext, content_type = validate_image_extension(f"file.{file_extension}")
+    if not is_valid:
+        return create_error_response("INVALID_IMAGE_TYPE", {"allowed": ["jpg", "jpeg", "png", "webp"]})
+    
+    db = get_db()
+    
+    row = db.execute(text("""
+        SELECT id, participant_id, status, expires_at, amount, upi_note
+        FROM payments
+        WHERE public_id = :pid
+        FOR UPDATE
+    """), {"pid": payment_public_id}).fetchone()
+    
+    if not row:
+        return create_error_response("PAYMENT_NOT_FOUND")
+    
+    payment_id, participant_id, status, expires_at, amount, payment_note = row
+    
+    # Check if payment has expired
+    if expires_at and datetime.now(timezone.utc) > expires_at:
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {"pid": payment_id})
+        db.commit()
+        return create_error_response("PAYMENT_EXPIRED")
+    
+    if status not in ("pending", "processing"):
+        return create_error_response("PAYMENT_INVALID_STATE")
+    
+    # Decode base64 image
+    try:
+        # Handle data URL prefix (e.g., "data:image/png;base64,")
+        if "," in image_base64:
+            image_base64 = image_base64.split(",")[1]
+        
+        image_bytes = base64.b64decode(image_base64)
+        image = Image.open(BytesIO(image_bytes))
+    except Exception:
+        return create_error_response("INVALID_IMAGE_TYPE", {"allowed": ["jpg", "jpeg", "png", "webp"]})
+    
+    # Run OCR and verification FIRST
+    try:
+        extracted_text, confidence = extract_text_with_confidence(image)
+    except Exception as e:
+        if _is_ocr_unavailable(e):
+            return create_error_response("SYS_SERVICE_UNAVAILABLE")
+        current_app.logger.exception("OCR failed during pre-verification")
+        return create_error_response("SYS_SERVICE_UNAVAILABLE")
+    
+    # Run strict validation
+    is_valid, detected_app, failures = verify_payment_screenshot(
+        image, extracted_text, amount, payment_note, confidence
+    )
+    
+    # If verification failed, return error WITHOUT storing anything
+    if not is_valid:
+        log_audit(db, "payment_verification_failed", participant_id=participant_id,
+                  details=f"Payment {payment_public_id} verification failed: {failures}")
+        db.commit()
+        return jsonify({
+            "status": "rejected_fraud",
+            "verified": False,
+            "failure_reasons": failures,
+            "detected_app": detected_app
+        })
+    
+    # Extract transaction ID
+    txn_patterns = [
+        r'\b\d{12}\b',
+        r'\b[a-zA-Z0-9]{12,16}\b',
+        r'\b\d{10,16}\b',
+    ]
+    
+    txn_match = None
+    for pattern in txn_patterns:
+        txn_match = re.search(pattern, extracted_text)
+        if txn_match:
+            break
+    
+    if not txn_match:
+        cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
+        for pattern in txn_patterns:
+            txn_match = re.search(pattern, cleaned_text)
+            if txn_match:
+                break
+    
+    upi_ref = txn_match.group(0) if txn_match else None
+    
+    # Check for duplicate transaction ID
+    if upi_ref:
+        from app.utils.fraud import check_duplicate_transaction
+        txn_duplicate, txn_status = check_duplicate_transaction(db, upi_ref, exclude_payment_id=payment_id)
+        if txn_duplicate:
+            log_audit(db, "fraud_detected_duplicate_txn", participant_id=participant_id,
+                      details=f"Transaction {upi_ref} already used in payment with status {txn_status}")
+            db.commit()
+            return jsonify({
+                "status": "rejected_fraud",
+                "verified": False,
+                "failure_reasons": ["duplicate_transaction_id"],
+                "detected_app": detected_app
+            })
+    
+    # Calculate SHA256 for deduplication
+    import hashlib
+    sha256_hash = hashlib.sha256(image_bytes).hexdigest()
+    
+    # Check for duplicate screenshot
+    from app.utils.fraud import check_duplicate_screenshot, check_rejected_screenshot
+    is_duplicate, existing_payment_id = check_duplicate_screenshot(db, sha256_hash)
+    if is_duplicate:
+        log_audit(db, "fraud_detected_duplicate_image", participant_id=participant_id,
+                  details=f"SHA256 {sha256_hash[:16]}... already exists in payment {existing_payment_id}")
+        db.commit()
+        return jsonify({
+            "status": "rejected_fraud",
+            "verified": False,
+            "failure_reasons": ["duplicate_screenshot"],
+            "detected_app": detected_app
+        })
+    
+    was_rejected = check_rejected_screenshot(db, sha256_hash)
+    if was_rejected:
+        log_audit(db, "fraud_detected_rejected_reuse", participant_id=participant_id,
+                  details=f"SHA256 {sha256_hash[:16]}... was previously rejected")
+        db.commit()
+        return jsonify({
+            "status": "rejected_fraud",
+            "verified": False,
+            "failure_reasons": ["rejected_reuse"],
+            "detected_app": detected_app
+        })
+    
+    # Verification passed - now upload to S3 and store in database
+    object_key = f"payments/{payment_public_id}.{ext}"
+    
+    try:
+        # Upload to S3
+        s3.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=object_key,
+            Body=image_bytes,
+            ContentType=content_type
+        )
+    except Exception as e:
+        current_app.logger.exception(f"S3 upload failed for payment {payment_public_id}")
+        return create_error_response("SYS_SERVICE_UNAVAILABLE")
+    
+    # Store in database
+    verification_details = {
+        "ocr_confidence": confidence,
+        "failure_reasons": [],
+        "extracted_text_length": len(extracted_text) if extracted_text else 0
+    }
+    
+    try:
+        db.execute(text("""
+            INSERT INTO payment_files (
+                payment_id, object_key, sha256
+            ) VALUES (
+                :pid, :key, :hash
+            )
+        """), {
+            "pid": payment_id,
+            "key": object_key,
+            "hash": sha256_hash
+        })
+        
+        db.execute(text("""
+            UPDATE payments
+            SET extracted_text = :txt,
+                upi_txn_ref = :ref,
+                fraud_score = 0,
+                verified_at = CURRENT_TIMESTAMP,
+                status = 'success',
+                detected_app = :app,
+                verification_details = :details
+            WHERE id = :pid
+        """), {
+            "txt": extracted_text,
+            "ref": upi_ref,
+            "app": detected_app,
+            "details": json.dumps(verification_details),
+            "pid": payment_id
+        })
+        
+        log_audit(db, "payment_verified_success", participant_id=participant_id,
+                  details=f"Payment {payment_public_id} verified successfully via {detected_app}")
+        
+        db.commit()
+        
+        return jsonify({
+            "status": "success",
+            "verified": True,
+            "detected_app": detected_app
+        })
+        
+    except Exception as e:
+        db.rollback()
+        current_app.logger.exception(f"Database error after S3 upload for payment {payment_public_id}")
+        return create_error_response("SYS_INTERNAL_ERROR")
 
 
 @payment_bp.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])

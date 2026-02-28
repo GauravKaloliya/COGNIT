@@ -120,6 +120,10 @@ export const endpoints = {
     object_key: objectKey,
     sha256: sha256
   }),
+  verifyAndUploadPayment: (paymentId, imageBase64, fileExtension = 'jpg') => api.post(`/payments/${paymentId}/verify-and-upload`, {
+    image_base64: imageBase64,
+    file_extension: fileExtension
+  }),
   
   // Error logging
   logClientError: (errorData) => api.post('/client-errors', errorData)

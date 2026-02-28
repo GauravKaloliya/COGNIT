@@ -14,6 +14,7 @@ export default function PaymentLinkPage({
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [uploadFile, setUploadFile] = useState(null);
   const [verifying, setVerifying] = useState(false);
+  const [verificationProgress, setVerificationProgress] = useState(0);
   const [error, setError] = useState(null);
   const [failureReasons, setFailureReasons] = useState([]);
   const fileInputRef = useRef(null);
@@ -27,8 +28,10 @@ export default function PaymentLinkPage({
 
   const getVerificationErrorMessage = (reasons) => {
     const messages = {
-      'unrecognized_app': 'Screenshot not from an allowed UPI app. Please use Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.',
-      'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.'
+      'unrecognized_app': 'Screenshot not from an allowed UPI app. Please use Google Pay, Paytm, or BHIM.',
+      'duplicate_transaction_id': 'This transaction has already been used. Please make a fresh payment.',
+      'duplicate_screenshot': 'This screenshot has already been submitted. Please use a fresh payment screenshot.',
+      'rejected_reuse': 'This screenshot was previously rejected. Please use a fresh payment screenshot.'
     };
     return reasons.map(r => messages[r] || r).join('. ');
   };
@@ -248,11 +251,32 @@ export default function PaymentLinkPage({
     }
   };
 
-  const calculateSha256 = async (file) => {
-    const arrayBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  // Convert file to base64
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  // Simulate progress animation for verification
+  const simulateProgress = () => {
+    setVerificationProgress(0);
+    const steps = [15, 30, 45, 60, 75, 85, 92, 97];
+    let stepIndex = 0;
+    
+    const interval = setInterval(() => {
+      if (stepIndex < steps.length) {
+        setVerificationProgress(steps[stepIndex]);
+        stepIndex++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 400);
+    
+    return () => clearInterval(interval);
   };
 
   const handleUploadAndFinalize = async () => {
@@ -268,62 +292,35 @@ export default function PaymentLinkPage({
 
     setVerifying(true);
     setError(null);
+    const cleanupProgress = simulateProgress();
 
     try {
-      // Extract file extension from uploaded file
+      // Convert file to base64
+      const imageBase64 = await fileToBase64(uploadFile);
       const fileExtension = uploadFile.name.split('.').pop().toLowerCase();
 
-      // Step 1: Get upload URL using API wrapper
-      const { upload_url, object_key } = await endpoints.generateUploadUrl(
+      // Call the new verify-and-upload endpoint
+      // This verifies FIRST, then uploads to S3 and database only if verified
+      const result = await endpoints.verifyAndUploadPayment(
         paymentData.payment_id,
+        imageBase64,
         fileExtension
       );
 
-      // Step 2: Upload file to S3
-      const uploadResponse = await fetch(upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": uploadFile.type },
-        body: uploadFile
-      });
+      cleanupProgress();
+      setVerificationProgress(100);
 
-      if (!uploadResponse.ok) {
-        if (uploadResponse.status === 413) {
-          setError("The file is too large. Please upload an image smaller than 5MB.");
-        } else {
-          setError("We couldn't upload your screenshot. Please check your internet connection and try again.");
-        }
-        return;
-      }
-
-      // Step 3: Calculate SHA256 and finalize
-      const sha256 = await calculateSha256(uploadFile);
-      const finalizeData = await endpoints.finalizePayment(
-        paymentData.payment_id,
-        object_key,
-        sha256
-      );
-
-      // Check inline verification result first (avoids extra round-trip)
-      const inlineVerification = finalizeData.verification;
-
-      // Handle verification error state
-      if (inlineVerification?.status === "error") {
-        setVerifying(false);
-        setError("Payment verification failed due to a system error. Please try again or contact support if the problem persists.");
-        return;
-      }
-
-      if (inlineVerification?.verified && inlineVerification.status === "rejected_fraud") {
+      if (result.status === "rejected_fraud") {
         setPaymentStatus("rejected_fraud");
         setVerifying(false);
-        const reasons = inlineVerification.failure_reasons || [];
+        const reasons = result.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.");
+        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.");
         return;
       }
 
-      if (inlineVerification?.verified && inlineVerification.status === "success") {
+      if (result.status === "success" && result.verified) {
         setPaymentStatus("success");
         sessionStorage.removeItem("payment_id");
         clearTimerState();
@@ -331,29 +328,13 @@ export default function PaymentLinkPage({
         return;
       }
 
-      // Fall back to polling status endpoint
-      const statusData = await endpoints.getPaymentStatus(paymentData.payment_id);
+      // Fallback error
+      setError("Payment verification failed. Please try again.");
 
-      if (statusData.status === "rejected_fraud") {
-        setPaymentStatus("rejected_fraud");
-        setVerifying(false);
-        const reasons = statusData.verification_details?.failure_reasons || [];
-        setFailureReasons(reasons);
-        const specificError = getVerificationErrorMessage(reasons);
-        setError(specificError || "Your payment screenshot could not be verified. Please ensure you are using Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.");
-        return;
-      }
-
-      if (statusData.status === "expired") {
-        handleExpiry();
-        return;
-      }
-
-      setPaymentStatus("success");
-      sessionStorage.removeItem("payment_id");
-      clearTimerState();
-      await onNext();
     } catch (err) {
+      cleanupProgress();
+      setVerificationProgress(0);
+      
       // Handle specific error codes with better messaging
       if (err.code === 'PAY_001_0001' || err.code === 'ERR_PAYMENT_EXPIRED') {
         handleExpiry();
@@ -367,21 +348,6 @@ export default function PaymentLinkPage({
 
       if (err.code === 'ERR_INVALID_IMAGE_TYPE') {
         setError("Invalid image format. Please upload JPG, PNG, or WEBP images only.");
-        return;
-      }
-
-      if (err.code === 'ERR_DUPLICATE_IMAGE' || err.code === 'FRAUD_003_0001') {
-        setError("This screenshot has already been submitted by another user. Please use a fresh payment screenshot.");
-        return;
-      }
-
-      if (err.code === 'ERR_REJECTED_REUSE' || err.code === 'FRAUD_003_0002') {
-        setError("This screenshot was previously rejected. Please use a fresh payment screenshot.");
-        return;
-      }
-
-      if (err.code === 'ERR_DUPLICATE_TXN' || err.code === 'DUP_003_0002') {
-        setError("This transaction has already been used. Each payment must be unique.");
         return;
       }
 
@@ -432,6 +398,7 @@ export default function PaymentLinkPage({
     setFailureReasons([]);
     setTimeRemaining(0);
     setTimerProgress(100);
+    setVerificationProgress(0);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
     }
@@ -620,45 +587,94 @@ export default function PaymentLinkPage({
           </section>
         )}
 
+        {/* Important Notice Box - Above Verification Box */}
+        <section className="payment-card payment-notice-card">
+          <h3>
+            <span className="payment-card-emoji" aria-hidden="true">🔔</span>
+            Important Notice
+          </h3>
+          <div className="payment-notice-content">
+            <p><strong>Only verified payment screenshots will be accepted!</strong></p>
+            <ul className="payment-steps">
+              <li>✅ Accepted apps: <strong>Google Pay, Paytm, BHIM</strong> only</li>
+              <li>✅ Make sure the transaction is <strong>successful</strong></li>
+              <li>✅ Screenshot must show <strong>beneficiary name: Gaurav</strong></li>
+              <li>✅ Amount must be exactly <strong>₹1</strong></li>
+              <li>❌ Screenshots from other apps will be rejected</li>
+            </ul>
+          </div>
+        </section>
+
         {paymentStatus === "pending" && (
           <section className="payment-card">
             <h3>
               <span className="payment-card-emoji" aria-hidden="true">📤</span>
               Upload Payment Screenshot
             </h3>
-            <p>After completing the payment, upload a screenshot from Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM.</p>
+            <p>After completing the payment, upload a screenshot from Google Pay, Paytm, or BHIM.</p>
 
-            <div
-              className="payment-upload-area"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploadFile ? (
-                <div>
-                  <p>✅ {uploadFile.name}</p>
-                  <p className="payment-note">Click to change</p>
+            {/* Verification Progress Animation */}
+            {verifying && (
+              <div className="verification-progress-container">
+                <div className="verification-progress-bar">
+                  <div 
+                    className="verification-progress-fill" 
+                    style={{ width: `${verificationProgress}%` }}
+                  />
                 </div>
-              ) : (
-                <div>
-                  <p>📷</p>
-                  <p>Click to upload payment screenshot</p>
+                <div className="verification-progress-content">
+                  <div className="verification-spinner-ring">
+                    <div className="verification-spinner"></div>
+                  </div>
+                  <div className="verification-text">
+                    <span className="verification-title">Verifying Payment</span>
+                    <span className="verification-status">
+                      {verificationProgress < 30 && "Reading screenshot..."}
+                      {verificationProgress >= 30 && verificationProgress < 60 && "Extracting details..."}
+                      {verificationProgress >= 60 && verificationProgress < 85 && "Validating payment..."}
+                      {verificationProgress >= 85 && "Almost done..."}
+                    </span>
+                  </div>
+                  <span className="verification-percentage">{verificationProgress}%</span>
                 </div>
-              )}
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                onChange={handleFileChange}
-                style={{ display: 'none' }}
-              />
-            </div>
+              </div>
+            )}
 
-            <button
-              className="primary"
-              onClick={handleUploadAndFinalize}
-              disabled={!uploadFile || verifying}
-            >
-              {verifying ? "Verifying..." : "Confirm Payment"}
-            </button>
+            {!verifying && (
+              <>
+                <div
+                  className="payment-upload-area"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {uploadFile ? (
+                    <div>
+                      <p>✅ {uploadFile.name}</p>
+                      <p className="payment-note">Click to change</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p>📷</p>
+                      <p>Click to upload payment screenshot</p>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    style={{ display: 'none' }}
+                  />
+                </div>
+
+                <button
+                  className="primary"
+                  onClick={handleUploadAndFinalize}
+                  disabled={!uploadFile || verifying}
+                >
+                  {verifying ? "Verifying..." : "Verify & Confirm Payment"}
+                </button>
+              </>
+            )}
           </section>
         )}
 
@@ -669,7 +685,7 @@ export default function PaymentLinkPage({
           </h3>
           <ul className="payment-steps">
             <li>Pay exactly ₹1 using a UPI app</li>
-            <li>Use only: Google Pay, PhonePe, Paytm, Amazon Pay, or BHIM</li>
+            <li>Use only: Google Pay, Paytm, or BHIM</li>
             <li>Take a screenshot immediately after payment</li>
             <li>Upload the screenshot above to verify</li>
             <li>Payment session expires in {formatTime(timeRemaining)}</li>
