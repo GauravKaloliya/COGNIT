@@ -8,7 +8,6 @@ import FinishedPage from "./pages/FinishedPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import { getApiUrl } from "./utils/apiBase";
 import { api, endpoints } from "./utils/api.js";
-import { getErrorMessage, parseErrorResponse } from "./utils/errors";
 
 function createId() {
   if (crypto?.randomUUID) {
@@ -312,7 +311,7 @@ export default function App() {
           }
         }).catch(() => {}); // Silent fail
       }
-      const errorMessage = getErrorMessage(error, "Failed to create participant. Please try again.");
+      const errorMessage = error.message || "Failed to create participant. Please try again.";
       throw new Error(errorMessage);
     }
   };
@@ -336,7 +335,7 @@ export default function App() {
           }
         }).catch(() => {});
       }
-      const errorMessage = getErrorMessage(error, "Failed to record consent. Please try again.");
+      const errorMessage = error.message || "Failed to record consent. Please try again.";
       throw new Error(errorMessage);
     }
   };
@@ -506,7 +505,7 @@ export default function App() {
           }
         }).catch(() => {});
       }
-      const errorMessage = getErrorMessage(error, "Submission failed. Please try again.");
+      const errorMessage = error.message || "Submission failed. Please try again.";
       throw new Error(errorMessage);
     }
   };
