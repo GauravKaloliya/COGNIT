@@ -21,6 +21,7 @@ from app.utils.helpers import (
     log_audit,
     create_error_response,
     validate_image_extension,
+    get_ip_hash,
 )
 from app.utils.security import (
     generate_payment_signature,
@@ -227,6 +228,130 @@ def create_payment():
         except:
             pass
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
+
+
+@payment_bp.route("/payments/<payment_public_id>/upload-url", methods=["GET", "POST", "OPTIONS"])
+@require_valid_payment_session
+@limiter.limit("20 per minute")
+@track_performance
+def get_payment_upload_url(payment_public_id):
+    """Return a presigned S3 upload URL for payment screenshots (legacy flow)."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    data = request.json or {}
+    file_extension = (
+        data.get("file_extension")
+        or request.args.get("file_extension")
+        or "jpg"
+    ).lower().strip(".")
+    sha256_hash = data.get("sha256") or data.get("sha256_hash")
+    file_size = data.get("file_size")
+
+    if not sha256_hash:
+        return create_error_response("MISSING_FIELDS", {"fields": ["sha256"]})
+
+    if not re.match(r"^[a-f0-9]{64}$", sha256_hash):
+        return create_error_response("INVALID_SHA256")
+
+    is_valid_ext, ext, content_type = validate_image_extension(f"file.{file_extension}")
+    if not is_valid_ext:
+        return create_error_response("INVALID_IMAGE_TYPE", {"allowed": ["jpg", "jpeg", "png", "webp"]})
+
+    try:
+        db = get_db()
+    except Exception:
+        current_app.logger.exception("get_payment_upload_url failed - db connection")
+        return create_error_response("INTERNAL_ERROR", custom_message="Payment upload preparation failed. Please try again.")
+
+    row = db.execute(text("""
+        SELECT id, participant_id, status, expires_at
+        FROM payments
+        WHERE public_id = :pid
+        FOR UPDATE
+    """), {"pid": payment_public_id}).fetchone()
+
+    if not row:
+        return create_error_response("PAYMENT_NOT_FOUND")
+
+    payment_id, participant_id, status, expires_at = row
+
+    if expires_at and datetime.now(timezone.utc) > expires_at:
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {"pid": payment_id})
+        db.commit()
+        return create_error_response("PAYMENT_EXPIRED")
+
+    if status != "pending":
+        return create_error_response("PAYMENT_INVALID_STATE")
+
+    is_duplicate, existing_payment_id = check_duplicate_screenshot(db, sha256_hash)
+    if is_duplicate:
+        log_audit(db, "fraud_detected_duplicate_image", participant_id=participant_id,
+                  details=f"SHA256 {sha256_hash[:16]}... already exists in payment {existing_payment_id}")
+        db.commit()
+        return create_error_response("DUPLICATE_IMAGE")
+
+    was_rejected = check_rejected_screenshot(db, sha256_hash)
+    if was_rejected:
+        log_audit(db, "fraud_detected_rejected_reuse", participant_id=participant_id,
+                  details=f"SHA256 {sha256_hash[:16]}... was previously rejected")
+        db.commit()
+        return create_error_response("REJECTED_REUSE")
+
+    object_key = f"payments/{payment_public_id}.{ext}"
+
+    try:
+        presigned_url = s3.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": S3_BUCKET_NAME,
+                "Key": object_key,
+                "ContentType": content_type
+            },
+            ExpiresIn=300
+        )
+    except Exception as e:
+        current_app.logger.error(f"Failed to generate presigned URL: {e}")
+        return create_error_response("INTERNAL_ERROR", custom_message="Failed to prepare upload URL")
+
+    try:
+        db.execute(text("""
+            INSERT INTO payment_files (
+                payment_id, object_key, sha256, content_type, file_size, uploaded_by_ip_hash
+            ) VALUES (
+                :pid, :key, :hash, :content_type, :file_size, :ip_hash
+            ) ON CONFLICT (payment_id)
+            DO UPDATE SET
+                object_key = EXCLUDED.object_key,
+                sha256 = EXCLUDED.sha256,
+                content_type = EXCLUDED.content_type,
+                file_size = EXCLUDED.file_size,
+                uploaded_by_ip_hash = EXCLUDED.uploaded_by_ip_hash,
+                created_at = CURRENT_TIMESTAMP
+        """), {
+            "pid": payment_id,
+            "key": object_key,
+            "hash": sha256_hash,
+            "content_type": content_type,
+            "file_size": file_size,
+            "ip_hash": get_ip_hash()
+        })
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        current_app.logger.error(f"Failed to store upload metadata: {e}")
+        return create_error_response("INTERNAL_ERROR", custom_message="Failed to prepare upload")
+
+    return jsonify({
+        "upload_url": presigned_url,
+        "object_key": object_key,
+        "content_type": content_type,
+        "expires_in": 300
+    })
 
 
 @payment_bp.route("/payments/<payment_public_id>/verify-upload", methods=["POST"])
