@@ -85,8 +85,40 @@ def create_participant():
             db.rollback()
         except:
             pass
-        if "unique" in str(e).lower():
+        error_str = str(e).lower()
+        
+        # Handle unique/duplicate constraint violations
+        if "unique" in error_str or "duplicate" in error_str:
+            if "username" in error_str:
+                return create_error_response("DUP_USERNAME")
+            elif "email" in error_str:
+                return create_error_response("DUP_EMAIL")
+            elif "phone" in error_str:
+                return create_error_response("DUP_PHONE")
+            elif "public_id" in error_str:
+                return create_error_response("DUP_PUBLIC_ID")
             return create_error_response("PARTICIPANT_EXISTS")
+        
+        # Handle foreign key constraint violations
+        if "foreign key" in error_str or "violates foreign key constraint" in error_str:
+            if "gender_code" in error_str:
+                return create_error_response("VAL_GENDER_REQUIRED")
+            elif "language_code" in error_str:
+                return create_error_response("VAL_LANGUAGE_REQUIRED")
+            current_app.logger.exception("create_participant foreign key violation")
+            return create_error_response("DATABASE_ERROR")
+        
+        # Handle check constraint violations
+        if "check constraint" in error_str or "violates check constraint" in error_str:
+            if "chk_email_format" in error_str or "email" in error_str:
+                return create_error_response("VAL_EMAIL_INVALID")
+            elif "chk_phone_format" in error_str or "phone" in error_str:
+                return create_error_response("VAL_PHONE_INVALID")
+            elif "chk_age" in error_str or "age" in error_str:
+                return create_error_response("VAL_AGE_INVALID")
+            current_app.logger.exception("create_participant check constraint violation")
+            return create_error_response("DATABASE_ERROR")
+        
         current_app.logger.exception("create_participant failed")
         return create_error_response("DATABASE_ERROR")
 
