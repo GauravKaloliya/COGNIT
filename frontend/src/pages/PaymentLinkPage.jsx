@@ -344,7 +344,7 @@ export default function PaymentLinkPage({
 
       if (inlineVerification?.status === "error") {
         setVerifying(false);
-        setError(getErrorMessage('SYS_002_0012'));
+        setError(getErrorMessage('SYS_002_0013'));
         return;
       }
 

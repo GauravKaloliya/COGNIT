@@ -552,10 +552,36 @@ def finalize_payment_upload(payment_public_id):
                     s3.delete_object(Bucket=S3_BUCKET_NAME, Key=object_key)
                 except Exception:
                     pass
+                # Use specific failure reason instead of generic error status
+                # so frontend can show actionable message
+                failures = ["ocr_unavailable"]  # Treat system errors like OCR unavailable
+                verification_details = {
+                    "ocr_confidence": 0,
+                    "failure_reasons": failures,
+                    "extracted_text_length": 0
+                }
+                # Update payment with details
+                db.execute(text("""
+                    UPDATE payments
+                    SET extracted_text = '',
+                        upi_txn_ref = NULL,
+                        fraud_score = :fs,
+                        verified_at = CURRENT_TIMESTAMP,
+                        status = 'rejected_fraud',
+                        detected_app = NULL,
+                        auto_rejected = true,
+                        verification_details = :details
+                    WHERE id = :pid
+                """), {
+                    "fs": len(failures) * 10,
+                    "details": json.dumps(verification_details),
+                    "pid": payment_id
+                })
+                db.commit()
                 verification_result = {
-                    "status": "error",
-                    "verified": False,
-                    "error": "verification_failed"
+                    "status": "rejected_fraud",
+                    "verified": True,
+                    "failure_reasons": failures
                 }
 
         return jsonify({"status": "uploaded", "verification": verification_result})
