@@ -3,6 +3,7 @@ Fraud detection utilities module for C.O.G.N.I.T. backend.
 Provides duplicate detection, screenshot validation, and fraud scoring.
 """
 
+import logging
 from typing import List, Optional, Tuple
 
 from flask import current_app
@@ -10,6 +11,8 @@ from sqlalchemy import text
 
 from app.config import ERROR_CODES
 from app.utils.ocr import extract_upi_ref
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -40,7 +43,7 @@ def check_duplicate_screenshot(db, sha256_hash: str) -> Tuple[bool, Optional[int
             return True, result[0]
         return False, None
     except Exception as e:
-        current_app.logger.warning(f"Duplicate screenshot check failed: {e}")
+        logger.warning(f"Duplicate screenshot check failed: {e}")
         return False, None
 
 
@@ -73,7 +76,7 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
         
         return bool(result)
     except Exception as e:
-        current_app.logger.warning(f"Rejected screenshot check failed: {e}")
+        logger.warning(f"Rejected screenshot check failed: {e}")
         return False
 
 
@@ -120,7 +123,7 @@ def check_duplicate_transaction(
             return True, result[0]
         return False, None
     except Exception as e:
-        current_app.logger.warning(f"Duplicate transaction check failed: {e}")
+        logger.warning(f"Duplicate transaction check failed: {e}")
         return False, None
 
 

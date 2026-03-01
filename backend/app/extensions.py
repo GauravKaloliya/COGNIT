@@ -3,6 +3,7 @@ Extensions module for C.O.G.N.I.T. backend.
 Initializes and configures Flask extensions following application factory pattern.
 """
 
+import sys
 import boto3
 from flask import Flask
 from flask_cors import CORS
@@ -14,21 +15,67 @@ from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, LOG
 
 
 # ────────────────────────────────────────────────
-# Flask Application
+# Logging Configuration for Vercel
 # ────────────────────────────────────────────────
 
 import os
-template_dir = os.path.join(os.path.dirname(__file__), '..', 'templates')
 import logging
+
+def configure_logging():
+    """Configure logging for Vercel serverless functions."""
+    log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+    
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    if root_logger.handlers:
+        root_logger.handlers.clear()
+    
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(log_level)
+    handler.setFormatter(logging.Formatter(
+        '[%(asctime)s] %(levelname)s in %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    handler.flush = lambda: sys.stdout.flush()
+    
+    root_logger.addHandler(handler)
+    
+    for logger_name in ['werkzeug', 'flask', 'sqlalchemy', 'boto3', 'urllib3']:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+    
+    return root_logger
+
+configure_logging()
+
+
+# ────────────────────────────────────────────────
+# Flask Application
+# ────────────────────────────────────────────────
+
+template_dir = os.path.join(os.path.dirname(__file__), '..', 'templates')
 
 app = Flask(__name__, template_folder=template_dir)
 app.url_map.strict_slashes = False
 app.config["SECRET_KEY"] = SECRET_KEY
-app.logger.setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
+
+log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+app.logger.setLevel(log_level)
+
+if app.logger.handlers:
+    app.logger.handlers.clear()
+
+app_logger_handler = logging.StreamHandler(sys.stdout)
+app_logger_handler.setLevel(log_level)
+app_logger_handler.setFormatter(logging.Formatter(
+    '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+app.logger.addHandler(app_logger_handler)
 
 
 # ────────────────────────────────────────────────

@@ -4,10 +4,13 @@ Server-side enforcement of payment flow with strict state transitions
 """
 
 import functools
+import logging
 from datetime import datetime, timezone
 from flask import request, jsonify, g, current_app
 from sqlalchemy import text
 import json
+
+logger = logging.getLogger(__name__)
 
 def error_response(error_code, message=None, details=None):
     """Standardized error response"""
@@ -316,5 +319,4 @@ def log_payment_flow_event(event_type, participant_id=None, payment_id=None, det
         })
         
     except Exception as e:
-        # Don't fail the main operation if audit logging fails
-        print(f"Audit logging error: {e}")
+        logger.error(f"Audit logging error: {e}")
