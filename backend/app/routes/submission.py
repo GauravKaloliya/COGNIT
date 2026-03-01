@@ -4,6 +4,7 @@ Handles survey submissions and engagement tracking.
 """
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -35,6 +36,8 @@ from app.utils.helpers import (
     create_error_response,
 )
 from app.utils.decorators import track_performance
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -259,7 +262,7 @@ def submit():
             pass
         if "unique" in str(exc).lower() and "survey_index" in str(exc):
             return create_error_response("SURVEY_EXISTS")
-        current_app.logger.exception("submit failed")
+        logger.error(f"submit failed: {exc}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -354,10 +357,10 @@ def track_engagement():
             "total_events": current_meta["engagement_tracking"]["total_events"]
         })
         
-    except Exception:
+    except Exception as e:
         try:
             db.rollback()
         except:
             pass
-        current_app.logger.exception("track_engagement failed")
+        logger.error(f"track_engagement failed: {e}")
         return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")

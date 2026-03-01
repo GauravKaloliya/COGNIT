@@ -4,10 +4,11 @@ Flask application factory and route registration.
 """
 
 import json
+import logging
 import random
 from datetime import datetime, timezone
 
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template, request, g
 from sqlalchemy import text
 
 from app.extensions import app, limiter
@@ -15,6 +16,8 @@ from app.database import engine, get_db
 from app.utils.helpers import get_ip_hash, error_response, success_response, create_error_response
 from app.utils.decorators import track_performance
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -25,6 +28,25 @@ app.register_blueprint(participant_bp)
 app.register_blueprint(image_bp)
 app.register_blueprint(submission_bp)
 app.register_blueprint(payment_bp)
+
+
+# ────────────────────────────────────────────────
+# Request/Response Logging
+# ────────────────────────────────────────────────
+
+@app.before_request
+def log_request():
+    """Log incoming requests for debugging."""
+    g.request_start_time = datetime.now(timezone.utc)
+    logger.info(f"Request: {request.method} {request.path} - IP: {get_ip_hash()[:16]}...")
+
+@app.after_request
+def log_response(response):
+    """Log outgoing responses for debugging."""
+    if hasattr(g, 'request_start_time'):
+        duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
+        logger.info(f"Response: {request.method} {request.path} - Status: {response.status_code} - {duration_ms}ms")
+    return response
 
 
 # ────────────────────────────────────────────────
@@ -39,10 +61,10 @@ def health():
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+        logger.info("Health check passed")
         return jsonify({"status": "healthy", "database": "connected"})
     except Exception as e:
-        from flask import current_app
-        current_app.logger.error(f"Health check failed: {e}")
+        logger.error(f"Health check failed: {e}")
         return jsonify({"status": "degraded", "error": str(e)}), 503
 
 
@@ -55,6 +77,8 @@ def health():
 def log_client_error():
     """Receive and log client-side errors."""
     data = request.json or {}
+    
+    logger.warning(f"Client error: {data.get('error_code', 'UNKNOWN')} - {data.get('error_message', '')[:100]}")
     
     db = get_db()
     try:
@@ -78,7 +102,8 @@ def log_client_error():
         })
         db.commit()
         return success_response(message="Error logged")
-    except:
+    except Exception as e:
+        logger.error(f"Failed to log client error: {e}")
         return success_response(message="Error logging failed silently")
 
 

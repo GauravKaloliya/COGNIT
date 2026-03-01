@@ -3,6 +3,7 @@ Image routes module for C.O.G.N.I.T. backend.
 Handles random image selection for survey.
 """
 
+import logging
 import random
 
 from flask import jsonify, request, current_app
@@ -11,6 +12,8 @@ from sqlalchemy import text
 from app.database import get_db
 from app.utils.helpers import create_error_response
 from app.utils.decorators import track_performance
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -53,6 +56,6 @@ def random_image():
             return create_error_response("INTERNAL_ERROR")
 
         return jsonify({"image_id": row[0], "url": row[1]})
-    except Exception:
-        current_app.logger.exception("random_image failed")
+    except Exception as e:
+        logger.error(f"random_image failed: {e}")
         return create_error_response("DATABASE_ERROR")

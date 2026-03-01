@@ -3,6 +3,7 @@ Participant routes module for C.O.G.N.I.T. backend.
 Handles participant registration, validation, and consent.
 """
 
+import logging
 import re
 
 from flask import jsonify, request, current_app
@@ -16,6 +17,8 @@ from app.utils.helpers import (
     create_error_response,
 )
 from app.utils.decorators import track_performance
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -79,6 +82,7 @@ def create_participant():
         
         log_audit(db, "participant_created", participant_id=participant_id, details=f"public_id={public_id}")
         db.commit()
+        logger.info(f"Participant created: {public_id[:8]}...")
         return jsonify({"status": "created", "public_id": public_id}), 201
     except Exception as e:
         try:
@@ -105,7 +109,7 @@ def create_participant():
                 return create_error_response("VAL_GENDER_REQUIRED")
             elif "language_code" in error_str:
                 return create_error_response("VAL_LANGUAGE_REQUIRED")
-            current_app.logger.exception("create_participant foreign key violation")
+            logger.error(f"Foreign key violation in create_participant: {e}")
             return create_error_response("DATABASE_ERROR")
         
         # Handle check constraint violations
@@ -116,10 +120,10 @@ def create_participant():
                 return create_error_response("VAL_PHONE_INVALID")
             elif "chk_age" in error_str or "age" in error_str:
                 return create_error_response("VAL_AGE_INVALID")
-            current_app.logger.exception("create_participant check constraint violation")
+            logger.error(f"Check constraint violation in create_participant: {e}")
             return create_error_response("DATABASE_ERROR")
         
-        current_app.logger.exception("create_participant failed")
+        logger.error(f"create_participant failed: {e}", exc_info=True)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -141,8 +145,8 @@ def check_username():
             LIMIT 1
         """), {"un": username}).scalar()
         return jsonify({"available": not bool(exists)})
-    except Exception:
-        current_app.logger.exception("check_username failed")
+    except Exception as e:
+        logger.error(f"check_username failed: {e}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -162,8 +166,8 @@ def check_email():
             LIMIT 1
         """), {"em": email}).scalar()
         return jsonify({"available": not bool(exists)})
-    except Exception:
-        current_app.logger.exception("check_email failed")
+    except Exception as e:
+        logger.error(f"check_email failed: {e}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -183,8 +187,8 @@ def check_phone():
             LIMIT 1
         """), {"ph": phone}).scalar()
         return jsonify({"available": not bool(exists)})
-    except Exception:
-        current_app.logger.exception("check_phone failed")
+    except Exception as e:
+        logger.error(f"check_phone failed: {e}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -216,13 +220,14 @@ def record_consent():
         """), {"pid": pid})
         log_audit(db, "consent_recorded", participant_id=pid)
         db.commit()
+        logger.info(f"Consent recorded for participant: {public_id[:8]}...")
         return jsonify({"status": "consent recorded"})
-    except Exception:
+    except Exception as e:
         try:
             db.rollback()
         except:
             pass
-        current_app.logger.exception("consent failed")
+        logger.error(f"consent failed: {e}")
         return create_error_response("INTERNAL_ERROR")
 
 
@@ -275,6 +280,6 @@ def get_participant_payment_status(public_id):
             "verified_at": payment_row[2].isoformat() if payment_row and payment_row[2] else None,
             "detected_app": payment_row[3] if payment_row else None
         })
-    except Exception:
-        current_app.logger.exception("get_participant_payment_status failed")
+    except Exception as e:
+        logger.error(f"get_participant_payment_status failed: {e}")
         return create_error_response("DATABASE_ERROR")

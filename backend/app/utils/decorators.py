@@ -4,6 +4,7 @@ Provides error logging and performance tracking decorators.
 """
 
 import functools
+import logging
 import random
 import time
 import traceback
@@ -13,6 +14,8 @@ from sqlalchemy import text
 
 from app.config import PERFORMANCE_LOG_SAMPLE_RATE, ERROR_CODES
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -26,6 +29,7 @@ def log_errors(f):
         try:
             return f(*args, **kwargs)
         except Exception as e:
+            logger.error(f"Unhandled exception in {request.path}: {e}", exc_info=True)
             try:
                 db = get_db()
                 db.execute(text("""
@@ -49,8 +53,8 @@ def log_errors(f):
                     "pid": getattr(g, 'participant_id', None)
                 })
                 db.commit()
-            except:
-                pass
+            except Exception as log_error:
+                logger.error(f"Failed to log error to database: {log_error}")
             raise
     return wrapper
 
