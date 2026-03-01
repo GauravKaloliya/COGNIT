@@ -110,13 +110,6 @@ def api_docs():
         "authentication": "None (public_id based participant identification)",
         "endpoints": [
             {
-                "path": "/health",
-                "method": "GET",
-                "description": "Server and database health check",
-                "auth": "None",
-                "rate_limit": "exempt"
-            },
-            {
                 "path": "/participants",
                 "method": "POST",
                 "description": "Register new participant (public_id must be UUID)",
@@ -260,18 +253,6 @@ def api_docs():
                     }
                 },
                 "rate_limit": "20/min"
-            },
-            {
-                "path": "/client-errors",
-                "method": "POST",
-                "description": "Log client-side errors for debugging and analytics",
-                "body_example": {
-                    "error_code": "SYS_001_0001",
-                    "error_message": "Error description",
-                    "page_url": "https://app.cognit.online/survey",
-                    "extra_data": {}
-                },
-                "rate_limit": "60/min"
             }
         ],
     }
