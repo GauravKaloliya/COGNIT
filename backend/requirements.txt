@@ -1,18 +1,10 @@
 Flask==3.0.2
 flask-cors==4.0.0
 flask-limiter==3.3.0
-requests==2.32.3
 psycopg2-binary==2.9.9
 SQLAlchemy==2.0.25
-redis==5.0.4
-setuptools==70.0.0
 python-dotenv==1.0.0
 # Payment System Dependencies
 pillow==10.3.0
 qrcode==7.4.2
 boto3==1.34.93
-celery==5.3.6
-# Enhanced Security & Image Processing (NEW)
-opencv-python-headless==4.9.0.80
-numpy==1.26.4
-imagehash==4.3.1
