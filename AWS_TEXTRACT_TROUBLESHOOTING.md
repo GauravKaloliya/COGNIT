@@ -4,7 +4,21 @@ This document explains why AWS Textract OCR service may be unavailable and how t
 
 ## Overview
 
-The C.O.G.N.I.T. payment verification system uses AWS Textract for OCR (Optical Character Recognition) to extract text from UPI payment screenshots. When Textract is unavailable, payment verification fails automatically and the payment is marked as `rejected_fraud`.
+The C.O.G.N.I.T. payment verification system uses AWS Textract for OCR (Optical Character Recognition) to extract text from UPI payment screenshots. 
+
+### Important: New Verification Flow
+
+The system now processes images **directly from user uploads** (not from S3):
+1. User sends base64-encoded image to `/payments/{payment_id}/verify-upload`
+2. Textract processes the image bytes directly
+3. **Only if verification passes:**
+   - Image is uploaded to S3
+   - Record is inserted to `payment_files` table
+4. **If verification fails:**
+   - Image is NOT uploaded to S3
+   - No database insert occurs for payment_files
+
+When Textract is unavailable, payment verification fails automatically and the payment is marked as `rejected_fraud`.
 
 ## Common Causes & Solutions
 
