@@ -14,7 +14,7 @@ from sqlalchemy import text
 import qrcode
 from PIL import Image
 
-from app.config import PAYMENT_EXPIRY_SECONDS
+from app.config import PAYMENT_EXPIRY_SECONDS, UPI_NAME
 from app.extensions import limiter
 from app.database import get_db
 from app.utils.helpers import (
@@ -471,7 +471,7 @@ def verify_and_upload_payment(payment_public_id):
         
         # Run strict validation
         is_valid, detected_app, failures = verify_payment_screenshot(
-            image, extracted_text, amount, payment_note, confidence
+            image, extracted_text, amount, payment_note, confidence, UPI_NAME
         )
         
         # Build verification details JSON
@@ -746,7 +746,7 @@ def verify_payment(payment_public_id):
 
     # Run strict validation
     is_valid, detected_app, failures = verify_payment_screenshot(
-        image, extracted_text, amount, payment_note, confidence
+        image, extracted_text, amount, payment_note, confidence, UPI_NAME
     )
 
     # Build verification details JSON
