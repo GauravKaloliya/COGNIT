@@ -110,66 +110,66 @@ def submit():
         except:
             return create_error_response("INVALID_FORMAT", {"field": "survey_index", "message": "survey_index must be >= 0"})
 
-    db = get_db()
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
 
-    p_row = db.execute(text("""
-        SELECT id, consent_given, is_deleted
-        FROM participants
-        WHERE public_id = :pub
-    """), {"pub": public_id}).fetchone()
-
-    if not p_row or p_row[2]:
-        return create_error_response("PARTICIPANT_NOT_FOUND")
-    if not p_row[1]:
-        return create_error_response("CONSENT_REQUIRED")
-
-    participant_id = p_row[0]
-
-    flagged = db.execute(text("""
-        SELECT is_flagged FROM participant_attention_stats
-        WHERE participant_id = :pid
-    """), {"pid": participant_id}).scalar()
-    if flagged:
-        return create_error_response("FLAGGED_ACCOUNT")
-
-    img_row = db.execute(text("SELECT id FROM images WHERE image_id = :iid"), {"iid": image_id_str}).fetchone()
-    if not img_row:
-        return create_error_response("INVALID_IMAGE_ID")
-    image_id_fk = img_row[0]
-
-    if not is_survey:
-        dup = db.execute(text("""
-            SELECT 1 FROM submissions
-            WHERE participant_id = :pid AND image_id = :iid AND is_survey = false
-        """), {"pid": participant_id, "iid": image_id_fk}).scalar()
-        if dup:
-            return create_error_response("DUPLICATE_SUBMISSION")
-
-    ac_row = db.execute(text("""
-        SELECT expected_word, is_strict
-        FROM attention_checks
-        WHERE image_id = :iid AND is_active = true
-    """), {"iid": image_id_fk}).fetchone()
-
-    is_attention = ac_row is not None
-    attention_passed = None
-    if is_attention:
-        expected = ac_row[0].strip().lower()
-        strict = ac_row[1]
-        dlow = description.lower()
-        attention_passed = bool(re.search(rf"\b{re.escape(expected)}\b", dlow)) if strict else (expected in dlow)
-
-    too_fast = ts is not None and ts < TOO_FAST_SECONDS
-    quality = calculate_quality_score(word_count, attention_passed, ts, len(feedback), False)
-
-    # Get engagement tracking data
-    tab_switch_count = d.get("tab_switch_count", 0)
-    page_close_attempts = d.get("page_close_attempts", 0)
-    network_disconnects = d.get("network_disconnects", 0)
-
     try:
+        db = get_db()
+        p_row = db.execute(text("""
+            SELECT id, consent_given, is_deleted
+            FROM participants
+            WHERE public_id = :pub
+        """), {"pub": public_id}).fetchone()
+
+        if not p_row or p_row[2]:
+            return create_error_response("PARTICIPANT_NOT_FOUND")
+        if not p_row[1]:
+            return create_error_response("CONSENT_REQUIRED")
+
+        participant_id = p_row[0]
+
+        flagged = db.execute(text("""
+            SELECT is_flagged FROM participant_attention_stats
+            WHERE participant_id = :pid
+        """), {"pid": participant_id}).scalar()
+        if flagged:
+            return create_error_response("FLAGGED_ACCOUNT")
+
+        img_row = db.execute(text("SELECT id FROM images WHERE image_id = :iid"), {"iid": image_id_str}).fetchone()
+        if not img_row:
+            return create_error_response("INVALID_IMAGE_ID")
+        image_id_fk = img_row[0]
+
+        if not is_survey:
+            dup = db.execute(text("""
+                SELECT 1 FROM submissions
+                WHERE participant_id = :pid AND image_id = :iid AND is_survey = false
+            """), {"pid": participant_id, "iid": image_id_fk}).scalar()
+            if dup:
+                return create_error_response("DUPLICATE_SUBMISSION")
+
+        ac_row = db.execute(text("""
+            SELECT expected_word, is_strict
+            FROM attention_checks
+            WHERE image_id = :iid AND is_active = true
+        """), {"iid": image_id_fk}).fetchone()
+
+        is_attention = ac_row is not None
+        attention_passed = None
+        if is_attention:
+            expected = ac_row[0].strip().lower()
+            strict = ac_row[1]
+            dlow = description.lower()
+            attention_passed = bool(re.search(rf"\b{re.escape(expected)}\b", dlow)) if strict else (expected in dlow)
+
+        too_fast = ts is not None and ts < TOO_FAST_SECONDS
+        quality = calculate_quality_score(word_count, attention_passed, ts, len(feedback), False)
+
+        # Get engagement tracking data
+        tab_switch_count = d.get("tab_switch_count", 0)
+        page_close_attempts = d.get("page_close_attempts", 0)
+        network_disconnects = d.get("network_disconnects", 0)
+
         db.execute(text("""
             INSERT INTO submissions (
                 participant_id, image_id, survey_index, description, word_count,
@@ -253,7 +253,10 @@ def submit():
         })
 
     except Exception as exc:
-        db.rollback()
+        try:
+            db.rollback()
+        except:
+            pass
         if "unique" in str(exc).lower() and "survey_index" in str(exc):
             return create_error_response("SURVEY_EXISTS")
         current_app.logger.exception("submit failed")
@@ -284,20 +287,20 @@ def track_engagement():
     if event_type not in allowed_events:
         return create_error_response("INVALID_FORMAT", {"field": "event_type", "allowed": allowed_events})
     
-    db = get_db()
-    
-    # Get participant
-    row = db.execute(text("""
-        SELECT id FROM participants
-        WHERE public_id = :pub AND is_deleted = false
-    """), {"pub": public_id}).fetchone()
-    
-    if not row:
-        return create_error_response("PARTICIPANT_NOT_FOUND")
-    
-    participant_id = row[0]
-
     try:
+        db = get_db()
+        
+        # Get participant
+        row = db.execute(text("""
+            SELECT id FROM participants
+            WHERE public_id = :pub AND is_deleted = false
+        """), {"pub": public_id}).fetchone()
+        
+        if not row:
+            return create_error_response("PARTICIPANT_NOT_FOUND")
+        
+        participant_id = row[0]
+
         # Get current metadata
         current_meta = db.execute(text("""
             SELECT extra_metadata FROM participants WHERE id = :pid
@@ -352,6 +355,9 @@ def track_engagement():
         })
         
     except Exception:
-        db.rollback()
+        try:
+            db.rollback()
+        except:
+            pass
         current_app.logger.exception("track_engagement failed")
         return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
