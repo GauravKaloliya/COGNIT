@@ -245,8 +245,13 @@ def get_payment_upload_url(payment_public_id):
         or request.args.get("file_extension")
         or "jpg"
     ).lower().strip(".")
-    sha256_hash = data.get("sha256") or data.get("sha256_hash")
-    file_size = data.get("file_size")
+    sha256_hash = (
+        data.get("sha256")
+        or data.get("sha256_hash")
+        or request.args.get("sha256")
+        or request.args.get("sha256_hash")
+    )
+    file_size = data.get("file_size") or request.args.get("file_size")
 
     if not sha256_hash:
         return create_error_response("MISSING_FIELDS", {"fields": ["sha256"]})
