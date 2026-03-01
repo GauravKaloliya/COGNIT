@@ -23,6 +23,14 @@ const TRANSLATIONS = {
     'VAL_003_0006': 'Please upload a screenshot of your payment first.',
 
     // User detail validation
+    'VAL_001_0001': 'Username must be at least 2 characters and contain only letters, numbers, and underscores',
+    'VAL_001_0002': 'Please enter a valid email address from Gmail, Outlook, Hotmail, or iCloud',
+    'VAL_001_0003': 'Please enter a valid 10-digit Indian mobile number',
+    'VAL_001_0004': 'Age must be between 13 and 100',
+    'VAL_001_0005': 'Please select a gender',
+    'VAL_001_0006': 'Please enter your location',
+    'VAL_001_0007': 'Please select your native language',
+    'VAL_001_0008': 'Please select your prior experience',
     'VAL_001_0010': 'Username is required (min {min} characters)',
     'VAL_001_0011': 'Username can only contain letters, numbers, and underscores (no spaces or special characters)',
     'VAL_001_0012': 'Email is required',
