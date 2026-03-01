@@ -230,18 +230,21 @@ def api_docs():
                 "rate_limit": "30/min"
             },
             {
-                "path": "/payments/{payment_id}/upload-url",
+                "path": "/payments/{payment_id}/verify-upload",
                 "method": "POST",
-                "description": "Get S3 presigned URL for payment screenshot upload",
-                "rate_limit": "20/min"
-            },
-            {
-                "path": "/payments/{payment_id}/finalize",
-                "method": "POST",
-                "description": "Finalize payment after screenshot upload",
+                "description": "Verify payment screenshot and upload to S3 only if verified. Image is processed directly (not from S3).",
                 "body_example": {
-                    "object_key": "payments/uuid.jpg",
-                    "sha256": "sha256hash"
+                    "image_base64": "base64-encoded-image-data",
+                    "file_extension": "jpg",
+                    "sha256": "sha256hash-of-original-file"
+                },
+                "response": {
+                    "status": "processed",
+                    "verification": {
+                        "status": "success|rejected_fraud",
+                        "verified": True,
+                        "failure_reasons": []
+                    }
                 },
                 "rate_limit": "20/min"
             }
