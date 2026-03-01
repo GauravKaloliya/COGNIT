@@ -100,8 +100,6 @@ def root():
 @track_performance
 def api_docs():
     """JSON API documentation endpoint."""
-    from app.config import MIN_DESCRIPTION_LENGTH, MAX_DESCRIPTION_LENGTH, MIN_FEEDBACK_LENGTH, MAX_FEEDBACK_LENGTH, MIN_RATING, MAX_RATING, MIN_WORD_COUNT
-    
     base_url = "https://api.cognit.online"
 
     docs = {
@@ -111,13 +109,6 @@ def api_docs():
         "base_url": base_url,
         "authentication": "None (public_id based participant identification)",
         "endpoints": [
-            {
-                "path": "/health",
-                "method": "GET",
-                "description": "Server and database health check",
-                "auth": "None",
-                "rate_limit": "exempt"
-            },
             {
                 "path": "/participants",
                 "method": "POST",
@@ -135,12 +126,6 @@ def api_docs():
                     "prior_experience": "some experience"
                 },
                 "rate_limit": "30/min"
-            },
-            {
-                "path": "/participants/{public_id}",
-                "method": "GET",
-                "description": "Get participant profile (public fields only)",
-                "rate_limit": "10/min"
             },
             {
                 "path": "/check-username",
@@ -171,6 +156,20 @@ def api_docs():
                 "rate_limit": "20/min"
             },
             {
+                "path": "/participants/{public_id}/payment-status",
+                "method": "GET",
+                "description": "Get participant's payment verification status",
+                "response": {
+                    "payment_status": "paid|pending",
+                    "is_verified": True,
+                    "current_stage": "survey",
+                    "payment_id": "uuid",
+                    "verified_at": "2024-01-01T12:15:00+00:00",
+                    "detected_app": "gpay|phonepe|paytm|other"
+                },
+                "rate_limit": "30/min"
+            },
+            {
                 "path": "/images/random",
                 "method": "GET",
                 "description": "Get random image (exclude=comma,separated,image_ids)",
@@ -189,15 +188,22 @@ def api_docs():
                     "feedback": "My comments here...",
                     "time_spent_seconds": 45.2,
                     "is_survey": False,
-                    "survey_index": None
+                    "survey_index": None,
+                    "tab_switch_count": 0,
+                    "page_close_attempts": 0,
+                    "network_disconnects": 0
                 },
                 "rate_limit": "60/min"
             },
             {
-                "path": "/docs",
-                "method": "GET",
-                "description": "This documentation",
-                "rate_limit": "30/min"
+                "path": "/engagement/track",
+                "method": "POST",
+                "description": "Track engagement events (tab switches, page close attempts, network disconnects)",
+                "body_example": {
+                    "public_id": "550e8400-...",
+                    "event_type": "tab_switch|page_close_attempt|network_disconnect"
+                },
+                "rate_limit": "60/min"
             },
             {
                 "path": "/payments/create",
