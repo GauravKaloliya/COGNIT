@@ -113,11 +113,9 @@ export const endpoints = {
   }),
   getPaymentStatus: (paymentId) => api.get(`/payments/${paymentId}/status`),
   getParticipantPaymentStatus: (publicId) => api.get(`/participants/${publicId}/payment-status`),
-  generateUploadUrl: (paymentId, fileExtension = 'jpg') => api.post(`/payments/${paymentId}/upload-url`, {
-    file_extension: fileExtension
-  }),
-  finalizePayment: (paymentId, objectKey, sha256) => api.post(`/payments/${paymentId}/finalize`, {
-    object_key: objectKey,
+  verifyUpload: (paymentId, imageBase64, fileExtension, sha256) => api.post(`/payments/${paymentId}/verify-upload`, {
+    image_base64: imageBase64,
+    file_extension: fileExtension,
     sha256: sha256
   }),
   
