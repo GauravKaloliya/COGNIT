@@ -361,26 +361,7 @@
             <div id="endpoints" class="tab-content">
                 <h2>API Endpoints</h2>
 
-                <h3 style="margin-top: 24px;">System</h3>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/health</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Performs a health check across the database and image storage layer. This endpoint is exempt from rate limiting to support uptime monitoring.</p>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "healthy",
-  "database": "connected"
-}</pre></div>
-                        <p class="endpoint-desc">If a dependency is unavailable the status becomes <code>degraded</code> and an error message is included.</p>
-                    </div>
-                </div>
-
-                <h3 style="margin-top: 32px;">Participants &amp; Consent</h3>
+                <h3 style="margin-top: 24px;">Participants &amp; Consent</h3>
 
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
@@ -715,33 +696,6 @@
                     </div>
                 </div>
 
-                <h3 style="margin-top: 32px;">Client Errors</h3>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/client-errors</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Log client-side errors for debugging and analytics. Used by frontend to report errors for investigation.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "error_code": "SYS_001_0001",
-  "error_message": "Error description",
-  "page_url": "https://app.cognit.online/survey",
-  "extra_data": {}
-}</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "success",
-  "message": "Error logged"
-}</pre></div>
-                    </div>
-                </div>
             </div>
 
             <div id="examples" class="tab-content">
