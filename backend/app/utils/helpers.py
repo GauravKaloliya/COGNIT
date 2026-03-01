@@ -5,6 +5,7 @@ Provides common helper functions for validation, responses, and audit logging.
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any, Dict, Optional, Tuple
 
@@ -25,6 +26,8 @@ from app.config import (
     CONTENT_TYPE_MAP,
     IP_HASH_SALT,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -114,7 +117,7 @@ def log_audit(db, event_type: str, participant_id: Optional[int] = None, details
                 "det": details[:8000]
             })
     except Exception as exc:
-        current_app.logger.warning("audit log insert failed: %s", exc)
+        logger.warning(f"audit log insert failed: {exc}")
 
 
 # ────────────────────────────────────────────────
