@@ -328,11 +328,12 @@ def verify_payment_screenshot(
     text: str,
     expected_amount: float,
     payment_note: str,
-    confidence: float
+    confidence: float,
+    expected_upi_name: str
 ) -> Tuple[bool, Optional[str], List[str]]:
     """
     Validate UPI payment screenshot with three checks:
-    1. Banking name must include "Gaurav"
+    1. Banking name must match the configured UPI name
     2. Amount must be 1 rupee
     3. Transaction time must be within 5 minutes
 
@@ -342,6 +343,7 @@ def verify_payment_screenshot(
         expected_amount: Expected payment amount
         payment_note: Expected payment note/reference
         confidence: OCR confidence score
+        expected_upi_name: Expected UPI recipient name from config
 
     Returns:
         Tuple of (is_valid, detected_app, failure_reasons)
@@ -368,8 +370,8 @@ def verify_payment_screenshot(
         if not detected_app:
             failures.append("unrecognized_app")
 
-    # Check 1: Banking name must include "Gaurav"
-    if 'gaurav' not in lower:
+    # Check 1: Banking name must match the configured UPI name
+    if expected_upi_name and expected_upi_name.lower() not in lower:
         failures.append("invalid_banking_name")
 
     # Check 2: Amount must be 1 rupee
