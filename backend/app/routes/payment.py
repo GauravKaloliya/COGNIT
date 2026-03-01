@@ -141,7 +141,11 @@ def create_payment():
     except:
         return create_error_response("INVALID_AMOUNT")
 
-    db = get_db()
+    try:
+        db = get_db()
+    except Exception:
+        current_app.logger.exception("create_payment failed - db connection")
+        return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
     row = db.execute(text("""
         SELECT id FROM participants
@@ -218,7 +222,10 @@ def create_payment():
         })
 
     except Exception:
-        db.rollback()
+        try:
+            db.rollback()
+        except:
+            pass
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
 
@@ -269,7 +276,11 @@ def verify_and_upload_payment(payment_public_id):
         current_app.logger.warning(f"Failed to decode image: {e}")
         return create_error_response("INVALID_FORMAT", {"field": "image_base64", "message": "Invalid image data"})
     
-    db = get_db()
+    try:
+        db = get_db()
+    except Exception:
+        current_app.logger.exception("verify_and_upload_payment failed - db connection")
+        return create_error_response("INTERNAL_ERROR", custom_message="Payment verification failed. Please try again.")
     
     row = db.execute(text("""
         SELECT id, participant_id, status, expires_at
@@ -487,7 +498,10 @@ def verify_and_upload_payment(payment_public_id):
             }
     
     except Exception as e:
-        db.rollback()
+        try:
+            db.rollback()
+        except:
+            pass
         if _is_ocr_unavailable(e):
             verification_details, failures = _reject_for_ocr_unavailable(db, payment_id, participant_id)
             verification_result = {
@@ -512,57 +526,65 @@ def verify_and_upload_payment(payment_public_id):
 @track_performance
 def get_payment_status(payment_public_id):
     """Get current payment status including expiry check."""
-    db = get_db()
+    try:
+        db = get_db()
 
-    row = db.execute(text("""
-        SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app, p.auto_rejected
-        FROM payments p
-        WHERE p.public_id = :pid
-    """), {"pid": payment_public_id}).fetchone()
+        row = db.execute(text("""
+            SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app, p.auto_rejected
+            FROM payments p
+            WHERE p.public_id = :pid
+        """), {"pid": payment_public_id}).fetchone()
 
-    if not row:
-        return create_error_response("PAYMENT_NOT_FOUND")
+        if not row:
+            return create_error_response("PAYMENT_NOT_FOUND")
 
-    payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected = row
+        payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected = row
 
-    # Check if payment should be marked as expired
-    now = datetime.now(timezone.utc)
-    is_expired = expires_at and now > expires_at
+        # Check if payment should be marked as expired
+        now = datetime.now(timezone.utc)
+        is_expired = expires_at and now > expires_at
 
-    if is_expired and status in ("pending", "processing"):
-        db.execute(text("""
-            UPDATE payments
-            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {"pid": payment_id})
-        db.commit()
-        status = "expired"
+        if is_expired and status in ("pending", "processing"):
+            db.execute(text("""
+                UPDATE payments
+                SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+                WHERE id = :pid
+            """), {"pid": payment_id})
+            db.commit()
+            status = "expired"
 
-    response = {
-        "payment_id": payment_public_id,
-        "status": status,
-        "amount": float(amount) if amount else None,
-        "expires_at": expires_at.isoformat() if expires_at else None,
-        "is_expired": status == "expired",
-        "time_remaining_seconds": max(0, int((expires_at - now).total_seconds())) if expires_at and status in ("pending", "processing") else 0,
-        "verified_at": verified_at.isoformat() if verified_at else None
-    }
+        response = {
+            "payment_id": payment_public_id,
+            "status": status,
+            "amount": float(amount) if amount else None,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "is_expired": status == "expired",
+            "time_remaining_seconds": max(0, int((expires_at - now).total_seconds())) if expires_at and status in ("pending", "processing") else 0,
+            "verified_at": verified_at.isoformat() if verified_at else None
+        }
 
-    if verification_details:
-        response["verification_details"] = verification_details
-    if detected_app:
-        response["detected_app"] = detected_app
-    if auto_rejected:
-        response["auto_rejected"] = True
+        if verification_details:
+            response["verification_details"] = verification_details
+        if detected_app:
+            response["detected_app"] = detected_app
+        if auto_rejected:
+            response["auto_rejected"] = True
 
-    return jsonify(response)
+        return jsonify(response)
+    except Exception:
+        current_app.logger.exception("get_payment_status failed")
+        return create_error_response("DATABASE_ERROR")
 
 
 @payment_bp.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])
 @limiter.exempt
 def verify_payment(payment_public_id):
     """Internal endpoint for payment verification (no rate limit)."""
-    db = get_db()
+    try:
+        db = get_db()
+    except Exception:
+        current_app.logger.exception("verify_payment failed - db connection")
+        return create_error_response("DATABASE_ERROR")
 
     row = db.execute(text("""
         SELECT p.id, p.participant_id, p.amount, f.object_key, p.upi_note
