@@ -5,7 +5,7 @@ import { getErrorMessage } from "../utils/errorRegistry.js";
 const VERIFICATION_REASON_CODES = {
   unrecognized_app: 'FRAUD_001_0003',
   duplicate_transaction_id: 'DUP_003_0002',
-  invalid_banking_name: 'FRAUD_002_0001',
+  invalid_banking_name: 'FRAUD_001_0004',
   invalid_amount: 'FRAUD_002_0003',
   time_out_of_range: 'FRAUD_002_0008',
   invalid_timestamp: 'FRAUD_002_0007',
