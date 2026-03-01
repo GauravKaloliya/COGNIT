@@ -45,11 +45,16 @@ CORS(app, resources={r"/*": {"origins": cors_origins}})
 # Rate Limiter
 # ────────────────────────────────────────────────
 
+# Use in-memory storage for Vercel serverless (Redis not available)
+# Vercel functions are stateless, so rate limits are per-instance
+is_vercel = os.getenv("VERCEL", "0") == "1" or os.getenv("VERCEL_ENV") == "production"
+storage_uri = "memory://" if is_vercel else RATELIMIT_STORAGE_URI
+
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
     default_limits=["200 per day", "50 per hour"],
-    storage_uri=RATELIMIT_STORAGE_URI
+    storage_uri=storage_uri
 )
 
 
