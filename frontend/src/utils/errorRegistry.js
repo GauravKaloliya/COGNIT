@@ -4,8 +4,6 @@
  * Supports multiple languages and automatic translation
  */
 
-import { getApiUrl } from './apiBase';
-
 const DEFAULT_LANGUAGE = 'en';
 
 // Error message translations
@@ -288,31 +286,19 @@ export function parseErrorResponse(response) {
 }
 
 /**
- * Log error to backend for analytics
+ * Log error for analytics (local console logging only)
  */
 export async function logErrorToBackend(errorData) {
-  try {
-    await fetch(getApiUrl('/client-errors'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error_code: errorData.code,
-        error_message: errorData.message,
-        page_url: window.location.href,
-        user_agent: navigator.userAgent,
-        timestamp: errorData.timestamp,
-        extra_data: {
-          category: errorData.category,
-          severity: errorData.severity,
-          action: errorData.action,
-          field: errorData.field
-        }
-      })
-    });
-  } catch (e) {
-    // Silent fail - don't cause infinite error loops
-    console.warn('Failed to log error to backend:', e);
-  }
+  console.warn('Client error:', {
+    code: errorData.code,
+    message: errorData.message,
+    category: errorData.category,
+    severity: errorData.severity,
+    action: errorData.action,
+    field: errorData.field,
+    page_url: errorData.page_url,
+    timestamp: errorData.timestamp
+  });
 }
 
 /**

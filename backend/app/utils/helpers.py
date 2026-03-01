@@ -117,6 +117,42 @@ def log_audit(db, event_type: str, participant_id: Optional[int] = None, details
         current_app.logger.warning("audit log insert failed: %s", exc)
 
 
+def log_client_error(db, error_code: str = "CLIENT_UNKNOWN", error_message: str = "", 
+                     page_url: str = "", extra_data: Optional[Dict] = None):
+    """
+    Log client-side errors to the database for analytics.
+    
+    Args:
+        db: Database session
+        error_code: Error code (e.g., "VAL_001_0001")
+        error_message: Human-readable error message
+        page_url: URL where the error occurred
+        extra_data: Additional metadata as dict
+    """
+    try:
+        db.execute(text("""
+            INSERT INTO error_log (
+                error_code, error_message, error_type,
+                endpoint, http_method, ip_hash,
+                user_agent, request_data
+            ) VALUES (
+                :code, :message, 'client_error',
+                :page, 'CLIENT', :ip,
+                :ua, :data
+            )
+        """), {
+            "code": error_code[:50] if error_code else "CLIENT_UNKNOWN",
+            "message": error_message[:500] if error_message else "",
+            "page": page_url[:255] if page_url else "",
+            "ip": get_ip_hash(),
+            "ua": request.headers.get("User-Agent", "")[:512],
+            "data": json.dumps(extra_data or {})
+        })
+        db.commit()
+    except Exception as exc:
+        current_app.logger.warning("client error log insert failed: %s", exc)
+
+
 # ────────────────────────────────────────────────
 # Response Helpers
 # ────────────────────────────────────────────────

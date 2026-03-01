@@ -324,7 +324,7 @@
                 <ol>
                     <li>Create a participant profile using <code>/participants</code>.</li>
                     <li>Record consent using <code>/consent</code> before collecting data.</li>
-                    <li>Confirm participation using <code>/payment/confirm</code>.</li>
+                    <li>Create a payment session using <code>/payments/create</code> and verify payment via <code>/payments/{payment_id}/verify-upload</code>.</li>
                     <li>Fetch images via <code>/images/random</code> (optionally exclude previously used images).</li>
                     <li>Submit descriptions with ratings and feedback using <code>/submit</code>.</li>
                 </ol>
@@ -352,8 +352,8 @@
                     <li><strong>/participants:</strong> 30 requests per minute</li>
                     <li><strong>/consent:</strong> 20 requests per minute</li>
                     <li><strong>/submit:</strong> 60 requests per minute</li>
-                    <li><strong>/payment/create-order:</strong> 30 requests per minute</li>
-                    <li><strong>/payment/verify:</strong> 60 requests per minute</li>
+                    <li><strong>/payments/create:</strong> 20 requests per minute</li>
+                    <li><strong>/payments/verify-upload:</strong> 20 requests per minute</li>
                     <li><strong>/docs:</strong> 30 requests per minute</li>
                 </ul>
             </div>
@@ -370,17 +370,13 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Performs a health check across the database and image storage layer. This endpoint is exempt from rate limiting to support uptime monitoring.</p>
+                        <p class="endpoint-desc">Performs a health check across the database. This endpoint is exempt from rate limiting to support uptime monitoring.</p>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "status": "healthy",
-  "timestamp": "2024-01-01T00:00:00+00:00",
-  "services": {
-    "database": "connected",
-    "images": "accessible"
-  }
+  "database": "connected"
 }</pre></div>
-                        <p class="endpoint-desc">If a dependency is unavailable the status becomes <code>degraded</code> and the relevant service contains an error message.</p>
+                        <p class="endpoint-desc">If a dependency is unavailable the status becomes <code>degraded</code> and includes an error message.</p>
                     </div>
                 </div>
 
@@ -395,30 +391,6 @@
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
                         </div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "title": "C.O.G.N.I.T. API Documentation",
-  "description": "C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) research platform API.",
-  "base_url": "{{ base_url }}",
-  "security": { ... },
-  "endpoints": {
-    "health": { "path": "/health", "method": "GET", "auth_required": false },
-    "submit": { "path": "/submit", "method": "POST", "auth_required": false }
-  }
-}</pre></div>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Serves the HTML API documentation (this page). Useful for browser-based access without requiring authentication.</p>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>HTML document</pre></div>
                     </div>
                 </div>
 
@@ -437,35 +409,21 @@
                         </div>
                         <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "uuid-or-custom-id",
+  "public_id": "550e8400-e29b-41d4-a716-446655440000",
   "session_id": "session-token",
-  "username": "letters_numbers_underscores",
-  "email": "name@gmail.com",
-  "phone": "+91XXXXXXXXXX",
-  "gender": "female",
-  "age": 24,
-  "place": "Hyderabad",
-  "native_language": "Telugu",
-  "prior_experience": "No"
+  "username": "user123",
+  "email": "user@gmail.com",
+  "phone": "9876543210",
+  "gender_code": "male",
+  "age": 25,
+  "location": "Ahmedabad",
+  "language_code": "en",
+  "prior_experience": "some experience"
 }</pre></div>
                         <h4>Response (201)</h4>
                         <div class="code-block small"><pre>{
-  "status": "success",
-  "participant_id": "user-123",
-  "participant_fk": 42,
-  "message": "Participant created successfully"
-}</pre></div>
-                        <h4>Validation Errors (400)</h4>
-                        <div class="code-block small"><pre>{
-  "error": "Validation failed",
-  "details": {
-    "age": "Age is required",
-    "gender": "Gender is required"
-  }
-}</pre></div>
-                        <h4>Duplicate Participant (409)</h4>
-                        <div class="code-block small"><pre>{
-  "error": "Participant ID already exists"
+  "status": "created",
+  "public_id": "550e8400-e29b-41d4-a716-446655440000"
 }</pre></div>
                     </div>
                 </div>
@@ -473,47 +431,22 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/participants/&lt;participant_id&gt;</code>
+                        <code class="endpoint-path">/participants/{public_id}/payment-status</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Fetches participant metadata, including consent status. This endpoint is useful for resuming sessions or admin checks.</p>
-                        <h4>Path Parameters</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Type</th>
-                                    <th>Required</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>participant_id</code></td>
-                                    <td>string</td>
-                                    <td>Yes</td>
-                                    <td>Participant identifier used during registration</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <p class="endpoint-desc">Get participant's payment verification status. Used to check if a participant can access the survey.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
+                        </div>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "user-123",
-  "username": "ava",
-  "email": "ava@gmail.com",
-  "phone": "+919876543210",
-  "gender": "female",
-  "age": 24,
-  "place": "Hyderabad",
-  "native_language": "Telugu",
-  "prior_experience": "No",
-  "consent_given": true,
-  "created_at": "2024-01-01 00:00:00"
-}</pre></div>
-                        <h4>Not Found (404)</h4>
-                        <div class="code-block small"><pre>{
-  "error": "Participant not found"
+  "payment_status": "paid",
+  "is_verified": true,
+  "current_stage": "survey",
+  "payment_id": "uuid",
+  "verified_at": "2024-01-01T00:00:00+00:00",
+  "detected_app": "gpay"
 }</pre></div>
                     </div>
                 </div>
@@ -525,24 +458,17 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Records consent for an existing participant and stamps the consent time. Consent must be <code>true</code> to proceed.</p>
+                        <p class="endpoint-desc">Records consent for an existing participant. Consent must be recorded before submissions are allowed.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 20 per minute</span>
                         </div>
                         <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "user-123",
-  "consent_given": true
+  "public_id": "550e8400-e29b-41d4-a716-446655440000"
 }</pre></div>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
-  "status": "success",
-  "message": "Consent recorded successfully",
-  "timestamp": "2024-01-01T00:00:00+00:00"
-}</pre></div>
-                        <h4>Errors</h4>
-                        <div class="code-block small"><pre>{
-  "error": "Consent must be given to proceed"
+  "status": "consent recorded"
 }</pre></div>
                     </div>
                 </div>
@@ -556,36 +482,13 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Checks if a username is available for registration. Returns available: true if the username is not already taken.</p>
+                        <p class="endpoint-desc">Checks if a username is available for registration.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
                         </div>
-                        <h4>Query Parameters</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Type</th>
-                                    <th>Required</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>username</code></td>
-                                    <td>string</td>
-                                    <td>Yes</td>
-                                    <td>Username to check for availability</td>
-                                </tr>
-                            </tbody>
-                        </table>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "available": true
-}</pre></div>
-                        <h4>Errors (400)</h4>
-                        <div class="code-block small"><pre>{
-  "error": "username parameter required"
 }</pre></div>
                     </div>
                 </div>
@@ -597,29 +500,10 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Checks if an email address is already registered. Returns available: true if the email is not in use.</p>
+                        <p class="endpoint-desc">Checks if an email address is already registered.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
                         </div>
-                        <h4>Query Parameters</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Type</th>
-                                    <th>Required</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>email</code></td>
-                                    <td>string</td>
-                                    <td>Yes</td>
-                                    <td>Email address to check for availability</td>
-                                </tr>
-                            </tbody>
-                        </table>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "available": true
@@ -634,29 +518,10 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Checks if a phone number is already registered. Returns available: true if the phone is not in use.</p>
+                        <p class="endpoint-desc">Checks if a phone number is already registered.</p>
                         <div class="endpoint-meta">
                             <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
                         </div>
-                        <h4>Query Parameters</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Type</th>
-                                    <th>Required</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>phone</code></td>
-                                    <td>string</td>
-                                    <td>Yes</td>
-                                    <td>Phone number to check for availability</td>
-                                </tr>
-                            </tbody>
-                        </table>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
   "available": true
@@ -695,12 +560,8 @@
                         </table>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
-  "image_id": "aurora-lake.svg",
-  "url": "https://example.com/images/aurora-lake.svg"
-}</pre></div>
-                        <h4>No Images Available (404)</h4>
-                        <div class="code-block small"><pre>{
-  "error": "no images"
+  "image_id": "image-unique-string-123",
+  "url": "https://example.com/images/image.jpg"
 }</pre></div>
                     </div>
                 </div>
@@ -720,37 +581,159 @@
                         </div>
                         <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "participant_id": "user-123",
-  "session_id": "session-456",
-  "image_id": "aurora-lake.svg",
-  "image_url": "/images/aurora-lake.svg",
-  "survey_index": 0,
-  "description": "At least 60 words describing the image...",
+  "public_id": "550e8400-e29b-41d4-a716-446655440000",
+  "image_id": "image-unique-string-123",
+  "description": "A detailed description with at least 60 words...",
   "rating": 8,
   "feedback": "Interesting scene with depth",
   "time_spent_seconds": 45,
-  "is_survey": false
+  "is_survey": false,
+  "survey_index": 0,
+  "tab_switch_count": 0,
+  "page_close_attempts": 0,
+  "network_disconnects": 0
 }</pre></div>
-                        <h4>Behavior &amp; Validation</h4>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "status": "submitted",
+  "word_count": 78,
+  "quality_score": 0.84,
+  "attention_passed": true,
+  "flagged_too_fast": false
+}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/engagement/track</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Track engagement events like tab switches, page close attempts, and network disconnects.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
+                        </div>
+                        <h4>Request Body</h4>
+                        <div class="code-block small"><pre>{
+  "public_id": "550e8400-e29b-41d4-a716-446655440000",
+  "event_type": "tab_switch"
+}</pre></div>
+                        <h4>Allowed Event Types</h4>
                         <ul>
-                            <li>Participant must exist, have consent recorded, and have <code>payment_status = paid</code>.</li>
-                            <li><code>image_url</code>, <code>survey_index</code>, <code>is_survey</code>, and <code>time_spent_seconds</code> are optional.</li>
-                            <li><code>description</code> must meet the minimum word count (default 60 words).</li>
-                            <li><code>rating</code> must be an integer between 1 and 10.</li>
-                            <li><code>feedback</code> must be at least 5 characters.</li>
-                            <li>Attention check images are evaluated automatically and update attention stats.</li>
-                            <li>Submissions record quality scores and attention flags for downstream analysis.</li>
+                            <li><code>tab_switch</code> - User switched browser tabs</li>
+                            <li><code>page_close_attempt</code> - User attempted to close the page</li>
+                            <li><code>network_disconnect</code> - Network connection was lost</li>
                         </ul>
                         <h4>Response</h4>
                         <div class="code-block small"><pre>{
-  "status": "ok",
-  "word_count": 78,
-  "attention_passed": true,
-  "quality_score": 0.84
+  "status": "tracked",
+  "event_type": "tab_switch",
+  "total_events": 3
 }</pre></div>
-                        <h4>Errors</h4>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 32px;">Payments</h3>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payments/create</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Creates a new payment session with an expiry timer and generates a UPI QR code.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 20 per minute</span>
+                        </div>
+                        <h4>Request Body</h4>
                         <div class="code-block small"><pre>{
-  "error": "Payment required"
+  "public_id": "550e8400-e29b-41d4-a716-446655440000",
+  "amount": 1.00
+}</pre></div>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "payment_id": "uuid",
+  "amount": 1.00,
+  "expires_at": "2024-01-01T12:15:00+00:00",
+  "signature": "payment-signature",
+  "upi_link": "upi://pay?...",
+  "upi_note": "COGNIT uuid",
+  "qr_base64": "base64-encoded-qr-image",
+  "timer_activated": true,
+  "time_remaining_seconds": 900
+}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/payments/{payment_id}/status</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Get current payment status including expiry check and time remaining.</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
+                        </div>
+                        <h4>Response</h4>
+                        <div class="code-block small"><pre>{
+  "payment_id": "uuid",
+  "status": "pending",
+  "amount": 1.00,
+  "expires_at": "2024-01-01T12:15:00+00:00",
+  "is_expired": false,
+  "time_remaining_seconds": 600,
+  "verified_at": null
+}</pre></div>
+                        <h4>Payment Status Values</h4>
+                        <ul>
+                            <li><code>pending</code> - Payment created, awaiting screenshot</li>
+                            <li><code>processing</code> - Screenshot uploaded, verification in progress</li>
+                            <li><code>success</code> - Payment verified successfully</li>
+                            <li><code>rejected_fraud</code> - Payment rejected due to fraud detection</li>
+                            <li><code>expired</code> - Payment session timed out</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payments/{payment_id}/verify-upload</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Verify payment screenshot via OCR and upload to S3 only if verified. The image is processed directly (not from S3).</p>
+                        <div class="endpoint-meta">
+                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 20 per minute</span>
+                        </div>
+                        <h4>Request Body</h4>
+                        <div class="code-block small"><pre>{
+  "image_base64": "base64-encoded-image-data",
+  "file_extension": "jpg",
+  "sha256": "sha256hash-of-original-file"
+}</pre></div>
+                        <h4>Response (Success)</h4>
+                        <div class="code-block small"><pre>{
+  "status": "processed",
+  "verification": {
+    "status": "success",
+    "verified": true,
+    "failure_reasons": []
+  }
+}</pre></div>
+                        <h4>Response (Rejected)</h4>
+                        <div class="code-block small"><pre>{
+  "status": "processed",
+  "verification": {
+    "status": "rejected_fraud",
+    "verified": true,
+    "failure_reasons": ["amount_mismatch", "invalid_upi_id"]
+  }
 }</pre></div>
                     </div>
                 </div>
@@ -765,15 +748,16 @@ const participantResponse = await fetch('/participants', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    participant_id: 'user-123',
-    session_id: 'session-456',
-    username: 'ava_1',
-    email: 'ava@gmail.com',
-    gender: 'female',
-    age: 24,
-    place: 'Hyderabad',
-    native_language: 'Telugu',
-    prior_experience: 'No'
+    public_id: crypto.randomUUID(),
+    session_id: crypto.randomUUID(),
+    username: 'user123',
+    email: 'user@gmail.com',
+    phone: '9876543210',
+    gender_code: 'male',
+    age: 25,
+    location: 'Ahmedabad',
+    language_code: 'en',
+    prior_experience: 'some experience'
   })
 });
 
@@ -781,117 +765,84 @@ const participantResponse = await fetch('/participants', {
 await fetch('/consent', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ participant_id: 'user-123', consent_given: true })
+  body: JSON.stringify({ public_id: 'user-uuid' })
 });
 
-// Confirm participation
-await fetch('/payment/confirm', {
+// Create payment
+const payment = await fetch('/payments/create', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ participant_id: 'user-123' })
+  body: JSON.stringify({ public_id: 'user-uuid', amount: 1.00 })
+}).then(r => r.json());
+
+// Verify payment screenshot
+await fetch(`/payments/${payment.payment_id}/verify-upload`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    image_base64: 'base64-data',
+    file_extension: 'jpg',
+    sha256: 'file-hash'
+  })
 });
 
 // Get a random image
-const imageResponse = await fetch('/images/random');
-const image = await imageResponse.json();
+const image = await fetch('/images/random').then(r => r.json());
 
-// Submit participant data
-const submission = {
-  participant_id: 'user-123',
-  session_id: 'session-456',
-  image_id: image.image_id,
-  image_url: image.image_url,
-  description: 'A detailed description that exceeds the minimum word count...',
-  rating: 8,
-  feedback: 'Clear contrast and composition.',
-  time_spent_seconds: 48,
-  is_survey: false
-};
-
-const submitResponse = await fetch('/submit', {
+// Submit description
+await fetch('/submit', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(submission)
-});
-const result = await submitResponse.json();
-console.log(result);</pre></div>
-
-                <h3 style="margin-top: 32px;">Python / Requests</h3>
-                <div class="code-block"><pre>import requests
-
-base_url = "{{ base_url }}"
-
-participant_payload = {
-    "participant_id": "user-123",
-    "session_id": "session-456",
-    "username": "ava_1",
-    "gender": "female",
-    "age": 24,
-    "place": "Hyderabad",
-    "native_language": "Telugu",
-    "prior_experience": "No"
-}
-
-requests.post(f"{base_url}/participants", json=participant_payload)
-
-requests.post(
-    f"{base_url}/consent",
-    json={"participant_id": "user-123", "consent_given": True}
-)
-
-image = requests.get(f"{base_url}/images/random").json()
-
-submission_payload = {
-    "participant_id": "user-123",
-    "session_id": "session-456",
-    "image_id": image["image_id"],
-    "image_url": image["image_url"],
-    "description": "A detailed description that exceeds the minimum word count...",
-    "rating": 7,
-    "feedback": "Good lighting and composition.",
-    "time_spent_seconds": 42
-}
-
-submission = requests.post(f"{base_url}/submit", json=submission_payload)
-print(submission.json())</pre></div>
+  body: JSON.stringify({
+    public_id: 'user-uuid',
+    image_id: image.image_id,
+    description: 'A detailed description with at least 60 words...',
+    rating: 8,
+    feedback: 'Great image!',
+    time_spent_seconds: 45,
+    is_survey: false
+  })
+});</pre></div>
 
                 <h3 style="margin-top: 32px;">cURL</h3>
                 <div class="code-block"><pre># Create participant
 curl -X POST "{{ base_url }}/participants" \
   -H "Content-Type: application/json" \
   -d '{
-    "participant_id": "user-123",
+    "public_id": "550e8400-e29b-41d4-a716-446655440000",
     "session_id": "session-456",
-    "username": "ava_1",
-    "gender": "female",
-    "age": 24,
-    "place": "Hyderabad",
-    "native_language": "Telugu",
-    "prior_experience": "No"
+    "username": "user123",
+    "email": "user@gmail.com",
+    "phone": "9876543210",
+    "gender_code": "male",
+    "age": 25,
+    "location": "Ahmedabad",
+    "language_code": "en",
+    "prior_experience": "some experience"
   }'
 
 # Record consent
 curl -X POST "{{ base_url }}/consent" \
   -H "Content-Type: application/json" \
-  -d '{
-    "participant_id": "user-123",
-    "consent_given": true
-  }'
+  -d '{"public_id": "550e8400-e29b-41d4-a716-446655440000"}'
 
-# Get a random image excluding previous ones
-curl -X GET "{{ base_url }}/images/random?exclude=aurora-lake.svg"
+# Create payment
+curl -X POST "{{ base_url }}/payments/create" \
+  -H "Content-Type: application/json" \
+  -d '{"public_id": "550e8400-e29b-41d4-a716-446655440000", "amount": 1.00}'
 
-# Submit data
+# Get a random image
+curl -X GET "{{ base_url }}/images/random"
+
+# Submit description
 curl -X POST "{{ base_url }}/submit" \
   -H "Content-Type: application/json" \
   -d '{
-    "participant_id": "user-123",
-    "session_id": "session-456",
-    "image_id": "aurora-lake.svg",
-    "image_url": "/images/aurora-lake.svg",
-    "description": "A detailed description that exceeds the minimum word count...",
+    "public_id": "550e8400-e29b-41d4-a716-446655440000",
+    "image_id": "image-123",
+    "description": "A detailed description with at least 60 words...",
     "rating": 8,
-    "feedback": "Great sense of depth.",
+    "feedback": "Great image!",
     "time_spent_seconds": 45
   }'</pre></div>
             </div>
@@ -955,25 +906,26 @@ curl -X POST "{{ base_url }}/submit" \
 
                 <h3 style="margin-top: 32px;">Error Response Format</h3>
                 <div class="code-block"><pre>{
-  "error": "Description of what went wrong",
-  "details": "Optional additional information"
+  "success": false,
+  "error": {
+    "code": "VAL_001_0001",
+    "message": "Username is already taken",
+    "category": "VAL",
+    "field": "username"
+  }
 }</pre></div>
 
-                <h3 style="margin-top: 32px;">Common Validation Errors</h3>
+                <h3 style="margin-top: 32px;">Error Categories</h3>
                 <ul>
-                    <li><code>Minimum 60 words required</code> — Description is too short.</li>
-                    <li><code>rating must be an integer between 1-10</code> — Rating is outside the accepted range.</li>
-                    <li><code>comments must be at least 5 characters</code> — Feedback is too short.</li>
-                    <li><code>Participant ID already exists</code> — The participant_id is not unique.</li>
-                    <li><code>Participant not found. Please complete registration first.</code> — Participant ID missing from the database.</li>
-                    <li><code>Consent required. Please complete the consent process.</code> — Consent not recorded.</li>
-                    <li><code>Account flagged for low attention quality</code> — Participant failed attention checks.</li>
+                    <li><strong>VAL</strong> - Validation errors (fix input)</li>
+                    <li><strong>DUP</strong> - Duplicate/conflict errors (change input)</li>
+                    <li><strong>AUTH</strong> - Authorization/permission errors</li>
+                    <li><strong>NF</strong> - Not found errors</li>
+                    <li><strong>PAY</strong> - Payment related errors</li>
+                    <li><strong>FRAUD</strong> - Fraud detection errors</li>
+                    <li><strong>SYS</strong> - System/internal errors</li>
+                    <li><strong>RATE</strong> - Rate limit errors</li>
                 </ul>
-
-                <h3 style="margin-top: 32px;">Rate Limit Error (429)</h3>
-                <div class="code-block"><pre>{
-  "message": "Rate limit exceeded"
-}</pre></div>
             </div>
 
             <div class="footer">

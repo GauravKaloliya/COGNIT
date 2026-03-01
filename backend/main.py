@@ -3,7 +3,6 @@ C.O.G.N.I.T. Backend - Main Application Entry Point
 Flask application factory and route registration.
 """
 
-import json
 import random
 from datetime import datetime, timezone
 
@@ -11,8 +10,8 @@ from flask import jsonify, render_template, request
 from sqlalchemy import text
 
 from app.extensions import app, limiter
-from app.database import engine, get_db
-from app.utils.helpers import get_ip_hash, error_response, success_response, create_error_response
+from app.database import engine
+from app.utils.helpers import error_response
 from app.utils.decorators import track_performance
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
 
@@ -47,42 +46,6 @@ def health():
 
 
 # ────────────────────────────────────────────────
-# Client Error Logging
-# ────────────────────────────────────────────────
-
-@app.route("/client-errors", methods=["POST"])
-@limiter.limit("60 per minute")
-def log_client_error():
-    """Receive and log client-side errors."""
-    data = request.json or {}
-    
-    db = get_db()
-    try:
-        db.execute(text("""
-            INSERT INTO error_log (
-                error_code, error_message, error_type,
-                endpoint, http_method, ip_hash,
-                user_agent, request_data
-            ) VALUES (
-                :code, :message, 'client_error',
-                :page, 'CLIENT', :ip,
-                :ua, :data
-            )
-        """), {
-            "code": data.get("error_code", "CLIENT_UNKNOWN"),
-            "message": data.get("error_message", "")[:500],
-            "page": data.get("page_url", "")[:255],
-            "ip": get_ip_hash(),
-            "ua": request.headers.get("User-Agent", "")[:512],
-            "data": json.dumps(data.get("extra_data", {}))
-        })
-        db.commit()
-        return success_response(message="Error logged")
-    except:
-        return success_response(message="Error logging failed silently")
-
-
-# ────────────────────────────────────────────────
 # API Documentation Routes
 # ────────────────────────────────────────────────
 
@@ -100,8 +63,6 @@ def root():
 @track_performance
 def api_docs():
     """JSON API documentation endpoint."""
-    from app.config import MIN_DESCRIPTION_LENGTH, MAX_DESCRIPTION_LENGTH, MIN_FEEDBACK_LENGTH, MAX_FEEDBACK_LENGTH, MIN_RATING, MAX_RATING, MIN_WORD_COUNT
-    
     base_url = "https://api.cognit.online"
 
     docs = {
@@ -121,7 +82,7 @@ def api_docs():
             {
                 "path": "/participants",
                 "method": "POST",
-                "description": "Register new participant (public_id must be UUID)",
+                "description": "Register new participant",
                 "body_example": {
                     "public_id": "550e8400-e29b-41d4-a716-446655440000",
                     "session_id": "sess_abc123xyz",
@@ -137,10 +98,10 @@ def api_docs():
                 "rate_limit": "30/min"
             },
             {
-                "path": "/participants/{public_id}",
+                "path": "/participants/{public_id}/payment-status",
                 "method": "GET",
-                "description": "Get participant profile (public fields only)",
-                "rate_limit": "10/min"
+                "description": "Get participant's payment verification status",
+                "rate_limit": "30/min"
             },
             {
                 "path": "/check-username",
@@ -166,15 +127,15 @@ def api_docs():
             {
                 "path": "/consent",
                 "method": "POST",
-                "description": "Record consent (required before submissions)",
+                "description": "Record participant consent",
                 "body_example": {"public_id": "550e8400-e29b-41d4-a716-446655440000"},
                 "rate_limit": "20/min"
             },
             {
                 "path": "/images/random",
                 "method": "GET",
-                "description": "Get random image (exclude=comma,separated,image_ids)",
-                "query_params": {"exclude": "img1,img2 (optional)"},
+                "description": "Get random image for survey",
+                "query_params": {"exclude": "comma-separated image IDs to exclude (optional)"},
                 "rate_limit": "default"
             },
             {
@@ -184,7 +145,7 @@ def api_docs():
                 "body_example": {
                     "public_id": "550e8400-...",
                     "image_id": "image-unique-string-123",
-                    "description": "Detailed description here at least 60 words...",
+                    "description": "Detailed description here (min 60 words)...",
                     "rating": 7,
                     "feedback": "My comments here...",
                     "time_spent_seconds": 45.2,
@@ -194,10 +155,14 @@ def api_docs():
                 "rate_limit": "60/min"
             },
             {
-                "path": "/docs",
-                "method": "GET",
-                "description": "This documentation",
-                "rate_limit": "30/min"
+                "path": "/engagement/track",
+                "method": "POST",
+                "description": "Track engagement events (tab switches, page close attempts, network disconnects)",
+                "body_example": {
+                    "public_id": "550e8400-...",
+                    "event_type": "tab_switch"
+                },
+                "rate_limit": "60/min"
             },
             {
                 "path": "/payments/create",
@@ -232,7 +197,7 @@ def api_docs():
             {
                 "path": "/payments/{payment_id}/verify-upload",
                 "method": "POST",
-                "description": "Verify payment screenshot and upload to S3 only if verified. Image is processed directly (not from S3).",
+                "description": "Verify payment screenshot via OCR and upload to S3 if verified",
                 "body_example": {
                     "image_base64": "base64-encoded-image-data",
                     "file_extension": "jpg",

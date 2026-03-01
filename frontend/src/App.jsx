@@ -308,20 +308,7 @@ export default function App() {
       });
       return data;
     } catch (error) {
-      // Log error to backend for analytics
-      if (error.code) {
-        endpoints.logClientError({
-          error_code: error.code,
-          error_message: error.message,
-          page_url: window.location.href,
-          extra_data: {
-            category: error.category,
-            severity: error.severity,
-            action: error.action,
-            field: error.field
-          }
-        }).catch(() => {}); // Silent fail
-      }
+      console.warn('Participant creation error:', error.code, error.message);
       const errorMessage = error.message || getErrorMessage('SYS_002_0022');
       throw new Error(errorMessage);
     }
@@ -333,19 +320,7 @@ export default function App() {
       const data = await endpoints.recordConsent(publicId);
       return data;
     } catch (error) {
-      // Log error to backend for analytics
-      if (error.code) {
-        endpoints.logClientError({
-          error_code: error.code,
-          error_message: error.message,
-          page_url: window.location.href,
-          extra_data: {
-            category: error.category,
-            severity: error.severity,
-            action: error.action
-          }
-        }).catch(() => {});
-      }
+      console.warn('Consent recording error:', error.code, error.message);
       const errorMessage = error.message || getErrorMessage('SYS_002_0002');
       throw new Error(errorMessage);
     }
@@ -445,19 +420,7 @@ export default function App() {
       setShownImages(prev => [...prev, data.image_id]);
       setSurvey(data);
     } catch (error) {
-      // Log error to backend for analytics
-      if (error.code) {
-        endpoints.logClientError({
-          error_code: error.code,
-          error_message: error.message,
-          page_url: window.location.href,
-          extra_data: {
-            category: error.category,
-            severity: error.severity,
-            action: error.action
-          }
-        }).catch(() => {});
-      }
+      console.warn('Image fetch error:', error.code, error.message);
       const errorMessage = error.message || getErrorMessage('SYS_002_0016');
       addToast(errorMessage, "error");
       setImageError(errorMessage);
@@ -502,20 +465,7 @@ export default function App() {
         setSurveyFeedbackReady(true);
       }
     } catch (error) {
-      // Log error to backend for analytics
-      if (error.code) {
-        endpoints.logClientError({
-          error_code: error.code,
-          error_message: error.message,
-          page_url: window.location.href,
-          extra_data: {
-            category: error.category,
-            severity: error.severity,
-            action: error.action,
-            field: error.field
-          }
-        }).catch(() => {});
-      }
+      console.warn('Submission error:', error.code, error.message);
       const errorMessage = error.message || getErrorMessage('SYS_002_0006');
       throw new Error(errorMessage);
     }
