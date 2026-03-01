@@ -247,6 +247,15 @@ export default function PaymentLinkPage({
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   };
 
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   const handleUploadAndFinalize = async () => {
     if (!uploadFile) {
       setError(getErrorMessage('VAL_003_0006'));
@@ -265,50 +274,34 @@ export default function PaymentLinkPage({
       // Extract file extension from uploaded file
       const fileExtension = uploadFile.name.split('.').pop().toLowerCase();
 
-      // Step 1: Get upload URL using API wrapper
-      const { upload_url, object_key } = await endpoints.generateUploadUrl(
-        paymentData.payment_id,
-        fileExtension
-      );
+      // Step 1: Convert file to base64
+      const imageBase64 = await fileToBase64(uploadFile);
 
-      // Step 2: Upload file to S3
-      const uploadResponse = await fetch(upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": uploadFile.type },
-        body: uploadFile
-      });
-
-      if (!uploadResponse.ok) {
-        if (uploadResponse.status === 413) {
-          setError(getErrorMessage('VAL_003_0005'));
-        } else {
-          setError(getErrorMessage('SYS_001_0002'));
-        }
-        return;
-      }
-
-      // Step 3: Calculate SHA256 and finalize
+      // Step 2: Calculate SHA256
       const sha256 = await calculateSha256(uploadFile);
-      const finalizeData = await endpoints.finalizePayment(
+
+      // Step 3: Call verify-upload endpoint which handles verification and S3 upload
+      const verifyData = await endpoints.verifyUpload(
         paymentData.payment_id,
-        object_key,
+        imageBase64,
+        fileExtension,
         sha256
       );
 
-      // Check inline verification result first (avoids extra round-trip)
-      const inlineVerification = finalizeData.verification;
+      // Check verification result
+      const verification = verifyData.verification;
 
-      if (inlineVerification?.verified && inlineVerification.status === "rejected_fraud") {
+      if (verification?.verified && verification.status === "rejected_fraud") {
         setPaymentStatus("rejected_fraud");
         setVerifying(false);
-        const reasons = inlineVerification.failure_reasons || [];
+        const reasons = verification.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
         setError(specificError || getErrorMessage('FRAUD_002_0009'));
         return;
       }
 
-      if (inlineVerification?.verified && inlineVerification.status === "success") {
+      if (verification?.verified && verification.status === "success") {
         setPaymentStatus("success");
         sessionStorage.removeItem("payment_id");
         clearTimerState();
@@ -316,7 +309,7 @@ export default function PaymentLinkPage({
         return;
       }
 
-      // Fall back to polling status endpoint
+      // Fall back to polling status endpoint for async processing
       const statusData = await endpoints.getPaymentStatus(paymentData.payment_id);
 
       if (statusData.status === "rejected_fraud") {
@@ -342,7 +335,7 @@ export default function PaymentLinkPage({
         return;
       }
 
-      if (inlineVerification?.status === "error") {
+      if (verification?.status === "error") {
         setVerifying(false);
         setError(getErrorMessage('SYS_002_0012'));
         return;
