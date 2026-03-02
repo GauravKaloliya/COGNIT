@@ -5,6 +5,13 @@ __pycache__/
 *.pyd
 .venv/
 venv/
+build/
+dist/
+*.egg-info/
+*.whl
+
+# Vercel
+.vercel/
 
 # Node
 node_modules/

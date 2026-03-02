@@ -20,5 +20,9 @@ dependencies = [
 requires = ["setuptools>=61.0", "wheel", "Cython"]
 build-backend = "setuptools.build_meta"
 
-[tool.uv]
-dev-dependencies = []
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*", "app*", "middleware*"]
+
+[dependency-groups]
+dev = []
