@@ -63,24 +63,35 @@ def configure_logging(log_level=None):
 
         return root_logger
 
-    # Remove any existing handlers to avoid duplicates
-    # (important in serverless where the module may be re-used)
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # Create stdout handler - Vercel captures stdout
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(level)
-
-    # Create formatter with timestamp, module name, level, and message
-    formatter = logging.Formatter(
-        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+    has_stdout_handler = any(
+        isinstance(handler, logging.StreamHandler)
+        and getattr(handler, "stream", None) is sys.stdout
+        for handler in root_logger.handlers
     )
-    stdout_handler.setFormatter(formatter)
 
-    # Add handler to root logger
-    root_logger.addHandler(stdout_handler)
+    if root_logger.handlers and not has_stdout_handler:
+        stdout_handler = logging.StreamHandler(sys.stdout)
+        stdout_handler.setLevel(level)
+
+        formatter = logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        stdout_handler.setFormatter(formatter)
+        root_logger.addHandler(stdout_handler)
+    elif not root_logger.handlers:
+        stdout_handler = logging.StreamHandler(sys.stdout)
+        stdout_handler.setLevel(level)
+
+        formatter = logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        stdout_handler.setFormatter(formatter)
+        root_logger.addHandler(stdout_handler)
+
+    for handler in root_logger.handlers:
+        handler.setLevel(level)
 
     for logger_name in loggers:
         logger = logging.getLogger(logger_name)
