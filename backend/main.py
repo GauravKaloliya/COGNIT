@@ -4,6 +4,7 @@ Flask application factory and route registration.
 """
 
 import json
+import logging
 import random
 from datetime import datetime, timezone
 
@@ -15,6 +16,9 @@ from app.database import engine, get_db
 from app.utils.helpers import get_ip_hash, error_response, success_response, create_error_response
 from app.utils.decorators import track_performance
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -35,14 +39,14 @@ app.register_blueprint(payment_bp)
 def log_request():
     """Log incoming requests for debugging."""
     g.request_start_time = datetime.now(timezone.utc)
-    print(f"[REQUEST] {request.method} {request.path}", flush=True)
+    logger.info(f"REQUEST {request.method} {request.path}")
 
 @app.after_request
 def log_response(response):
     """Log outgoing responses for debugging."""
     if hasattr(g, 'request_start_time'):
         duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
-        print(f"[RESPONSE] {request.method} {request.path} - {response.status_code} - {duration_ms}ms", flush=True)
+        logger.info(f"RESPONSE {request.method} {request.path} - {response.status_code} - {duration_ms}ms")
     return response
 
 
@@ -55,14 +59,14 @@ def log_response(response):
 @track_performance
 def health():
     """Server and database health check endpoint."""
-    print("[HEALTH] Health check initiated", flush=True)
+    logger.info("Health check initiated")
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print("[HEALTH] Health check passed", flush=True)
+        logger.info("Health check passed")
         return jsonify({"status": "healthy", "database": "connected"})
     except Exception as e:
-        print(f"[HEALTH] Health check failed: {e}", flush=True)
+        logger.error(f"Health check failed: {e}")
         return jsonify({"status": "degraded", "error": str(e)}), 503
 
 
@@ -76,7 +80,7 @@ def log_client_error():
     """Receive and log client-side errors."""
     data = request.json or {}
 
-    print(f"[CLIENT_ERROR] {data.get('error_code', 'UNKNOWN')} - {data.get('error_message', '')[:100]}", flush=True)
+    logger.warning(f"CLIENT_ERROR {data.get('error_code', 'UNKNOWN')} - {data.get('error_message', '')[:100]}")
 
     db = get_db()
     try:
@@ -101,7 +105,7 @@ def log_client_error():
         db.commit()
         return success_response(message="Error logged")
     except Exception as e:
-        print(f"[CLIENT_ERROR] Failed to log client error: {e}", flush=True)
+        logger.error(f"Failed to log client error: {e}")
         return success_response(message="Error logging failed silently")
 
 
