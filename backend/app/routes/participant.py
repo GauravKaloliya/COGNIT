@@ -3,7 +3,6 @@ Participant routes module for C.O.G.N.I.T. backend.
 Handles participant registration, validation, and consent.
 """
 
-import logging
 import re
 
 from flask import jsonify, request, current_app
@@ -17,8 +16,6 @@ from app.utils.helpers import (
     create_error_response,
 )
 from app.utils.decorators import track_performance
-
-logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -82,7 +79,7 @@ def create_participant():
         
         log_audit(db, "participant_created", participant_id=participant_id, details=f"public_id={public_id}")
         db.commit()
-        logger.info(f"Participant created: {public_id[:8]}...")
+        print(f"[INFO] Participant created: {public_id[:8]}...", flush=True)
         return jsonify({"status": "created", "public_id": public_id}), 201
     except Exception as e:
         try:
@@ -109,7 +106,7 @@ def create_participant():
                 return create_error_response("VAL_GENDER_REQUIRED")
             elif "language_code" in error_str:
                 return create_error_response("VAL_LANGUAGE_REQUIRED")
-            logger.error(f"Foreign key violation in create_participant: {e}")
+            print(f"[ERROR] Foreign key violation in create_participant: {e}", flush=True)
             return create_error_response("DATABASE_ERROR")
         
         # Handle check constraint violations
@@ -120,10 +117,10 @@ def create_participant():
                 return create_error_response("VAL_PHONE_INVALID")
             elif "chk_age" in error_str or "age" in error_str:
                 return create_error_response("VAL_AGE_INVALID")
-            logger.error(f"Check constraint violation in create_participant: {e}")
+            print(f"[ERROR] Check constraint violation in create_participant: {e}", flush=True)
             return create_error_response("DATABASE_ERROR")
         
-        logger.error(f"create_participant failed: {e}", exc_info=True)
+        print(f"[ERROR] create_participant failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -146,7 +143,7 @@ def check_username():
         """), {"un": username}).scalar()
         return jsonify({"available": not bool(exists)})
     except Exception as e:
-        logger.error(f"check_username failed: {e}")
+        print(f"[ERROR] check_username failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -167,7 +164,7 @@ def check_email():
         """), {"em": email}).scalar()
         return jsonify({"available": not bool(exists)})
     except Exception as e:
-        logger.error(f"check_email failed: {e}")
+        print(f"[ERROR] check_email failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -188,7 +185,7 @@ def check_phone():
         """), {"ph": phone}).scalar()
         return jsonify({"available": not bool(exists)})
     except Exception as e:
-        logger.error(f"check_phone failed: {e}")
+        print(f"[ERROR] check_phone failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -220,14 +217,14 @@ def record_consent():
         """), {"pid": pid})
         log_audit(db, "consent_recorded", participant_id=pid)
         db.commit()
-        logger.info(f"Consent recorded for participant: {public_id[:8]}...")
+        print(f"[INFO] Consent recorded for participant: {public_id[:8]}...", flush=True)
         return jsonify({"status": "consent recorded"})
     except Exception as e:
         try:
             db.rollback()
         except:
             pass
-        logger.error(f"consent failed: {e}")
+        print(f"[ERROR] consent failed: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR")
 
 
@@ -281,5 +278,5 @@ def get_participant_payment_status(public_id):
             "detected_app": payment_row[3] if payment_row else None
         })
     except Exception as e:
-        logger.error(f"get_participant_payment_status failed: {e}")
+        print(f"[ERROR] get_participant_payment_status failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")

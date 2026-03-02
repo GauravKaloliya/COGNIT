@@ -4,7 +4,6 @@ Initializes and configures Flask extensions following application factory patter
 """
 
 import os
-import sys
 import boto3
 from flask import Flask
 from flask_cors import CORS
