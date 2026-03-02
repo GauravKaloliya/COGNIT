@@ -21,31 +21,16 @@ from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, LOG
 import os
 import logging
 
-def configure_logging():
-    """Configure logging for Vercel serverless functions."""
-    log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
-    
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
-    
-    if root_logger.handlers:
-        root_logger.handlers.clear()
-    
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(log_level)
-    handler.setFormatter(logging.Formatter(
-        '[%(asctime)s] %(levelname)s in %(name)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    ))
-    
-    root_logger.addHandler(handler)
-    
-    for logger_name in ['werkzeug', 'flask', 'sqlalchemy', 'boto3', 'urllib3']:
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
-    
-    return root_logger
+log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+logging.basicConfig(
+    level=log_level,
+    format='[%(asctime)s] %(levelname)s in %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout
+)
 
-configure_logging()
+for logger_name in ['werkzeug', 'flask', 'sqlalchemy', 'boto3', 'urllib3']:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 # ────────────────────────────────────────────────
