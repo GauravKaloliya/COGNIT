@@ -5,7 +5,6 @@ Handles payment creation, screenshot upload, verification, and status.
 
 import base64
 import json
-import logging
 import re
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -44,8 +43,6 @@ from app.utils.fraud import (
 from app.utils.decorators import track_performance
 from app.extensions import s3, app
 from app.config import S3_BUCKET_NAME
-
-logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -148,7 +145,7 @@ def create_payment():
     try:
         db = get_db()
     except Exception as e:
-        logger.error(f"create_payment failed - db connection: {e}")
+        print(f"[ERROR] create_payment failed - db connection: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
     row = db.execute(text("""
@@ -208,7 +205,7 @@ def create_payment():
         # Generate UPI link and QR code
         upi_link = generate_upi_link(amount, upi_note)
         
-        logger.info(f"Payment created: {payment_row[0]} for participant {public_id[:8]}...")
+        print(f"[INFO] Payment created: {payment_row[0]} for participant {public_id[:8]}...", flush=True)
 
         qr = qrcode.make(upi_link)
         buffer = BytesIO()
@@ -232,7 +229,7 @@ def create_payment():
             db.rollback()
         except:
             pass
-        logger.error(f"Payment creation failed: {e}")
+        print(f"[ERROR] Payment creation failed: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
 
@@ -272,7 +269,7 @@ def get_payment_upload_url(payment_public_id):
     try:
         db = get_db()
     except Exception as e:
-        logger.error(f"get_payment_upload_url failed - db connection: {e}")
+        print(f"[ERROR] get_payment_upload_url failed - db connection: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment upload preparation failed. Please try again.")
 
     row = db.execute(text("""
@@ -326,7 +323,7 @@ def get_payment_upload_url(payment_public_id):
             ExpiresIn=300
         )
     except Exception as e:
-        logger.error(f"Failed to generate presigned URL: {e}")
+        print(f"[ERROR] Failed to generate presigned URL: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR", custom_message="Failed to prepare upload URL")
 
     try:
@@ -354,7 +351,7 @@ def get_payment_upload_url(payment_public_id):
         db.commit()
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to store upload metadata: {e}")
+        print(f"[ERROR] Failed to store upload metadata: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR", custom_message="Failed to prepare upload")
 
     return jsonify({
@@ -409,13 +406,13 @@ def verify_and_upload_payment(payment_public_id):
         image_bytes = base64.b64decode(image_base64)
         image = Image.open(BytesIO(image_bytes))
     except Exception as e:
-        logger.warning(f"Failed to decode image: {e}")
+        print(f"[WARN] Failed to decode image: {e}", flush=True)
         return create_error_response("INVALID_FORMAT", {"field": "image_base64", "message": "Invalid image data"})
     
     try:
         db = get_db()
     except Exception as e:
-        logger.error(f"verify_and_upload_payment failed - db connection: {e}")
+        print(f"[ERROR] verify_and_upload_payment failed - db connection: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment verification failed. Please try again.")
     
     row = db.execute(text("""
@@ -543,7 +540,7 @@ def verify_and_upload_payment(payment_public_id):
                     ContentType=content_type
                 )
             except Exception as s3_error:
-                logger.error(f"Failed to upload verified payment to S3: {s3_error}")
+                print(f"[ERROR] Failed to upload verified payment to S3: {s3_error}", flush=True)
                 db.rollback()
                 return create_error_response("INTERNAL_ERROR", custom_message="Failed to save payment screenshot")
             
@@ -587,7 +584,7 @@ def verify_and_upload_payment(payment_public_id):
                 "verified": True,
                 "failure_reasons": []
             }
-            logger.info(f"Payment verified successfully: {payment_public_id}")
+            print(f"[INFO] Payment verified successfully: {payment_public_id}", flush=True)
         else:
             # Verification FAILED - DO NOT upload to S3, DO NOT save to payment_files
             # Just update payment status to rejected
@@ -633,7 +630,7 @@ def verify_and_upload_payment(payment_public_id):
                 "verified": True,
                 "failure_reasons": failures
             }
-            logger.warning(f"Payment rejected: {payment_public_id} - reasons: {failures}")
+            print(f"[WARN] Payment rejected: {payment_public_id} - reasons: {failures}", flush=True)
     
     except Exception as e:
         try:
@@ -647,9 +644,9 @@ def verify_and_upload_payment(payment_public_id):
                 "verified": True,
                 "failure_reasons": failures
             }
-            logger.warning(f"OCR service not available - payment auto-rejected: {payment_public_id}")
+            print(f"[WARN] OCR service not available - payment auto-rejected: {payment_public_id}", flush=True)
         else:
-            logger.error(f"Verification failed: {e}", exc_info=True)
+            print(f"[ERROR] Verification failed: {e}", flush=True)
             verification_result = {
                 "status": "error",
                 "verified": False,
@@ -710,7 +707,7 @@ def get_payment_status(payment_public_id):
 
         return jsonify(response)
     except Exception as e:
-        logger.error(f"get_payment_status failed: {e}")
+        print(f"[ERROR] get_payment_status failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -721,7 +718,7 @@ def verify_payment(payment_public_id):
     try:
         db = get_db()
     except Exception as e:
-        logger.error(f"verify_payment failed - db connection: {e}")
+        print(f"[ERROR] verify_payment failed - db connection: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
     row = db.execute(text("""
@@ -749,7 +746,7 @@ def verify_payment(payment_public_id):
                 "failure_reasons": failures,
                 "auto_rejected": True
             })
-        logger.error(f"Verification failed due to OCR error: {e}", exc_info=True)
+        print(f"[ERROR] Verification failed due to OCR error: {e}", flush=True)
         return create_error_response("SYS_SERVICE_UNAVAILABLE")
 
     # Run strict validation
