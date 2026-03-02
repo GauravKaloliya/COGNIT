@@ -39,6 +39,7 @@ def log_request():
     """Log incoming requests for debugging."""
     g.request_start_time = datetime.now(timezone.utc)
     logger.info(f"Request: {request.method} {request.path} - IP: {get_ip_hash()[:16]}...")
+    print(f"[REQUEST] {request.method} {request.path}", flush=True)
 
 @app.after_request
 def log_response(response):
@@ -46,6 +47,7 @@ def log_response(response):
     if hasattr(g, 'request_start_time'):
         duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
         logger.info(f"Response: {request.method} {request.path} - Status: {response.status_code} - {duration_ms}ms")
+        print(f"[RESPONSE] {request.method} {request.path} - {response.status_code} - {duration_ms}ms", flush=True)
     return response
 
 
@@ -58,13 +60,16 @@ def log_response(response):
 @track_performance
 def health():
     """Server and database health check endpoint."""
+    print("[HEALTH] Health check initiated", flush=True)
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info("Health check passed")
+        print("[HEALTH] Health check passed", flush=True)
         return jsonify({"status": "healthy", "database": "connected"})
     except Exception as e:
         logger.error(f"Health check failed: {e}")
+        print(f"[HEALTH] Health check failed: {e}", flush=True)
         return jsonify({"status": "degraded", "error": str(e)}), 503
 
 
