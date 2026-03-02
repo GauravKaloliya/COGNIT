@@ -4,6 +4,8 @@ Initializes and configures Flask extensions following application factory patter
 """
 
 import os
+import logging
+import sys
 import boto3
 from flask import Flask
 from flask_cors import CORS
@@ -12,6 +14,42 @@ from flask_limiter.util import get_remote_address
 
 from app.config import SECRET_KEY, CORS_ORIGINS, RATELIMIT_STORAGE_URI
 from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+
+
+# ────────────────────────────────────────────────
+# Logging Configuration
+# ────────────────────────────────────────────────
+
+def configure_logging():
+    """
+    Configure Python logging for Vercel serverless functions.
+
+    - Logs to stdout (required by Vercel)
+    - JSON-structured format for better parsing
+    - Appropriate log levels for different environments
+    """
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S UTC",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+
+    # Set up Flask app logger
+    flask_logger = logging.getLogger("werkzeug")
+    flask_logger.setLevel(logging.WARNING)
+
+    # Set up application logger
+    app_logger = logging.getLogger("cognit")
+    app_logger.setLevel(getattr(logging, log_level, logging.INFO))
+
+    return app_logger
+
+
+# Configure logging immediately
+logger = configure_logging()
 
 
 # ────────────────────────────────────────────────

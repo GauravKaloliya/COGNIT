@@ -8,6 +8,7 @@ import random
 from flask import jsonify, request, current_app
 from sqlalchemy import text
 
+from app.extensions import logger
 from app.database import get_db
 from app.utils.helpers import create_error_response
 from app.utils.decorators import track_performance
@@ -54,5 +55,5 @@ def random_image():
 
         return jsonify({"image_id": row[0], "url": row[1]})
     except Exception as e:
-        print(f"[ERROR] random_image failed: {e}", flush=True)
+        logger.error(f"random_image failed: {e}")
         return create_error_response("DATABASE_ERROR")

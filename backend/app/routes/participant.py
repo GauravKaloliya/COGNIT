@@ -8,7 +8,7 @@ import re
 from flask import jsonify, request, current_app
 from sqlalchemy import text
 
-from app.extensions import limiter
+from app.extensions import limiter, logger
 from app.database import get_db
 from app.utils.helpers import (
     get_ip_hash,
@@ -79,7 +79,7 @@ def create_participant():
         
         log_audit(db, "participant_created", participant_id=participant_id, details=f"public_id={public_id}")
         db.commit()
-        print(f"[INFO] Participant created: {public_id[:8]}...", flush=True)
+        logger.info(f"Participant created: {public_id[:8]}...")
         return jsonify({"status": "created", "public_id": public_id}), 201
     except Exception as e:
         try:
@@ -106,7 +106,7 @@ def create_participant():
                 return create_error_response("VAL_GENDER_REQUIRED")
             elif "language_code" in error_str:
                 return create_error_response("VAL_LANGUAGE_REQUIRED")
-            print(f"[ERROR] Foreign key violation in create_participant: {e}", flush=True)
+            logger.error(f"Foreign key violation in create_participant: {e}")
             return create_error_response("DATABASE_ERROR")
         
         # Handle check constraint violations
@@ -117,10 +117,10 @@ def create_participant():
                 return create_error_response("VAL_PHONE_INVALID")
             elif "chk_age" in error_str or "age" in error_str:
                 return create_error_response("VAL_AGE_INVALID")
-            print(f"[ERROR] Check constraint violation in create_participant: {e}", flush=True)
+            logger.error(f"Check constraint violation in create_participant: {e}")
             return create_error_response("DATABASE_ERROR")
         
-        print(f"[ERROR] create_participant failed: {e}", flush=True)
+        logger.error(f"create_participant failed: {e}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -143,7 +143,7 @@ def check_username():
         """), {"un": username}).scalar()
         return jsonify({"available": not bool(exists)})
     except Exception as e:
-        print(f"[ERROR] check_username failed: {e}", flush=True)
+        logger.error(f"check_username failed: {e}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -164,7 +164,7 @@ def check_email():
         """), {"em": email}).scalar()
         return jsonify({"available": not bool(exists)})
     except Exception as e:
-        print(f"[ERROR] check_email failed: {e}", flush=True)
+        logger.error(f"check_email failed: {e}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -185,7 +185,7 @@ def check_phone():
         """), {"ph": phone}).scalar()
         return jsonify({"available": not bool(exists)})
     except Exception as e:
-        print(f"[ERROR] check_phone failed: {e}", flush=True)
+        logger.error(f"check_phone failed: {e}")
         return create_error_response("DATABASE_ERROR")
 
 
@@ -217,14 +217,14 @@ def record_consent():
         """), {"pid": pid})
         log_audit(db, "consent_recorded", participant_id=pid)
         db.commit()
-        print(f"[INFO] Consent recorded for participant: {public_id[:8]}...", flush=True)
+        logger.info(f"Consent recorded for participant: {public_id[:8]}...")
         return jsonify({"status": "consent recorded"})
     except Exception as e:
         try:
             db.rollback()
         except:
             pass
-        print(f"[ERROR] consent failed: {e}", flush=True)
+        logger.error(f"consent failed: {e}")
         return create_error_response("INTERNAL_ERROR")
 
 
@@ -278,5 +278,5 @@ def get_participant_payment_status(public_id):
             "detected_app": payment_row[3] if payment_row else None
         })
     except Exception as e:
-        print(f"[ERROR] get_participant_payment_status failed: {e}", flush=True)
+        logger.error(f"get_participant_payment_status failed: {e}")
         return create_error_response("DATABASE_ERROR")
