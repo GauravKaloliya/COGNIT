@@ -37,7 +37,6 @@ def configure_logging():
         '[%(asctime)s] %(levelname)s in %(name)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     ))
-    handler.flush = lambda: sys.stdout.flush()
     
     root_logger.addHandler(handler)
     
@@ -65,17 +64,7 @@ app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 
 log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
 app.logger.setLevel(log_level)
-
-if app.logger.handlers:
-    app.logger.handlers.clear()
-
-app_logger_handler = logging.StreamHandler(sys.stdout)
-app_logger_handler.setLevel(log_level)
-app_logger_handler.setFormatter(logging.Formatter(
-    '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-))
-app.logger.addHandler(app_logger_handler)
+app.logger.propagate = True
 
 
 # ────────────────────────────────────────────────
