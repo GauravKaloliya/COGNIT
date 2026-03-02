@@ -3,6 +3,7 @@ Extensions module for C.O.G.N.I.T. backend.
 Initializes and configures Flask extensions following application factory pattern.
 """
 
+import os
 import sys
 import boto3
 from flask import Flask
@@ -11,26 +12,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from app.config import SECRET_KEY, CORS_ORIGINS, RATELIMIT_STORAGE_URI
-from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, LOG_LEVEL
-
-
-# ────────────────────────────────────────────────
-# Logging Configuration for Vercel
-# ────────────────────────────────────────────────
-
-import os
-import logging
-
-log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
-logging.basicConfig(
-    level=log_level,
-    format='[%(asctime)s] %(levelname)s in %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    stream=sys.stdout
-)
-
-for logger_name in ['werkzeug', 'flask', 'sqlalchemy', 'boto3', 'urllib3']:
-    logging.getLogger(logger_name).setLevel(logging.WARNING)
+from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 
 
 # ────────────────────────────────────────────────
@@ -46,10 +28,6 @@ app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
-
-log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
-app.logger.setLevel(log_level)
-app.logger.propagate = True
 
 
 # ────────────────────────────────────────────────
