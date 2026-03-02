@@ -10,8 +10,12 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from app.config import SECRET_KEY, CORS_ORIGINS, RATELIMIT_STORAGE_URI
+from app.config import SECRET_KEY, CORS_ORIGINS, RATELIMIT_STORAGE_URI, LOG_LEVEL
 from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+
+# Configure logging for Vercel runtime log collection
+from app.logging_config import configure_logging
+configure_logging(LOG_LEVEL)
 
 
 # ────────────────────────────────────────────────

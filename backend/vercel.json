@@ -1,10 +1,8 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "main.py", "use": "@vercel/python" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "main.py" }
-  ],
+  "buildCommand": "pip install -r requirements.txt",
+  "outputDirectory": ".",
+  "framework": null,
+  "installCommand": "pip install -r requirements.txt",
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ."
 }
