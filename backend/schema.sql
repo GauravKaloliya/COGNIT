@@ -1,5 +1,10 @@
 -- =====================================================================
--- EXTENSIONS (Neon supports both)
+-- C.O.G.N.I.T. Database Schema
+-- Compatible with NeonDB (serverless PostgreSQL)
+-- =====================================================================
+
+-- =====================================================================
+-- EXTENSIONS (NeonDB supports standard PostgreSQL extensions)
 -- =====================================================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS btree_gin;
@@ -210,16 +215,16 @@ CREATE TRIGGER trg_validate_payment_stage_consistency
     EXECUTE FUNCTION validate_payment_stage_consistency();
 
 -- Active-only unique constraints
-CREATE UNIQUE INDEX idx_participants_active_username ON participants (username) WHERE is_deleted = false;
-CREATE UNIQUE INDEX idx_participants_active_email    ON participants (email)    WHERE is_deleted = false AND email IS NOT NULL;
-CREATE UNIQUE INDEX idx_participants_active_phone    ON participants (phone)    WHERE is_deleted = false AND phone IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_username ON participants (username) WHERE is_deleted = false;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_email    ON participants (email)    WHERE is_deleted = false AND email IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_phone    ON participants (phone)    WHERE is_deleted = false AND phone IS NOT NULL;
 
-CREATE INDEX idx_participants_public_id     ON participants (public_id);
-CREATE INDEX idx_participants_session_id    ON participants (session_id);
-CREATE INDEX idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
-CREATE INDEX idx_participants_payment_status ON participants (payment_status);
-CREATE INDEX idx_participants_consent       ON participants (consent_given);
-CREATE INDEX idx_participants_active        ON participants (is_deleted) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (public_id);
+CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);
+CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (payment_status);
+CREATE INDEX IF NOT EXISTS idx_participants_consent       ON participants (consent_given);
+CREATE INDEX IF NOT EXISTS idx_participants_active        ON participants (is_deleted) WHERE is_deleted = false;
 
 -- =====================================================================
 -- IMAGES & ATTENTION CHECKS
@@ -246,9 +251,9 @@ CREATE TRIGGER trg_prevent_random_key_change
     BEFORE UPDATE ON images
     FOR EACH ROW EXECUTE FUNCTION prevent_random_key_update();
 
-CREATE INDEX idx_images_image_id   ON images (image_id);
-CREATE INDEX idx_images_random_key ON images (random_key);
-CREATE INDEX idx_images_difficulty ON images (difficulty);
+CREATE INDEX IF NOT EXISTS idx_images_image_id   ON images (image_id);
+CREATE INDEX IF NOT EXISTS idx_images_random_key ON images (random_key);
+CREATE INDEX IF NOT EXISTS idx_images_difficulty ON images (difficulty);
 
 CREATE TABLE IF NOT EXISTS attention_checks (
     id            BIGSERIAL PRIMARY KEY,
@@ -262,7 +267,7 @@ CREATE TABLE IF NOT EXISTS attention_checks (
         DEFERRABLE INITIALLY DEFERRED
 );
 
-CREATE UNIQUE INDEX idx_attention_checks_active_unique
+CREATE UNIQUE INDEX IF NOT EXISTS idx_attention_checks_active_unique
     ON attention_checks (image_id) WHERE is_active = true;
 
 -- =====================================================================
@@ -301,9 +306,9 @@ CREATE TRIGGER trg_validate_payment_submission
     BEFORE INSERT ON submissions
     FOR EACH ROW EXECUTE FUNCTION validate_payment_for_submission();
 
-CREATE INDEX idx_submissions_participant_created ON submissions (participant_id, created_at DESC);
-CREATE INDEX idx_submissions_participant_quality ON submissions (participant_id, quality_score DESC, created_at DESC) WHERE is_survey = true;
-CREATE INDEX idx_submissions_attention ON submissions (is_attention_check, attention_passed);
+CREATE INDEX IF NOT EXISTS idx_submissions_participant_created ON submissions (participant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_participant_quality ON submissions (participant_id, quality_score DESC, created_at DESC) WHERE is_survey = true;
+CREATE INDEX IF NOT EXISTS idx_submissions_attention ON submissions (is_attention_check, attention_passed);
 
 -- =====================================================================
 -- PARTICIPANT STATS TABLES
@@ -326,10 +331,10 @@ CREATE TRIGGER trg_attention_stats_updated
     BEFORE UPDATE ON participant_attention_stats
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE INDEX idx_attention_flagged_score ON participant_attention_stats (is_flagged, attention_score DESC) INCLUDE (participant_id);
+CREATE INDEX IF NOT EXISTS idx_attention_flagged_score ON participant_attention_stats (is_flagged, attention_score DESC) INCLUDE (participant_id);
 
 CREATE TABLE IF NOT EXISTS participant_activity_stats (
-    participant_id     BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
+    participant_id  BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
     total_words        BIGINT NOT NULL DEFAULT 0,
     total_submissions  INTEGER NOT NULL DEFAULT 0,
     survey_rounds      INTEGER NOT NULL DEFAULT 0,
@@ -343,7 +348,7 @@ CREATE TRIGGER trg_activity_stats_updated
     BEFORE UPDATE ON participant_activity_stats
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE INDEX idx_activity_priority_eligible ON participant_activity_stats (priority_eligible);
+CREATE INDEX IF NOT EXISTS idx_activity_priority_eligible ON participant_activity_stats (priority_eligible);
 
 -- =====================================================================
 -- PAYMENTS & FRAUD
@@ -398,20 +403,20 @@ CREATE TRIGGER trg_sync_payment_status
     FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
     EXECUTE FUNCTION sync_participant_payment_status();
 
-CREATE UNIQUE INDEX idx_payments_unique_upi_ref
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_unique_upi_ref
     ON payments (upi_txn_ref) WHERE upi_txn_ref IS NOT NULL;
 
-CREATE UNIQUE INDEX idx_payments_upi_ref_global
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_upi_ref_global
     ON payments (upi_txn_ref)
     WHERE upi_txn_ref IS NOT NULL AND status = 'success';
 
-CREATE UNIQUE INDEX idx_payments_one_active_per_participant
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_per_participant
     ON payments (participant_id)
     WHERE status IN ('pending','processing');
 
-CREATE INDEX idx_payments_expired_pending ON payments (expires_at) WHERE status = 'pending';
-CREATE INDEX idx_payments_participant ON payments (participant_id);
-CREATE INDEX idx_payments_status     ON payments (status);
+CREATE INDEX IF NOT EXISTS idx_payments_expired_pending ON payments (expires_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_payments_participant ON payments (participant_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status     ON payments (status);
 
 CREATE TABLE IF NOT EXISTS payment_files (
     id                BIGSERIAL PRIMARY KEY,
@@ -430,13 +435,13 @@ CREATE TABLE IF NOT EXISTS payment_files (
     CONSTRAINT chk_payment_files_key_prefix CHECK (object_key LIKE 'payments/%')
 );
 
-CREATE UNIQUE INDEX idx_payment_files_object_key_unique ON payment_files (object_key);
-CREATE UNIQUE INDEX idx_one_file_per_payment            ON payment_files (payment_id);
-CREATE UNIQUE INDEX idx_payment_files_sha256_unique     ON payment_files (sha256);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_object_key_unique ON payment_files (object_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_file_per_payment            ON payment_files (payment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_sha256_unique     ON payment_files (sha256);
 
-CREATE INDEX idx_payment_files_payment  ON payment_files (payment_id);
-CREATE INDEX idx_payment_files_sha256   ON payment_files (sha256);
-CREATE INDEX idx_payment_files_phash    ON payment_files (image_phash) WHERE image_phash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_payment_files_payment  ON payment_files (payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_files_sha256   ON payment_files (sha256);
+CREATE INDEX IF NOT EXISTS idx_payment_files_phash    ON payment_files (image_phash) WHERE image_phash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS payment_fraud_signals (
     id           BIGSERIAL PRIMARY KEY,
@@ -449,7 +454,7 @@ CREATE TABLE IF NOT EXISTS payment_fraud_signals (
     CONSTRAINT unique_signal_per_payment UNIQUE (payment_id, signal_type)
 );
 
-CREATE INDEX idx_fraud_signals_payment ON payment_fraud_signals (payment_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_signals_payment ON payment_fraud_signals (payment_id);
 
 CREATE TABLE IF NOT EXISTS payment_submissions (
     payment_id   BIGINT NOT NULL REFERENCES payments(id)   ON DELETE CASCADE,
@@ -457,9 +462,9 @@ CREATE TABLE IF NOT EXISTS payment_submissions (
     PRIMARY KEY (payment_id, submission_id)
 );
 
-CREATE INDEX idx_payment_submissions_payment        ON payment_submissions (payment_id);
-CREATE INDEX idx_payment_submissions_submission     ON payment_submissions (submission_id);
-CREATE INDEX idx_payment_submissions_submission_payment ON payment_submissions (submission_id, payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_submissions_payment        ON payment_submissions (payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_submissions_submission     ON payment_submissions (submission_id);
+CREATE INDEX IF NOT EXISTS idx_payment_submissions_submission_payment ON payment_submissions (submission_id, payment_id);
 
 -- =====================================================================
 -- REWARDS
@@ -483,8 +488,8 @@ CREATE TRIGGER trg_reward_winners_updated
     BEFORE UPDATE ON reward_winners
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE INDEX idx_reward_winners_status     ON reward_winners (status);
-CREATE INDEX idx_reward_winners_participant ON reward_winners (participant_id);
+CREATE INDEX IF NOT EXISTS idx_reward_winners_status     ON reward_winners (status);
+CREATE INDEX IF NOT EXISTS idx_reward_winners_participant ON reward_winners (participant_id);
 
 -- =====================================================================
 -- SECURITY / AUDIT
@@ -506,9 +511,9 @@ CREATE TRIGGER trg_device_fingerprint_last_seen
     BEFORE UPDATE ON device_fingerprints
     FOR EACH ROW EXECUTE FUNCTION update_last_seen();
 
-CREATE INDEX idx_device_fingerprints_participant ON device_fingerprints (participant_id);
-CREATE INDEX idx_device_fingerprints_hash      ON device_fingerprints (fingerprint_hash);
-CREATE INDEX idx_device_fingerprints_risk      ON device_fingerprints (risk_score DESC);
+CREATE INDEX IF NOT EXISTS idx_device_fingerprints_participant ON device_fingerprints (participant_id);
+CREATE INDEX IF NOT EXISTS idx_device_fingerprints_hash      ON device_fingerprints (fingerprint_hash);
+CREATE INDEX IF NOT EXISTS idx_device_fingerprints_risk      ON device_fingerprints (risk_score DESC);
 
 CREATE TABLE IF NOT EXISTS audit_log (
     id           BIGSERIAL PRIMARY KEY,
@@ -524,9 +529,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_audit_created     ON audit_log (created_at DESC);
-CREATE INDEX idx_audit_participant ON audit_log (participant_id);
-CREATE INDEX idx_audit_event_type  ON audit_log (event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_created     ON audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_participant ON audit_log (participant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_event_type  ON audit_log (event_type);
 
 CREATE TABLE IF NOT EXISTS payment_audit_log (
     id               BIGSERIAL PRIMARY KEY,
@@ -543,10 +548,10 @@ CREATE TABLE IF NOT EXISTS payment_audit_log (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_payment_audit_payment     ON payment_audit_log (payment_id);
-CREATE INDEX idx_payment_audit_participant ON payment_audit_log (participant_id);
-CREATE INDEX idx_payment_audit_event_type  ON payment_audit_log (event_type);
-CREATE INDEX idx_payment_audit_created     ON payment_audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payment_audit_payment     ON payment_audit_log (payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_audit_participant ON payment_audit_log (participant_id);
+CREATE INDEX IF NOT EXISTS idx_payment_audit_event_type  ON payment_audit_log (event_type);
+CREATE INDEX IF NOT EXISTS idx_payment_audit_created     ON payment_audit_log (created_at DESC);
 
 -- =====================================================================
 -- ERROR LOGGING
@@ -567,12 +572,14 @@ CREATE TABLE IF NOT EXISTS error_log (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_error_log_created     ON error_log (created_at DESC);
-CREATE INDEX idx_error_log_code        ON error_log (error_code);
-CREATE INDEX idx_error_log_participant ON error_log (participant_id);
-CREATE INDEX idx_error_log_endpoint    ON error_log (endpoint, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_error_log_created     ON error_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_error_log_code        ON error_log (error_code);
+CREATE INDEX IF NOT EXISTS idx_error_log_participant ON error_log (participant_id);
+CREATE INDEX IF NOT EXISTS idx_error_log_endpoint    ON error_log (endpoint, created_at DESC);
 
--- Optional materialized view for error analytics (refresh via cron/pg_cron)
+-- Optional materialized view for error analytics
+-- Note: NeonDB supports materialized views but does not support pg_cron for auto-refresh
+-- Refresh manually or via external scheduler: REFRESH MATERIALIZED VIEW error_analytics;
 CREATE MATERIALIZED VIEW IF NOT EXISTS error_analytics AS
 SELECT
     error_code,
@@ -598,5 +605,5 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_perf_created  ON performance_metrics (created_at DESC);
-CREATE INDEX idx_perf_endpoint ON performance_metrics (endpoint, created_at);
+CREATE INDEX IF NOT EXISTS idx_perf_created  ON performance_metrics (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_perf_endpoint ON performance_metrics (endpoint, created_at);
