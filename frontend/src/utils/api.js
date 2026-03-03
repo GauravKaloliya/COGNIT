@@ -6,12 +6,16 @@ import { parseErrorResponse, getErrorMessage } from './errorRegistry';
  */
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
+  const requestId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   
   try {
     const response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        'X-Request-ID': requestId,
         ...options.headers
       }
     });
@@ -42,6 +46,7 @@ export async function apiFetch(endpoint, options = {}) {
       error.status = response.status;
       error.details = parsedError.details;
       error.originalMessage = parsedError.originalMessage;
+      error.requestId = parsedError.requestId || response.headers.get('X-Request-ID') || requestId;
       
       throw error;
     }
@@ -55,6 +60,9 @@ export async function apiFetch(endpoint, options = {}) {
       error.severity = 'error';
       error.action = 'retry';
       error.message = getErrorMessage('SYS_002_0007');
+    }
+    if (!error.requestId) {
+      error.requestId = requestId;
     }
     throw error;
   }

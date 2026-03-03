@@ -17,6 +17,8 @@ const VERIFICATION_REASON_CODES = {
   missing_paid_bhim: 'FRAUD_002_0005',
   note_mismatch: 'FRAUD_002_0002',
 };
+const MAX_UPLOAD_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB || "8");
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
 export default function PaymentLinkPage({ 
   onNext, 
@@ -223,8 +225,9 @@ export default function PaymentLinkPage({
         setError(getErrorMessage('VAL_003_0004'));
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        setError(getErrorMessage('VAL_003_0005'));
+      if (file.size > MAX_UPLOAD_BYTES) {
+        const actualMb = (file.size / (1024 * 1024)).toFixed(2);
+        setError(`File size is ${actualMb}MB. Max allowed is ${MAX_UPLOAD_MB}MB.`);
         return;
       }
       setUploadFile(file);

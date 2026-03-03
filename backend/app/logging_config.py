@@ -54,7 +54,7 @@ def configure_logging(log_level=None):
         "app",
         "app.routes",
         "app.utils",
-        "app.middleware",
+        "middleware",
         "main",
     ]
 
