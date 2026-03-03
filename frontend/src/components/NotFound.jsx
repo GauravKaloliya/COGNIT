@@ -86,11 +86,6 @@ export default function NotFound() {
           <p className="hero-message">
             Oops! The page you're looking for doesn't exist.
           </p>
-          <div className="page-actions">
-            <button type="button" className="ghost" onClick={() => navigate('/')}>
-              Go Home
-            </button>
-          </div>
         </div>
       </div>
       <div className="branding-footer">

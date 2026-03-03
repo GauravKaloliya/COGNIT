@@ -4,6 +4,7 @@ import ConsentPage from "./pages/ConsentPage.jsx";
 import PaymentContentPage from "./pages/PaymentContentPage.jsx";
 import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
+import SurveyFeedPage from "./pages/SurveyFeedPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import { getApiUrl } from "./utils/apiBase";
@@ -354,6 +355,16 @@ export default function App() {
     verifyPaymentForSurvey();
   }, [stage, systemReady, paymentVerified, publicId, addToast]);
 
+  useEffect(() => {
+    if (stage !== "survey" || !systemReady || !paymentVerified || surveyFeedbackReady) {
+      return;
+    }
+    // Recover gracefully after hard reload if in-memory survey object is missing.
+    if (!survey || !survey.image_id) {
+      fetchImage({ clearCurrent: true });
+    }
+  }, [stage, systemReady, paymentVerified, surveyFeedbackReady, survey]);
+
   // Create participant in database using standardized API wrapper
   const createParticipant = async () => {
     try {
@@ -394,8 +405,8 @@ export default function App() {
       if (consentGiven) {
         await recordConsent();
       }
-      // Secure navigation: validate transition before moving
       if (validateStageTransition("user-details", "payment")) {
+        // Secure navigation: validate transition before moving
         setStage("payment");
       }
       addToast("Details submitted successfully", "success");
@@ -421,7 +432,20 @@ export default function App() {
   };
 
   // Handle payment completion with secure navigation
-  const handlePaymentComplete = async () => {
+  const handlePaymentComplete = async (options = {}) => {
+    const skipVerification = options?.skipVerification === true;
+
+    if (skipVerification) {
+      setPaymentVerified(true);
+      setPaymentSubStage("content");
+      if (validateStageTransition("payment", "survey", true)) {
+        setStage("survey");
+      }
+      fetchImage({ clearCurrent: true });
+      addToast("Participation confirmed successfully", "success");
+      return;
+    }
+
     // Verify payment status with backend before allowing survey access
     try {
       const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId);
@@ -431,13 +455,8 @@ export default function App() {
         if (validateStageTransition("payment", "survey", true)) {
           setStage("survey");
         }
-        setSurveyFeedbackReady(false);
-        try {
-          await fetchImage();
-          addToast("Participation confirmed successfully", "success");
-        } catch (err) {
-          addToast(getErrorMessage('SYS_002_0015'), "error");
-        }
+        fetchImage({ clearCurrent: true });
+        addToast("Participation confirmed successfully", "success");
       } else {
         addToast(getErrorMessage('PAY_001_0005'), "error");
       }
@@ -471,9 +490,12 @@ export default function App() {
   };
 
   // Fetch image using standardized API wrapper
-  const fetchImage = async () => {
+  const fetchImage = async ({ clearCurrent = false } = {}) => {
     setSurveyFeedbackReady(false);
     setImageError(null);
+    if (clearCurrent) {
+      setSurvey(null);
+    }
 
     try {
       const data = await endpoints.getRandomImage(shownImages, publicId);
@@ -526,34 +548,15 @@ export default function App() {
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 1200);
 
-      // Update survey completed count
-      setSurveyCompleted((prev) => prev + 1);
+      const nextCompleted = surveyCompleted + 1;
+      setSurveyCompleted(nextCompleted);
 
-      // Show feedback screen after first practice survey
-      if (surveyCompleted === 0) {
-        setSurveyFeedbackReady(true);
-      }
+      // Always show feedback page after each successful survey submission.
+      setSurveyFeedbackReady(true);
     } catch (error) {
       const errorMessage = error.message || getErrorMessage('SYS_002_0006');
       throw new Error(errorMessage);
     }
-  };
-
-  // Handle finish
-  const handleFinish = () => {
-    setStage("finished");
-  };
-
-  // Handle survey continue - fetch next survey image
-  const handleSurveyContinue = async () => {
-    setSurveyFeedbackReady(false);
-    await fetchImage();
-  };
-
-  // Handle survey finish
-  const handleSurveyFinish = () => {
-    setSurveyFeedbackReady(false); // Reset feedback state
-    setStage("finished");
   };
 
   // Render based on stage
@@ -611,19 +614,23 @@ export default function App() {
         }
       
       case "survey":
+        if (surveyFeedbackReady) {
+          return (
+            <SurveyFeedPage
+              surveyCompleted={surveyCompleted}
+              setSurveyFeedbackReady={setSurveyFeedbackReady}
+              setStage={setStage}
+              fetchNextSurvey={fetchImage}
+            />
+          );
+        }
         return (
           <SurveyPage
             survey={survey}
             publicId={publicId}
             onSubmit={handleSubmit}
-            onFinish={handleFinish}
-            isSurvey={true}
-            surveyFeedbackReady={surveyFeedbackReady}
-            onSurveyContinue={handleSurveyContinue}
-            onSurveyFinish={handleSurveyFinish}
             fetchError={imageError}
             onRetry={fetchImage}
-            surveyCompleted={surveyCompleted}
           />
         );
       

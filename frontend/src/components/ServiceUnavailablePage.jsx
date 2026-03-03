@@ -34,7 +34,7 @@ export default function ServiceUnavailablePage({ error }) {
 
           <div className="page-actions">
             <button className="primary" onClick={() => window.location.reload()}>
-              Reload Page
+              Reload
             </button>
           </div>
         </div>
