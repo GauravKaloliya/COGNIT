@@ -75,7 +75,7 @@ BEGIN
         RAISE EXCEPTION 'Cannot change payment status from final state: %', OLD.status;
     END IF;
 
-    IF OLD.status = 'pending' AND NEW.status NOT IN ('processing', 'expired', 'failed') THEN
+    IF OLD.status = 'pending' AND NEW.status NOT IN ('processing', 'expired', 'failed', 'rejected_fraud') THEN
         RAISE EXCEPTION 'Invalid transition from pending to %', NEW.status;
     END IF;
 
