@@ -111,7 +111,7 @@ const TRANSLATIONS = {
     // Image quality issues
     'FRAUD_001_0001': 'Screenshot is too blurry. Please upload a clearer image.',
     'FRAUD_001_0002': 'Could not read the screenshot text. Please retake.',
-    'FRAUD_001_0003': 'Please use GPay, PhonePe, Paytm, or other approved apps',
+    'FRAUD_001_0003': 'Please use GPay, Paytm, or other approved apps',
     'FRAUD_001_0004': 'Payment not made to correct beneficiary',
     
     // Payment mismatch issues

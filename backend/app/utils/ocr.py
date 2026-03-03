@@ -385,7 +385,6 @@ def verify_payment_screenshot(
         # Try fuzzy matching for app detection to handle OCR variations
         app_patterns = {
             'gpay': [r'g[ -]*pay', r'goo[gl]*[ -]*pay', r'tez'],
-            'phonepe': [r'phone[ -]*pe?', r'phonepe'],
             'paytm': [r'paytm'],
             'bhim': [r'bhim']
         }

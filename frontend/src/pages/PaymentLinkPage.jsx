@@ -583,7 +583,7 @@ export default function PaymentLinkPage({
             </h3>
             <ul className="payment-steps">
               <li>Pay exactly ₹1 using a UPI app</li>
-              <li><strong>Use only: Google Pay, PhonePe, Paytm, or BHIM</strong></li>
+              <li><strong>Use only: Google Pay, Paytm, or BHIM</strong></li>
               <li>Take a screenshot immediately after payment</li>
               <li>Upload the screenshot below to verify</li>
               <li>Payment session expires in {formatTime(timeRemaining)}</li>
@@ -597,7 +597,7 @@ export default function PaymentLinkPage({
               <span className="payment-card-emoji" aria-hidden="true">📤</span>
               Upload Payment Screenshot
             </h3>
-            <p>After completing the payment, upload a screenshot from Google Pay, PhonePe, Paytm, or BHIM.</p>
+            <p>After completing the payment, upload a screenshot from Google Pay, Paytm, or BHIM.</p>
 
             <div
               className="payment-upload-area"
