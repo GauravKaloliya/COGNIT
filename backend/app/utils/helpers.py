@@ -112,11 +112,13 @@ def log_audit(db, event_type: str, participant_id: Optional[int] = None, details
 def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
     """Generate standardized error response with support for message formatting."""
     error_def = ERROR_CODES.get(error_key, ERROR_CODES["SYS_INTERNAL_ERROR"])
+    custom_message = kwargs.get("custom_message")
+    base_message = error_def["message"].format(**kwargs) if kwargs else error_def["message"]
     response = {
         "success": False,
         "error": {
             "code": error_def["code"],
-            "message": error_def["message"].format(**kwargs) if kwargs else error_def["message"],
+            "message": custom_message or base_message,
             "category": error_key.split("_")[0] if "_" in error_key else "UNKNOWN",
         }
     }
