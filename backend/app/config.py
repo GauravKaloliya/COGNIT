@@ -7,14 +7,22 @@ import os
 from typing import Dict, Any
 
 from pathlib import Path
+
+# Try to load .env file - first check if we're in Vercel or local
+# Vercel doesn't have .env files, they inject env vars directly
 backend_dir = Path(__file__).parent.parent
 env_file = backend_dir / ".env"
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(env_file)
-except ImportError:
-    pass
+# Only load .env if it exists and we're running locally (not on Vercel)
+if env_file.exists() and not os.getenv("VERCEL_ENV"):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(env_file)
+    except ImportError:
+        pass
+elif not os.getenv("VERCEL_ENV"):
+    # Try to load from environment even without dotenv
+    pass  # Environment variables should be set externally
 
 
 # ────────────────────────────────────────────────
