@@ -13,6 +13,7 @@ node_modules/
 # Env
 .env
 .env.local
+.env.development
 
 # Data
 /backend/data/*.csv
