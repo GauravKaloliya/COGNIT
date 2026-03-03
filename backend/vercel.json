@@ -11,6 +11,5 @@
       "src": "/(.*)",
       "dest": "api/index.py"
     }
-  ],
-  "pythonVersion": "3.11"
+  ]
 }
