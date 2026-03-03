@@ -158,69 +158,6 @@ def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
         raise OCRServiceError(f"Textract OCR failed: {str(e)}")
 
 
-def extract_text_from_s3(object_key: str) -> Tuple[str, float]:
-    """
-    Extract text directly from S3 image using Amazon Textract.
-
-    Args:
-        object_key: S3 object key path in the configured bucket
-
-    Returns:
-        Tuple of (extracted_text, average_confidence)
-
-    Raises:
-        OCRServiceUnavailableError: If Textract service is not reachable
-        OCRServiceError: If text extraction fails
-    """
-    try:
-        textract = _get_textract_client()
-    except OCRServiceUnavailableError:
-        raise
-    except Exception as e:
-        raise OCRServiceUnavailableError(f"Textract client initialization failed: {str(e)}")
-
-    try:
-        response = textract.detect_document_text(
-            Document={
-                "S3Object": {
-                    "Bucket": S3_BUCKET_NAME,
-                    "Name": object_key
-                }
-            }
-        )
-
-        blocks = response.get("Blocks", [])
-
-        words = []
-        confidences = []
-
-        for block in blocks:
-            if block.get("BlockType") == "WORD":
-                text = block.get("Text", "").strip()
-                confidence = block.get("Confidence", 0)
-                if text:
-                    words.append(text)
-                    confidences.append(confidence)
-
-        if not words:
-            return "", 0.0
-
-        extracted_text = " ".join(words)
-        avg_confidence = sum(confidences) / len(confidences)
-
-        return extracted_text, avg_confidence
-
-    except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "Unknown")
-        if error_code in ("ThrottlingException", "ProvisionedThroughputExceededException"):
-            raise OCRServiceUnavailableError(f"Textract rate limited: {error_code}")
-        raise OCRServiceError(f"Textract API error for S3 object {object_key}: {error_code}")
-    except BotoCoreError as e:
-        raise OCRServiceUnavailableError(f"Textract connection error: {str(e)}")
-    except Exception as e:
-        raise OCRServiceError(f"Textract OCR failed for S3 object {object_key}: {str(e)}")
-
-
 # ────────────────────────────────────────────────
 # UPI App Detection
 # ────────────────────────────────────────────────
@@ -246,144 +183,112 @@ def detect_upi_app(text: str) -> Optional[str]:
 # VPA Normalization
 # ────────────────────────────────────────────────
 
-def normalize_vpa(text: str) -> str:
-    """
-    Normalize VPA for comparison by removing special characters.
-
-    Args:
-        text: Text containing VPA
-
-    Returns:
-        Normalized lowercase VPA string
-    """
-    return re.sub(r'[^a-z0-9@.]', '', text.lower())
-
-
 # ────────────────────────────────────────────────
 # Payment Screenshot Verification
 # ────────────────────────────────────────────────
 
-def _extract_timestamp(text: str) -> Optional[datetime]:
+def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
     """
-    Extract date and time from OCR text.
-    Supports various formats from different UPI apps:
-    - Full month names: January, February, etc.
-    - Short month names: Jan, Feb, etc.
-    - Ordinal dates: 1st, 2nd, 3rd, 4th, etc.
-    - Zero-padded formats: 01, 02, etc.
-    - Time: HH:MM AM/PM format
-
-    Returns:
-        datetime object with timezone or None if not found
+    Extract app-specific timestamp from OCR text.
+    Rules:
+    - gpay: DD FullMonth YYYY + HH:MM AM/PM
+    - paytm: DD Mon (YY|YYYY) + HH:MM AM/PM
+    - bhim: DD(st|nd|rd|th) Mon YY + HH:MM AM/PM
     """
     from datetime import datetime, timezone
 
     lower = text.lower()
 
-    # Strip ordinal suffixes for BHIM (1st, 2nd, 3rd, 4th, etc.)
-    text_for_date = re.sub(r'(\d+)(st|nd|rd|th)\s+', r'\1 ', text)
-    text_for_date = re.sub(r'(\d+)(st|nd|rd|th),', r'\1,', text_for_date)
-    lower_for_date = text_for_date.lower()
+    month_full = {
+        "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+        "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+    }
+    month_short = {
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
 
-    # Month name mappings - use short names as keys, look up by first 3 chars
-    month_names_short = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
-                         'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-    month_names_full = ['january', 'february', 'march', 'april', 'may', 'june',
-                        'july', 'august', 'september', 'october', 'november', 'december']
-    # Create map from full names too (first 3 chars will map correctly)
-    month_map = {name: idx + 1 for idx, name in enumerate(month_names_short)}
-    for name in month_names_full:
-        short = name[:3]
-        if short not in month_map:
-            month_map[short] = month_names_short.index(short) + 1
+    # Supports zero-padded and non-padded HH:MM with AM/PM (case-insensitive)
+    time_match = re.search(r"\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)\b", lower, re.IGNORECASE)
+    if not time_match:
+        return None
+    hour = int(time_match.group(1))
+    minute = int(time_match.group(2))
+    ampm = time_match.group(3).lower()
+    if ampm == "pm" and hour != 12:
+        hour += 12
+    elif ampm == "am" and hour == 12:
+        hour = 0
 
-    day, month, year = None, None, None
+    day = month = year = None
 
-    # Pattern 1: DD MMM YYYY (e.g., "15 Jan 2026" or "15 January 2026")
-    pattern = r'(\d{1,2})\s+([a-z]+)\s+(\d{2,4})'
-    match = re.search(pattern, lower_for_date)
-    if match:
-        day = int(match.group(1))
-        month_name = match.group(2).lower()[:3]  # Take first 3 chars
-        if month_name in month_map:
-            month = month_map[month_name]
-            year = int(match.group(3))
-            if year < 100:
-                year += 2000
-
-    # Pattern 2: MMM DD, YYYY (e.g., "Jan 15, 2026" or "January 15, 2026")
-    if month is None:
-        pattern = r'([a-z]+)\s+(\d{1,2}),?\s+(\d{2,4})'
-        match = re.search(pattern, lower_for_date)
-        if match:
-            month_name = match.group(1).lower()[:3]
-            if month_name in month_map:
-                month = month_map[month_name]
-                day = int(match.group(2))
-                year = int(match.group(3))
-                if year < 100:
-                    year += 2000
-
-    # Pattern 3: DD/MM/YYYY or DD-MM-YYYY (numeric date)
-    if month is None:
-        pattern = r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})'
-        match = re.search(pattern, lower_for_date)
-        if match:
-            day = int(match.group(1))
-            month = int(match.group(2))
-            year = int(match.group(3))
-            if year < 100:
-                year += 2000
-
-    # Extract time - HH:MM AM/PM format (case insensitive)
-    hour, minute = None, None
-    time_patterns = [
-        r'(\d{1,2}):(\d{2})\s*(am|pm)',  # HH:MM AM/PM
-        r'(\d{1,2}):(\d{2})(?:\s|$)',     # HH:MM (24-hour)
-    ]
-
-    for pattern in time_patterns:
-        match = re.search(pattern, lower, re.IGNORECASE)
-        if match:
-            hour = int(match.group(1))
-            minute = int(match.group(2))
-            ampm = match.group(3).lower() if len(match.groups()) >= 3 and match.group(3) else None
-
-            # Handle AM/PM conversion
-            if ampm == 'pm' and hour != 12:
-                hour += 12
-            elif ampm == 'am' and hour == 12:
-                hour = 0
-            break
-
-    # If we have time but no date, use current date as fallback
-    if day is None and hour is not None:
-        if 'today' in lower:
-            now = datetime.now(timezone.utc)
-            day = now.day
-            month = now.month
-            year = now.year
-        elif 'yesterday' in lower:
-            from datetime import timedelta
-            yesterday = datetime.now(timezone.utc) - timedelta(days=1)
-            day = yesterday.day
-            month = yesterday.month
-            year = yesterday.year
-
-    if day is not None and month is not None and year is not None and hour is not None and minute is not None:
-        try:
-            return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
-        except ValueError:
+    if app == "gpay":
+        # Examples: 03 January 2026, 3 january 2026
+        m = re.search(
+            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
+            r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+"
+            r"(\d{4})\b",
+            lower,
+            re.IGNORECASE,
+        )
+        if not m:
             return None
+        day = int(m.group(1))
+        month = month_full[m.group(2).lower()]
+        year = int(m.group(3))
+    elif app == "paytm":
+        # Examples: 03 Jan 2026, 3 jan 26, Jan 03 2026
+        m = re.search(
+            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
+            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+            r"(\d{2}|\d{4})\b",
+            lower,
+            re.IGNORECASE,
+        )
+        if not m:
+            m = re.search(
+                r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+                r"(0?[1-9]|[12][0-9]|3[01]),?\s+"
+                r"(\d{2}|\d{4})\b",
+                lower,
+                re.IGNORECASE,
+            )
+            if not m:
+                return None
+            month = month_short[m.group(1).lower()]
+            day = int(m.group(2))
+            year = int(m.group(3))
+        else:
+            day = int(m.group(1))
+            month = month_short[m.group(2).lower()]
+            year = int(m.group(3))
+        if year < 100:
+            year += 2000
+    else:  # bhim
+        # Example: 03rd Jan 26, 3rd jan 26
+        m = re.search(
+            r"\b(0?[1-9]|[12][0-9]|3[01])(st|nd|rd|th)\s+"
+            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+            r"(\d{2})\b",
+            lower,
+            re.IGNORECASE,
+        )
+        if not m:
+            return None
+        day = int(m.group(1))
+        month = month_short[m.group(3).lower()]
+        year = int(m.group(4)) + 2000
 
-    return None
+    try:
+        return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def verify_payment_screenshot(
     image: Image.Image,
     text: str,
     expected_amount: float,
-    payment_note: str,
     confidence: float,
     expected_upi_name: str
 ) -> Tuple[bool, Optional[str], List[str]]:
@@ -391,78 +296,65 @@ def verify_payment_screenshot(
     Validate UPI payment screenshot with app-specific and global rules.
 
     App-specific rules:
-    - Paytm: Must contain "paytm", Short month name date
-    - BHIM: Must contain "bhim" AND "paid", Ordinal date format (1st, 2nd, etc.)
-    - Google Pay: No app name check (Google Pay screenshots don't show app name)
+    - Google Pay: app label not required, must include "paid to cognit",
+      full-month-name + 4-digit-year date, and HH:MM AM/PM
+    - Paytm: "paytm" label required, short-month-name date, and HH:MM AM/PM
+    - BHIM: "bhim" label + "paid" required, ordinal day date (st/nd/rd/th)
+      with short month + 2-digit year, and HH:MM AM/PM
 
     Global rules (apply to all apps):
-    - Banking name: Must contain "gaurav" (case insensitive)
+    - Banking name: Must contain "gaurav" (case-insensitive)
     - Amount: Must contain "₹" and "1" (case insensitive for Rs/rs)
     - Time: Within 5 minutes of NOW (absolute difference ≤ 300 seconds)
-
-    Note: Transaction ID / Reference ID checking is NOT performed in this function.
 
     Args:
         image: PIL Image object
         text: OCR extracted text
         expected_amount: Expected payment amount (unused, amount must be ₹1)
-        payment_note: Expected payment note/reference (unused)
         confidence: OCR confidence score (unused for validation)
         expected_upi_name: Expected UPI recipient name from config (unused, uses "Gaurav")
 
     Returns:
         Tuple of (is_valid, detected_app, failure_reasons)
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
 
     failures = []
     lower = text.lower()
 
-    # Detect which UPI app - case insensitive matching
-    detected_app = None
+    has_paytm = re.search(r"\bpaytm\b", lower, re.IGNORECASE) is not None
+    has_bhim = re.search(r"\bbhim\b", lower, re.IGNORECASE) is not None
 
-    # Check for Paytm - must have "paytm"
-    has_paytm = re.search(r'paytm', lower) is not None
-
-    # Check for BHIM - must have "bhim"
-    has_bhim = re.search(r'bhim', lower) is not None
-
-    # Note: Google Pay screenshots don't show app name, so we don't check for it
-    # Google Pay will be treated as unrecognized but will pass if global rules pass
-
-    # Determine app and apply app-specific rules
+    # Google Pay usually has no app-name text, so fallback to gpay by default.
     if has_paytm:
-        # Paytm - must have "paytm" visible
         detected_app = "paytm"
-
-        # Paytm: Check for short month name (Jan, Feb, etc. - NOT full month names)
-        # Full month names: January, February, etc.
-        full_months = r'(january|february|march|april|may|june|july|august|september|october|november|december)'
-        has_full_month = re.search(full_months, lower) is not None
-
-        # Short month names: Jan, Feb, etc.
-        short_months = r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b'
-        has_short_month = re.search(short_months, lower) is not None
-
-        if has_full_month and not has_short_month:
-            failures.append("invalid_date_format_paytm")
     elif has_bhim:
-        # BHIM - must have "bhim" AND "paid"
         detected_app = "bhim"
+    else:
+        detected_app = "gpay"
 
-        # Check for "paid" keyword
-        if 'paid' not in lower:
+    # Explicitly reject known non-allowed app names if present.
+    disallowed_app_markers = [
+        r"\bphone\s*pe\b", r"\bphonepe\b",
+        r"\bamazon\s*pay\b", r"\bamazonpay\b",
+        r"\bbharat\s*pe\b", r"\bbharatpe\b",
+    ]
+    if any(re.search(p, lower, re.IGNORECASE) for p in disallowed_app_markers):
+        failures.append("unrecognized_app")
+        return False, None, failures
+
+    # App-specific rules
+    if detected_app == "gpay":
+        if re.search(r"paid\s+to\s+cognit", lower, re.IGNORECASE) is None:
+            failures.append("missing_paid_to_cognit")
+    elif detected_app == "paytm":
+        if not has_paytm:
+            failures.append("missing_paytm_label")
+    elif detected_app == "bhim":
+        if not has_bhim:
+            failures.append("missing_bhim_label")
+        if re.search(r"\bpaid\b", lower, re.IGNORECASE) is None:
             failures.append("missing_paid_bhim")
-
-        # BHIM: Check for ordinal date format (1st, 2nd, 3rd, 4th, etc.)
-        ordinal_pattern = r'(\d{1,2})(st|nd|rd|th)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
-        has_ordinal = re.search(ordinal_pattern, lower) is not None
-
-        if not has_ordinal:
-            failures.append("invalid_date_format_bhim")
-    # Google Pay: No app name check - let it pass to global rules
-    # If neither Paytm nor BHIM, assume it could be Google Pay (or other UPI app)
-    # and apply only global rules
 
     # ─────────────────────────────────────────────
     # Global Rules (apply to all apps)
@@ -481,55 +373,19 @@ def verify_payment_screenshot(
     if not (has_rupee_symbol and has_one):
         failures.append("invalid_amount")
 
-    # Rule 3: Time must be within 5 minutes of NOW
-    transaction_time = _extract_timestamp(text)
+    # Rule 3: app-specific date+time must be parsable and within 5 minutes of now
+    transaction_time = _extract_timestamp(text, detected_app)
     if transaction_time:
         now = datetime.now(timezone.utc)
         time_diff = abs((now - transaction_time).total_seconds())
         if time_diff > 300:  # 5 minutes = 300 seconds
             failures.append("time_out_of_range")
     else:
-        # Could not extract timestamp - consider it a failure
-        failures.append("missing_timestamp")
+        if detected_app == "gpay":
+            failures.append("invalid_datetime_format_gpay")
+        elif detected_app == "paytm":
+            failures.append("invalid_datetime_format_paytm")
+        else:
+            failures.append("invalid_datetime_format_bhim")
 
     return len(failures) == 0, detected_app, failures
-
-
-# ────────────────────────────────────────────────
-# UPI Reference Extraction
-# ────────────────────────────────────────────────
-
-def extract_upi_ref(text: str) -> Optional[str]:
-    """
-    Extract UPI transaction reference from OCR text.
-    Uses the same patterns as verify_payment_screenshot for consistency.
-
-    Args:
-        text: OCR extracted text
-
-    Returns:
-        UPI reference number or None
-    """
-    # Google Pay: 12-digit numeric (e.g., "312456789012")
-    # PhonePe: 12-16 character alphanumeric
-    # Paytm: 12-16 character alphanumeric
-    # BHIM: 12-16 character alphanumeric
-    txn_patterns = [
-        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
-        r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
-        r'\b\d{10,16}\b',                 # 10-16 digit numeric
-    ]
-
-    for pattern in txn_patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(0)
-
-    # If not found, try with spaces/dashes removed
-    cleaned_text = re.sub(r'[\s\-]', '', text)
-    for pattern in txn_patterns:
-        match = re.search(pattern, cleaned_text)
-        if match:
-            return match.group(0)
-
-    return None

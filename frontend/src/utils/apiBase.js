@@ -18,6 +18,11 @@ const resolveDefaultApiBase = () => {
   if (typeof window === "undefined") {
     return "";
   }
+  // In dev, route API calls through Vite proxy to avoid host/CORS mismatch.
+  // Keep production behavior unchanged (same-origin when not in dev).
+  if (import.meta.env.DEV) {
+    return "/api";
+  }
   return "";
 };
 

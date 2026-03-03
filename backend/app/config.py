@@ -8,21 +8,34 @@ from typing import Dict, Any
 
 from pathlib import Path
 
-# Try to load .env file - first check if we're in Vercel or local
-# Vercel doesn't have .env files, they inject env vars directly
 backend_dir = Path(__file__).parent.parent
-env_file = backend_dir / ".env"
-
-# Only load .env if it exists and we're running locally (not on Vercel)
-if env_file.exists() and not os.getenv("VERCEL_ENV"):
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(env_file)
-    except ImportError:
-        pass
-elif not os.getenv("VERCEL_ENV"):
-    # Try to load from environment even without dotenv
-    pass  # Environment variables should be set externally
+# Local/dev startup: load the first available env file if present.
+# This does not override already-exported environment variables.
+candidate_env_files = [
+    backend_dir / ".env",
+    backend_dir / ".env.development",
+    backend_dir / ".env.local",
+]
+try:
+    from dotenv import load_dotenv
+    for env_path in candidate_env_files:
+        if env_path.exists():
+            load_dotenv(env_path)
+            break
+except ImportError:
+    for env_path in candidate_env_files:
+        if not env_path.exists():
+            continue
+        with env_path.open("r", encoding="utf-8") as fh:
+            for raw_line in fh:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                os.environ.setdefault(key, value)
+        break
 
 
 # ────────────────────────────────────────────────
@@ -75,7 +88,7 @@ PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 # ────────────────────────────────────────────────
 
 ALLOWED_APPS: Dict[str, list] = {
-    "gpay": ["gpay", "google pay", "tez"],
+    "gpay": ["gpay", "google pay", "googlepay", "tez"],
     "paytm": ["paytm"],
     "bhim": ["bhim"]
 }
@@ -234,8 +247,6 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "FRAUD_AMOUNT_MISMATCH": {"code": "FRAUD_002_0003", "message": "Payment amount must be exactly ₹1", "status": 400, "category": "FRAUD"},
     "FRAUD_MISSING_SUCCESS": {"code": "FRAUD_002_0004", "message": "Payment success not detected in screenshot", "status": 400, "category": "FRAUD"},
     "FRAUD_FAILURE_INDICATOR": {"code": "FRAUD_002_0005", "message": "Payment appears to have failed. Check your UPI app.", "status": 400, "category": "FRAUD"},
-    "FRAUD_MISSING_TXN_ID": {"code": "FRAUD_002_0006", "message": "Transaction ID not found in screenshot", "status": 400, "category": "FRAUD"},
-    "FRAUD_DUPLICATE_TXN_ID": {"code": "FRAUD_002_0007", "message": "This transaction has already been used. Please make a fresh payment.", "status": 409, "category": "FRAUD"},
     "FRAUD_DUPLICATE_IMAGE": {"code": "FRAUD_003_0001", "message": "This screenshot was already submitted by another user", "status": 409, "category": "FRAUD"},
     "FRAUD_REJECTED_REUSE": {"code": "FRAUD_003_0002", "message": "This screenshot was previously rejected", "status": 409, "category": "FRAUD"},
     "FRAUD_NOT_UPI_PAYMENT": {"code": "FRAUD_002_0008", "message": "Screenshot does not appear to be a UPI payment", "status": 400, "category": "FRAUD"},
@@ -244,7 +255,6 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "PAYMENT_NOT_VERIFIED": {"code": "PAY_001_0007", "message": "Payment not verified. Please complete payment first.", "status": 403, "category": "PAY"},
     "DUPLICATE_IMAGE": {"code": "ERR_DUPLICATE_IMAGE", "message": "This screenshot has already been uploaded by another user.", "status": 409, "category": "FRAUD"},
     "REJECTED_REUSE": {"code": "ERR_REJECTED_REUSE", "message": "This screenshot was previously rejected. Please use a fresh payment screenshot.", "status": 409, "category": "FRAUD"},
-    "DUPLICATE_TXN": {"code": "ERR_DUPLICATE_TXN", "message": "This transaction has already been used. Each payment must be unique.", "status": 409, "category": "FRAUD"},
     "PAYMENT_REJECTED": {"code": "ERR_PAYMENT_REJECTED", "message": "Payment screenshot could not be verified.", "status": 400, "category": "FRAUD"},
 }
 
@@ -281,6 +291,7 @@ if not DATABASE_URL:
     raise ValueError("DATABASE_URL is required")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+DATABASE_SSLMODE = os.getenv("DATABASE_SSLMODE", "auto")
 
 
 # ────────────────────────────────────────────────

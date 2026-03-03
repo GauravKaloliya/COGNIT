@@ -24,16 +24,9 @@ export default function ErrorPage({ error, resetError }) {
           </p>
 
           {error?.stack && import.meta.env.DEV && (
-            <details style={{ marginBottom: '32px', textAlign: 'left' }}>
-              <summary style={{ cursor: 'pointer', marginBottom: '16px' }}>Error Details</summary>
-              <pre style={{ 
-                background: 'var(--bg)', 
-                padding: '16px', 
-                borderRadius: '8px', 
-                overflow: 'auto',
-                fontSize: '12px',
-                maxHeight: '300px'
-              }}>
+            <details className="error-details">
+              <summary className="error-details-summary">Error Details</summary>
+              <pre className="error-details-pre">
                 {error.stack}
               </pre>
             </details>

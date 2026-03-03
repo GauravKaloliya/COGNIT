@@ -340,53 +340,31 @@ export default function SurveyPage({
     return (
       <div className="panel">
         <div className="guidance">
-          <div style={{
-            background: 'linear-gradient(135deg, var(--success), var(--primary))',
-            width: '100px',
-            height: '100px',
-            borderRadius: '50%',
-            margin: '0 auto 32px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontSize: '48px',
-            boxShadow: '0 4px 20px rgba(24, 119, 242, 0.3)'
-          }}>
+          <div className="survey-feedback-icon">
             ✓
           </div>
-          <h2 style={{ color: 'var(--success)', marginBottom: '20px', marginTop: '0' }}>Survey Complete!</h2>
-          <p style={{ fontSize: '16px', lineHeight: '1.8', marginBottom: '32px', maxWidth: '500px', margin: '0 auto 32px' }}>
+          <h2 className="survey-feedback-title">Survey Complete!</h2>
+          <p className="survey-feedback-text">
             Great job on your survey! You have completed {surveyCompleted} survey
             {surveyCompleted === 1 ? '' : 's'}. You can now choose to continue with more survey 
             images or finish the study.
           </p>
-          <div style={{
-            backgroundColor: 'var(--accent-bg)',
-            padding: '20px',
-            borderRadius: '12px',
-            marginBottom: '32px',
-            borderLeft: '4px solid var(--primary)',
-            maxWidth: '600px',
-            margin: '0 auto 32px'
-          }}>
-            <p style={{ margin: '0', color: 'var(--muted)', lineHeight: '1.6' }}>
+          <div className="survey-feedback-tip">
+            <p>
               <em>Tip: Aim to describe colors, textures, relationships, and any notable objects.
               Remember to write at least {MIN_WORDS} words per description.</em>
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '20px' }}>
+          <div className="survey-feedback-actions">
             <button
               className="primary"
               onClick={onSurveyContinue}
-              style={{ padding: '14px 28px', fontSize: '14px', height: '48px' }}
             >
               Continue Survey
             </button>
             <button
-              className="ghost"
+              className="ghost survey-feedback-finish"
               onClick={onSurveyFinish}
-              style={{ padding: '14px 28px', border: '2px solid var(--error)', color: 'var(--error)', fontSize: '14px', height: '48px' }}
             >
               Finish
             </button>

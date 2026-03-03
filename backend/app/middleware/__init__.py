@@ -15,8 +15,6 @@ try:
         get_ip_hash,
         validate_payment_timer,
         check_global_duplicate_screenshot,
-        check_global_duplicate_upi_ref,
-        validate_upi_reference,
         detect_upi_app,
         analyze_fraud_signals
     )
