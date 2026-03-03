@@ -391,16 +391,16 @@ def verify_payment_screenshot(
     Validate UPI payment screenshot with app-specific and global rules.
 
     App-specific rules:
-    - Google Pay: Must NOT contain "google pay"/"gpay"/"googlepay", Must have "paid to cognit", Full month name date
     - Paytm: Must contain "paytm", Short month name date
     - BHIM: Must contain "bhim" AND "paid", Ordinal date format (1st, 2nd, etc.)
+    - Google Pay: No app name check (Google Pay screenshots don't show app name)
 
     Global rules (apply to all apps):
     - Banking name: Must contain "gaurav" (case insensitive)
     - Amount: Must contain "₹" and "1" (case insensitive for Rs/rs)
     - Time: Within 5 minutes of NOW (absolute difference ≤ 300 seconds)
 
-    Note: Transaction ID checking is NOT performed in this function.
+    Note: Transaction ID / Reference ID checking is NOT performed in this function.
 
     Args:
         image: PIL Image object
@@ -421,29 +421,17 @@ def verify_payment_screenshot(
     # Detect which UPI app - case insensitive matching
     detected_app = None
 
-    # Check for Google Pay - reject if contains Google Pay text
-    gpay_patterns = [r'google\s*pay', r'gpay', r'googlepay', r'tez']
-    has_gpay = any(re.search(p, lower) for p in gpay_patterns)
-
     # Check for Paytm - must have "paytm"
     has_paytm = re.search(r'paytm', lower) is not None
 
     # Check for BHIM - must have "bhim"
     has_bhim = re.search(r'bhim', lower) is not None
 
-    # Determine app and apply app-specific rules
-    if has_gpay:
-        # Google Pay - must reject if contains Google Pay text
-        # Also must have "paid to cognit" text
-        failures.append("gpay_not_allowed")
-        detected_app = "gpay"
+    # Note: Google Pay screenshots don't show app name, so we don't check for it
+    # Google Pay will be treated as unrecognized but will pass if global rules pass
 
-        # Check for "paid to cognit" - only relevant to check if it exists
-        # The gpay_not_allowed will cause failure regardless
-        if 'paid to cognit' not in lower and 'paid to' in lower:
-            # Has "paid to" but not "paid to cognit"
-            failures.append("missing_paid_to_cognit")
-    elif has_paytm:
+    # Determine app and apply app-specific rules
+    if has_paytm:
         # Paytm - must have "paytm" visible
         detected_app = "paytm"
 
@@ -472,9 +460,9 @@ def verify_payment_screenshot(
 
         if not has_ordinal:
             failures.append("invalid_date_format_bhim")
-    else:
-        # Unrecognized app
-        failures.append("unrecognized_app")
+    # Google Pay: No app name check - let it pass to global rules
+    # If neither Paytm nor BHIM, assume it could be Google Pay (or other UPI app)
+    # and apply only global rules
 
     # ─────────────────────────────────────────────
     # Global Rules (apply to all apps)
