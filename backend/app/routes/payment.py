@@ -38,7 +38,6 @@ from app.utils.ocr import (
 from app.utils.fraud import (
     check_duplicate_screenshot,
     check_rejected_screenshot,
-    check_duplicate_transaction,
 )
 from app.utils.decorators import track_performance
 from app.extensions import s3, app
@@ -484,48 +483,7 @@ def verify_and_upload_payment(payment_public_id):
             "extracted_text_length": len(extracted_text) if extracted_text else 0
         }
         
-        # Extract transaction ID
-        txn_patterns = [
-            r'\b\d{12}\b',
-            r'\b[a-zA-Z0-9]{12,16}\b',
-            r'\b\d{10,16}\b',
-        ]
-        
-        txn_match = None
-        for pattern in txn_patterns:
-            txn_match = re.search(pattern, extracted_text)
-            if txn_match:
-                break
-        
-        if not txn_match:
-            cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
-            for pattern in txn_patterns:
-                txn_match = re.search(pattern, cleaned_text)
-                if txn_match:
-                    break
-        
-        upi_ref = txn_match.group(0) if txn_match else None
-        
-        # 3. Check for duplicate transaction ID (only if valid so far)
-        if upi_ref and is_valid:
-            txn_duplicate, txn_status = check_duplicate_transaction(db, upi_ref, exclude_payment_id=payment_id)
-            if txn_duplicate:
-                log_audit(db, "fraud_detected_duplicate_txn", participant_id=participant_id,
-                          details=f"Transaction {upi_ref} already used in payment with status {txn_status}")
-                is_valid = False
-                failures.append("duplicate_transaction_id")
-                db.execute(text("""
-                    INSERT INTO payment_fraud_signals (
-                        payment_id, signal_type, signal_score, details
-                    ) VALUES (
-                        :pid, :type, :score, :details
-                    ) ON CONFLICT DO NOTHING
-                """), {
-                    "pid": payment_id,
-                    "type": "duplicate_transaction_id",
-                    "score": 100,
-                    "details": json.dumps({"upi_ref": upi_ref, "existing_status": txn_status})
-                })
+        # Note: Reference ID / Transaction ID checking has been removed
         
         # ONLY upload to S3 and save to database if verification passed
         if is_valid:
@@ -561,7 +519,6 @@ def verify_and_upload_payment(payment_public_id):
             db.execute(text("""
                 UPDATE payments
                 SET extracted_text = :txt,
-                    upi_txn_ref = :ref,
                     fraud_score = :fs,
                     verified_at = CURRENT_TIMESTAMP,
                     status = :status,
@@ -570,7 +527,6 @@ def verify_and_upload_payment(payment_public_id):
                 WHERE id = :pid
             """), {
                 "txt": extracted_text,
-                "ref": upi_ref,
                 "fs": len(failures) * 10,
                 "status": "success",
                 "app": detected_app,
@@ -591,7 +547,6 @@ def verify_and_upload_payment(payment_public_id):
             db.execute(text("""
                 UPDATE payments
                 SET extracted_text = :txt,
-                    upi_txn_ref = :ref,
                     fraud_score = :fs,
                     verified_at = CURRENT_TIMESTAMP,
                     status = :status,
@@ -601,7 +556,6 @@ def verify_and_upload_payment(payment_public_id):
                 WHERE id = :pid
             """), {
                 "txt": extracted_text,
-                "ref": upi_ref,
                 "fs": len(failures) * 10,
                 "status": "rejected_fraud",
                 "app": detected_app,
@@ -761,28 +715,7 @@ def verify_payment(payment_public_id):
         "extracted_text_length": len(extracted_text) if extracted_text else 0
     }
 
-    # Extract transaction ID using the same patterns as verify_payment_screenshot
-    txn_patterns = [
-        r'\b\d{12}\b',                    # 12-digit numeric (Google Pay)
-        r'\b[a-zA-Z0-9]{12,16}\b',        # 12-16 alphanumeric (most UPI apps)
-        r'\b\d{10,16}\b',                 # 10-16 digit numeric
-    ]
-
-    txn_match = None
-    for pattern in txn_patterns:
-        txn_match = re.search(pattern, extracted_text)
-        if txn_match:
-            break
-
-    # If still not found, try with spaces/dashes removed
-    if not txn_match:
-        cleaned_text = re.sub(r'[\s\-]', '', extracted_text)
-        for pattern in txn_patterns:
-            txn_match = re.search(pattern, cleaned_text)
-            if txn_match:
-                break
-
-    upi_ref = txn_match.group(0) if txn_match else None
+    # Note: Reference ID / Transaction ID checking has been removed
 
     if is_valid:
         new_status = "success"
@@ -792,7 +725,6 @@ def verify_payment(payment_public_id):
     db.execute(text("""
         UPDATE payments
         SET extracted_text = :txt,
-            upi_txn_ref = :ref,
             fraud_score = :fs,
             verified_at = CURRENT_TIMESTAMP,
             status = :status,
@@ -801,7 +733,6 @@ def verify_payment(payment_public_id):
         WHERE id = :pid
     """), {
         "txt": extracted_text,
-        "ref": upi_ref,
         "fs": len(failures) * 10,
         "status": new_status,
         "app": detected_app,

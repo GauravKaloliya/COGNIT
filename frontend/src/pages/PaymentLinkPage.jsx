@@ -3,17 +3,13 @@ import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 
 const VERIFICATION_REASON_CODES = {
-  unrecognized_app: 'FRAUD_001_0003',
-  duplicate_transaction_id: 'DUP_003_0002',
   invalid_banking_name: 'FRAUD_001_0004',
   invalid_amount: 'FRAUD_002_0003',
   time_out_of_range: 'FRAUD_001_0006',
   invalid_timestamp: 'FRAUD_001_0007',
   missing_timestamp: 'FRAUD_001_0008',
   ocr_unavailable: 'SYS_001_0004',
-  // New failure codes for app-specific validation
-  gpay_not_allowed: 'FRAUD_001_0003',
-  missing_paid_to_cognit: 'FRAUD_001_0003',
+  // App-specific validation failure codes
   invalid_date_format_paytm: 'FRAUD_002_0005',
   missing_paid_bhim: 'FRAUD_002_0005',
   invalid_date_format_bhim: 'FRAUD_002_0005',
