@@ -217,7 +217,8 @@ def require_valid_stage_transition(f):
             "consent": ["user-details"],
             "user-details": ["payment-content", "user-details"],  # Allow staying on same stage
             "payment-content": ["payment-link"],
-            "payment-link": ["survey"],
+            "payment-link": ["payment", "survey"],
+            "payment": ["payment", "survey"],
             "survey": ["finished"],
             "finished": []
         }

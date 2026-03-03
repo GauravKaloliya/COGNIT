@@ -39,7 +39,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION sync_participant_payment_status()
-RETURNS TRIGGER AS $
+RETURNS TRIGGER AS $$
 BEGIN
     UPDATE participants
     SET payment_status = CASE
@@ -399,13 +399,6 @@ CREATE TRIGGER trg_sync_payment_status
     FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
     EXECUTE FUNCTION sync_participant_payment_status();
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_unique_upi_ref
-    ON payments (upi_txn_ref) WHERE upi_txn_ref IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_upi_ref_global
-    ON payments (upi_txn_ref)
-    WHERE upi_txn_ref IS NOT NULL AND status = 'success';
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_per_participant
     ON payments (participant_id)
     WHERE status IN ('pending','processing');
@@ -548,45 +541,6 @@ CREATE INDEX IF NOT EXISTS idx_payment_audit_payment     ON payment_audit_log (p
 CREATE INDEX IF NOT EXISTS idx_payment_audit_participant ON payment_audit_log (participant_id);
 CREATE INDEX IF NOT EXISTS idx_payment_audit_event_type  ON payment_audit_log (event_type);
 CREATE INDEX IF NOT EXISTS idx_payment_audit_created     ON payment_audit_log (created_at DESC);
-
--- =====================================================================
--- ERROR LOGGING
--- =====================================================================
-CREATE TABLE IF NOT EXISTS error_log (
-    id            BIGSERIAL PRIMARY KEY,
-    error_code    VARCHAR(20) NOT NULL,
-    error_message TEXT,
-    error_type    VARCHAR(100),
-    endpoint      VARCHAR(120),
-    http_method   VARCHAR(10),
-    status_code   SMALLINT,
-    ip_hash       CHAR(64),
-    user_agent    VARCHAR(512),
-    stack_trace   TEXT,
-    participant_id BIGINT REFERENCES participants(id) ON DELETE SET NULL,
-    request_data  JSONB,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_error_log_created     ON error_log (created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_error_log_code        ON error_log (error_code);
-CREATE INDEX IF NOT EXISTS idx_error_log_participant ON error_log (participant_id);
-CREATE INDEX IF NOT EXISTS idx_error_log_endpoint    ON error_log (endpoint, created_at DESC);
-
--- Optional materialized view for error analytics
--- Note: NeonDB supports materialized views but does not support pg_cron for auto-refresh
--- Refresh manually or via external scheduler: REFRESH MATERIALIZED VIEW error_analytics;
-CREATE MATERIALIZED VIEW IF NOT EXISTS error_analytics AS
-SELECT
-    error_code,
-    DATE_TRUNC('hour', created_at) AS hour,
-    COUNT(*) AS count,
-    COUNT(DISTINCT participant_id) AS unique_users
-FROM error_log
-WHERE created_at > NOW() - INTERVAL '7 days'
-GROUP BY error_code, DATE_TRUNC('hour', created_at);
-
-CREATE INDEX IF NOT EXISTS idx_error_analytics_hour ON error_analytics (hour);
 
 -- =====================================================================
 -- PERFORMANCE METRICS (optional but useful)

@@ -63,7 +63,7 @@ def check_global_duplicate_screenshot(db, sha256_hash, exclude_participant_id=No
         SELECT pf.id, pf.payment_id, p.participant_id, p.status, p.created_at
         FROM payment_files pf
         JOIN payments p ON pf.payment_id = p.id
-        WHERE pf.sha256_hash = :hash
+        WHERE pf.sha256 = :hash
     """
     
     params = {"hash": sha256_hash}
@@ -85,75 +85,6 @@ def check_global_duplicate_screenshot(db, sha256_hash, exclude_participant_id=No
     
     return False, []
 
-def check_global_duplicate_upi_ref(db, upi_ref, exclude_payment_id=None):
-    """
-    Check for duplicate UPI transaction references across ALL payments
-    Prevents payment reuse fraud across participants
-    """
-    if not upi_ref:
-        return False, []
-    
-    query = """
-        SELECT id, participant_id, upi_txn_ref, status, created_at
-        FROM payments
-        WHERE upi_txn_ref = :ref
-    """
-    
-    params = {"ref": upi_ref}
-    
-    if exclude_payment_id:
-        query += " AND id != :exclude_pid"
-        params["exclude_pid"] = exclude_payment_id
-    
-    result = db.execute(text(query), params).fetchall()
-    
-    if result:
-        return True, [{
-            "payment_id": row[0],
-            "participant_id": row[1],
-            "upi_ref": row[2],
-            "status": row[3],
-            "created_at": row[4].isoformat() if row[4] else None
-        } for row in result]
-    
-    return False, []
-
-def validate_upi_reference(upi_ref):
-    """
-    Enhanced UPI reference validation with multiple pattern support
-    """
-    if not upi_ref:
-        return False, "UPI reference is required"
-    
-    # Clean the reference
-    upi_ref = upi_ref.strip().upper()
-    
-    # Pattern 1: Pure numeric 12-16 digits
-    if re.match(r'^\d{12,16}$', upi_ref):
-        return True, None
-    
-    # Pattern 2: Alphanumeric 12-30 characters
-    if re.match(r'^[A-Z0-9]{12,30}$', upi_ref):
-        return True, None
-    
-    # Pattern 3: GPay transaction ID (T followed by digits)
-    if re.match(r'^T\d{10,15}$', upi_ref):
-        return True, None
-    
-    # Pattern 4: PhonePe transaction ID (P2P followed by digits)
-    if re.match(r'^P2P\d{10,15}$', upi_ref):
-        return True, None
-    
-    # Pattern 5: UPI format (UPI/...)
-    if re.match(r'^UPI/[A-Z0-9/]+$', upi_ref):
-        return True, None
-    
-    # Pattern 6: Generic bank transaction format
-    if re.match(r'^[A-Z]{2,4}\d{8,20}$', upi_ref):
-        return True, None
-    
-    return False, "Invalid UPI reference format"
-
 def detect_upi_app(text_content):
     """
     Detect UPI app from OCR text content
@@ -162,11 +93,8 @@ def detect_upi_app(text_content):
     
     app_patterns = {
         "gpay": [r'\bgpay\b', r'\bgoogle\s*pay\b', r'\btez\b', r'\bgooglepay\b'],
-        "phonepe": [r'\bphone\s*pe\b', r'\bphonepe\b'],
         "paytm": [r'\bpaytm\b'],
         "bhim": [r'\bbhim\b'],
-        "amazonpay": [r'\bamazon\s*pay\b', r'\bamazonpay\b'],
-        "bharatpe": [r'\bbharat\s*pe\b', r'\bbharatpe\b']
     }
     
     for app, patterns in app_patterns.items():
@@ -242,8 +170,11 @@ def analyze_fraud_signals(db, participant_id, payment_data, device_data=None):
     
     # Signal 4: Suspicious IP patterns
     ip_count = db.execute(text("""
-        SELECT COUNT(DISTINCT ip_hash) FROM payments
-        WHERE participant_id = :pid
+        SELECT COUNT(DISTINCT pf.uploaded_by_ip_hash)
+        FROM payments p
+        JOIN payment_files pf ON pf.payment_id = p.id
+        WHERE p.participant_id = :pid
+          AND pf.uploaded_by_ip_hash IS NOT NULL
     """), {"pid": participant_id}).fetchone()
     
     if ip_count and ip_count[0] > 2:

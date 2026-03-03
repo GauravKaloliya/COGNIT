@@ -3,13 +3,9 @@ Fraud detection utilities module for C.O.G.N.I.T. backend.
 Provides duplicate detection, screenshot validation, and fraud scoring.
 """
 
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
-from flask import current_app
 from sqlalchemy import text
-
-from app.config import ERROR_CODES
-from app.utils.ocr import extract_upi_ref
 
 
 # ────────────────────────────────────────────────
@@ -76,84 +72,3 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
         print(f"[WARN] Rejected screenshot check failed: {e}", flush=True)
         return False
 
-
-# ────────────────────────────────────────────────
-# Duplicate Transaction Detection
-# ────────────────────────────────────────────────
-
-def check_duplicate_transaction(
-    db, 
-    upi_ref: str, 
-    exclude_payment_id: Optional[int] = None
-) -> Tuple[bool, Optional[str]]:
-    """
-    Check if a transaction ID has been used in any previous successful payment.
-    
-    Args:
-        db: Database session
-        upi_ref: UPI transaction reference
-        exclude_payment_id: Optional payment ID to exclude from check
-        
-    Returns:
-        Tuple of (is_duplicate, status_of_existing_payment)
-    """
-    if not upi_ref:
-        return False, None
-    
-    try:
-        query = """
-            SELECT status
-            FROM payments
-            WHERE upi_txn_ref = :ref
-        """
-        params = {"ref": upi_ref}
-        
-        if exclude_payment_id:
-            query += " AND id != :pid"
-            params["pid"] = exclude_payment_id
-        
-        query += " LIMIT 1"
-        
-        result = db.execute(text(query), params).fetchone()
-        
-        if result:
-            return True, result[0]
-        return False, None
-    except Exception as e:
-        print(f"[WARN] Duplicate transaction check failed: {e}", flush=True)
-        return False, None
-
-
-# ────────────────────────────────────────────────
-# Fraud Score Computation
-# ────────────────────────────────────────────────
-
-def compute_fraud_score(text: str, expected_amount: float) -> float:
-    """
-    Compute fraud score based on text analysis.
-    
-    Args:
-        text: OCR extracted text
-        expected_amount: Expected payment amount
-        
-    Returns:
-        Fraud score (0-100, higher = more suspicious)
-    """
-    score = 0.0
-    lower = text.lower()
-
-    # Missing amount
-    if f"{expected_amount:.2f}" not in lower:
-        score += 30
-
-    # Suspicious keywords
-    if "failed" in lower:
-        score += 40
-    if "pending" in lower:
-        score += 20
-
-    # No transaction ID
-    if not extract_upi_ref(text):
-        score += 30
-
-    return min(score, 100.0)

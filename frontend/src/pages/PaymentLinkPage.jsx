@@ -3,16 +3,18 @@ import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 
 const VERIFICATION_REASON_CODES = {
+  unrecognized_app: 'FRAUD_001_0003',
   invalid_banking_name: 'FRAUD_001_0004',
   invalid_amount: 'FRAUD_002_0003',
   time_out_of_range: 'FRAUD_001_0006',
-  invalid_timestamp: 'FRAUD_001_0007',
-  missing_timestamp: 'FRAUD_001_0008',
+  invalid_datetime_format_gpay: 'FRAUD_001_0007',
+  invalid_datetime_format_paytm: 'FRAUD_001_0007',
+  invalid_datetime_format_bhim: 'FRAUD_001_0007',
+  missing_paid_to_cognit: 'FRAUD_002_0005',
+  missing_paytm_label: 'FRAUD_002_0005',
+  missing_bhim_label: 'FRAUD_002_0005',
   ocr_unavailable: 'SYS_001_0004',
-  // App-specific validation failure codes
-  invalid_date_format_paytm: 'FRAUD_002_0005',
   missing_paid_bhim: 'FRAUD_002_0005',
-  invalid_date_format_bhim: 'FRAUD_002_0005',
 };
 
 export default function PaymentLinkPage({ 
@@ -203,19 +205,6 @@ export default function PaymentLinkPage({
       setPaymentData(data);
       startTimer(data.expires_at);
     } catch (err) {
-      // Log error to backend for analytics
-      if (err.code) {
-        endpoints.logClientError({
-          error_code: err.code,
-          error_message: err.message,
-          page_url: window.location.href,
-          extra_data: {
-            category: err.category,
-            severity: err.severity,
-            action: err.action
-          }
-        }).catch(() => {});
-      }
       const errorMessage = err.code
         ? getErrorMessage(err.code)
         : err.message || getErrorMessage('SYS_002_0009');
@@ -362,20 +351,6 @@ export default function PaymentLinkPage({
         setError(getErrorMessage('SYS_002_0013'));
       }
 
-      // Log error to backend for analytics
-      if (err.code) {
-        endpoints.logClientError({
-          error_code: err.code,
-          error_message: err.message,
-          page_url: window.location.href,
-          extra_data: {
-            category: err.category,
-            severity: err.severity,
-            action: err.action,
-            failure_reasons: failureReasons
-          }
-        }).catch(() => {});
-      }
     } finally {
       setVerifying(false);
     }
