@@ -1,5 +1,4 @@
 node_modules/
-dist/
 .env
 .env.local
 .env.development.local
@@ -10,3 +9,14 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+coverage/
+.vscode/
+.idea/
+.cache/
+.temp/
+*.md
+.eslintrc*
+.prettierrc*
+.editorconfig
+.git*
+.turbo/
