@@ -10,7 +10,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from app.config import SECRET_KEY, CORS_ORIGINS, CORS_SUPPORTS_CREDENTIALS, RATELIMIT_STORAGE_URI, LOG_LEVEL
+from app.config import SECRET_KEY, CORS_ORIGINS, CORS_SUPPORTS_CREDENTIALS, RATELIMIT_STORAGE_URI, MAX_CONTENT_LENGTH_MB
 from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 
 
@@ -26,7 +26,7 @@ app.config["SECRET_KEY"] = SECRET_KEY
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
-app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
 
 
 # ────────────────────────────────────────────────

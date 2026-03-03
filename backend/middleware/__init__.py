@@ -4,7 +4,6 @@ Security and validation middleware for the payment system
 """
 
 from .device_fingerprint import (
-    generate_canvas_fingerprint,
     collect_device_characteristics,
     generate_device_fingerprint,
     calculate_risk_score,
@@ -32,7 +31,6 @@ from .flow_validator import (
 
 __all__ = [
     # Device fingerprinting
-    'generate_canvas_fingerprint',
     'collect_device_characteristics',
     'generate_device_fingerprint',
     'calculate_risk_score',

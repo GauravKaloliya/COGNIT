@@ -126,6 +126,57 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION sync_attention_stats_from_submission()
+RETURNS TRIGGER AS $$
+DECLARE
+    pass_inc INTEGER := CASE WHEN NEW.attention_passed THEN 1 ELSE 0 END;
+    fail_inc INTEGER := CASE WHEN NEW.attention_passed THEN 0 ELSE 1 END;
+BEGIN
+    IF NEW.is_attention_check IS DISTINCT FROM TRUE THEN
+        RETURN NEW;
+    END IF;
+
+    INSERT INTO participant_attention_stats (
+        participant_id,
+        total_checks,
+        passed_checks,
+        failed_checks,
+        attention_score,
+        is_flagged,
+        last_checked_at
+    ) VALUES (
+        NEW.participant_id,
+        1,
+        pass_inc,
+        fail_inc,
+        pass_inc::NUMERIC,
+        FALSE,
+        CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (participant_id) DO UPDATE SET
+        total_checks = participant_attention_stats.total_checks + 1,
+        passed_checks = participant_attention_stats.passed_checks + pass_inc,
+        failed_checks = participant_attention_stats.failed_checks + fail_inc,
+        attention_score = (participant_attention_stats.passed_checks + pass_inc)::NUMERIC /
+                          (participant_attention_stats.total_checks + 1),
+        is_flagged = participant_attention_stats.is_flagged OR (
+            ((participant_attention_stats.passed_checks + pass_inc)::NUMERIC /
+             (participant_attention_stats.total_checks + 1)) < 0.60 AND
+            (participant_attention_stats.total_checks + 1) >= 3
+        ),
+        last_checked_at = CURRENT_TIMESTAMP;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION prevent_attention_event_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'attention_events is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
 -- =====================================================================
 -- LOOKUP TABLES
 -- =====================================================================
@@ -306,9 +357,49 @@ CREATE TRIGGER trg_validate_payment_submission
     BEFORE INSERT ON submissions
     FOR EACH ROW EXECUTE FUNCTION validate_payment_for_submission();
 
+CREATE TRIGGER trg_sync_attention_stats_from_submission
+    AFTER INSERT ON submissions
+    FOR EACH ROW
+    WHEN (NEW.is_attention_check = true AND NEW.attention_passed IS NOT NULL)
+    EXECUTE FUNCTION sync_attention_stats_from_submission();
+
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_created ON submissions (participant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_quality ON submissions (participant_id, quality_score DESC, created_at DESC) WHERE is_survey = true;
 CREATE INDEX IF NOT EXISTS idx_submissions_attention ON submissions (is_attention_check, attention_passed);
+
+-- =====================================================================
+-- ATTENTION EVENTS (IMMUTABLE AUDIT)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS attention_events (
+    id                 BIGSERIAL PRIMARY KEY,
+    participant_id     BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    submission_id      BIGINT NOT NULL UNIQUE REFERENCES submissions(id) ON DELETE CASCADE,
+    image_id           BIGINT NOT NULL REFERENCES images(id) ON DELETE RESTRICT,
+    expected_terms     TEXT[] NOT NULL DEFAULT '{}',
+    matched_terms      TEXT[] NOT NULL DEFAULT '{}',
+    failure_reasons    TEXT[] NOT NULL DEFAULT '{}',
+    is_strict          BOOLEAN NOT NULL DEFAULT TRUE,
+    attention_passed   BOOLEAN NOT NULL,
+    response_seconds   REAL,
+    distinct_word_count INTEGER,
+    content_fingerprint CHAR(64),
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_attention_events_participant_created
+    ON attention_events (participant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_attention_events_passed
+    ON attention_events (attention_passed, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_attention_events_fingerprint
+    ON attention_events (content_fingerprint) WHERE content_fingerprint IS NOT NULL;
+
+CREATE TRIGGER trg_attention_events_no_update
+    BEFORE UPDATE ON attention_events
+    FOR EACH ROW EXECUTE FUNCTION prevent_attention_event_mutation();
+
+CREATE TRIGGER trg_attention_events_no_delete
+    BEFORE DELETE ON attention_events
+    FOR EACH ROW EXECUTE FUNCTION prevent_attention_event_mutation();
 
 -- =====================================================================
 -- PARTICIPANT STATS TABLES

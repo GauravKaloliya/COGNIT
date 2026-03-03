@@ -5,7 +5,7 @@ Handles participant registration, validation, and consent.
 
 import re
 
-from flask import jsonify, request, current_app
+from flask import jsonify, request
 from sqlalchemy import text
 
 from app.extensions import limiter
