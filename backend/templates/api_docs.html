@@ -4,365 +4,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>C.O.G.N.I.T. API Documentation</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap');
-
-        :root {
-            color-scheme: light;
-
-            --bg: #f0f2f5;
-            --panel: #ffffff;
-            --text: #1c1e21;
-            --muted: #65676b;
-            --primary: #1877f2;
-            --secondary: #e7f3ff;
-            --accent: #d2e2ff;
-            --accent-bg: rgba(24, 119, 242, 0.08);
-            --warning: #ffb347;
-            --success: #42b72a;
-            --error: #c9444a;
-            --border: #ccd0d5;
-            --shadow: 0 8px 32px rgba(24, 119, 242, 0.15);
-            --gradient: linear-gradient(135deg, #f0f2f5 0%, #e7f3ff 100%);
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            margin: 0;
-            background: var(--gradient);
-            color: var(--text);
-            font-family: "Quicksand", "Nunito", system-ui, sans-serif;
-            min-height: 100vh;
-            transition: background 0.3s ease, color 0.3s ease;
-            line-height: 1.6;
-        }
-
-        .app {
-            width: min(1120px, 100%);
-            margin: 0 auto;
-            padding: clamp(16px, 3vw, 32px);
-            display: flex;
-            flex-direction: column;
-            gap: clamp(16px, 3vw, 24px);
-        }
-
-        .panel {
-            background: var(--panel);
-            border: 2px solid var(--border);
-            border-radius: 24px;
-            padding: clamp(20px, 3vw, 32px);
-            box-shadow: var(--shadow);
-        }
-
-        .doc-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 32px;
-            flex-wrap: wrap;
-            gap: 16px;
-        }
-
-        .panel h1, .panel h2 {
-            color: var(--primary);
-            font-weight: 700;
-        }
-
-        .panel h1 {
-            margin: 0;
-            font-size: clamp(24px, 4vw, 32px);
-        }
-
-        .panel h2 {
-            margin-top: 0;
-            margin-bottom: 16px;
-            font-size: clamp(20px, 3.2vw, 26px);
-        }
-
-        .panel h3 {
-            margin-top: 32px;
-            margin-bottom: 12px;
-            color: var(--text);
-        }
-
-        .panel p {
-            line-height: 1.6;
-            font-size: clamp(14px, 2.6vw, 16px);
-        }
-
-        .panel ul, .panel ol {
-            line-height: 1.8;
-            padding-left: 24px;
-        }
-
-        .panel li {
-            margin: 8px 0;
-        }
-
-        .tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 32px;
-            border-bottom: 2px solid var(--border);
-            flex-wrap: wrap;
-        }
-
-        .tab {
-            padding: 12px 24px;
-            background: transparent;
-            border: none;
-            border-bottom: 3px solid transparent;
-            color: var(--muted);
-            font-weight: 600;
-            cursor: pointer;
-            text-transform: capitalize;
-            border-radius: 8px 8px 0 0;
-            font-family: inherit;
-            font-size: 14px;
-            transition: all 0.2s ease;
-        }
-
-        .tab.active {
-            background: rgba(24, 119, 242, 0.1);
-            border-bottom-color: var(--primary);
-            color: var(--primary);
-        }
-
-        .tab:hover:not(.active) {
-            color: var(--text);
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .code-box {
-            background: var(--bg);
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 2px solid var(--border);
-            font-family: monospace;
-            font-size: 14px;
-            display: inline-block;
-            margin: 8px 0;
-        }
-
-        .code-box.block {
-            display: block;
-            width: 100%;
-        }
-
-        code {
-            background: var(--bg);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 14px;
-        }
-
-        .endpoint-card {
-            border: 2px solid var(--border);
-            border-radius: 12px;
-            margin-bottom: 16px;
-            overflow: hidden;
-        }
-
-        .endpoint-header {
-            padding: 16px 20px;
-            background: var(--bg);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-            transition: background 0.2s ease;
-        }
-
-        .endpoint-header:hover {
-            background: var(--secondary);
-        }
-
-        .method-badge {
-            padding: 4px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: bold;
-            color: white;
-        }
-
-        .method-badge.GET { background: #42b72a; }
-        .method-badge.POST { background: #1877f2; }
-        .method-badge.PUT { background: #ffb347; }
-        .method-badge.DELETE { background: #c9444a; }
-        .method-badge.PATCH { background: #9966ff; }
-
-        .endpoint-path {
-            font-family: monospace;
-            font-size: 14px;
-            color: var(--text);
-        }
-
-        .endpoint-toggle {
-            margin-left: auto;
-            font-size: 20px;
-            transition: transform 0.2s ease;
-        }
-
-        .endpoint-card.expanded .endpoint-toggle {
-            transform: rotate(90deg);
-        }
-
-        .endpoint-body {
-            padding: 20px;
-            display: none;
-        }
-
-        .endpoint-card.expanded .endpoint-body {
-            display: block;
-        }
-
-        .endpoint-desc {
-            color: var(--muted);
-            margin-bottom: 16px;
-        }
-
-        .endpoint-meta {
-            margin-bottom: 12px;
-            font-size: 12px;
-        }
-
-        .endpoint-meta strong {
-            color: var(--text);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 16px;
-            font-size: 14px;
-        }
-
-        thead tr {
-            background: var(--primary);
-            color: white;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-        }
-
-        tbody tr {
-            border-bottom: 1px solid var(--border);
-        }
-
-        tbody tr:hover {
-            background: var(--bg);
-        }
-
-        .footer {
-            margin-top: 48px;
-            padding-top: 24px;
-            border-top: 2px solid var(--border);
-            text-align: center;
-            color: var(--muted);
-        }
-
-        .code-block {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 16px;
-            border-radius: 8px;
-            overflow: auto;
-            font-family: Consolas, Monaco, "Courier New", monospace;
-            font-size: 14px;
-            line-height: 1.5;
-            margin: 10px 0;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        .code-block small {
-            padding: 12px;
-            font-size: 12px;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='api_docs.css') }}">
 </head>
 <body>
     <div class="app">
         <div class="panel">
             <div class="doc-header">
-                <div>
-                    <h1>C.O.G.N.I.T. API Documentation</h1>
-                </div>
+                <h1>C.O.G.N.I.T. API Documentation</h1>
+                <p class="doc-subtitle">End-user routes only</p>
             </div>
 
             <div class="tabs">
                 <button class="tab active" data-tab="overview">Overview</button>
                 <button class="tab" data-tab="endpoints">Endpoints</button>
                 <button class="tab" data-tab="examples">Examples</button>
-                <button class="tab" data-tab="errors">Errors</button>
             </div>
 
             <div id="overview" class="tab-content active">
                 <h2>Overview</h2>
-                <p>The C.O.G.N.I.T. (Cognitive Network for Image &amp; Text Modeling) API powers a human-subjects image description study. The service coordinates consent, participant records, payments, image delivery, and submission storage with built-in quality, attention, and audit tracking.</p>
+                <p>These are the public routes used by the web application for onboarding, payment verification, image retrieval, and submission.</p>
 
                 <h3>Base URL</h3>
                 <div class="code-box block">{{ base_url }}</div>
 
-                <h3>Core Workflow</h3>
+                <h3>Core Flow</h3>
                 <ol>
-                    <li>Create a participant profile using <code>/participants</code>.</li>
-                    <li>Record consent using <code>/consent</code> before collecting data.</li>
-                    <li>Create payment session via <code>/payments/create</code> and verify via <code>/payments/{payment_id}/verify-upload</code>.</li>
-                    <li>Fetch images via <code>/images/random</code> (optionally exclude previously used images).</li>
-                    <li>Submit descriptions with ratings and feedback using <code>/submit</code>.</li>
+                    <li>Create participant with <code>/participants</code>.</li>
+                    <li>Record consent with <code>/consent</code>.</li>
+                    <li>Create payment with <code>/payments/create</code> and verify via <code>/payments/{payment_id}/verify-upload</code>.</li>
+                    <li>Fetch image from <code>/images/random</code>.</li>
+                    <li>Submit response through <code>/submit</code>.</li>
                 </ol>
 
-                <h3>Request/Response Conventions</h3>
+                <h3>General Rules</h3>
                 <ul>
-                    <li>All JSON requests must include <code>Content-Type: application/json</code>.</li>
-                    <li>Responses are JSON unless noted (images and logo are binary responses).</li>
-                    <li>Timestamps are ISO 8601 strings in UTC.</li>
-                    <li>Maximum request body size is 1 MB.</li>
-                </ul>
-
-                <h3>Security &amp; Privacy Mechanisms</h3>
-                <ul>
-                    <li><strong>Rate Limiting:</strong> Default 200/day and 50/hour per IP, with tighter limits on sensitive routes.</li>
-                    <li><strong>Strict CORS:</strong> Only configured origins are allowed, no wildcard origins.</li>
-                    <li><strong>Security Headers:</strong> HSTS, CSP, Referrer-Policy, and clickjacking protections are enforced.</li>
-                    <li><strong>IP Hashing:</strong> IP addresses are irreversibly hashed with SHA-256 and a configurable salt before storage.</li>
-                    <li><strong>Input Validation:</strong> Server-side checks enforce email domains, phone formats, age bounds, rating ranges, and minimum word counts.</li>
-                    <li><strong>Audit &amp; Performance Logs:</strong> Participant operations and response times are recorded in dedicated tables.</li>
-                </ul>
-
-                <h3>Rate Limit Summary</h3>
-                <ul>
-                    <li><strong>/participants:</strong> 30 requests per minute</li>
-                    <li><strong>/consent:</strong> 20 requests per minute</li>
-                    <li><strong>/submit:</strong> 60 requests per minute</li>
-                    <li><strong>/payments/create:</strong> 20 requests per minute</li>
-                    <li><strong>/payments/verify-upload:</strong> 20 requests per minute</li>
-                    <li><strong>/check-username, /check-email, /check-phone:</strong> 30 requests per minute each</li>
+                    <li>Use JSON request bodies with <code>Content-Type: application/json</code>.</li>
+                    <li>Rate limits apply per route.</li>
+                    <li>Response timestamps are UTC ISO 8601.</li>
                 </ul>
             </div>
 
             <div id="endpoints" class="tab-content">
                 <h2>API Endpoints</h2>
 
-                <h3 style="margin-top: 24px;">Participants &amp; Consent</h3>
+                <h3 class="section-heading">Health</h3>
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/health</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Service and database health status check.</p>
+                    </div>
+                </div>
 
+                <h3 class="section-heading">Participant</h3>
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
@@ -370,12 +67,10 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Creates a participant record. The API validates username format, email domain, Indian phone numbers, and an age range of 13-100.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
-                        </div>
+                        <p class="endpoint-desc">Create participant profile.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
                         <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
+                        <div class="code-block"><pre>{
   "public_id": "550e8400-e29b-41d4-a716-446655440000",
   "session_id": "sess_abc123xyz",
   "username": "user123",
@@ -387,11 +82,44 @@
   "language_code": "en",
   "prior_experience": "some experience"
 }</pre></div>
-                        <h4>Response (201)</h4>
-                        <div class="code-block small"><pre>{
-  "status": "created",
-  "public_id": "550e8400-e29b-41d4-a716-446655440000"
-}</pre></div>
+                    </div>
+                </div>
+
+                <div class="endpoint-grid">
+                    <div class="endpoint-card">
+                        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                            <span class="method-badge GET">GET</span>
+                            <code class="endpoint-path">/check-username?username=&lt;value&gt;</code>
+                            <span class="endpoint-toggle">▶</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <p class="endpoint-desc">Check username availability.</p>
+                            <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
+                        </div>
+                    </div>
+
+                    <div class="endpoint-card">
+                        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                            <span class="method-badge GET">GET</span>
+                            <code class="endpoint-path">/check-email?email=&lt;value&gt;</code>
+                            <span class="endpoint-toggle">▶</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <p class="endpoint-desc">Check email availability.</p>
+                            <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
+                        </div>
+                    </div>
+
+                    <div class="endpoint-card">
+                        <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                            <span class="method-badge GET">GET</span>
+                            <code class="endpoint-path">/check-phone?phone=&lt;value&gt;</code>
+                            <span class="endpoint-toggle">▶</span>
+                        </div>
+                        <div class="endpoint-body">
+                            <p class="endpoint-desc">Check phone availability.</p>
+                            <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
+                        </div>
                     </div>
                 </div>
 
@@ -402,18 +130,8 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Records consent for an existing participant and stamps the consent time. Consent must be recorded before proceeding to payment and survey.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 20 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "public_id": "550e8400-e29b-41d4-a716-446655440000"
-}</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "consent recorded"
-}</pre></div>
+                        <p class="endpoint-desc">Record participant consent.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 20 per minute</p>
                     </div>
                 </div>
 
@@ -424,116 +142,22 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Get participant's payment verification status. Used by frontend to verify payment before allowing survey access.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
-                        </div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "payment_status": "paid",
-  "is_verified": true,
-  "current_stage": "survey",
-  "payment_id": "uuid",
-  "verified_at": "2024-01-01T12:15:00+00:00",
-  "detected_app": "gpay"
-}</pre></div>
+                        <p class="endpoint-desc">Fetch payment verification state for a participant.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
                     </div>
                 </div>
 
-                <h3 style="margin-top: 32px;">Availability Checks</h3>
-
+                <h3 class="section-heading">Survey</h3>
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/check-username?username=&lt;value&gt;</code>
+                        <code class="endpoint-path">/images/random?exclude=img1,img2</code>
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Checks if a username is available for registration. Returns available: true if the username is not already taken.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
-                        </div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "available": true
-}</pre></div>
+                        <p class="endpoint-desc">Fetch random image for participant.</p>
                     </div>
                 </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/check-email?email=&lt;value&gt;</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Checks if an email address is already registered. Returns available: true if the email is not in use.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
-                        </div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "available": true
-}</pre></div>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/check-phone?phone=&lt;value&gt;</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Checks if a phone number is already registered. Returns available: true if the phone is not in use.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
-                        </div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "available": true
-}</pre></div>
-                    </div>
-                </div>
-
-                <h3 style="margin-top: 32px;">Images</h3>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/images/random</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Returns a random image available for annotation. Use <code>exclude</code> to avoid already-seen image IDs.</p>
-                        <h4>Query Parameters</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Type</th>
-                                    <th>Required</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><code>exclude</code></td>
-                                    <td>string</td>
-                                    <td>No</td>
-                                    <td>Comma-separated list of image IDs to skip</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "image_id": "aurora-lake",
-  "url": "https://s3.amazonaws.com/bucket/images/aurora-lake.jpg"
-}</pre></div>
-                    </div>
-                </div>
-
-                <h3 style="margin-top: 32px;">Submissions</h3>
 
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
@@ -542,32 +166,8 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Submits a participant response. The API enforces consent, paid status, and attention-quality checks before storing the submission.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "public_id": "550e8400-e29b-41d4-a716-446655440000",
-  "image_id": "aurora-lake",
-  "description": "A detailed description that exceeds the minimum word count...",
-  "rating": 8,
-  "feedback": "Interesting scene with depth",
-  "time_spent_seconds": 45,
-  "is_survey": true,
-  "survey_index": 1,
-  "tab_switch_count": 0,
-  "page_close_attempts": 0,
-  "network_disconnects": 0
-}</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "submitted",
-  "word_count": 78,
-  "quality_score": 0.84,
-  "attention_passed": true,
-  "flagged_too_fast": false
-}</pre></div>
+                        <p class="endpoint-desc">Submit survey/image response.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 60 per minute</p>
                     </div>
                 </div>
 
@@ -578,32 +178,12 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Track engagement events for quality monitoring. Records tab switches, page close attempts, and network disconnects.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 60 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "public_id": "550e8400-e29b-41d4-a716-446655440000",
-  "event_type": "tab_switch"
-}</pre></div>
-                        <h4>Allowed Event Types</h4>
-                        <ul>
-                            <li><code>tab_switch</code> - User switched browser tabs</li>
-                            <li><code>page_close_attempt</code> - User attempted to close the page</li>
-                            <li><code>network_disconnect</code> - User lost network connection</li>
-                        </ul>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "status": "tracked",
-  "event_type": "tab_switch",
-  "total_events": 5
-}</pre></div>
+                        <p class="endpoint-desc">Track participant engagement events.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 60 per minute</p>
                     </div>
                 </div>
 
-                <h3 style="margin-top: 32px;">Payments</h3>
-
+                <h3 class="section-heading">Payments</h3>
                 <div class="endpoint-card">
                     <div class="endpoint-header" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
@@ -611,26 +191,8 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Create a new payment session with expiry timer. Returns UPI payment details and QR code for the participant to complete payment.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 20 per minute</span>
-                        </div>
-                        <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
-  "public_id": "550e8400-e29b-41d4-a716-446655440000",
-  "amount": 1.00
-}</pre></div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "payment_id": "uuid",
-  "amount": 1.00,
-  "expires_at": "2024-01-01T12:15:00+00:00",
-  "upi_link": "upi://pay?pa=...",
-  "upi_note": "COGNIT uuid",
-  "qr_base64": "base64encoded...",
-  "timer_activated": true,
-  "time_remaining_seconds": 600
-}</pre></div>
+                        <p class="endpoint-desc">Create payment session and get UPI details.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 20 per minute</p>
                     </div>
                 </div>
 
@@ -641,20 +203,8 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Get current payment status including expiry check and time remaining.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 30 per minute</span>
-                        </div>
-                        <h4>Response</h4>
-                        <div class="code-block small"><pre>{
-  "payment_id": "uuid",
-  "status": "pending",
-  "amount": 1.00,
-  "expires_at": "2024-01-01T12:15:00+00:00",
-  "is_expired": false,
-  "time_remaining_seconds": 540,
-  "verified_at": null
-}</pre></div>
+                        <p class="endpoint-desc">Check payment status and remaining time.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
                     </div>
                 </div>
 
@@ -665,77 +215,27 @@
                         <span class="endpoint-toggle">▶</span>
                     </div>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Verify payment screenshot using OCR and upload to S3 only if verified. Performs fraud detection including duplicate screenshot and transaction ID checks.</p>
-                        <div class="endpoint-meta">
-                            <span style="color: #f59e0b;"><strong>Rate Limit:</strong> 20 per minute</span>
-                        </div>
+                        <p class="endpoint-desc">Verify payment screenshot upload.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 20 per minute</p>
                         <h4>Request Body</h4>
-                        <div class="code-block small"><pre>{
+                        <div class="code-block"><pre>{
   "image_base64": "base64-encoded-image-data",
   "file_extension": "jpg",
-  "sha256": "sha256hash-of-original-file"
-}</pre></div>
-                        <h4>Response (Success)</h4>
-                        <div class="code-block small"><pre>{
-  "status": "processed",
-  "verification": {
-    "status": "success",
-    "verified": true,
-    "failure_reasons": []
-  }
-}</pre></div>
-                        <h4>Response (Rejected)</h4>
-                        <div class="code-block small"><pre>{
-  "status": "processed",
-  "verification": {
-    "status": "rejected_fraud",
-    "verified": true,
-    "failure_reasons": ["duplicate_transaction_id", "invalid_amount"]
-  }
+  "sha256": "sha256-hash"
 }</pre></div>
                     </div>
                 </div>
-
             </div>
 
             <div id="examples" class="tab-content">
                 <h2>Code Examples</h2>
-
-                <h3 style="margin-top: 24px;">JavaScript / Fetch</h3>
-                <div class="code-block"><pre>// Create participant
-const participantResponse = await fetch('/participants', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    public_id: crypto.randomUUID(),
-    session_id: crypto.randomUUID(),
-    username: 'user123',
-    email: 'user@gmail.com',
-    phone: '9876543210',
-    gender_code: 'male',
-    age: 25,
-    location: 'ahmedabad',
-    language_code: 'en',
-    prior_experience: 'no experience'
-  })
-});
-
-// Record consent
-await fetch('/consent', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ public_id: '550e8400-e29b-41d4-a716-446655440000' })
-});
-
-// Create payment
-const paymentResponse = await fetch('/payments/create', {
+                <h3>Fetch</h3>
+                <div class="code-block"><pre>const payment = await fetch('/payments/create', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ public_id: '550e8400-...', amount: 1.00 })
-});
-const payment = await paymentResponse.json();
+}).then(res => res.json());
 
-// Verify payment screenshot
 await fetch(`/payments/${payment.payment_id}/verify-upload`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -744,226 +244,22 @@ await fetch(`/payments/${payment.payment_id}/verify-upload`, {
     file_extension: 'jpg',
     sha256: 'sha256hash...'
   })
-});
-
-// Get a random image
-const imageResponse = await fetch('/images/random');
-const image = await imageResponse.json();
-
-// Submit participant data
-const submitResponse = await fetch('/submit', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    public_id: '550e8400-...',
-    image_id: image.image_id,
-    description: 'A detailed description that exceeds the minimum word count...',
-    rating: 8,
-    feedback: 'Clear contrast and composition.',
-    time_spent_seconds: 48,
-    is_survey: true,
-    survey_index: 1
-  })
 });</pre></div>
-
-                <h3 style="margin-top: 32px;">Python / Requests</h3>
-                <div class="code-block"><pre>import requests
-
-base_url = "{{ base_url }}"
-
-# Create participant
-participant_payload = {
-    "public_id": "550e8400-e29b-41d4-a716-446655440000",
-    "session_id": "session-456",
-    "username": "user123",
-    "email": "user@gmail.com",
-    "phone": "9876543210",
-    "gender_code": "male",
-    "age": 25,
-    "location": "ahmedabad",
-    "language_code": "en",
-    "prior_experience": "no experience"
-}
-
-requests.post(f"{base_url}/participants", json=participant_payload)
-
-# Record consent
-requests.post(
-    f"{base_url}/consent",
-    json={"public_id": "550e8400-e29b-41d4-a716-446655440000"}
-)
-
-# Create payment
-payment = requests.post(
-    f"{base_url}/payments/create",
-    json={"public_id": "550e8400-e29b-41d4-a716-446655440000", "amount": 1.00}
-).json()
-
-# Get random image
-image = requests.get(f"{base_url}/images/random").json()
-
-# Submit data
-submission_payload = {
-    "public_id": "550e8400-e29b-41d4-a716-446655440000",
-    "image_id": image["image_id"],
-    "description": "A detailed description that exceeds the minimum word count...",
-    "rating": 7,
-    "feedback": "Good lighting and composition.",
-    "time_spent_seconds": 42,
-    "is_survey": True,
-    "survey_index": 1
-}
-
-submission = requests.post(f"{base_url}/submit", json=submission_payload)
-print(submission.json())</pre></div>
-
-                <h3 style="margin-top: 32px;">cURL</h3>
-                <div class="code-block"><pre># Create participant
-curl -X POST "{{ base_url }}/participants" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "public_id": "550e8400-e29b-41d4-a716-446655440000",
-    "session_id": "session-456",
-    "username": "user123",
-    "email": "user@gmail.com",
-    "phone": "9876543210",
-    "gender_code": "male",
-    "age": 25,
-    "location": "ahmedabad",
-    "language_code": "en",
-    "prior_experience": "no experience"
-  }'
-
-# Record consent
-curl -X POST "{{ base_url }}/consent" \
-  -H "Content-Type: application/json" \
-  -d '{"public_id": "550e8400-e29b-41d4-a716-446655440000"}'
-
-# Create payment
-curl -X POST "{{ base_url }}/payments/create" \
-  -H "Content-Type: application/json" \
-  -d '{"public_id": "550e8400-...", "amount": 1.00}'
-
-# Get a random image excluding previous ones
-curl -X GET "{{ base_url }}/images/random?exclude=img1,img2"
-
-# Submit data
-curl -X POST "{{ base_url }}/submit" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "public_id": "550e8400-e29b-41d4-a716-446655440000",
-    "image_id": "aurora-lake",
-    "description": "A detailed description that exceeds the minimum word count...",
-    "rating": 8,
-    "feedback": "Great sense of depth.",
-    "time_spent_seconds": 45,
-    "is_survey": true,
-    "survey_index": 1
-  }'</pre></div>
-            </div>
-
-            <div id="errors" class="tab-content">
-                <h2>Error Handling</h2>
-                <p>The API returns consistent JSON error responses. Clients should use HTTP status codes to drive retry logic and UX messaging.</p>
-
-                <h3 style="margin-top: 24px;">HTTP Status Codes</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Code</th>
-                            <th>Meaning</th>
-                            <th>Description</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><code>200</code></td>
-                            <td>OK</td>
-                            <td>Successful read, update, or verification</td>
-                        </tr>
-                        <tr>
-                            <td><code>201</code></td>
-                            <td>Created</td>
-                            <td>Participant record created</td>
-                        </tr>
-                        <tr>
-                            <td><code>400</code></td>
-                            <td>Bad Request</td>
-                            <td>Validation failures or missing fields</td>
-                        </tr>
-                        <tr>
-                            <td><code>403</code></td>
-                            <td>Forbidden</td>
-                            <td>Consent or payment requirements unmet; flagged attention status</td>
-                        </tr>
-                        <tr>
-                            <td><code>404</code></td>
-                            <td>Not Found</td>
-                            <td>Resource is missing (participant or image)</td>
-                        </tr>
-                        <tr>
-                            <td><code>409</code></td>
-                            <td>Conflict</td>
-                            <td>Duplicate participant record</td>
-                        </tr>
-                        <tr>
-                            <td><code>429</code></td>
-                            <td>Too Many Requests</td>
-                            <td>Rate limit exceeded</td>
-                        </tr>
-                        <tr>
-                            <td><code>500</code></td>
-                            <td>Internal Server Error</td>
-                            <td>Unexpected database or configuration failure</td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <h3 style="margin-top: 32px;">Error Response Format</h3>
-                <div class="code-block"><pre>{
-  "error": {
-    "code": "VAL_001_0001",
-    "message": "Description of what went wrong",
-    "category": "VAL",
-    "severity": "error",
-    "action": "fix_input",
-    "field": "email"
-  }
-}</pre></div>
-
-                <h3 style="margin-top: 32px;">Common Validation Errors</h3>
-                <ul>
-                    <li><code>Minimum 60 words required</code> — Description is too short.</li>
-                    <li><code>Rating must be between 1 and 10</code> — Rating is outside the accepted range.</li>
-                    <li><code>Feedback must be at least 5 characters</code> — Feedback is too short.</li>
-                    <li><code>Participant ID already exists</code> — The public_id is not unique.</li>
-                    <li><code>Participant not found</code> — Participant ID missing from the database.</li>
-                    <li><code>Consent required</code> — Consent not recorded.</li>
-                    <li><code>Account flagged for low attention quality</code> — Participant failed attention checks.</li>
-                    <li><code>Payment not verified</code> — Payment verification required before survey access.</li>
-                    <li><code>Payment expired</code> — Payment session has expired.</li>
-                    <li><code>Duplicate image</code> — Payment screenshot was already used.</li>
-                </ul>
-
-                <h3 style="margin-top: 32px;">Rate Limit Error (429)</h3>
-                <div class="code-block"><pre>{
-  "error": "Rate limit exceeded"
-}</pre></div>
             </div>
 
             <div class="footer">
-                <p>C.O.G.N.I.T. API Documentation • Created by Gaurav Kaloliya</p>
+                <p>C.O.G.N.I.T. API Documentation</p>
             </div>
         </div>
     </div>
 
     <script>
-        document.querySelectorAll('.tab').forEach(tab => {
+        document.querySelectorAll('.tab').forEach((tab) => {
             tab.addEventListener('click', () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
                 tab.classList.add('active');
 
-                document.querySelectorAll('.tab-content').forEach(content => {
+                document.querySelectorAll('.tab-content').forEach((content) => {
                     content.classList.remove('active');
                 });
 

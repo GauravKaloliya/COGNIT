@@ -1,5 +1,5 @@
 import { getApiUrl } from './apiBase';
-import { parseErrorResponse, logErrorToBackend, getErrorMessage } from './errorRegistry';
+import { parseErrorResponse, getErrorMessage } from './errorRegistry';
 
 /**
  * Enhanced fetch wrapper with standardized error handling
@@ -20,9 +20,6 @@ export async function apiFetch(endpoint, options = {}) {
     
     if (!response.ok) {
       const parsedError = parseErrorResponse(data);
-      
-      // Log for analytics
-      logErrorToBackend(parsedError);
       
       // Create Error object with extra properties
       const error = new Error(parsedError.message);
@@ -118,34 +115,6 @@ export const endpoints = {
     file_extension: fileExtension,
     sha256: sha256
   }),
-  
-  // Error logging
-  logClientError: (errorData) => api.post('/client-errors', errorData)
-};
-
-/**
- * Error logging helper
- */
-export const logError = async (error, context = {}) => {
-  try {
-    const errorData = {
-      code: error.code || 'SYS_001_0001',
-      message: error.message || 'Unknown error',
-      category: error.category || 'SYS',
-      severity: error.severity || 'error',
-      action: error.action || 'retry',
-      field: error.field,
-      fields: error.fields,
-      context,
-      page_url: window.location.href,
-      user_agent: navigator.userAgent,
-      timestamp: new Date().toISOString()
-    };
-    
-    await endpoints.logClientError(errorData);
-  } catch (e) {
-    console.warn('Failed to log error:', e);
-  }
 };
 
 /**

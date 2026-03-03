@@ -9,7 +9,6 @@
 import { 
   getErrorMessage, 
   parseErrorResponse, 
-  logErrorToBackend,
   ERROR_CATEGORIES
 } from './errorRegistry';
 
@@ -17,7 +16,6 @@ import {
 export { 
   getErrorMessage, 
   parseErrorResponse, 
-  logErrorToBackend,
   ERROR_CATEGORIES
 };
 
@@ -58,7 +56,6 @@ export const ERROR_MESSAGES = {
   // Fraud detection errors
   'ERR_DUPLICATE_IMAGE': 'This screenshot has already been uploaded by another user. Please use a fresh payment screenshot.',
   'ERR_REJECTED_REUSE': 'This screenshot was previously rejected. Please use a fresh payment screenshot.',
-  'ERR_DUPLICATE_TXN': 'This transaction has already been used. Each payment must be unique.',
   'ERR_PAYMENT_REJECTED': 'Payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.',
   
   // Image errors

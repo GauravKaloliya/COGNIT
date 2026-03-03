@@ -4,8 +4,6 @@
  * Supports multiple languages and automatic translation
  */
 
-import { getApiUrl } from './apiBase';
-
 const DEFAULT_LANGUAGE = 'en';
 
 // Error message translations
@@ -73,7 +71,6 @@ const TRANSLATIONS = {
     
     // Payment duplicates
     'DUP_003_0001': 'This screenshot has already been submitted',
-    'DUP_003_0002': 'This transaction has already been used',
     'DUP_003_0003': 'This screenshot was already used by another user',
     
     // =====================================================================
@@ -111,7 +108,7 @@ const TRANSLATIONS = {
     // Image quality issues
     'FRAUD_001_0001': 'Screenshot is too blurry. Please upload a clearer image.',
     'FRAUD_001_0002': 'Could not read the screenshot text. Please retake.',
-    'FRAUD_001_0003': 'Please use GPay, Paytm, or other approved apps',
+    'FRAUD_001_0003': 'Please use Google Pay, Paytm, or BHIM',
     'FRAUD_001_0004': 'Payment not made to correct beneficiary',
     
     // Payment mismatch issues
@@ -120,7 +117,6 @@ const TRANSLATIONS = {
     'FRAUD_002_0003': 'Payment amount must be exactly ₹1',
     'FRAUD_002_0004': 'Payment success not detected in screenshot',
     'FRAUD_002_0005': 'Payment appears to have failed. Check your UPI app.',
-    'FRAUD_002_0006': 'Transaction ID not found in screenshot',
     'FRAUD_002_0007': 'Payment timestamp could not be verified. Please upload a recent screenshot.',
     'FRAUD_002_0008': 'Payment time is outside the allowed window. Please upload a recent screenshot.',
     'FRAUD_002_0009': 'Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.',
@@ -197,7 +193,6 @@ const TRANSLATIONS = {
     'ERR_INVALID_SHA256': 'Invalid file hash. Please try uploading again.',
     'ERR_DUPLICATE_IMAGE': 'This screenshot has already been uploaded by another user. Please use a fresh payment screenshot.',
     'ERR_REJECTED_REUSE': 'This screenshot was previously rejected. Please use a fresh payment screenshot.',
-    'ERR_DUPLICATE_TXN': 'This transaction has already been used. Each payment must be unique.',
     'ERR_PAYMENT_REJECTED': 'Payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.',
     'ERR_NO_IMAGES': 'No images are currently available. Please try again later.',
     'ERR_IMAGE_NOT_FOUND': 'Image not found.',
@@ -289,34 +284,6 @@ export function parseErrorResponse(response) {
 }
 
 /**
- * Log error to backend for analytics
- */
-export async function logErrorToBackend(errorData) {
-  try {
-    await fetch(getApiUrl('/client-errors'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error_code: errorData.code,
-        error_message: errorData.message,
-        page_url: window.location.href,
-        user_agent: navigator.userAgent,
-        timestamp: errorData.timestamp,
-        extra_data: {
-          category: errorData.category,
-          severity: errorData.severity,
-          action: errorData.action,
-          field: errorData.field
-        }
-      })
-    });
-  } catch (e) {
-    // Silent fail - don't cause infinite error loops
-    console.warn('Failed to log error to backend:', e);
-  }
-}
-
-/**
  * Get all available error codes by category
  */
 export function getErrorCodesByCategory() {
@@ -356,7 +323,6 @@ export function getAvailableLanguages() {
 export default {
   getErrorMessage,
   parseErrorResponse,
-  logErrorToBackend,
   getErrorCodesByCategory,
   hasErrorCode,
   getAvailableLanguages,
