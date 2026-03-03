@@ -206,7 +206,7 @@ export default function PaymentLinkPage({
       startTimer(data.expires_at);
     } catch (err) {
       const errorMessage = err.code
-        ? getErrorMessage(err.code)
+        ? (err.message || getErrorMessage(err.code))
         : err.message || getErrorMessage('SYS_002_0009');
       setError(errorMessage);
       sessionStorage.removeItem("payment_id");
@@ -342,7 +342,7 @@ export default function PaymentLinkPage({
       }
 
       if (err.code) {
-        setError(getErrorMessage(err.code));
+        setError(err.message || getErrorMessage(err.code));
       } else if (err.message && err.message.toLowerCase().includes('timeout')) {
         setError(getErrorMessage('SYS_002_0008'));
       } else if (err.message && err.message.toLowerCase().includes('fetch')) {

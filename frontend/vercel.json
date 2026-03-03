@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "ignoreCommand": "bash -c 'if [ -z \"$VERCEL_GIT_PREVIOUS_SHA\" ]; then exit 1; fi; git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" \"$VERCEL_GIT_COMMIT_SHA\" -- frontend && exit 0 || exit 1'",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
