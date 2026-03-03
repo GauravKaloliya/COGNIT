@@ -3,6 +3,10 @@ C.O.G.N.I.T. Backend - Main Application Entry Point
 Flask application factory and route registration.
 """
 
+# Initialize logging first, before any other imports
+from app.logging_config import configure_logging
+configure_logging()
+
 import json
 import logging
 import random
