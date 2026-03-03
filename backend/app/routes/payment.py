@@ -5,11 +5,12 @@ Handles payment creation, screenshot upload, verification, and status.
 
 import base64
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
-from flask import jsonify, request
+from flask import jsonify, request, g
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 import qrcode
@@ -22,7 +23,6 @@ from app.utils.helpers import (
     log_audit,
     create_error_response,
     validate_image_extension,
-    get_ip_hash,
 )
 from app.utils.security import (
     generate_payment_signature,
@@ -45,6 +45,7 @@ from app.utils.fraud import (
 from app.utils.decorators import track_performance
 from app.extensions import s3
 from app.config import S3_BUCKET_NAME
+from middleware.payment_flow import require_valid_payment_session
 
 
 # ────────────────────────────────────────────────
@@ -53,6 +54,7 @@ from app.config import S3_BUCKET_NAME
 
 from flask import Blueprint
 payment_bp = Blueprint('payment', __name__)
+logger = logging.getLogger(__name__)
 
 
 def _is_ocr_unavailable(error: Exception) -> bool:
@@ -114,14 +116,6 @@ def _reject_for_ocr_unavailable(db, payment_id: int, participant_id: int):
     return verification_details, failures
 
 
-# Import middleware if available
-try:
-    from middleware import require_valid_payment_session
-except ImportError:
-    def require_valid_payment_session(f):
-        return f
-
-
 # ────────────────────────────────────────────────
 # Routes
 # ────────────────────────────────────────────────
@@ -132,6 +126,7 @@ except ImportError:
 def create_payment():
     """Create a new payment session with timer."""
     data = request.json or {}
+    logger.info("create_payment request_id=%s", getattr(g, "request_id", None))
     public_id = data.get("public_id")
     amount = data.get("amount")
 
@@ -148,7 +143,7 @@ def create_payment():
     try:
         db = get_db()
     except Exception as e:
-        print(f"[ERROR] create_payment failed - db connection: {e}", flush=True)
+        logger.error("create_payment db connection failed request_id=%s error=%s", getattr(g, "request_id", None), e)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
     row = db.execute(text("""
@@ -200,7 +195,10 @@ def create_payment():
         # Generate UPI link and QR code
         upi_link = generate_upi_link(amount, upi_note)
         
-        print(f"[INFO] Payment created: {payment_row[0]} for participant {public_id[:8]}...", flush=True)
+        logger.info(
+            "payment created request_id=%s payment_id=%s participant_public_id=%s",
+            getattr(g, "request_id", None), payment_row[0], public_id[:8]
+        )
 
         qr = qrcode.make(upi_link)
         buffer = BytesIO()
@@ -262,137 +260,8 @@ def create_payment():
                     })
             except Exception:
                 pass
-        print(f"[ERROR] Payment creation failed: {e}", flush=True)
+        logger.error("payment creation failed request_id=%s error=%s", getattr(g, "request_id", None), e)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
-
-
-@payment_bp.route("/payments/<payment_public_id>/upload-url", methods=["GET", "POST", "OPTIONS"])
-@require_valid_payment_session
-@limiter.limit("20 per minute")
-@track_performance
-def get_payment_upload_url(payment_public_id):
-    """Return a presigned S3 upload URL for payment screenshots (legacy flow)."""
-    if request.method == "OPTIONS":
-        return "", 204
-
-    data = request.json or {}
-    file_extension = (
-        data.get("file_extension")
-        or request.args.get("file_extension")
-        or "jpg"
-    ).lower().strip(".")
-    sha256_hash = (
-        data.get("sha256")
-        or data.get("sha256_hash")
-        or request.args.get("sha256")
-        or request.args.get("sha256_hash")
-    )
-    file_size = data.get("file_size") or request.args.get("file_size")
-
-    if not sha256_hash:
-        return create_error_response("MISSING_FIELDS", {"fields": ["sha256"]})
-
-    if not re.match(r"^[a-f0-9]{64}$", sha256_hash):
-        return create_error_response("INVALID_SHA256")
-
-    is_valid_ext, ext, content_type = validate_image_extension(f"file.{file_extension}")
-    if not is_valid_ext:
-        return create_error_response("INVALID_IMAGE_TYPE", {"allowed": ["jpg", "jpeg", "png", "webp"]})
-
-    try:
-        db = get_db()
-    except Exception as e:
-        print(f"[ERROR] get_payment_upload_url failed - db connection: {e}", flush=True)
-        return create_error_response("INTERNAL_ERROR", custom_message="Payment upload preparation failed. Please try again.")
-
-    row = db.execute(text("""
-        SELECT id, participant_id, status, expires_at
-        FROM payments
-        WHERE public_id = :pid
-        FOR UPDATE
-    """), {"pid": payment_public_id}).fetchone()
-
-    if not row:
-        return create_error_response("PAYMENT_NOT_FOUND")
-
-    payment_id, participant_id, status, expires_at = row
-
-    if expires_at and datetime.now(timezone.utc) > expires_at:
-        db.execute(text("""
-            UPDATE payments
-            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {"pid": payment_id})
-        db.commit()
-        return create_error_response("PAYMENT_EXPIRED")
-
-    if status != "pending":
-        return create_error_response("PAYMENT_INVALID_STATE")
-
-    is_duplicate, existing_payment_id = check_duplicate_screenshot(db, sha256_hash)
-    if is_duplicate:
-        log_audit(db, "fraud_detected_duplicate_image", participant_id=participant_id,
-                  details=f"SHA256 {sha256_hash[:16]}... already exists in payment {existing_payment_id}")
-        db.commit()
-        return create_error_response("DUPLICATE_IMAGE")
-
-    was_rejected = check_rejected_screenshot(db, sha256_hash)
-    if was_rejected:
-        log_audit(db, "fraud_detected_rejected_reuse", participant_id=participant_id,
-                  details=f"SHA256 {sha256_hash[:16]}... was previously rejected")
-        db.commit()
-        return create_error_response("REJECTED_REUSE")
-
-    object_key = f"payments/{payment_public_id}.{ext}"
-
-    try:
-        presigned_url = s3.generate_presigned_url(
-            "put_object",
-            Params={
-                "Bucket": S3_BUCKET_NAME,
-                "Key": object_key,
-                "ContentType": content_type
-            },
-            ExpiresIn=300
-        )
-    except Exception as e:
-        print(f"[ERROR] Failed to generate presigned URL: {e}", flush=True)
-        return create_error_response("INTERNAL_ERROR", custom_message="Failed to prepare upload URL")
-
-    try:
-        db.execute(text("""
-            INSERT INTO payment_files (
-                payment_id, object_key, sha256, content_type, file_size, uploaded_by_ip_hash
-            ) VALUES (
-                :pid, :key, :hash, :content_type, :file_size, :ip_hash
-            ) ON CONFLICT (payment_id)
-            DO UPDATE SET
-                object_key = EXCLUDED.object_key,
-                sha256 = EXCLUDED.sha256,
-                content_type = EXCLUDED.content_type,
-                file_size = EXCLUDED.file_size,
-                uploaded_by_ip_hash = EXCLUDED.uploaded_by_ip_hash,
-                created_at = CURRENT_TIMESTAMP
-        """), {
-            "pid": payment_id,
-            "key": object_key,
-            "hash": sha256_hash,
-            "content_type": content_type,
-            "file_size": file_size,
-            "ip_hash": get_ip_hash()
-        })
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"[ERROR] Failed to store upload metadata: {e}", flush=True)
-        return create_error_response("INTERNAL_ERROR", custom_message="Failed to prepare upload")
-
-    return jsonify({
-        "upload_url": presigned_url,
-        "object_key": object_key,
-        "content_type": content_type,
-        "expires_in": 300
-    })
 
 
 @payment_bp.route("/payments/<payment_public_id>/verify-upload", methods=["POST"])
@@ -412,6 +281,7 @@ def verify_and_upload_payment(payment_public_id):
         - sha256_hash: SHA256 hash of the original image file
     """
     data = request.json or {}
+    logger.info("verify_upload request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     image_base64 = data.get("image_base64")
     file_extension = data.get("file_extension", "jpg").lower().strip(".")
     sha256_hash = data.get("sha256")
@@ -439,13 +309,13 @@ def verify_and_upload_payment(payment_public_id):
         image_bytes = base64.b64decode(image_base64)
         image = Image.open(BytesIO(image_bytes))
     except Exception as e:
-        print(f"[WARN] Failed to decode image: {e}", flush=True)
+        logger.warning("payment image decode failed request_id=%s error=%s", getattr(g, "request_id", None), e)
         return create_error_response("INVALID_FORMAT", {"field": "image_base64", "message": "Invalid image data"})
     
     try:
         db = get_db()
     except Exception as e:
-        print(f"[ERROR] verify_and_upload_payment failed - db connection: {e}", flush=True)
+        logger.error("verify_and_upload_payment db connection failed request_id=%s error=%s", getattr(g, "request_id", None), e)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment verification failed. Please try again.")
     
     row = db.execute(text("""
@@ -506,7 +376,7 @@ def verify_and_upload_payment(payment_public_id):
             db.commit()
             return create_error_response("DUPLICATE_IMAGE")
     except Exception as hash_exc:
-        print(f"[WARN] Perceptual hash check failed: {hash_exc}", flush=True)
+        logger.warning("perceptual hash check failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, hash_exc)
         image_hash = None
     
     # Run verification BEFORE uploading to S3
@@ -548,7 +418,7 @@ def verify_and_upload_payment(payment_public_id):
                     ContentType=content_type
                 )
             except Exception as s3_error:
-                print(f"[ERROR] Failed to upload verified payment to S3: {s3_error}", flush=True)
+                logger.error("s3 upload for verified payment failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, s3_error)
                 db.rollback()
                 return create_error_response("INTERNAL_ERROR", custom_message="Failed to save payment screenshot")
             
@@ -591,7 +461,7 @@ def verify_and_upload_payment(payment_public_id):
                 "verified": True,
                 "failure_reasons": []
             }
-            print(f"[INFO] Payment verified successfully: {payment_public_id}", flush=True)
+            logger.info("payment verified request_id=%s payment_id=%s participant_id=%s", getattr(g, "request_id", None), payment_public_id, participant_id)
         else:
             # Verification FAILED - DO NOT upload to S3, DO NOT save to payment_files
             # Just update payment status to rejected
@@ -635,7 +505,7 @@ def verify_and_upload_payment(payment_public_id):
                 "verified": True,
                 "failure_reasons": failures
             }
-            print(f"[WARN] Payment rejected: {payment_public_id} - reasons: {failures}", flush=True)
+            logger.warning("payment rejected request_id=%s payment_id=%s participant_id=%s reasons=%s", getattr(g, "request_id", None), payment_public_id, participant_id, failures)
     
     except Exception as e:
         try:
@@ -649,9 +519,9 @@ def verify_and_upload_payment(payment_public_id):
                 "verified": True,
                 "failure_reasons": failures
             }
-            print(f"[WARN] OCR service not available - payment auto-rejected: {payment_public_id}", flush=True)
+            logger.warning("payment auto-rejected ocr unavailable request_id=%s payment_id=%s participant_id=%s", getattr(g, "request_id", None), payment_public_id, participant_id)
         else:
-            print(f"[ERROR] Verification failed: {e}", flush=True)
+            logger.error("payment verification failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
             verification_result = {
                 "status": "error",
                 "verified": False,
@@ -666,6 +536,7 @@ def verify_and_upload_payment(payment_public_id):
 @track_performance
 def get_payment_status(payment_public_id):
     """Get current payment status including expiry check."""
+    logger.info("payment_status request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     try:
         db = get_db()
 
@@ -712,7 +583,7 @@ def get_payment_status(payment_public_id):
 
         return jsonify(response)
     except Exception as e:
-        print(f"[ERROR] get_payment_status failed: {e}", flush=True)
+        logger.error("get payment status failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -720,10 +591,11 @@ def get_payment_status(payment_public_id):
 @limiter.exempt
 def verify_payment(payment_public_id):
     """Internal endpoint for payment verification (no rate limit)."""
+    logger.info("internal_verify request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     try:
         db = get_db()
     except Exception as e:
-        print(f"[ERROR] verify_payment failed - db connection: {e}", flush=True)
+        logger.error("internal verify payment db failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
     row = db.execute(text("""
@@ -750,7 +622,7 @@ def verify_payment(payment_public_id):
                 "failure_reasons": failures,
                 "auto_rejected": True
             })
-        print(f"[ERROR] Verification failed due to OCR error: {e}", flush=True)
+        logger.error("internal verify payment ocr failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("SYS_SERVICE_UNAVAILABLE")
 
     # Run strict validation

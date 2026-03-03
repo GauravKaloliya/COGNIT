@@ -17,8 +17,10 @@ const TRANSLATIONS = {
     'VAL_003_0001': 'Please fill in all required fields',
     'VAL_003_0002': 'Invalid request ID format',
     'VAL_003_0004': 'Please upload an image file (JPG, PNG, etc.) of your payment screenshot.',
-    'VAL_003_0005': 'The file is too large. Please upload an image smaller than 5MB.',
+    'VAL_003_0005': 'The file is too large. Please upload a smaller image.',
     'VAL_003_0006': 'Please upload a screenshot of your payment first.',
+    'VAL_003_0003': 'Invalid request ID format',
+    'VAL_003_0007': 'This action is not allowed for this API route',
 
     // User detail validation
     'VAL_001_0001': 'Username must be at least 2 characters and contain only letters, numbers, and underscores',
@@ -54,6 +56,7 @@ const TRANSLATIONS = {
     'VAL_002_0008': 'Rating must be between 1 and 10',
     'VAL_002_0009': 'Rating must be at least 1',
     'VAL_002_0010': 'Rating cannot exceed 10',
+    'VAL_002_0011': 'Invalid survey index',
     
     // =====================================================================
     // DUPLICATE/CONFLICT ERRORS (DUP)
@@ -71,6 +74,7 @@ const TRANSLATIONS = {
     
     // Payment duplicates
     'DUP_003_0001': 'This screenshot has already been submitted',
+    'DUP_003_0002': 'This transaction has already been used',
     'DUP_003_0003': 'This screenshot was already used by another user',
     
     // =====================================================================
@@ -90,6 +94,7 @@ const TRANSLATIONS = {
     'NF_001_0002': 'Image not found',
     'NF_001_0003': 'Payment not found',
     'NF_001_0004': 'Consent record not found',
+    'NF_001_0005': 'Route not found',
     
     // =====================================================================
     // PAYMENT ERRORS (PAY)
@@ -100,6 +105,8 @@ const TRANSLATIONS = {
     'PAY_001_0003': 'Invalid payment amount',
     'PAY_001_0004': 'Payment has already been processed',
     'PAY_001_0005': 'Please complete payment before accessing the survey.',
+    'PAY_001_0006': 'Invalid file hash',
+    'PAY_001_0007': 'Payment not verified. Please complete payment first.',
     
     // =====================================================================
     // FRAUD DETECTION ERRORS (FRAUD)
@@ -110,8 +117,10 @@ const TRANSLATIONS = {
     'FRAUD_001_0002': 'Could not read the screenshot text. Please retake.',
     'FRAUD_001_0003': 'Please use Google Pay, Paytm, or BHIM',
     'FRAUD_001_0004': 'Payment not made to correct beneficiary',
+    'FRAUD_001_0005': 'Payment amount must be exactly ₹1',
     'FRAUD_001_0006': 'Payment time is outside the allowed 5-minute window. Please upload a recent screenshot.',
     'FRAUD_001_0007': 'Could not read payment date/time from screenshot. Please upload a clearer screenshot.',
+    'FRAUD_001_0008': 'Payment time not found in screenshot',
     
     // Payment mismatch issues
     'FRAUD_002_0001': 'Payment not made to correct UPI ID',
@@ -122,6 +131,7 @@ const TRANSLATIONS = {
     'FRAUD_002_0007': 'Payment timestamp could not be verified. Please upload a recent screenshot.',
     'FRAUD_002_0008': 'Payment time is outside the allowed window. Please upload a recent screenshot.',
     'FRAUD_002_0009': 'Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.',
+    'FRAUD_002_0010': 'Payment date/time not found in screenshot',
     
     // Reuse detection
     'FRAUD_003_0001': 'This screenshot was already submitted by another user',
@@ -267,19 +277,22 @@ export function parseErrorResponse(response) {
     };
   }
   
-  const { code, message, field, fields, details } = response.error;
-  const category = code?.split('_')[0] || 'SYS';
+  const { code, message, field, fields, details, category: serverCategory, http_status, retryable, request_id } = response.error;
+  const category = serverCategory || code?.split('_')[0] || 'SYS';
   const categoryInfo = ERROR_CATEGORIES[category] || ERROR_CATEGORIES.SYS;
   const mappedMessage = code && hasErrorCode(code) ? getErrorMessage(code) : null;
   
   return {
     code,
-    message: message || mappedMessage || getErrorMessage('SYS_001_0001'),
+    message: mappedMessage || message || getErrorMessage('SYS_001_0001'),
     originalMessage: message,
     category,
     field,
     fields,
     details,
+    status: http_status,
+    retryable,
+    requestId: request_id,
     severity: categoryInfo.severity,
     action: categoryInfo.action,
     timestamp: new Date().toISOString()
