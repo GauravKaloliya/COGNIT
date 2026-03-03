@@ -136,6 +136,7 @@ const TRANSLATIONS = {
     // Reuse detection
     'FRAUD_003_0001': 'This screenshot was already submitted by another user',
     'FRAUD_003_0002': 'This screenshot was previously rejected',
+    'FRAUD_003_0004': 'You already submitted this screenshot. Please use a new payment screenshot.',
     
     // =====================================================================
     // SYSTEM ERRORS (SYS)
@@ -204,6 +205,7 @@ const TRANSLATIONS = {
     'ERR_INVALID_IMAGE_TYPE': 'Invalid image format. Please upload JPG, PNG, or WEBP.',
     'ERR_INVALID_SHA256': 'Invalid file hash. Please try uploading again.',
     'ERR_DUPLICATE_IMAGE': 'This screenshot has already been uploaded by another user. Please use a fresh payment screenshot.',
+    'ERR_DUPLICATE_IMAGE_SELF': 'You already submitted this screenshot. Please use a new payment screenshot.',
     'ERR_REJECTED_REUSE': 'This screenshot was previously rejected. Please use a fresh payment screenshot.',
     'ERR_PAYMENT_REJECTED': 'Payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.',
     'ERR_NO_IMAGES': 'No images are currently available. Please try again later.',

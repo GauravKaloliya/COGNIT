@@ -15,7 +15,6 @@ const VERIFICATION_REASON_CODES = {
   missing_bhim_label: 'FRAUD_002_0005',
   ocr_unavailable: 'SYS_001_0004',
   missing_paid_bhim: 'FRAUD_002_0005',
-  note_mismatch: 'FRAUD_002_0002',
 };
 const MAX_UPLOAD_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB || "8");
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
@@ -63,6 +62,16 @@ export default function PaymentLinkPage({
   const getTimerState = useCallback(() => {
     return sessionStorage.getItem("payment_timer_expires_at");
   }, []);
+
+  const stopTimer = useCallback((clearPersisted = false) => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (clearPersisted) {
+      clearTimerState();
+    }
+  }, [clearTimerState]);
 
   // Calculate timer values based on expiry
   const calculateTimerValues = useCallback((expiresAt) => {
@@ -124,17 +133,12 @@ export default function PaymentLinkPage({
     setPaymentStatus("expired");
     setError(getErrorMessage('PAY_001_0001'));
     sessionStorage.removeItem("payment_id");
-    clearTimerState();
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-    }
-  }, [clearTimerState]);
+    stopTimer(true);
+  }, [stopTimer]);
 
   // Start the countdown timer
   const startTimer = useCallback((expiresAt) => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-    }
+    stopTimer();
 
     saveTimerState(expiresAt);
 
@@ -151,18 +155,16 @@ export default function PaymentLinkPage({
 
     updateTimer();
     timerIntervalRef.current = setInterval(updateTimer, 1000);
-  }, [calculateTimerValues, saveTimerState, handleExpiry]);
+  }, [calculateTimerValues, saveTimerState, handleExpiry, stopTimer]);
 
   useEffect(() => {
     document.title = "Payment - C.O.G.N.I.T.";
     createPayment();
 
     return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-      }
+      stopTimer();
     };
-  }, []);
+  }, [stopTimer]);
 
   // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
@@ -180,11 +182,9 @@ export default function PaymentLinkPage({
     }
 
     return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-      }
+      stopTimer();
     };
-  }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, startTimer, handleExpiry]);
+  }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, startTimer, handleExpiry, stopTimer]);
 
   const createPayment = async () => {
     if (!publicId) {
@@ -251,6 +251,18 @@ export default function PaymentLinkPage({
     });
   };
 
+  const restartPayment = async () => {
+    stopTimer(true);
+    sessionStorage.removeItem("payment_id");
+    sessionStorage.removeItem("payment_timer_expires_at");
+    setPaymentData(null);
+    setPaymentStatus("pending");
+    setUploadFile(null);
+    setFailureReasons([]);
+    setError(null);
+    await createPayment();
+  };
+
   const handleUploadAndFinalize = async () => {
     if (!uploadFile) {
       setError(getErrorMessage('VAL_003_0006'));
@@ -262,6 +274,7 @@ export default function PaymentLinkPage({
       return;
     }
 
+    stopTimer(true);
     setVerifying(true);
     setError(null);
 
@@ -300,7 +313,7 @@ export default function PaymentLinkPage({
         setPaymentStatus("success");
         sessionStorage.removeItem("payment_id");
         clearTimerState();
-        await onNext();
+        onNext?.({ skipVerification: true });
         return;
       }
 
@@ -326,7 +339,7 @@ export default function PaymentLinkPage({
         setPaymentStatus("success");
         sessionStorage.removeItem("payment_id");
         clearTimerState();
-        await onNext();
+        onNext?.({ skipVerification: true });
         return;
       }
 
@@ -360,22 +373,6 @@ export default function PaymentLinkPage({
     }
   };
 
-  const handleRetry = () => {
-    sessionStorage.removeItem("payment_id");
-    clearTimerState();
-    setPaymentData(null);
-    setUploadFile(null);
-    setPaymentStatus("pending");
-    setError(null);
-    setFailureReasons([]);
-    setTimeRemaining(0);
-    setTimerProgress(100);
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-    }
-    createPayment();
-  };
-
   if (isLoading) {
     return (
       <div className="panel payment-panel">
@@ -407,7 +404,7 @@ export default function PaymentLinkPage({
         </div>
         <div className="banner warning spaced">{error}</div>
         <div className="page-actions">
-          <button className="primary" onClick={handleRetry}>
+          <button className="primary" onClick={restartPayment}>
             Try Again
           </button>
         </div>
@@ -434,8 +431,8 @@ export default function PaymentLinkPage({
           {error || getErrorMessage('PAY_001_0001')}
         </div>
         <div className="page-actions">
-          <button className="primary" onClick={handleRetry}>
-            Create New Payment
+          <button className="primary" onClick={restartPayment}>
+            Try Again
           </button>
         </div>
       </div>
@@ -471,7 +468,7 @@ export default function PaymentLinkPage({
           </div>
         )}
         <div className="page-actions">
-          <button className="primary" onClick={handleRetry}>
+          <button className="primary" onClick={restartPayment}>
             Try Again
           </button>
         </div>
@@ -542,12 +539,6 @@ export default function PaymentLinkPage({
                 </>
               )}
             </div>
-
-            {paymentData.upi_note && (
-              <p className="payment-note" style={{ marginTop: '10px', fontWeight: 'bold' }}>
-                Payment Note: {paymentData.upi_note}
-              </p>
-            )}
 
             <div className="payment-status-badge pending">
               <span>⏱️</span>

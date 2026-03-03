@@ -38,14 +38,12 @@ def generate_payment_signature(public_id: str, amount: str, expires_at: str) -> 
 # UPI Link Generation
 # ────────────────────────────────────────────────
 
-def generate_upi_link(amount: float, note: str) -> str:
+def generate_upi_link(amount: float) -> str:
     """
     Generate UPI payment link for mobile apps.
     
     Args:
         amount: Payment amount in INR
-        note: Payment note/reference
-        
     Returns:
         UPI payment URI string
     """
@@ -54,6 +52,5 @@ def generate_upi_link(amount: float, note: str) -> str:
         "pn": UPI_NAME,
         "am": f"{amount:.2f}",
         "cu": "INR",
-        "tn": note
     }
     return "upi://pay?" + urllib.parse.urlencode(params)

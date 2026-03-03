@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from io import BytesIO
 from typing import List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
@@ -24,6 +25,7 @@ from app.config import (
     AWS_REGION,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
+    PAYMENT_SCREENSHOT_TIMEZONE,
 )
 from app.extensions import s3
 
@@ -195,9 +197,13 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
     - paytm: DD Mon (YY|YYYY) + HH:MM AM/PM
     - bhim: DD(st|nd|rd|th) Mon YY + HH:MM AM/PM
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     lower = text.lower()
+    try:
+        local_tz = ZoneInfo(PAYMENT_SCREENSHOT_TIMEZONE)
+    except Exception:
+        local_tz = ZoneInfo("Asia/Kolkata")
 
     month_full = {
         "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
@@ -280,7 +286,7 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
         year = int(m.group(4)) + 2000
 
     try:
-        return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+        return datetime(year, month, day, hour, minute, tzinfo=local_tz)
     except ValueError:
         return None
 
@@ -335,8 +341,7 @@ def verify_payment_screenshot(
     text: str,
     expected_amount: float,
     confidence: float,
-    expected_upi_name: str,
-    expected_note: Optional[str] = None
+    expected_upi_name: str
 ) -> Tuple[bool, Optional[str], List[str]]:
     """
     Validate UPI payment screenshot with app-specific and global rules.
@@ -419,14 +424,7 @@ def verify_payment_screenshot(
     if re.search(r"(?:₹\s*1(?:\.00)?\b|rs\.?\s*1(?:\.00)?\b)", lower, re.IGNORECASE) is None:
         failures.append("invalid_amount")
 
-    # Rule 3: one-time UPI note must match exact server generated note.
-    if expected_note:
-        normalized_text = re.sub(r"\s+", " ", lower).strip()
-        normalized_note = re.sub(r"\s+", " ", expected_note.lower()).strip()
-        if normalized_note not in normalized_text:
-            failures.append("note_mismatch")
-
-    # Rule 4: app-specific date+time must be parsable/unambiguous and within 5 minutes.
+    # Rule 3: app-specific date+time must be parsable/unambiguous and within 5 minutes.
     if _is_datetime_ambiguous(text, detected_app):
         if detected_app == "gpay":
             failures.append("invalid_datetime_format_gpay")
@@ -438,7 +436,8 @@ def verify_payment_screenshot(
         transaction_time = _extract_timestamp(text, detected_app)
         if transaction_time:
             now = datetime.now(timezone.utc)
-            time_diff = abs((now - transaction_time).total_seconds())
+            transaction_time_utc = transaction_time.astimezone(timezone.utc)
+            time_diff = abs((now - transaction_time_utc).total_seconds())
             if time_diff > 300:  # 5 minutes = 300 seconds
                 failures.append("time_out_of_range")
         else:
@@ -450,3 +449,69 @@ def verify_payment_screenshot(
                 failures.append("invalid_datetime_format_bhim")
 
     return len(failures) == 0, detected_app, failures
+
+
+def sanitize_extracted_text_for_storage(
+    text: str,
+    detected_app: Optional[str]
+) -> str:
+    """
+    Keep only verification-relevant OCR snippets for DB storage.
+    This avoids saving unrelated/noisy OCR words in payments.extracted_text.
+    """
+    if not text:
+        return ""
+
+    lower = text.lower()
+    kept_parts: List[str] = []
+
+    def add_match(pattern: str):
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = match.group(0).strip()
+            if value and value not in kept_parts:
+                kept_parts.append(value)
+
+    # App markers
+    add_match(r"\bpaytm\b")
+    add_match(r"\bbhim\b")
+    add_match(r"\bgpay\b")
+    add_match(r"\bgoogle\s*pay\b")
+
+    # Core payment semantics
+    add_match(r"paid\s+to\s+cognit")
+    add_match(r"\bpaid\b")
+    add_match(r"\bcognit\b")
+    add_match(r"\bgaurav\b")
+    add_match(r"(?:₹\s*1(?:\.00)?\b|rs\.?\s*1(?:\.00)?\b)")
+
+    # Time
+    add_match(r"\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)\b")
+
+    # Date by detected app
+    if detected_app == "gpay":
+        add_match(
+            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
+            r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+"
+            r"(\d{4})\b"
+        )
+    elif detected_app == "paytm":
+        add_match(
+            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
+            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+            r"(\d{2}|\d{4})\b"
+        )
+        add_match(
+            r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+            r"(0?[1-9]|[12][0-9]|3[01]),?\s+"
+            r"(\d{2}|\d{4})\b"
+        )
+    elif detected_app == "bhim":
+        add_match(
+            r"\b(0?[1-9]|[12][0-9]|3[01])(st|nd|rd|th)\s+"
+            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+            r"(\d{2})\b"
+        )
+
+    # Deterministic compact output
+    return " | ".join(kept_parts)
