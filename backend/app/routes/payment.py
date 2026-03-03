@@ -77,7 +77,6 @@ def _reject_for_ocr_unavailable(db, payment_id: int, participant_id: int):
     db.execute(text("""
         UPDATE payments
         SET extracted_text = '',
-            upi_txn_ref = NULL,
             fraud_score = :fs,
             verified_at = CURRENT_TIMESTAMP,
             status = 'rejected_fraud',
@@ -188,7 +187,7 @@ def create_payment():
             "timer_time": datetime.now(timezone.utc)
         }).fetchone()
 
-        # Generate UPI note for reference
+        # Generate UPI note identifier
         upi_note = f"COGNIT {payment_row[0]}"
 
         db.commit()
@@ -461,11 +460,9 @@ def verify_and_upload_payment(payment_public_id):
         """), {"pid": payment_id}).fetchone()
         
         amount = payment_row[0] if payment_row else 1
-        payment_note = f"COGNIT {payment_public_id}"
-        
         # Run strict validation
         is_valid, detected_app, failures = verify_payment_screenshot(
-            image, extracted_text, amount, payment_note, confidence, UPI_NAME
+            image, extracted_text, amount, confidence, UPI_NAME
         )
         
         # Build verification details JSON
@@ -474,8 +471,6 @@ def verify_and_upload_payment(payment_public_id):
             "failure_reasons": failures,
             "extracted_text_length": len(extracted_text) if extracted_text else 0
         }
-        
-        # Note: Reference ID / Transaction ID checking has been removed
         
         # ONLY upload to S3 and save to database if verification passed
         if is_valid:
@@ -678,8 +673,7 @@ def verify_payment(payment_public_id):
     if not row:
         return create_error_response("PAYMENT_NOT_FOUND")
 
-    payment_id, participant_id, amount, object_key, payment_note = row
-
+    payment_id, participant_id, amount, object_key = row
     try:
         image = fetch_s3_image(object_key)
         extracted_text, confidence = extract_text_with_confidence(image)
@@ -697,7 +691,7 @@ def verify_payment(payment_public_id):
 
     # Run strict validation
     is_valid, detected_app, failures = verify_payment_screenshot(
-        image, extracted_text, amount, payment_note, confidence, UPI_NAME
+        image, extracted_text, amount, confidence, UPI_NAME
     )
 
     # Build verification details JSON
@@ -706,8 +700,6 @@ def verify_payment(payment_public_id):
         "failure_reasons": failures,
         "extracted_text_length": len(extracted_text) if extracted_text else 0
     }
-
-    # Note: Reference ID / Transaction ID checking has been removed
 
     if is_valid:
         new_status = "success"

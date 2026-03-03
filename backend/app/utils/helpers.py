@@ -8,18 +8,11 @@ import json
 import re
 from typing import Any, Dict, Optional, Tuple
 
-from flask import current_app, jsonify, request
+from flask import jsonify, request
 from sqlalchemy import text
 
 from app.config import (
     ERROR_CODES,
-    MIN_WORD_COUNT,
-    MIN_DESCRIPTION_LENGTH,
-    MAX_DESCRIPTION_LENGTH,
-    MIN_FEEDBACK_LENGTH,
-    MAX_FEEDBACK_LENGTH,
-    MIN_RATING,
-    MAX_RATING,
     TOO_FAST_SECONDS,
     ALLOWED_IMAGE_EXTENSIONS,
     CONTENT_TYPE_MAP,
@@ -54,11 +47,6 @@ def count_words(text: str) -> int:
         return 0
     words = re.findall(r"\b\w+\b", text.strip(), re.UNICODE)
     return len([w for w in words if re.search(r"[^\W\d_]", w, re.UNICODE)])
-
-
-def detect_bot_like_content(text: str, wc: int) -> Tuple[bool, str]:
-    """Detect bot-like content - currently disabled, returns False always."""
-    return False, ""
 
 
 # ────────────────────────────────────────────────

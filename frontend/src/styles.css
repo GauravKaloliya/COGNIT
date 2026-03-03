@@ -409,11 +409,6 @@ body.dark .status-dot.offline {
   }
 }
 
-.panel.centered {
-  text-align: center;
-  align-items: center;
-}
-
 .status-panel {
   text-align: center;
   justify-content: center;
@@ -477,18 +472,6 @@ body.dark .banner.warning {
   background: rgba(230, 126, 34, 0.2);
   color: #fbbf24;
   border-color: rgba(230, 126, 34, 0.4);
-}
-
-.banner.info {
-  background: #eff6ff;
-  color: #1e40af;
-  border-color: #bfdbfe;
-}
-
-body.dark .banner.info {
-  background: rgba(24, 119, 242, 0.15);
-  color: #60a5fa;
-  border-color: rgba(24, 119, 242, 0.3);
 }
 
 .banner.spaced {
@@ -814,33 +797,6 @@ textarea {
   line-height: var(--leading-normal);
 }
 
-/* Payment checkbox specific */
-.payment-checkbox {
-  background-color: var(--panel);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  margin: var(--space-2) 0 0;
-  align-items: center;
-}
-
-@media (min-width: 768px) {
-  .payment-checkbox {
-    padding: var(--space-3);
-  }
-}
-
-.payment-checkbox input[type="checkbox"] {
-  margin-top: 0;
-  margin-right: 0;
-}
-
-.payment-checkbox .consent-text {
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-  margin: 0;
-  padding: 0;
-}
-
 /* --------------------------------------------------------------------------
    Mobile-First Buttons
    -------------------------------------------------------------------------- */
@@ -895,13 +851,6 @@ textarea {
   opacity: 0.6;
   cursor: not-allowed;
   background: var(--muted);
-}
-
-.primary.compact {
-  min-height: 40px;
-  font-size: var(--text-sm);
-  min-width: auto;
-  width: auto;
 }
 
 .primary.small {
@@ -989,21 +938,6 @@ textarea {
     min-width: 44px;
     min-height: 44px;
     padding: var(--space-2) var(--space-3) !important;
-  }
-}
-
-/* --------------------------------------------------------------------------
-   Mobile-First Survey Styles
-   -------------------------------------------------------------------------- */
-.survey {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-@media (min-width: 768px) {
-  .survey {
-    gap: var(--space-5);
   }
 }
 
@@ -1781,33 +1715,11 @@ body.dark .toast.warning {
 .payment-note {
   color: var(--muted);
   font-size: var(--text-sm);
+  overflow-wrap: anywhere;
 }
 
 .payment-panel .consent-checkbox:hover {
   border-color: var(--border);
-}
-
-.payment-cta {
-  min-width: 100%;
-  padding: var(--space-4) var(--space-6);
-  font-size: var(--text-base);
-}
-
-@media (min-width: 480px) {
-  .payment-cta {
-    min-width: 160px;
-    padding: var(--space-3) var(--space-6);
-  }
-}
-
-.payment-cta:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  background: var(--muted);
-}
-
-.payment-actions {
-  margin-top: var(--space-4);
 }
 
 .hero-title {
@@ -1859,16 +1771,131 @@ body.dark .toast.warning {
   width: 100%;
 }
 
-.page-actions.left {
-  justify-content: flex-start;
-}
-
-.page-actions.center {
-  justify-content: center;
-}
-
 .page-top-actions {
   margin-bottom: var(--space-3);
+}
+
+@media (max-width: 479px) {
+  .page-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-actions .primary,
+  .page-actions .ghost {
+    width: 100%;
+  }
+}
+
+.error-details {
+  margin-bottom: var(--space-5);
+  text-align: left;
+}
+
+.error-details-summary {
+  cursor: pointer;
+  margin-bottom: var(--space-3);
+}
+
+.error-details-pre {
+  background: var(--bg);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  overflow: auto;
+  font-size: 12px;
+  max-height: min(300px, 40vh);
+}
+
+.service-unavailable-icon {
+  font-size: clamp(2.5rem, 10vw, 4rem);
+  margin-bottom: var(--space-3);
+}
+
+.service-unavailable-card {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+  text-align: left;
+}
+
+.service-unavailable-card-title {
+  font-weight: var(--font-semibold);
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+}
+
+.service-unavailable-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--muted);
+  line-height: var(--leading-relaxed);
+}
+
+.survey-feedback-icon {
+  background: linear-gradient(135deg, var(--success), var(--primary));
+  width: clamp(72px, 24vw, 100px);
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  margin: 0 auto var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: clamp(32px, 10vw, 48px);
+  box-shadow: 0 4px 20px rgba(24, 119, 242, 0.3);
+}
+
+.survey-feedback-title {
+  color: var(--success);
+  margin: 0 0 var(--space-4);
+}
+
+.survey-feedback-text {
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  margin: 0 auto var(--space-5);
+  max-width: 500px;
+}
+
+.survey-feedback-tip {
+  background-color: var(--accent-bg);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  margin: 0 auto var(--space-5);
+  border-left: 4px solid var(--primary);
+  max-width: 600px;
+}
+
+.survey-feedback-tip p {
+  margin: 0;
+  color: var(--muted);
+  line-height: var(--leading-relaxed);
+}
+
+.survey-feedback-actions {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.survey-feedback-finish {
+  border: 2px solid var(--error);
+  color: var(--error);
+}
+
+@media (max-width: 479px) {
+  .survey-feedback-actions {
+    gap: var(--space-2);
+  }
+
+  .survey-feedback-actions .primary,
+  .survey-feedback-actions .ghost {
+    width: 100%;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -2001,9 +2028,10 @@ body.dark .toast.warning {
   align-items: center;
   gap: 1rem;
   padding: 1.5rem;
-  background: var(--bg-secondary);
+  background: var(--bg);
   border-radius: 12px;
   margin: 1rem 0;
+  width: 100%;
 }
 
 @media (min-width: 768px) {
@@ -2013,8 +2041,8 @@ body.dark .toast.warning {
 }
 
 .payment-qr-code {
-  width: 200px;
-  height: 200px;
+  width: min(200px, 100%);
+  aspect-ratio: 1 / 1;
   border-radius: 8px;
   box-shadow: 0 2px 8px var(--shadow-color, rgba(0, 0, 0, 0.1));
 }
@@ -2027,6 +2055,7 @@ body.dark .payment-qr-code {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   width: 100%;
   padding: 1rem 1.5rem;
@@ -2054,6 +2083,23 @@ body.dark .payment-qr-code {
   white-space: nowrap;
 }
 
+@media (max-width: 479px) {
+  .payment-upi-button {
+    font-size: var(--text-base);
+    justify-content: flex-start;
+    gap: var(--space-2);
+    padding: 0.875rem 1rem;
+  }
+
+  .payment-upi-timer {
+    margin-left: 0;
+    width: 100%;
+    border-left: none;
+    padding-left: 0;
+    padding-top: var(--space-1);
+  }
+}
+
 .payment-upload-area {
   border: 2px dashed var(--border-color, var(--border));
   border-radius: 12px;
@@ -2069,6 +2115,12 @@ body.dark .payment-qr-code {
   background: var(--bg-tertiary, var(--accent-bg));
 }
 
+@media (max-width: 479px) {
+  .payment-upload-area {
+    padding: 1.25rem;
+  }
+}
+
 .payment-status-badge {
   display: inline-flex;
   align-items: center;
@@ -2077,6 +2129,7 @@ body.dark .payment-qr-code {
   border-radius: 20px;
   font-size: 0.875rem;
   font-weight: 500;
+  flex-wrap: wrap;
 }
 
 .payment-status-badge.pending {
@@ -2156,134 +2209,6 @@ body.dark .payment-failure-details li {
 }
 
 /* --------------------------------------------------------------------------
-   Payment Timer with Border Filling Animation
-   -------------------------------------------------------------------------- */
-.payment-timer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem;
-  margin: 0 0 1rem 0;
-  background: var(--panel);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-}
-
-.payment-timer-ring {
-  position: relative;
-  width: 80px;
-  height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.payment-timer-svg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.payment-timer-bg {
-  fill: none;
-  stroke: var(--border-light);
-  stroke-width: 4;
-}
-
-.payment-timer-progress {
-  fill: none;
-  stroke-width: 4;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 1s linear, stroke 0.3s ease;
-}
-
-.payment-timer-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 1;
-}
-
-.payment-timer-icon {
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-.payment-timer-text {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text);
-  margin-top: 0.125rem;
-}
-
-.payment-timer-label {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--muted);
-  text-align: center;
-}
-
-.payment-timer.expired .payment-timer-progress {
-  stroke: var(--error) !important;
-}
-
-.payment-timer.expired .payment-timer-text {
-  color: var(--error);
-}
-
-/* Timer warning states */
-.payment-timer.warning .payment-timer-progress {
-  stroke: var(--warning);
-}
-
-.payment-timer.danger .payment-timer-progress {
-  stroke: var(--error);
-  animation: pulse-timer 1s ease-in-out infinite;
-}
-
-@keyframes pulse-timer {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
-
-/* Dark mode timer styles */
-body.dark .payment-timer {
-  background: var(--soft-panel);
-}
-
-body.dark .payment-timer-bg {
-  stroke: var(--border);
-}
-
-/* Responsive timer */
-@media (min-width: 768px) {
-  .payment-timer {
-    flex-direction: row;
-    justify-content: center;
-    gap: 1rem;
-    padding: 1.25rem;
-  }
-
-  .payment-timer-ring {
-    width: 60px;
-    height: 60px;
-  }
-
-  .payment-timer-label {
-    font-size: 1rem;
-  }
-}
-
-/* --------------------------------------------------------------------------
    Accessibility
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
@@ -2332,74 +2257,6 @@ body.dark .payment-timer-bg {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
-}
-
-/* --------------------------------------------------------------------------
-   Utility Classes
-   -------------------------------------------------------------------------- */
-.hidden {
-  display: none;
-}
-
-/* Text utilities */
-.text-center { text-align: center; }
-.text-left { text-align: left; }
-.text-right { text-align: right; }
-
-/* Spacing utilities */
-.mt-0 { margin-top: 0; }
-.mb-0 { margin-bottom: 0; }
-
-/* Truncate with ellipsis */
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Break words */
-.break-words {
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  word-break: break-word;
-}
-
-/* Flex utilities */
-.flex { display: flex; }
-.flex-col { flex-direction: column; }
-.items-center { align-items: center; }
-.justify-center { justify-content: center; }
-.gap-2 { gap: var(--space-2); }
-.gap-4 { gap: var(--space-4); }
-
-/* Screen reader only */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
-/* Icon SVG sizing */
-.icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.icon-sm {
-  width: 16px;
-  height: 16px;
-}
-
-.icon-lg {
-  width: 24px;
-  height: 24px;
 }
 
 /* Number input - fix spinner overlap */
@@ -2472,16 +2329,6 @@ textarea:focus-visible {
   box-shadow: var(--focus-ring);
 }
 
-/* Smooth scrolling for anchor links */
-html {
-  scroll-behavior: smooth;
-}
-
-/* Prevent horizontal overflow on mobile */
-body {
-  overflow-x: hidden;
-}
-
 /* Ensure images don't overflow containers */
 img {
   max-width: 100%;
@@ -2509,11 +2356,6 @@ img {
   line-height: var(--leading-relaxed);
 }
 
-/* Payment CTA specific styling */
-.payment-cta {
-  border-radius: var(--radius-md);
-}
-
 /* Improve back button visibility */
 .back-button {
   border-width: 1.5px;
@@ -2524,25 +2366,6 @@ input::placeholder,
 textarea::placeholder,
 select:invalid {
   opacity: 0.9;
-}
-
-/* Make required asterisks more visible */
-.form-field label .required {
-  font-size: 1.1em;
-  margin-left: 2px;
-}
-
-/* Improve note banner contrast */
-.banner.warning {
-  background: #fff7ed;
-  color: #9a3412;
-  border-color: #fed7aa;
-}
-
-body.dark .banner.warning {
-  background: rgba(230, 126, 34, 0.2);
-  color: #fbbf24;
-  border-color: rgba(230, 126, 34, 0.4);
 }
 
 /* Disabled visual feedback */
@@ -2593,52 +2416,3 @@ select option {
     padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
   }
 }
-
-/* Animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-@keyframes timer-pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.85;
-  }
-}
-
-@keyframes qr-glow {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(24, 119, 242, 0.3), 0 4px 12px rgba(0,0,0,0.1);
-  }
-  50% {
-    box-shadow: 0 0 30px rgba(24, 119, 242, 0.5), 0 4px 16px rgba(0,0,0,0.15);
-  }
-}
-
-@keyframes qr-border-fill {
-  0% {
-    background-position: 0% 0%;
-  }
-  100% {
-    background-position: 100% 0%;
-  }
-}
-
