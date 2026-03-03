@@ -11,6 +11,7 @@ from io import BytesIO
 
 from flask import jsonify, request, current_app
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 import qrcode
 from PIL import Image
 
@@ -55,11 +56,13 @@ payment_bp = Blueprint('payment', __name__)
 def _is_ocr_unavailable(error: Exception) -> bool:
     """Check if the error indicates OCR service is unavailable."""
     return (
-        isinstance(error, (OCRServiceUnavailableError, TesseractNotFoundError))
+        isinstance(error, (OCRServiceUnavailableError, TesseractNotFoundError, OCRServiceError))
         or "OCRServiceUnavailableError" in type(error).__name__
         or "TesseractNotFoundError" in type(error).__name__
+        or "OCRServiceError" in type(error).__name__
         or "ocr unavailable" in str(error).lower()
         or "textract client" in str(error).lower()
+        or "textract api error" in str(error).lower()
         or "aws credentials" in str(error).lower()
         or "rate limited" in str(error).lower()
         or "connection error" in str(error).lower()
@@ -219,6 +222,44 @@ def create_payment():
             db.rollback()
         except:
             pass
+        # Handle concurrent duplicate create calls (e.g., frontend double-invoke)
+        # by returning the existing active payment instead of failing with 500.
+        if isinstance(e, IntegrityError) or "idx_payments_one_active_per_participant" in str(e):
+            try:
+                existing = db.execute(text("""
+                    SELECT public_id, amount, expires_at
+                    FROM payments
+                    WHERE participant_id = :pid
+                      AND status IN ('pending', 'processing')
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """), {"pid": participant_id}).fetchone()
+                if existing:
+                    existing_payment_id, existing_amount, existing_expires_at = existing
+                    upi_note = f"COGNIT {existing_payment_id}"
+                    upi_link = generate_upi_link(float(existing_amount), upi_note)
+                    qr = qrcode.make(upi_link)
+                    buffer = BytesIO()
+                    qr.save(buffer, format="PNG")
+                    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+                    remaining_seconds = max(
+                        0,
+                        int((existing_expires_at - datetime.now(timezone.utc)).total_seconds())
+                    ) if existing_expires_at else PAYMENT_EXPIRY_SECONDS
+
+                    return jsonify({
+                        "payment_id": str(existing_payment_id),
+                        "amount": float(existing_amount),
+                        "expires_at": existing_expires_at.isoformat() if existing_expires_at else None,
+                        "signature": signature,
+                        "upi_link": upi_link,
+                        "upi_note": upi_note,
+                        "qr_base64": qr_base64,
+                        "timer_activated": True,
+                        "time_remaining_seconds": remaining_seconds
+                    })
+            except Exception:
+                pass
         print(f"[ERROR] Payment creation failed: {e}", flush=True)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
 
