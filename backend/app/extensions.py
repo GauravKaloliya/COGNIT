@@ -10,7 +10,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from app.config import SECRET_KEY, CORS_ORIGINS, RATELIMIT_STORAGE_URI, LOG_LEVEL
+from app.config import SECRET_KEY, CORS_ORIGINS, CORS_SUPPORTS_CREDENTIALS, RATELIMIT_STORAGE_URI, LOG_LEVEL
 from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 
 
@@ -25,7 +25,7 @@ app.url_map.strict_slashes = False
 app.config["SECRET_KEY"] = SECRET_KEY
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 
 
@@ -33,10 +33,12 @@ app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 # CORS Configuration
 # ────────────────────────────────────────────────
 
-cors_origins = CORS_ORIGINS
-if cors_origins != "*":
-    cors_origins = [origin.strip() for origin in cors_origins.split(",")]
-CORS(app, resources={r"/*": {"origins": cors_origins}})
+cors_origins = [origin.strip() for origin in CORS_ORIGINS.split(",")]
+CORS(
+    app,
+    resources={r"/*": {"origins": cors_origins}},
+    supports_credentials=CORS_SUPPORTS_CREDENTIALS
+)
 
 
 # ────────────────────────────────────────────────
