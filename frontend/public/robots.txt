@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Allow all search engines to index the site
+# This is a research application - public facing
+
+Sitemap: https://cognit.online/sitemap.xml
