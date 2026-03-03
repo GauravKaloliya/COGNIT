@@ -7,7 +7,7 @@ import hashlib
 import re
 from typing import Any, Dict, Optional, Tuple
 
-from flask import jsonify, request
+from flask import jsonify, request, g
 from sqlalchemy import text
 
 from app.config import (
@@ -89,8 +89,8 @@ def log_audit(db, event_type: str, participant_id: Optional[int] = None, details
             db.execute(text("""
                 INSERT INTO audit_log (
                     event_type, participant_id, endpoint, http_method,
-                    ip_hash, user_agent, details
-                ) VALUES (:ev, :pid, :ep, :meth, :iph, :ua, :det)
+                    ip_hash, user_agent, details, request_id
+                ) VALUES (:ev, :pid, :ep, :meth, :iph, :ua, :det, :rid)
             """), {
                 "ev": event_type,
                 "pid": participant_id,
@@ -98,7 +98,8 @@ def log_audit(db, event_type: str, participant_id: Optional[int] = None, details
                 "meth": request.method,
                 "iph": get_ip_hash(),
                 "ua": request.headers.get("User-Agent", "")[:512],
-                "det": details[:8000]
+                "det": details[:8000],
+                "rid": getattr(g, "request_id", None),
             })
     except Exception as exc:
         print(f"[WARN] audit log insert failed: {exc}", flush=True)
@@ -109,25 +110,35 @@ def log_audit(db, event_type: str, participant_id: Optional[int] = None, details
 # ────────────────────────────────────────────────
 
 def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
-    """Generate standardized error response with support for message formatting."""
+    """Generate strict standardized error response."""
     error_def = ERROR_CODES.get(error_key, ERROR_CODES["SYS_INTERNAL_ERROR"])
     custom_message = kwargs.get("custom_message")
+    status = int(error_def.get("status", 500))
+    category = error_def.get("category", "SYS")
+    retryable = kwargs.get("retryable")
+    if retryable is None:
+        retryable = status >= 500 or category in {"RATE", "PAY"}
+
     base_message = error_def["message"].format(**kwargs) if kwargs else error_def["message"]
+    request_id = getattr(g, "request_id", None)
     response = {
         "success": False,
         "error": {
             "code": error_def["code"],
             "message": custom_message or base_message,
-            "category": error_key.split("_")[0] if "_" in error_key else "UNKNOWN",
+            "category": category,
+            "http_status": status,
+            "retryable": bool(retryable),
+            "request_id": request_id,
         }
     }
     if "field" in error_def:
         response["error"]["field"] = error_def["field"]
-    if "fields" in error_def:
-        response["error"]["fields"] = kwargs.get("fields", [])
+    if "fields" in kwargs and kwargs.get("fields") is not None:
+        response["error"]["fields"] = kwargs["fields"]
     if kwargs.get("details"):
         response["error"]["details"] = kwargs["details"]
-    return jsonify(response), error_def["status"]
+    return jsonify(response), status
 
 
 def success_response(data: Optional[Dict] = None, message: Optional[str] = None):
@@ -145,7 +156,7 @@ def create_error_response(
     details: Optional[dict] = None, 
     custom_message: Optional[str] = None
 ) -> Tuple[Any, int]:
-    """Legacy wrapper for backward compatibility."""
+    """Project-wide error response helper."""
     return error_response(error_key, details=details, custom_message=custom_message)
 
 

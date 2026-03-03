@@ -131,10 +131,26 @@ RETURNS TRIGGER AS $$
 DECLARE
     pass_inc INTEGER := CASE WHEN NEW.attention_passed THEN 1 ELSE 0 END;
     fail_inc INTEGER := CASE WHEN NEW.attention_passed THEN 0 ELSE 1 END;
+    hard_flag BOOLEAN := FALSE;
 BEGIN
     IF NEW.is_attention_check IS DISTINCT FROM TRUE THEN
         RETURN NEW;
     END IF;
+
+    -- DB-level hard flag rule: 2 consecutive failed attention checks.
+    SELECT (
+        COUNT(*) = 2
+        AND bool_and(COALESCE(attention_passed, FALSE) = FALSE)
+    )
+    INTO hard_flag
+    FROM (
+        SELECT attention_passed
+        FROM submissions
+        WHERE participant_id = NEW.participant_id
+          AND is_attention_check = TRUE
+        ORDER BY created_at DESC, id DESC
+        LIMIT 2
+    ) recent;
 
     INSERT INTO participant_attention_stats (
         participant_id,
@@ -163,10 +179,78 @@ BEGIN
             ((participant_attention_stats.passed_checks + pass_inc)::NUMERIC /
              (participant_attention_stats.total_checks + 1)) < 0.60 AND
             (participant_attention_stats.total_checks + 1) >= 3
-        ),
+        ) OR hard_flag,
         last_checked_at = CURRENT_TIMESTAMP;
 
     RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION validate_attention_event_consistency()
+RETURNS TRIGGER AS $$
+DECLARE
+    sub_participant_id BIGINT;
+    sub_image_id BIGINT;
+    sub_attention_passed BOOLEAN;
+    sub_is_attention BOOLEAN;
+BEGIN
+    SELECT s.participant_id, s.image_id, s.attention_passed, s.is_attention_check
+    INTO sub_participant_id, sub_image_id, sub_attention_passed, sub_is_attention
+    FROM submissions s
+    WHERE s.id = NEW.submission_id;
+
+    IF sub_participant_id IS NULL THEN
+        RAISE EXCEPTION 'attention_event submission does not exist: %', NEW.submission_id;
+    END IF;
+
+    IF sub_is_attention IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'attention_event must reference an attention-check submission: %', NEW.submission_id;
+    END IF;
+
+    IF NEW.participant_id IS DISTINCT FROM sub_participant_id THEN
+        RAISE EXCEPTION 'attention_event participant mismatch for submission %', NEW.submission_id;
+    END IF;
+
+    IF NEW.image_id IS DISTINCT FROM sub_image_id THEN
+        RAISE EXCEPTION 'attention_event image mismatch for submission %', NEW.submission_id;
+    END IF;
+
+    IF NEW.attention_passed IS DISTINCT FROM sub_attention_passed THEN
+        RAISE EXCEPTION 'attention_event attention_passed mismatch for submission %', NEW.submission_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION validate_payment_file_status()
+RETURNS TRIGGER AS $$
+DECLARE
+    payment_status TEXT;
+BEGIN
+    SELECT status INTO payment_status
+    FROM payments
+    WHERE id = NEW.payment_id;
+
+    IF payment_status IN ('failed', 'rejected_fraud', 'expired', 'refunded') THEN
+        RAISE EXCEPTION 'Cannot attach payment file to payment in status %', payment_status;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION validate_rejected_payment_has_signal()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.status = 'rejected_fraud' THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM payment_fraud_signals pfs WHERE pfs.payment_id = NEW.id
+        ) THEN
+            RAISE EXCEPTION 'rejected_fraud payment % must have at least one fraud signal', NEW.id;
+        END IF;
+    END IF;
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -401,6 +485,10 @@ CREATE TRIGGER trg_attention_events_no_delete
     BEFORE DELETE ON attention_events
     FOR EACH ROW EXECUTE FUNCTION prevent_attention_event_mutation();
 
+CREATE TRIGGER trg_attention_events_consistency
+    BEFORE INSERT ON attention_events
+    FOR EACH ROW EXECUTE FUNCTION validate_attention_event_consistency();
+
 -- =====================================================================
 -- PARTICIPANT STATS TABLES
 -- =====================================================================
@@ -523,6 +611,10 @@ CREATE INDEX IF NOT EXISTS idx_payment_files_payment  ON payment_files (payment_
 CREATE INDEX IF NOT EXISTS idx_payment_files_sha256   ON payment_files (sha256);
 CREATE INDEX IF NOT EXISTS idx_payment_files_phash    ON payment_files (image_phash) WHERE image_phash IS NOT NULL;
 
+CREATE TRIGGER trg_payment_files_status_guard
+    BEFORE INSERT OR UPDATE OF payment_id ON payment_files
+    FOR EACH ROW EXECUTE FUNCTION validate_payment_file_status();
+
 CREATE TABLE IF NOT EXISTS payment_fraud_signals (
     id           BIGSERIAL PRIMARY KEY,
     payment_id   BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
@@ -535,6 +627,12 @@ CREATE TABLE IF NOT EXISTS payment_fraud_signals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fraud_signals_payment ON payment_fraud_signals (payment_id);
+
+CREATE CONSTRAINT TRIGGER trg_rejected_payment_requires_signal
+    AFTER INSERT OR UPDATE OF status ON payments
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW
+    EXECUTE FUNCTION validate_rejected_payment_has_signal();
 
 CREATE TABLE IF NOT EXISTS payment_submissions (
     payment_id   BIGINT NOT NULL REFERENCES payments(id)   ON DELETE CASCADE,
