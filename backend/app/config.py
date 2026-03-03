@@ -76,6 +76,7 @@ PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 
 ALLOWED_APPS: Dict[str, list] = {
     "gpay": ["gpay", "google pay", "tez"],
+    "phonepe": ["phonepe"],
     "paytm": ["paytm"],
     "bhim": ["bhim"]
 }
