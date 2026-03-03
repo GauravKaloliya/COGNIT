@@ -39,7 +39,6 @@ from app.utils.ocr import (
 from app.utils.fraud import (
     check_duplicate_screenshot,
     check_rejected_screenshot,
-    check_duplicate_transaction,
     compute_fraud_score,
 )
 
@@ -77,6 +76,5 @@ __all__ = [
     # Fraud
     'check_duplicate_screenshot',
     'check_rejected_screenshot',
-    'check_duplicate_transaction',
     'compute_fraud_score',
 ]
