@@ -357,12 +357,9 @@ CREATE TABLE IF NOT EXISTS payments (
     id                   BIGSERIAL PRIMARY KEY,
     participant_id       BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
     public_id            UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
-    transaction_id       VARCHAR(120),
+    
     amount               NUMERIC(12,2) NOT NULL CHECK (amount > 0),
     currency             VARCHAR(10) NOT NULL DEFAULT 'INR',
-    upi_vpa              VARCHAR(120),
-    upi_note             VARCHAR(255),
-    upi_txn_ref          VARCHAR(120),
     extracted_text       TEXT,
     fraud_score          NUMERIC(5,2) DEFAULT 0 CHECK (fraud_score >= 0),
     auto_rejected        BOOLEAN DEFAULT FALSE,
@@ -370,7 +367,6 @@ CREATE TABLE IF NOT EXISTS payments (
     signature            CHAR(64) NOT NULL CHECK (length(signature) = 64),
     expires_at           TIMESTAMPTZ NOT NULL,
     timer_activated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    gateway              VARCHAR(60),
     status               VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending','processing','success','failed','rejected_fraud','expired','refunded')),
     verified_at          TIMESTAMPTZ,
