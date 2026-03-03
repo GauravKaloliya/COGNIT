@@ -11,8 +11,6 @@ import { getApiUrl } from "./utils/apiBase";
 import { endpoints } from "./utils/api.js";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 
-const PAYMENT_FLOW_BYPASSED = (import.meta.env.VITE_BYPASS_PAYMENT_FLOW ?? "false").toLowerCase() === "true";
-
 function createId() {
   if (crypto?.randomUUID) {
     return crypto.randomUUID();
@@ -332,24 +330,7 @@ export default function App() {
 
   // Verify payment status when accessing survey stage directly (prevent unauthorized access)
   useEffect(() => {
-    if (!PAYMENT_FLOW_BYPASSED || !systemReady) return;
-
-    if (!paymentVerified) {
-      setPaymentVerified(true);
-    }
-
-    if (stage === "payment") {
-      setPaymentSubStage("content");
-      setStage("survey");
-      return;
-    }
-  }, [stage, paymentVerified, systemReady]);
-
-  useEffect(() => {
     const verifyPaymentForSurvey = async () => {
-      if (PAYMENT_FLOW_BYPASSED) {
-        return;
-      }
       // Only check if we're at survey stage and haven't verified payment yet
       if (stage === 'survey' && !paymentVerified && systemReady) {
         try {
@@ -424,12 +405,7 @@ export default function App() {
       if (consentGiven) {
         await recordConsent();
       }
-      if (PAYMENT_FLOW_BYPASSED) {
-        setPaymentVerified(true);
-        setPaymentSubStage("content");
-        setStage("survey");
-        fetchImage({ clearCurrent: true });
-      } else if (validateStageTransition("user-details", "payment")) {
+      if (validateStageTransition("user-details", "payment")) {
         // Secure navigation: validate transition before moving
         setStage("payment");
       }
@@ -459,7 +435,7 @@ export default function App() {
   const handlePaymentComplete = async (options = {}) => {
     const skipVerification = options?.skipVerification === true;
 
-    if (skipVerification || PAYMENT_FLOW_BYPASSED) {
+    if (skipVerification) {
       setPaymentVerified(true);
       setPaymentSubStage("content");
       if (validateStageTransition("payment", "survey", true)) {

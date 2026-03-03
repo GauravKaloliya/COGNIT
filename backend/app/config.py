@@ -86,8 +86,6 @@ if not PAYMENT_SECRET:
     raise ValueError("PAYMENT_SECRET is required")
 PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 PAYMENT_SCREENSHOT_TIMEZONE = os.getenv("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
-# Temporary toggle to bypass payment-gated routes while keeping payment module intact.
-BYPASS_PAYMENT_FLOW = os.getenv("BYPASS_PAYMENT_FLOW", "false").lower() == "true"
 
 
 # ────────────────────────────────────────────────
