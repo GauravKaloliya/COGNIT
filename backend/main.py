@@ -291,27 +291,6 @@ def api_docs():
 
 
 # ────────────────────────────────────────────────
-# Create App Factory Function
-# ────────────────────────────────────────────────
-
-def create_app():
-    """
-    Application factory for Vercel serverless and testing.
-
-    Returns:
-        Flask application instance
-    """
-    return app
-
-
-# ────────────────────────────────────────────────
-# Vercel Serverless Export
-# ────────────────────────────────────────────────
-
-app = create_app()
-
-
-# ────────────────────────────────────────────────
 # Development Server Entry Point
 # ────────────────────────────────────────────────
 
