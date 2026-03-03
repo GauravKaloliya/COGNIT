@@ -2288,18 +2288,6 @@ input[type="number"]::-webkit-inner-spin-button {
   text-decoration: none;
 }
 
-/* Improve checkbox card internal spacing */
-.consent-checkbox input[type="checkbox"] {
-  margin-top: 0;
-  flex-shrink: 0;
-}
-
-@media (min-width: 768px) {
-  .consent-checkbox input[type="checkbox"] {
-    margin-top: 2px;
-  }
-}
-
 /* Payment page specific improvements */
 .payment-panel .page-actions {
   margin-top: var(--space-5);

@@ -9,19 +9,6 @@ import time
 from datetime import datetime, timezone
 from flask import request, g
 from sqlalchemy import text
-import random
-import string
-
-def generate_canvas_fingerprint():
-    """Generate a canvas-based fingerprint for browser detection"""
-    try:
-        # This would be implemented client-side in JavaScript
-        # and sent to the server. For now, we'll use a simple hash
-        # based on user agent and other available data
-        canvas_data = f"{request.user_agent.string if request.user_agent else ''}{time.time()}"
-        return hashlib.sha256(canvas_data.encode()).hexdigest()
-    except:
-        return hashlib.sha256(str(time.time()).encode()).hexdigest()
 
 def collect_device_characteristics():
     """Collect device characteristics for fingerprinting"""
@@ -181,6 +168,7 @@ def device_fingerprint_middleware():
             g.device_fingerprint = fingerprint_hash
             g.device_risk_score = risk_score
             g.device_characteristics = characteristics
+            g.device_fingerprint_written = bool(participant_id)
             
     except Exception as e:
         # Don't fail the request if fingerprinting fails

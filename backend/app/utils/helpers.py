@@ -4,7 +4,6 @@ Provides common helper functions for validation, responses, and audit logging.
 """
 
 import hashlib
-import json
 import re
 from typing import Any, Dict, Optional, Tuple
 

@@ -4,7 +4,7 @@ Handles SQLAlchemy engine, session management, and database connection lifecycle
 """
 
 from flask import g
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import NullPool
 
