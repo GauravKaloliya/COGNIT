@@ -19,6 +19,16 @@ export async function apiFetch(endpoint, options = {}) {
     const data = await response.json().catch(() => null);
     
     if (!response.ok) {
+      if (!data && response.status === 413) {
+        const error = new Error(getErrorMessage('VAL_003_0005'));
+        error.code = 'VAL_003_0005';
+        error.category = 'VAL';
+        error.severity = 'warning';
+        error.action = 'fix_input';
+        error.status = response.status;
+        throw error;
+      }
+
       const parsedError = parseErrorResponse(data);
       
       // Create Error object with extra properties
@@ -94,9 +104,12 @@ export const endpoints = {
   recordConsent: (publicId) => api.post('/consent', { public_id: publicId }),
   
   // Images
-  getRandomImage: (exclude = []) => {
-    const excludeParam = exclude.length > 0 ? `?exclude=${exclude.join(',')}` : '';
-    return api.get(`/images/random${excludeParam}`);
+  getRandomImage: (exclude = [], publicId = null) => {
+    const params = new URLSearchParams();
+    if (exclude.length > 0) params.set('exclude', exclude.join(','));
+    if (publicId) params.set('public_id', publicId);
+    const qs = params.toString();
+    return api.get(`/images/random${qs ? `?${qs}` : ''}`);
   },
   
   // Submissions

@@ -14,12 +14,18 @@ from flask import jsonify, render_template, request, g
 from sqlalchemy import text
 
 from app.extensions import app, limiter
-from app.database import engine
+from app.database import engine, get_db
 from app.utils.decorators import track_performance
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
+
+try:
+    from middleware import device_fingerprint_middleware
+except ImportError:
+    def device_fingerprint_middleware():
+        return None
 
 
 # ────────────────────────────────────────────────
@@ -38,17 +44,58 @@ app.register_blueprint(payment_bp)
 
 @app.before_request
 def log_request():
-    """Log incoming requests for debugging."""
+    """Log incoming requests and attach security context."""
     g.request_start_time = datetime.now(timezone.utc)
+    g.device_fingerprint_written = False
+
+    # Ensure DB session exists for middleware utilities that rely on g.db.
+    try:
+        get_db()
+    except Exception as e:
+        logger.warning(f"DB session init failed in before_request: {e}")
+
+    # Attach fingerprint/risk context globally (best effort, non-blocking).
+    try:
+        device_fingerprint_middleware()
+    except Exception as e:
+        logger.warning(f"Device fingerprint middleware failed: {e}")
+
     logger.info(f"REQUEST {request.method} {request.path}")
 
 @app.after_request
 def log_response(response):
     """Log outgoing responses for debugging."""
+    if getattr(g, "device_fingerprint_written", False) and request.method in {"GET", "HEAD"}:
+        try:
+            db = getattr(g, "db", None)
+            if db is not None and response.status_code < 400:
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Device fingerprint commit failed: {e}")
+            try:
+                if db is not None:
+                    db.rollback()
+            except Exception:
+                pass
+
     if hasattr(g, 'request_start_time'):
         duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
         logger.info(f"RESPONSE {request.method} {request.path} - {response.status_code} - {duration_ms}ms")
     return response
+
+
+@app.errorhandler(413)
+def handle_request_too_large(_error):
+    """Return JSON response for oversized uploads."""
+    return jsonify({
+        "success": False,
+        "error": {
+            "code": "VAL_003_0005",
+            "message": "The file is too large. Please upload an image smaller than 5MB.",
+            "category": "VAL",
+            "field": "image_base64"
+        }
+    }), 413
 
 
 # ────────────────────────────────────────────────
@@ -154,8 +201,11 @@ def _build_public_docs(base_url: str) -> dict:
             {
                 "path": "/images/random",
                 "method": "GET",
-                "description": "Get a random image. Optional: exclude=img1,img2",
-                "query_params": {"exclude": "comma-separated image_ids (optional)"},
+                "description": "Get a random image. Supports deterministic attention-check placement using participant public_id.",
+                "query_params": {
+                    "exclude": "comma-separated image_ids (optional)",
+                    "public_id": "participant public UUID (optional, recommended for scheduled attention checks)"
+                },
                 "rate_limit": "default"
             },
             {

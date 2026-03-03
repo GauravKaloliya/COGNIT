@@ -285,12 +285,58 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
         return None
 
 
+def _is_datetime_ambiguous(text: str, app: str) -> bool:
+    """Return True when multiple conflicting date/time candidates are detected."""
+    lower = text.lower()
+    time_matches = re.findall(r"\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)\b", lower, re.IGNORECASE)
+    if len(set(time_matches)) > 1:
+        return True
+
+    if app == "gpay":
+        date_matches = re.findall(
+            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
+            r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+"
+            r"(\d{4})\b",
+            lower,
+            re.IGNORECASE,
+        )
+        return len(set(date_matches)) > 1
+    if app == "paytm":
+        matches_a = re.findall(
+            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
+            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+            r"(\d{2}|\d{4})\b",
+            lower,
+            re.IGNORECASE,
+        )
+        matches_b = re.findall(
+            r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+            r"(0?[1-9]|[12][0-9]|3[01]),?\s+"
+            r"(\d{2}|\d{4})\b",
+            lower,
+            re.IGNORECASE,
+        )
+        normalized = set(matches_a) | set((d, m, y) for (m, d, y) in matches_b)
+        return len(normalized) > 1
+
+    # bhim
+    date_matches = re.findall(
+        r"\b(0?[1-9]|[12][0-9]|3[01])(st|nd|rd|th)\s+"
+        r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
+        r"(\d{2})\b",
+        lower,
+        re.IGNORECASE,
+    )
+    return len(set(date_matches)) > 1
+
+
 def verify_payment_screenshot(
     image: Image.Image,
     text: str,
     expected_amount: float,
     confidence: float,
-    expected_upi_name: str
+    expected_upi_name: str,
+    expected_note: Optional[str] = None
 ) -> Tuple[bool, Optional[str], List[str]]:
     """
     Validate UPI payment screenshot with app-specific and global rules.
@@ -343,6 +389,11 @@ def verify_payment_screenshot(
         failures.append("unrecognized_app")
         return False, None, failures
 
+    # Enforce OCR confidence floor.
+    if confidence < MIN_OCR_CONFIDENCE:
+        failures.append("ocr_unavailable")
+        return False, detected_app, failures
+
     # App-specific rules
     if detected_app == "gpay":
         if re.search(r"paid\s+to\s+cognit", lower, re.IGNORECASE) is None:
@@ -360,32 +411,42 @@ def verify_payment_screenshot(
     # Global Rules (apply to all apps)
     # ─────────────────────────────────────────────
 
-    # Rule 1: Banking name must contain "gaurav" (case insensitive)
-    # Note: This ignores expected_upi_name parameter
-    if 'gaurav' not in lower:
+    # Rule 1: Banking name must contain strict token "gaurav" (case-insensitive).
+    if re.search(r"\bgaurav\b", lower, re.IGNORECASE) is None:
         failures.append("invalid_banking_name")
 
-    # Rule 2: Amount must contain "₹" and "1" (case insensitive)
-    # Look for ₹ symbol or Rs/rs text along with "1"
-    has_rupee_symbol = '₹' in text or 'rs' in lower.replace('prs', '').replace('crs', '')
-    has_one = '1' in text or 'one' in lower
-
-    if not (has_rupee_symbol and has_one):
+    # Rule 2: Amount must be exactly ₹1 / Rs.1 / rs 1 (optionally 1.00).
+    if re.search(r"(?:₹\s*1(?:\.00)?\b|rs\.?\s*1(?:\.00)?\b)", lower, re.IGNORECASE) is None:
         failures.append("invalid_amount")
 
-    # Rule 3: app-specific date+time must be parsable and within 5 minutes of now
-    transaction_time = _extract_timestamp(text, detected_app)
-    if transaction_time:
-        now = datetime.now(timezone.utc)
-        time_diff = abs((now - transaction_time).total_seconds())
-        if time_diff > 300:  # 5 minutes = 300 seconds
-            failures.append("time_out_of_range")
-    else:
+    # Rule 3: one-time UPI note must match exact server generated note.
+    if expected_note:
+        normalized_text = re.sub(r"\s+", " ", lower).strip()
+        normalized_note = re.sub(r"\s+", " ", expected_note.lower()).strip()
+        if normalized_note not in normalized_text:
+            failures.append("note_mismatch")
+
+    # Rule 4: app-specific date+time must be parsable/unambiguous and within 5 minutes.
+    if _is_datetime_ambiguous(text, detected_app):
         if detected_app == "gpay":
             failures.append("invalid_datetime_format_gpay")
         elif detected_app == "paytm":
             failures.append("invalid_datetime_format_paytm")
         else:
             failures.append("invalid_datetime_format_bhim")
+    else:
+        transaction_time = _extract_timestamp(text, detected_app)
+        if transaction_time:
+            now = datetime.now(timezone.utc)
+            time_diff = abs((now - transaction_time).total_seconds())
+            if time_diff > 300:  # 5 minutes = 300 seconds
+                failures.append("time_out_of_range")
+        else:
+            if detected_app == "gpay":
+                failures.append("invalid_datetime_format_gpay")
+            elif detected_app == "paytm":
+                failures.append("invalid_datetime_format_paytm")
+            else:
+                failures.append("invalid_datetime_format_bhim")
 
     return len(failures) == 0, detected_app, failures
