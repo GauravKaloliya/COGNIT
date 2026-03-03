@@ -12,6 +12,7 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+.env.production
 
 # Logs
 npm-debug.log*
@@ -33,3 +34,16 @@ lerna-debug.log*
 
 # OS files
 Thumbs.db
+
+# Vercel
+.vercel
+.turbo
+
+# Coverage
+coverage
+*.lcov
+
+# Misc
+.cache
+.temp
+*.log
