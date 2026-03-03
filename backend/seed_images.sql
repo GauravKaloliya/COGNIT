@@ -95,25 +95,64 @@ ON CONFLICT (image_id) DO UPDATE SET
 -- with current backend parsing logic.
 -- ---------------------------------------------------------------------
 
-INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
-SELECT id, 'circle|round', true, true FROM images WHERE image_id = 'survey/attention-circle.svg'
-ON CONFLICT (image_id) WHERE is_active = true DO UPDATE SET
-    expected_word = EXCLUDED.expected_word,
-    is_strict     = EXCLUDED.is_strict,
-    is_active     = EXCLUDED.is_active;
+UPDATE attention_checks ac
+SET expected_word = 'circle|round',
+    is_strict = true,
+    is_active = true
+FROM images i
+WHERE i.image_id = 'survey/attention-circle.svg'
+  AND ac.image_id = i.id
+  AND ac.is_active = true;
 
 INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
-SELECT id, 'ocean|sea', true, true FROM images WHERE image_id = 'survey/attention-ocean.svg'
-ON CONFLICT (image_id) WHERE is_active = true DO UPDATE SET
-    expected_word = EXCLUDED.expected_word,
-    is_strict     = EXCLUDED.is_strict,
-    is_active     = EXCLUDED.is_active;
+SELECT i.id, 'circle|round', true, true
+FROM images i
+WHERE i.image_id = 'survey/attention-circle.svg'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM attention_checks ac
+      WHERE ac.image_id = i.id
+        AND ac.is_active = true
+  );
+
+UPDATE attention_checks ac
+SET expected_word = 'ocean|sea',
+    is_strict = true,
+    is_active = true
+FROM images i
+WHERE i.image_id = 'survey/attention-ocean.svg'
+  AND ac.image_id = i.id
+  AND ac.is_active = true;
 
 INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
-SELECT id, 'red|crimson', true, true FROM images WHERE image_id = 'survey/attention-red.svg'
-ON CONFLICT (image_id) WHERE is_active = true DO UPDATE SET
-    expected_word = EXCLUDED.expected_word,
-    is_strict     = EXCLUDED.is_strict,
-    is_active     = EXCLUDED.is_active;
+SELECT i.id, 'ocean|sea', true, true
+FROM images i
+WHERE i.image_id = 'survey/attention-ocean.svg'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM attention_checks ac
+      WHERE ac.image_id = i.id
+        AND ac.is_active = true
+  );
+
+UPDATE attention_checks ac
+SET expected_word = 'red|crimson',
+    is_strict = true,
+    is_active = true
+FROM images i
+WHERE i.image_id = 'survey/attention-red.svg'
+  AND ac.image_id = i.id
+  AND ac.is_active = true;
+
+INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
+SELECT i.id, 'red|crimson', true, true
+FROM images i
+WHERE i.image_id = 'survey/attention-red.svg'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM attention_checks ac
+      WHERE ac.image_id = i.id
+        AND ac.is_active = true
+  );
 
 COMMIT;

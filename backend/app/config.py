@@ -61,7 +61,6 @@ PRIORITY_WORD_THRESHOLD = int(os.getenv("PRIORITY_WORD_THRESHOLD", "500"))
 PRIORITY_ROUNDS_THRESHOLD = int(os.getenv("PRIORITY_ROUNDS_THRESHOLD", "3"))
 PRIORITY_ATTENTION_THRESHOLD = float(os.getenv("PRIORITY_ATTENTION_THRESHOLD", "0.75"))
 PRIORITY_MIN_SUBMISSIONS = int(os.getenv("PRIORITY_MIN_SUBMISSIONS", "3"))
-SURVEY_ROUNDS = int(os.getenv("SURVEY_ROUNDS", "1"))
 
 PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.10"))
 MAX_CONTENT_LENGTH_MB = int(os.getenv("MAX_CONTENT_LENGTH_MB", "8"))
@@ -86,6 +85,7 @@ PAYMENT_SECRET = os.getenv("PAYMENT_SECRET")
 if not PAYMENT_SECRET:
     raise ValueError("PAYMENT_SECRET is required")
 PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
+PAYMENT_SCREENSHOT_TIMEZONE = os.getenv("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
 
 
 # ────────────────────────────────────────────────
@@ -256,12 +256,14 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "FRAUD_MISSING_SUCCESS": {"code": "FRAUD_002_0004", "message": "Payment success not detected in screenshot", "status": 400, "category": "FRAUD"},
     "FRAUD_FAILURE_INDICATOR": {"code": "FRAUD_002_0005", "message": "Payment appears to have failed. Check your UPI app.", "status": 400, "category": "FRAUD"},
     "FRAUD_DUPLICATE_IMAGE": {"code": "FRAUD_003_0001", "message": "This screenshot was already submitted by another user", "status": 409, "category": "FRAUD"},
+    "FRAUD_DUPLICATE_IMAGE_SELF": {"code": "FRAUD_003_0004", "message": "You already submitted this screenshot. Please use a new payment screenshot.", "status": 409, "category": "FRAUD"},
     "FRAUD_REJECTED_REUSE": {"code": "FRAUD_003_0002", "message": "This screenshot was previously rejected", "status": 409, "category": "FRAUD"},
     "FRAUD_NOT_UPI_PAYMENT": {"code": "FRAUD_002_0008", "message": "Screenshot does not appear to be a UPI payment", "status": 400, "category": "FRAUD"},
     "FRAUD_MISSING_RECIPIENT": {"code": "FRAUD_002_0009", "message": "Payment recipient details not found in screenshot", "status": 400, "category": "FRAUD"},
     "FRAUD_MISSING_TIMESTAMP": {"code": "FRAUD_002_0010", "message": "Payment date/time not found in screenshot", "status": 400, "category": "FRAUD"},
     "PAYMENT_NOT_VERIFIED": {"code": "PAY_001_0007", "message": "Payment not verified. Please complete payment first.", "status": 403, "category": "PAY"},
     "DUPLICATE_IMAGE": {"code": "ERR_DUPLICATE_IMAGE", "message": "This screenshot has already been uploaded by another user.", "status": 409, "category": "FRAUD"},
+    "DUPLICATE_IMAGE_SELF": {"code": "ERR_DUPLICATE_IMAGE_SELF", "message": "You already submitted this screenshot. Please use a new payment screenshot.", "status": 409, "category": "FRAUD"},
     "REJECTED_REUSE": {"code": "ERR_REJECTED_REUSE", "message": "This screenshot was previously rejected. Please use a fresh payment screenshot.", "status": 409, "category": "FRAUD"},
     "PAYMENT_REJECTED": {"code": "ERR_PAYMENT_REJECTED", "message": "Payment screenshot could not be verified.", "status": 400, "category": "FRAUD"},
 }
@@ -292,6 +294,7 @@ _ERROR_KEY_ALIASES = {
     "INVALID_IMAGE_TYPE": "PAY_INVALID_IMAGE_TYPE",
     "INVALID_SHA256": "PAY_INVALID_SHA256",
     "DUPLICATE_IMAGE": "FRAUD_DUPLICATE_IMAGE",
+    "DUPLICATE_IMAGE_SELF": "FRAUD_DUPLICATE_IMAGE_SELF",
     "REJECTED_REUSE": "FRAUD_REJECTED_REUSE",
 }
 for _legacy_key, _canonical_key in _ERROR_KEY_ALIASES.items():

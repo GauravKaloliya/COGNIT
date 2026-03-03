@@ -13,7 +13,11 @@ from PIL import Image
 # Duplicate Screenshot Detection
 # ────────────────────────────────────────────────
 
-def check_duplicate_screenshot(db, sha256_hash: str) -> Tuple[bool, Optional[int]]:
+def check_duplicate_screenshot(
+    db,
+    sha256_hash: str,
+    participant_id: Optional[int] = None
+) -> Tuple[bool, Optional[int], bool]:
     """
     Check if a screenshot with the given SHA256 hash already exists.
     
@@ -22,11 +26,11 @@ def check_duplicate_screenshot(db, sha256_hash: str) -> Tuple[bool, Optional[int
         sha256_hash: SHA256 hash of the screenshot file
         
     Returns:
-        Tuple of (is_duplicate, existing_payment_id)
+        Tuple of (is_duplicate, existing_payment_id, is_same_participant)
     """
     try:
         result = db.execute(text("""
-            SELECT pf.payment_id, p.status
+            SELECT pf.payment_id, p.participant_id
             FROM payment_files pf
             JOIN payments p ON p.id = pf.payment_id
             WHERE pf.sha256 = :hash
@@ -34,11 +38,15 @@ def check_duplicate_screenshot(db, sha256_hash: str) -> Tuple[bool, Optional[int
         """), {"hash": sha256_hash}).fetchone()
         
         if result:
-            return True, result[0]
-        return False, None
+            existing_payment_id, existing_participant_id = result
+            is_same_participant = (
+                participant_id is not None and existing_participant_id == participant_id
+            )
+            return True, existing_payment_id, is_same_participant
+        return False, None, False
     except Exception as e:
         print(f"[WARN] Duplicate screenshot check failed: {e}", flush=True)
-        return False, None
+        return False, None, False
 
 
 # ────────────────────────────────────────────────
@@ -102,30 +110,41 @@ def _hamming_distance_hex(hash_a: str, hash_b: str) -> int:
     return value.bit_count()
 
 
-def check_near_duplicate_screenshot(db, image_hash: str, threshold: int = 6) -> Tuple[bool, Optional[int], Optional[int]]:
+def check_near_duplicate_screenshot(
+    db,
+    image_hash: str,
+    participant_id: Optional[int] = None,
+    threshold: int = 6
+) -> Tuple[bool, Optional[int], Optional[int], bool]:
     """
     Check near-duplicate screenshot using perceptual hash distance.
 
     Returns:
-        Tuple of (is_near_duplicate, existing_payment_id, min_distance)
+        Tuple of (is_near_duplicate, existing_payment_id, min_distance, is_same_participant)
     """
     try:
         rows = db.execute(text("""
-            SELECT pf.payment_id, pf.image_phash
+            SELECT pf.payment_id, pf.image_phash, p.participant_id
             FROM payment_files pf
+            JOIN payments p ON p.id = pf.payment_id
             WHERE pf.image_phash IS NOT NULL
             LIMIT 5000
         """)).fetchall()
         best_payment = None
         best_distance = None
-        for payment_id, stored_hash in rows:
+        best_participant = None
+        for payment_id, stored_hash, owner_participant_id in rows:
             distance = _hamming_distance_hex(image_hash, stored_hash)
             if best_distance is None or distance < best_distance:
                 best_distance = distance
                 best_payment = payment_id
+                best_participant = owner_participant_id
         if best_distance is not None and best_distance <= threshold:
-            return True, best_payment, best_distance
-        return False, None, best_distance
+            is_same_participant = (
+                participant_id is not None and best_participant == participant_id
+            )
+            return True, best_payment, best_distance, is_same_participant
+        return False, None, best_distance, False
     except Exception as e:
         print(f"[WARN] Near-duplicate screenshot check failed: {e}", flush=True)
-        return False, None, None
+        return False, None, None, False

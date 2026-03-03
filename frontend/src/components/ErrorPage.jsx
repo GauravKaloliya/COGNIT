@@ -1,16 +1,20 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { getErrorMessage } from '../utils/errorRegistry.js';
 
 export default function ErrorPage({ error, resetError }) {
-  const navigate = useNavigate();
+  const redirectToConsent = () => {
+    sessionStorage.setItem("stage", JSON.stringify("consent"));
+    sessionStorage.setItem("paymentSubStage", JSON.stringify("content"));
+    sessionStorage.setItem("consentGiven", JSON.stringify(false));
+    sessionStorage.setItem("paymentVerified", JSON.stringify(false));
+    window.location.assign("/");
+  };
 
   const handleReset = () => {
     if (resetError) {
       resetError();
-    } else {
-      navigate('/');
     }
+    redirectToConsent();
   };
 
   return (
@@ -34,10 +38,7 @@ export default function ErrorPage({ error, resetError }) {
 
           <div className="page-actions">
             <button className="primary" onClick={handleReset}>
-              Try Again
-            </button>
-            <button className="ghost" onClick={() => { if (resetError) resetError(); navigate('/'); }}>
-              Go Home
+              Reload
             </button>
           </div>
         </div>

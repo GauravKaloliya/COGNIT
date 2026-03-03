@@ -29,7 +29,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
   const priorityEligible = rewardStatus?.priority_eligible;
 
   return (
-    <div className="panel">
+    <div className="panel finish-panel">
       <div className="finish-wrapper">
         <h2>Thank you for completing the C.O.G.N.I.T. survey</h2>
         <p className="page-subtitle">
@@ -88,7 +88,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
         </p>
 
         <div className="page-actions">
-          <button className="primary large" onClick={handleFinish}>
+          <button className="primary" onClick={handleFinish}>
             Finish
           </button>
         </div>

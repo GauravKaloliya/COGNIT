@@ -55,6 +55,7 @@ export const ERROR_MESSAGES = {
   
   // Fraud detection errors
   'ERR_DUPLICATE_IMAGE': 'This screenshot has already been uploaded by another user. Please use a fresh payment screenshot.',
+  'ERR_DUPLICATE_IMAGE_SELF': 'You already submitted this screenshot. Please use a new payment screenshot.',
   'ERR_REJECTED_REUSE': 'This screenshot was previously rejected. Please use a fresh payment screenshot.',
   'ERR_PAYMENT_REJECTED': 'Payment screenshot could not be verified. Please ensure you are using a valid UPI app and the screenshot shows a successful transaction.',
   
