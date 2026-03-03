@@ -3,15 +3,30 @@ Vercel Serverless Function Entry Point
 Converts Flask WSGI app to Vercel-compatible response format.
 """
 
+import json
+import io
+import sys
+
+# Set up path for imports
+sys.path.insert(0, '/home/engine/project/backend')
+
+# Import and configure logging early
 from app.logging_config import configure_logging
 configure_logging()
 
-import json
-import io
-from flask import Flask
+from flask import Flask, jsonify
 from werkzeug.wrappers import Request, Response
 
-from main import app as flask_app
+# Create a minimal Flask app for Vercel - we'll import the actual app from main
+_vercel_app = None
+
+def get_flask_app():
+    """Lazy-load the Flask app to avoid circular imports during Vercel detection."""
+    global _vercel_app
+    if _vercel_app is None:
+        from main import app as flask_app
+        _vercel_app = flask_app
+    return _vercel_app
 
 
 def handler(request):
@@ -19,6 +34,9 @@ def handler(request):
     Vercel serverless function handler.
     Converts Vercel request to WSGI, calls Flask, then converts WSGI response back.
     """
+    # Get the Flask app
+    flask_app = get_flask_app()
+    
     # Get the request body
     body = request.body
     if body is None:
@@ -48,7 +66,7 @@ def handler(request):
         'CONTENT_LENGTH': str(len(body)) if body else '0',
         'wsgi.url_scheme': 'https',
         'wsgi.input': io.BytesIO(body),
-        'wsgi.errors': __import__('sys').stderr,
+        'wsgi.errors': sys.stderr,
         'wsgi.multithread': True,
         'wsgi.multiprocess': True,
         'wsgi.run_once': False,
@@ -79,7 +97,8 @@ def handler(request):
         resp_headers[key.lower()] = value
 
     # Default content-type to JSON for API routes
-    if request.path.startswith('/api/') or request.path.startswith('/docs') or request.path.startswith('/health') or request.path.startswith('/check-'):
+    path = request.path
+    if path.startswith('/api/') or path.startswith('/docs') or path.startswith('/health') or path.startswith('/check-') or path.startswith('/participants') or path.startswith('/images') or path.startswith('/submit') or path.startswith('/consent') or path.startswith('/payments') or path.startswith('/engagement'):
         if 'content-type' not in resp_headers:
             resp_headers['content-type'] = 'application/json'
 
