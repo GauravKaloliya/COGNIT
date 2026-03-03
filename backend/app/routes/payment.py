@@ -188,16 +188,8 @@ def create_payment():
             "timer_time": datetime.now(timezone.utc)
         }).fetchone()
 
-        # Generate UPI note and store in database
+        # Generate UPI note for reference
         upi_note = f"COGNIT {payment_row[0]}"
-        db.execute(text("""
-            UPDATE payments
-            SET upi_note = :note
-            WHERE public_id = :pub
-        """), {
-            "note": upi_note,
-            "pub": payment_row[0]
-        })
 
         db.commit()
 
@@ -463,13 +455,13 @@ def verify_and_upload_payment(payment_public_id):
         # Extract text directly from image bytes (not from S3)
         extracted_text, confidence = extract_text_with_confidence(image)
         
-        # Get payment amount and note for verification
+        # Get payment amount for verification
         payment_row = db.execute(text("""
-            SELECT amount, upi_note FROM payments WHERE id = :pid
+            SELECT amount FROM payments WHERE id = :pid
         """), {"pid": payment_id}).fetchone()
         
         amount = payment_row[0] if payment_row else 1
-        payment_note = payment_row[1] if payment_row else ""
+        payment_note = f"COGNIT {payment_public_id}"
         
         # Run strict validation
         is_valid, detected_app, failures = verify_payment_screenshot(
@@ -676,7 +668,7 @@ def verify_payment(payment_public_id):
         return create_error_response("DATABASE_ERROR")
 
     row = db.execute(text("""
-        SELECT p.id, p.participant_id, p.amount, f.object_key, p.upi_note
+        SELECT p.id, p.participant_id, p.amount, f.object_key
         FROM payments p
         JOIN payment_files f ON f.payment_id = p.id
         WHERE p.public_id = :pid
