@@ -276,6 +276,7 @@ def _extract_timestamp(text: str) -> Optional[Tuple[int, int, int, int, int]]:
     date_patterns = [
         r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})',  # DD/MM/YYYY or DD-MM-YYYY
         r'(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{2,4})',  # DD MMM YYYY
+        r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2}),?\s+(\d{4})',  # MMM DD, YYYY
     ]
     
     # Pattern: HH:MM or HH:MM AM/PM
@@ -290,15 +291,25 @@ def _extract_timestamp(text: str) -> Optional[Tuple[int, int, int, int, int]]:
         match = re.search(pattern, lower, re.IGNORECASE)
         if match:
             groups = match.groups()
-            day = int(groups[0])
-            if groups[1].isalpha():
-                # Month name
+            if groups[0].isalpha():
+                # Month name first (MMM DD, YYYY format)
                 month_names = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 
                               'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+                month = month_names.index(groups[0].lower()[:3]) + 1
+                day = int(groups[1])
+                year = int(groups[2])
+            elif groups[1].isalpha():
+                # Month name second (DD MMM YYYY format)
+                month_names = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 
+                              'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+                day = int(groups[0])
                 month = month_names.index(groups[1].lower()[:3]) + 1
+                year = int(groups[2])
             else:
+                # Numeric date (DD/MM/YYYY or DD-MM-YYYY)
+                day = int(groups[0])
                 month = int(groups[1])
-            year = int(groups[2])
+                year = int(groups[2])
             if year < 100:
                 year += 2000
             break
@@ -316,6 +327,23 @@ def _extract_timestamp(text: str) -> Optional[Tuple[int, int, int, int, int]]:
             elif len(groups) > 2 and groups[2] and groups[2].lower() == 'am' and hour == 12:
                 hour = 0
             break
+    
+    # If we have time but no date, try to find just time with "today" or similar context
+    if day is None and hour is not None:
+        # Look for "today" keyword which implies current date
+        if 'today' in lower:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            day = now.day
+            month = now.month
+            year = now.year
+        # Also check for "yesterday"
+        elif 'yesterday' in lower:
+            from datetime import datetime, timezone, timedelta
+            yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+            day = yesterday.day
+            month = yesterday.month
+            year = yesterday.year
     
     if day is not None and hour is not None:
         return (day, month or 1, year or 2024, hour, minute)
