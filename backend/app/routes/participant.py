@@ -8,6 +8,7 @@ import re
 from flask import jsonify, request
 from sqlalchemy import text
 
+from app.config import BYPASS_PAYMENT_FLOW
 from app.extensions import limiter
 from app.database import get_db
 from app.utils.helpers import (
@@ -253,6 +254,16 @@ def get_participant_payment_status(public_id):
         
         participant_id, payment_status, current_stage = row
         
+        if BYPASS_PAYMENT_FLOW:
+            return jsonify({
+                "payment_status": "bypassed",
+                "is_verified": True,
+                "current_stage": current_stage,
+                "payment_id": None,
+                "verified_at": None,
+                "detected_app": None
+            })
+
         # Check for successful payment
         is_paid = payment_status == 'paid'
         

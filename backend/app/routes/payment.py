@@ -7,6 +7,7 @@ import base64
 import json
 import logging
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
@@ -32,6 +33,7 @@ from app.utils.ocr import (
     fetch_s3_image,
     extract_text_with_confidence,
     verify_payment_screenshot,
+    sanitize_extracted_text_for_storage,
     OCRServiceUnavailableError,
     TesseractNotFoundError,
     OCRServiceError,
@@ -168,32 +170,32 @@ def create_payment():
     # Timer starts immediately when payment is created
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)
     expires_str = expires_at.isoformat()
+    payment_public_id = str(uuid.uuid4())
 
     signature = generate_payment_signature(public_id, str(amount), expires_str)
 
     try:
         payment_row = db.execute(text("""
             INSERT INTO payments (
-                participant_id, amount, signature, expires_at, timer_activated_at
+                participant_id, public_id, amount, signature, expires_at, timer_activated_at, metadata
             ) VALUES (
-                :pid, :amt, :sig, :exp, :timer_time
+                :pid, :pub_id, :amt, :sig, :exp, :timer_time,
+                '{}'::jsonb
             )
             RETURNING public_id
         """), {
             "pid": participant_id,
+            "pub_id": payment_public_id,
             "amt": amount,
             "sig": signature,
             "exp": expires_at,
             "timer_time": datetime.now(timezone.utc)
         }).fetchone()
 
-        # Generate UPI note identifier
-        upi_note = f"COGNIT {payment_row[0]}"
-
         db.commit()
 
         # Generate UPI link and QR code
-        upi_link = generate_upi_link(amount, upi_note)
+        upi_link = generate_upi_link(amount)
         
         logger.info(
             "payment created request_id=%s payment_id=%s participant_public_id=%s",
@@ -211,7 +213,6 @@ def create_payment():
             "expires_at": expires_str,
             "signature": signature,
             "upi_link": upi_link,
-            "upi_note": upi_note,
             "qr_base64": qr_base64,
             "timer_activated": True,
             "time_remaining_seconds": PAYMENT_EXPIRY_SECONDS
@@ -227,7 +228,7 @@ def create_payment():
         if isinstance(e, IntegrityError) or "idx_payments_one_active_per_participant" in str(e):
             try:
                 existing = db.execute(text("""
-                    SELECT public_id, amount, expires_at
+                    SELECT public_id, amount, expires_at, metadata
                     FROM payments
                     WHERE participant_id = :pid
                       AND status IN ('pending', 'processing')
@@ -235,9 +236,8 @@ def create_payment():
                     LIMIT 1
                 """), {"pid": participant_id}).fetchone()
                 if existing:
-                    existing_payment_id, existing_amount, existing_expires_at = existing
-                    upi_note = f"COGNIT {existing_payment_id}"
-                    upi_link = generate_upi_link(float(existing_amount), upi_note)
+                    existing_payment_id, existing_amount, existing_expires_at, _existing_metadata = existing
+                    upi_link = generate_upi_link(float(existing_amount))
                     qr = qrcode.make(upi_link)
                     buffer = BytesIO()
                     qr.save(buffer, format="PNG")
@@ -253,7 +253,6 @@ def create_payment():
                         "expires_at": existing_expires_at.isoformat() if existing_expires_at else None,
                         "signature": signature,
                         "upi_link": upi_link,
-                        "upi_note": upi_note,
                         "qr_base64": qr_base64,
                         "timer_activated": True,
                         "time_remaining_seconds": remaining_seconds
@@ -342,13 +341,36 @@ def verify_and_upload_payment(payment_public_id):
     
     if status != "pending":
         return create_error_response("PAYMENT_INVALID_STATE")
+
+    # Track every verification attempt for pending payments.
+    db.execute(text("""
+        UPDATE payments
+        SET verification_attempts = COALESCE(verification_attempts, 0) + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = :pid
+    """), {"pid": payment_id})
     
     # Fraud Detection Checks (using hash before any S3 upload)
     # 1. Check if this screenshot was already uploaded
-    is_duplicate, existing_payment_id = check_duplicate_screenshot(db, sha256_hash)
+    is_duplicate, existing_payment_id, is_same_participant = check_duplicate_screenshot(
+        db, sha256_hash, participant_id=participant_id
+    )
     if is_duplicate:
-        log_audit(db, "fraud_detected_duplicate_image", participant_id=participant_id,
-                  details=f"SHA256 {sha256_hash[:16]}... already exists in payment {existing_payment_id}")
+        if is_same_participant:
+            log_audit(
+                db,
+                "fraud_detected_duplicate_image_self",
+                participant_id=participant_id,
+                details=f"SHA256 {sha256_hash[:16]}... already exists in own payment {existing_payment_id}"
+            )
+            db.commit()
+            return create_error_response("DUPLICATE_IMAGE_SELF")
+        log_audit(
+            db,
+            "fraud_detected_duplicate_image",
+            participant_id=participant_id,
+            details=f"SHA256 {sha256_hash[:16]}... already exists in payment {existing_payment_id}"
+        )
         db.commit()
         return create_error_response("DUPLICATE_IMAGE")
     
@@ -363,10 +385,22 @@ def verify_and_upload_payment(payment_public_id):
     # 3. Near-duplicate check using perceptual hash (resistant to minor edits/crops)
     try:
         image_hash = compute_dhash(image)
-        is_near_duplicate, near_payment_id, near_distance = check_near_duplicate_screenshot(
-            db, image_hash, threshold=6
+        is_near_duplicate, near_payment_id, near_distance, near_same_participant = check_near_duplicate_screenshot(
+            db,
+            image_hash,
+            participant_id=participant_id,
+            threshold=6
         )
         if is_near_duplicate:
+            if near_same_participant:
+                log_audit(
+                    db,
+                    "fraud_detected_near_duplicate_image_self",
+                    participant_id=participant_id,
+                    details=f"dHash distance={near_distance} matched own payment={near_payment_id}"
+                )
+                db.commit()
+                return create_error_response("DUPLICATE_IMAGE_SELF")
             log_audit(
                 db,
                 "fraud_detected_near_duplicate_image",
@@ -383,6 +417,13 @@ def verify_and_upload_payment(payment_public_id):
     verification_result = {"status": "processing", "verified": False}
     
     try:
+        # Status transition guard in schema requires: pending -> processing -> final.
+        db.execute(text("""
+            UPDATE payments
+            SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {"pid": payment_id})
+
         # Extract text directly from image bytes (not from S3)
         extracted_text, confidence = extract_text_with_confidence(image)
         
@@ -392,11 +433,11 @@ def verify_and_upload_payment(payment_public_id):
         """), {"pid": payment_id}).fetchone()
         
         amount = payment_row[0] if payment_row else 1
-        expected_note = f"COGNIT {payment_public_id}"
         # Run strict validation
         is_valid, detected_app, failures = verify_payment_screenshot(
-            image, extracted_text, amount, confidence, UPI_NAME, expected_note=expected_note
+            image, extracted_text, amount, confidence, UPI_NAME
         )
+        filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
         
         # Build verification details JSON
         verification_details = {
@@ -447,7 +488,7 @@ def verify_and_upload_payment(payment_public_id):
                     verification_details = :details
                 WHERE id = :pid
             """), {
-                "txt": extracted_text,
+                "txt": filtered_text,
                 "fs": len(failures) * 10,
                 "status": "success",
                 "app": detected_app,
@@ -476,7 +517,7 @@ def verify_and_upload_payment(payment_public_id):
                     auto_rejected = true
                 WHERE id = :pid
             """), {
-                "txt": extracted_text,
+                "txt": filtered_text,
                 "fs": len(failures) * 10,
                 "status": "rejected_fraud",
                 "app": detected_app,
@@ -541,7 +582,7 @@ def get_payment_status(payment_public_id):
         db = get_db()
 
         row = db.execute(text("""
-            SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app, p.auto_rejected
+            SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app, p.auto_rejected, p.verification_attempts
             FROM payments p
             WHERE p.public_id = :pid
         """), {"pid": payment_public_id}).fetchone()
@@ -549,7 +590,7 @@ def get_payment_status(payment_public_id):
         if not row:
             return create_error_response("PAYMENT_NOT_FOUND")
 
-        payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected = row
+        payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected, verification_attempts = row
 
         # Check if payment should be marked as expired
         now = datetime.now(timezone.utc)
@@ -571,7 +612,8 @@ def get_payment_status(payment_public_id):
             "expires_at": expires_at.isoformat() if expires_at else None,
             "is_expired": status == "expired",
             "time_remaining_seconds": max(0, int((expires_at - now).total_seconds())) if expires_at and status in ("pending", "processing") else 0,
-            "verified_at": verified_at.isoformat() if verified_at else None
+            "verified_at": verified_at.isoformat() if verified_at else None,
+            "verification_attempts": int(verification_attempts or 0)
         }
 
         if verification_details:
@@ -610,6 +652,14 @@ def verify_payment(payment_public_id):
         return create_error_response("PAYMENT_NOT_FOUND")
 
     payment_id, participant_id, amount, object_key = row
+
+    # Status transition guard in schema requires: pending -> processing -> final.
+    db.execute(text("""
+        UPDATE payments
+        SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+        WHERE id = :pid AND status = 'pending'
+    """), {"pid": payment_id})
+
     try:
         image = fetch_s3_image(object_key)
         extracted_text, confidence = extract_text_with_confidence(image)
@@ -627,8 +677,9 @@ def verify_payment(payment_public_id):
 
     # Run strict validation
     is_valid, detected_app, failures = verify_payment_screenshot(
-        image, extracted_text, amount, confidence, UPI_NAME, expected_note=f"COGNIT {payment_public_id}"
+        image, extracted_text, amount, confidence, UPI_NAME
     )
+    filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
 
     # Build verification details JSON
     verification_details = {
@@ -652,7 +703,7 @@ def verify_payment(payment_public_id):
             verification_details = :details
         WHERE id = :pid
     """), {
-        "txt": extracted_text,
+        "txt": filtered_text,
         "fs": len(failures) * 10,
         "status": new_status,
         "app": detected_app,

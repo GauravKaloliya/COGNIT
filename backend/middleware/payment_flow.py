@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from flask import request, g
 from sqlalchemy import text
 
+from app.config import BYPASS_PAYMENT_FLOW
 from app.utils.helpers import create_error_response
 
 
@@ -17,6 +18,9 @@ def require_payment_completed(f):
 
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
+        if BYPASS_PAYMENT_FLOW:
+            return f(*args, **kwargs)
+
         public_id = None
         if request.is_json and request.json:
             public_id = request.json.get("public_id")

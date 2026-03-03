@@ -7,19 +7,19 @@ const MIN_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MIN_DESCRIPTION_LEN
 const MAX_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MAX_DESCRIPTION_LENGTH || "10000", 10);
 const MIN_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MIN_FEEDBACK_LENGTH || "5", 10);
 const MAX_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MAX_FEEDBACK_LENGTH || "2000", 10);
+const COPY_PASTE_DISABLED = (import.meta.env.VITE_DISABLE_COPY_PASTE ?? "true").toLowerCase() === "true";
+
+const sanitizeAlphaNumericSpace = (value) =>
+  value.replace(/[\t\r\n]+/g, ' ').replace(/[^a-zA-Z0-9 ]+/g, '');
+
+const getDraftKey = (imageId) => (imageId ? `survey_draft_${imageId}` : null);
 
 export default function SurveyPage({
   survey,
   publicId,
   onSubmit,
-  onFinish,
-  isSurvey = false,
-  surveyFeedbackReady = false,
-  onSurveyContinue,
-  onSurveyFinish,
   fetchError = null,
-  onRetry,
-  surveyCompleted = 0
+  onRetry
 }) {
   const [description, setDescription] = useState("");
   const [rating, setRating] = useState(0);
@@ -49,6 +49,7 @@ export default function SurveyPage({
   const commentsValid = comments.trim().length >= MIN_FEEDBACK_LENGTH && comments.trim().length <= MAX_FEEDBACK_LENGTH;
   const imageReady = imageLoaded && !imageError;
   const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && descriptionValid && !submitting && imageReady;
+  const draftKey = getDraftKey(survey?.image_id);
 
   // Local engagement counters for submission payload.
   // Global backend event tracking is handled in App.jsx for all pages.
@@ -94,12 +95,27 @@ export default function SurveyPage({
 
   // Copy-paste prevention for survey page only (as requested)
   const preventCopyPaste = useCallback((e) => {
+    if (!COPY_PASTE_DISABLED) return;
     e.preventDefault();
     return false;
   }, []);
 
+  const preventClipboardShortcuts = useCallback((e) => {
+    if (!COPY_PASTE_DISABLED) return;
+    if ((e.ctrlKey || e.metaKey) && ["c", "x", "v", "insert"].includes(e.key.toLowerCase())) {
+      e.preventDefault();
+    }
+    if (e.shiftKey && e.key === "Insert") {
+      e.preventDefault();
+    }
+  }, []);
+
   // Add copy-paste prevention to textareas for survey page only
   useEffect(() => {
+    if (!COPY_PASTE_DISABLED) {
+      return;
+    }
+
     const descTextarea = descriptionRef.current;
     const commentsTextarea = commentsRef.current;
 
@@ -148,6 +164,23 @@ export default function SurveyPage({
     setSubmitError("");
     setTimerActive(false);
     surveyStartTime.current = Date.now();
+    setDescription("");
+    setRating(0);
+    setComments("");
+
+    if (survey?.image_id) {
+      try {
+        const saved = sessionStorage.getItem(getDraftKey(survey.image_id));
+        if (saved) {
+          const draft = JSON.parse(saved);
+          setDescription(typeof draft.description === "string" ? draft.description : "");
+          setRating(Number.isInteger(draft.rating) ? draft.rating : 0);
+          setComments(typeof draft.comments === "string" ? draft.comments : "");
+        }
+      } catch {
+        // Ignore malformed draft payload and continue with fresh inputs.
+      }
+    }
     
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -161,6 +194,15 @@ export default function SurveyPage({
       }
     };
   }, [survey?.image_id]);
+
+  useEffect(() => {
+    if (!draftKey) return;
+    try {
+      sessionStorage.setItem(draftKey, JSON.stringify({ description, rating, comments }));
+    } catch {
+      // Storage quota issues should not block typing.
+    }
+  }, [draftKey, description, rating, comments]);
 
   useEffect(() => {
     if (timerActive) {
@@ -210,6 +252,10 @@ export default function SurveyPage({
         timeSpentSeconds,
         engagementData
       });
+
+      if (draftKey) {
+        sessionStorage.removeItem(draftKey);
+      }
 
       // Reset form and engagement data after successful submission
       setDescription("");
@@ -288,44 +334,6 @@ export default function SurveyPage({
     );
   }
 
-  if (isSurvey && surveyFeedbackReady) {
-    return (
-      <div className="panel">
-        <div className="guidance">
-          <div className="survey-feedback-icon">
-            ✓
-          </div>
-          <h2 className="survey-feedback-title">Survey Complete!</h2>
-          <p className="survey-feedback-text">
-            Great job on your survey! You have completed {surveyCompleted} survey
-            {surveyCompleted === 1 ? '' : 's'}. You can now choose to continue with more survey 
-            images or finish the study.
-          </p>
-          <div className="survey-feedback-tip">
-            <p>
-              <em>Tip: Aim to describe colors, textures, relationships, and any notable objects.
-              Remember to write at least {MIN_WORDS} words per description.</em>
-            </p>
-          </div>
-          <div className="survey-feedback-actions">
-            <button
-              className="primary"
-              onClick={onSurveyContinue}
-            >
-              Continue Survey
-            </button>
-            <button
-              className="ghost survey-feedback-finish"
-              onClick={onSurveyFinish}
-            >
-              Finish
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="panel">
       <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
@@ -379,7 +387,7 @@ export default function SurveyPage({
           ) ? 'error-input' : ''}
           value={description}
           onChange={(e) => {
-            const value = e.target.value;
+            const value = sanitizeAlphaNumericSpace(e.target.value);
             if (value.length <= MAX_DESCRIPTION_LENGTH) {
               setDescription(value);
             }
@@ -388,6 +396,13 @@ export default function SurveyPage({
           spellCheck
           disabled={!imageReady}
           maxLength={MAX_DESCRIPTION_LENGTH}
+          onCopy={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onCut={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onPaste={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onContextMenu={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onDrop={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onDragOver={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onKeyDown={COPY_PASTE_DISABLED ? preventClipboardShortcuts : undefined}
         />
       </div>
 
@@ -432,7 +447,7 @@ export default function SurveyPage({
           ) ? 'error-input' : ''}
           value={comments}
           onChange={(e) => {
-            const value = e.target.value;
+            const value = sanitizeAlphaNumericSpace(e.target.value);
             if (value.length <= MAX_FEEDBACK_LENGTH) {
               setComments(value);
             }
@@ -440,6 +455,13 @@ export default function SurveyPage({
           placeholder="Share any additional notes..."
           disabled={!imageReady}
           maxLength={MAX_FEEDBACK_LENGTH}
+          onCopy={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onCut={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onPaste={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onContextMenu={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onDrop={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onDragOver={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+          onKeyDown={COPY_PASTE_DISABLED ? preventClipboardShortcuts : undefined}
         />
         {comments.length > 0 && (
           <div className="counts">
@@ -452,7 +474,7 @@ export default function SurveyPage({
 
       {submitError && <div className="banner warning">{submitError}</div>}
 
-      <div className="actions">
+      <div className="actions survey-submit-actions">
         <button
           className={`primary ${submitting ? "wiggle" : ""}`}
           onClick={handleSubmit}
