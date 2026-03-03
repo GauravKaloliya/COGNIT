@@ -5,10 +5,11 @@ Handles survey submissions and engagement tracking.
 
 import json
 import hashlib
+import logging
 import re
 from datetime import datetime, timezone
 
-from flask import jsonify, request
+from flask import jsonify, request, g
 from sqlalchemy import text
 
 from app.config import (
@@ -37,6 +38,7 @@ from app.utils.helpers import (
     create_error_response,
 )
 from app.utils.decorators import track_performance
+from middleware.payment_flow import require_payment_completed
 
 ATTN_TOKEN_SPLIT_RE = re.compile(r"[|,;/]+")
 
@@ -80,14 +82,7 @@ def _alphabetic_tokens(text: str):
 
 from flask import Blueprint
 submission_bp = Blueprint('submission', __name__)
-
-
-# Import middleware if available
-try:
-    from middleware import require_payment_completed
-except ImportError:
-    def require_payment_completed(f):
-        return f
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -101,6 +96,7 @@ except ImportError:
 def submit():
     """Submit an image description or survey response."""
     d = request.json or {}
+    logger.info("submit request_id=%s", getattr(g, "request_id", None))
     public_id = d.get("public_id")
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
@@ -350,11 +346,12 @@ def submit():
 
             db.execute(text("""
                 UPDATE participant_attention_stats
-                SET is_flagged = true,
+                SET is_flagged = CASE WHEN :hard_flag THEN true ELSE is_flagged END,
                     last_checked_at = CURRENT_TIMESTAMP
                 WHERE participant_id = :pid
             """), {
-                "pid": participant_id
+                "pid": participant_id,
+                "hard_flag": hard_flag_triggered,
             })
 
         db.execute(text("""
@@ -385,6 +382,15 @@ def submit():
                   details=f"wc={word_count} q={quality:.3f} survey={is_survey}")
 
         db.commit()
+        logger.info(
+            "submission accepted request_id=%s participant_id=%s submission_id=%s image_id=%s attention=%s passed=%s",
+            getattr(g, "request_id", None),
+            participant_id,
+            submission_id,
+            image_id_str,
+            is_attention,
+            attention_passed,
+        )
 
         return jsonify({
             "status": "submitted",
@@ -411,7 +417,7 @@ def submit():
             pass
         if "unique" in str(exc).lower() and "survey_index" in str(exc):
             return create_error_response("SURVEY_EXISTS")
-        print(f"[ERROR] submit failed: {exc}", flush=True)
+        logger.error("submit failed request_id=%s public_id=%s error=%s", getattr(g, "request_id", None), public_id, exc)
         return create_error_response("DATABASE_ERROR")
 
 
@@ -425,6 +431,7 @@ def submit():
 def track_engagement():
     """Track engagement events for all frontend pages."""
     data = request.json or {}
+    logger.info("track_engagement request_id=%s", getattr(g, "request_id", None))
     public_id = data.get("public_id")
     event_type = data.get("event_type")
     event_data = data.get("event_data") or {}
@@ -516,5 +523,5 @@ def track_engagement():
             db.rollback()
         except:
             pass
-        print(f"[ERROR] track_engagement failed: {e}", flush=True)
+        logger.error("track engagement failed request_id=%s public_id=%s event_type=%s error=%s", getattr(g, "request_id", None), public_id, event_type, e)
         return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")

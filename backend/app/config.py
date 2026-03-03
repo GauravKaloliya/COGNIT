@@ -157,6 +157,8 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "VAL_MISSING_FIELDS": {"code": "VAL_003_0001", "message": "Please fill in all required fields", "status": 400, "category": "VAL", "field": "general"},
     "VAL_INVALID_FORMAT": {"code": "VAL_003_0002", "message": "Invalid request format", "status": 400, "category": "VAL"},
     "VAL_INVALID_REQUEST_ID": {"code": "VAL_003_0003", "message": "Invalid request ID format", "status": 400, "category": "VAL"},
+    "VAL_METHOD_NOT_ALLOWED": {"code": "VAL_003_0007", "message": "HTTP method not allowed for this route", "status": 405, "category": "VAL"},
+    "VAL_FILE_TOO_LARGE": {"code": "VAL_003_0005", "message": "The file is too large. Please upload a smaller image.", "status": 413, "category": "VAL", "field": "image_base64"},
     "VAL_USERNAME_INVALID": {"code": "VAL_001_0001", "message": "Username must be at least 2 characters and contain only letters, numbers, and underscores", "status": 400, "category": "VAL", "field": "username"},
     "VAL_EMAIL_INVALID": {"code": "VAL_001_0002", "message": "Please enter a valid email address from Gmail, Outlook, Hotmail, or iCloud", "status": 400, "category": "VAL", "field": "email"},
     "VAL_PHONE_INVALID": {"code": "VAL_001_0003", "message": "Please enter a valid 10-digit Indian mobile number", "status": 400, "category": "VAL", "field": "phone"},
@@ -216,6 +218,7 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "NF_IMAGE": {"code": "NF_001_0002", "message": "Image not found", "status": 404, "category": "NF"},
     "NF_PAYMENT": {"code": "NF_001_0003", "message": "Payment not found", "status": 404, "category": "NF"},
     "NF_CONSENT": {"code": "NF_001_0004", "message": "Consent record not found", "status": 404, "category": "NF"},
+    "NF_ROUTE_NOT_FOUND": {"code": "NF_001_0005", "message": "Route not found", "status": 404, "category": "NF"},
     "PARTICIPANT_NOT_FOUND": {"code": "ERR_PARTICIPANT_NOT_FOUND", "message": "Registration not found. Please complete registration first.", "status": 404, "category": "NF"},
     "NO_IMAGES": {"code": "ERR_NO_IMAGES", "message": "No images available.", "status": 404, "category": "NF"},
     "IMAGE_NOT_FOUND": {"code": "ERR_IMAGE_NOT_FOUND", "message": "Image not found.", "status": 404, "category": "NF"},
@@ -262,6 +265,38 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "REJECTED_REUSE": {"code": "ERR_REJECTED_REUSE", "message": "This screenshot was previously rejected. Please use a fresh payment screenshot.", "status": 409, "category": "FRAUD"},
     "PAYMENT_REJECTED": {"code": "ERR_PAYMENT_REJECTED", "message": "Payment screenshot could not be verified.", "status": 400, "category": "FRAUD"},
 }
+
+# Canonicalize legacy keys to strict modern codes without breaking call sites.
+_ERROR_KEY_ALIASES = {
+    "DATABASE_ERROR": "SYS_DATABASE_ERROR",
+    "INTERNAL_ERROR": "SYS_INTERNAL_ERROR",
+    "MISSING_FIELDS": "VAL_MISSING_FIELDS",
+    "INVALID_FORMAT": "VAL_INVALID_FORMAT",
+    "INVALID_UUID": "VAL_INVALID_REQUEST_ID",
+    "DESCRIPTION_LENGTH": "VAL_DESC_LENGTH",
+    "FEEDBACK_LENGTH": "VAL_FEEDBACK_LENGTH",
+    "RATING_INVALID": "VAL_RATING_INVALID",
+    "WORD_COUNT": "VAL_WORD_COUNT",
+    "DUPLICATE_SUBMISSION": "DUP_SUBMISSION",
+    "SURVEY_EXISTS": "DUP_SURVEY_ROUND",
+    "PARTICIPANT_EXISTS": "DUP_PUBLIC_ID",
+    "CONSENT_REQUIRED": "AUTH_CONSENT_REQUIRED",
+    "FLAGGED_ACCOUNT": "AUTH_ACCOUNT_FLAGGED",
+    "PARTICIPANT_NOT_FOUND": "NF_PARTICIPANT",
+    "NO_IMAGES": "NF_IMAGE",
+    "IMAGE_NOT_FOUND": "NF_IMAGE",
+    "PAYMENT_NOT_FOUND": "NF_PAYMENT",
+    "PAYMENT_EXPIRED": "PAY_EXPIRED",
+    "PAYMENT_INVALID_STATE": "PAY_INVALID_STATE",
+    "INVALID_AMOUNT": "PAY_INVALID_AMOUNT",
+    "INVALID_IMAGE_TYPE": "PAY_INVALID_IMAGE_TYPE",
+    "INVALID_SHA256": "PAY_INVALID_SHA256",
+    "DUPLICATE_IMAGE": "FRAUD_DUPLICATE_IMAGE",
+    "REJECTED_REUSE": "FRAUD_REJECTED_REUSE",
+}
+for _legacy_key, _canonical_key in _ERROR_KEY_ALIASES.items():
+    if _canonical_key in ERROR_CODES:
+        ERROR_CODES[_legacy_key] = ERROR_CODES[_canonical_key]
 
 
 # ────────────────────────────────────────────────

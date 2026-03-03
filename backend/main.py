@@ -8,6 +8,7 @@ from app.logging_config import configure_logging
 configure_logging()
 
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from flask import jsonify, render_template, request, g
@@ -16,16 +17,13 @@ from sqlalchemy import text
 from app.extensions import app, limiter
 from app.database import engine, get_db
 from app.utils.decorators import track_performance
+from app.utils.helpers import create_error_response
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
 
-try:
-    from middleware import device_fingerprint_middleware
-except ImportError:
-    def device_fingerprint_middleware():
-        return None
+from middleware.device_fingerprint import device_fingerprint_middleware
 
 
 # ────────────────────────────────────────────────
@@ -47,6 +45,7 @@ def log_request():
     """Log incoming requests and attach security context."""
     g.request_start_time = datetime.now(timezone.utc)
     g.device_fingerprint_written = False
+    g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
 
     # Ensure DB session exists for middleware utilities that rely on g.db.
     try:
@@ -60,11 +59,15 @@ def log_request():
     except Exception as e:
         logger.warning(f"Device fingerprint middleware failed: {e}")
 
-    logger.info(f"REQUEST {request.method} {request.path}")
+    logger.info(f"REQUEST {request.method} {request.path} request_id={g.request_id}")
 
 @app.after_request
 def log_response(response):
     """Log outgoing responses for debugging."""
+    request_id = getattr(g, "request_id", None)
+    if request_id:
+        response.headers["X-Request-ID"] = request_id
+
     if getattr(g, "device_fingerprint_written", False) and request.method in {"GET", "HEAD"}:
         try:
             db = getattr(g, "db", None)
@@ -80,22 +83,46 @@ def log_response(response):
 
     if hasattr(g, 'request_start_time'):
         duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
-        logger.info(f"RESPONSE {request.method} {request.path} - {response.status_code} - {duration_ms}ms")
+        logger.info(
+            f"RESPONSE {request.method} {request.path} - {response.status_code} - {duration_ms}ms request_id={request_id}"
+        )
     return response
 
 
 @app.errorhandler(413)
 def handle_request_too_large(_error):
     """Return JSON response for oversized uploads."""
-    return jsonify({
-        "success": False,
-        "error": {
-            "code": "VAL_003_0005",
-            "message": "The file is too large. Please upload an image smaller than 5MB.",
-            "category": "VAL",
-            "field": "image_base64"
-        }
-    }), 413
+    max_bytes = int(app.config.get("MAX_CONTENT_LENGTH", 5 * 1024 * 1024))
+    max_mb = max(1, round(max_bytes / (1024 * 1024)))
+    return create_error_response(
+        "VAL_FILE_TOO_LARGE",
+        details={"max_mb": max_mb, "reason": "payload_too_large"},
+        custom_message=f"The file is too large. Please upload an image smaller than {max_mb}MB."
+    )
+
+
+@app.errorhandler(404)
+def handle_not_found(_error):
+    return create_error_response("NF_ROUTE_NOT_FOUND", details={"path": request.path, "reason": "route_not_found"})
+
+
+@app.errorhandler(405)
+def handle_method_not_allowed(_error):
+    return create_error_response(
+        "VAL_METHOD_NOT_ALLOWED",
+        details={"path": request.path, "method": request.method, "reason": "method_not_allowed"}
+    )
+
+
+@app.errorhandler(429)
+def handle_rate_limit(_error):
+    return create_error_response("RATE_LIMIT_EXCEEDED")
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(error):
+    logger.exception("Unhandled exception request_id=%s path=%s", getattr(g, "request_id", None), request.path)
+    return create_error_response("SYS_INTERNAL_ERROR")
 
 
 # ────────────────────────────────────────────────
