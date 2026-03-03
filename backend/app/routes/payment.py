@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
-from flask import jsonify, request, current_app
+from flask import jsonify, request
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 import qrcode
@@ -39,9 +39,11 @@ from app.utils.ocr import (
 from app.utils.fraud import (
     check_duplicate_screenshot,
     check_rejected_screenshot,
+    check_near_duplicate_screenshot,
+    compute_dhash,
 )
 from app.utils.decorators import track_performance
-from app.extensions import s3, app
+from app.extensions import s3
 from app.config import S3_BUCKET_NAME
 
 
@@ -487,6 +489,25 @@ def verify_and_upload_payment(payment_public_id):
                   details=f"SHA256 {sha256_hash[:16]}... was previously rejected")
         db.commit()
         return create_error_response("REJECTED_REUSE")
+
+    # 3. Near-duplicate check using perceptual hash (resistant to minor edits/crops)
+    try:
+        image_hash = compute_dhash(image)
+        is_near_duplicate, near_payment_id, near_distance = check_near_duplicate_screenshot(
+            db, image_hash, threshold=6
+        )
+        if is_near_duplicate:
+            log_audit(
+                db,
+                "fraud_detected_near_duplicate_image",
+                participant_id=participant_id,
+                details=f"dHash distance={near_distance} matched payment={near_payment_id}"
+            )
+            db.commit()
+            return create_error_response("DUPLICATE_IMAGE")
+    except Exception as hash_exc:
+        print(f"[WARN] Perceptual hash check failed: {hash_exc}", flush=True)
+        image_hash = None
     
     # Run verification BEFORE uploading to S3
     verification_result = {"status": "processing", "verified": False}
@@ -501,9 +522,10 @@ def verify_and_upload_payment(payment_public_id):
         """), {"pid": payment_id}).fetchone()
         
         amount = payment_row[0] if payment_row else 1
+        expected_note = f"COGNIT {payment_public_id}"
         # Run strict validation
         is_valid, detected_app, failures = verify_payment_screenshot(
-            image, extracted_text, amount, confidence, UPI_NAME
+            image, extracted_text, amount, confidence, UPI_NAME, expected_note=expected_note
         )
         
         # Build verification details JSON
@@ -533,14 +555,15 @@ def verify_and_upload_payment(payment_public_id):
             # Save to payment_files table
             db.execute(text("""
                 INSERT INTO payment_files (
-                    payment_id, object_key, sha256
+                    payment_id, object_key, sha256, image_phash
                 ) VALUES (
-                    :pid, :key, :hash
+                    :pid, :key, :hash, :phash
                 )
             """), {
                 "pid": payment_id,
                 "key": object_key,
-                "hash": sha256_hash
+                "hash": sha256_hash,
+                "phash": image_hash
             })
             
             # Update payment status
@@ -732,7 +755,7 @@ def verify_payment(payment_public_id):
 
     # Run strict validation
     is_valid, detected_app, failures = verify_payment_screenshot(
-        image, extracted_text, amount, confidence, UPI_NAME
+        image, extracted_text, amount, confidence, UPI_NAME, expected_note=f"COGNIT {payment_public_id}"
     )
 
     # Build verification details JSON

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
-import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 
 const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
@@ -51,80 +50,33 @@ export default function SurveyPage({
   const imageReady = imageLoaded && !imageError;
   const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && descriptionValid && !submitting && imageReady;
 
-  // Set up enhanced engagement tracking
+  // Local engagement counters for submission payload.
+  // Global backend event tracking is handled in App.jsx for all pages.
   useEffect(() => {
-    // Track tab visibility changes
-    const handleVisibilityChange = async () => {
-      if (document.hidden && publicId) {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
         setEngagementData(prev => ({
           ...prev,
           tabSwitchCount: prev.tabSwitchCount + 1
         }));
-
-        // Send engagement event to backend using API wrapper
-        try {
-          await endpoints.trackEngagement({
-            public_id: publicId,
-            event_type: 'tab_switch'
-          });
-        } catch (error) {
-          console.warn('Failed to track tab switch:', error);
-        }
       }
     };
 
-    // Track page close attempts
-    const handleBeforeUnload = async (e) => {
-      if (publicId) {
-        setEngagementData(prev => ({
-          ...prev,
-          pageCloseAttempts: prev.pageCloseAttempts + 1
-        }));
-
-        // Send engagement event to backend using API wrapper (non-blocking)
-        endpoints.trackEngagement({
-          public_id: publicId,
-          event_type: 'page_close_attempt'
-        }).catch(error => {
-          console.warn('Failed to track page close:', error);
-        });
-      }
-      // Allow navigation but track it
+    const handleBeforeUnload = (e) => {
+      setEngagementData(prev => ({
+        ...prev,
+        pageCloseAttempts: prev.pageCloseAttempts + 1
+      }));
       delete e['returnValue'];
     };
 
-    // Track network disconnects
-    const handleOnline = async () => {
-      // Network restored
-      if (publicId) {
-        try {
-          await endpoints.trackEngagement({
-            public_id: publicId,
-            event_type: 'network_reconnect'  // Note: different event type for online
-          });
-        } catch (error) {
-          console.warn('Failed to track network reconnect:', error);
-        }
-      }
-    };
+    const handleOnline = () => {};
 
-    const handleOffline = async () => {
-      if (publicId) {
-        setEngagementData(prev => ({
-          ...prev,
-          networkDisconnects: prev.networkDisconnects + 1
-        }));
-
-        // Send engagement event to backend using API wrapper
-        try {
-          await endpoints.trackEngagement({
-            public_id: publicId,
-            event_type: 'network_disconnect'
-          });
-        } catch (error) {
-          console.warn('Failed to track network disconnect:', error);
-        }
-      }
+    const handleOffline = () => {
+      setEngagementData(prev => ({
+        ...prev,
+        networkDisconnects: prev.networkDisconnects + 1
+      }));
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -138,7 +90,7 @@ export default function SurveyPage({
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [publicId]);
+  }, []);
 
   // Copy-paste prevention for survey page only (as requested)
   const preventCopyPaste = useCallback((e) => {

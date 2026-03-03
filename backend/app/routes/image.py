@@ -3,14 +3,13 @@ Image routes module for C.O.G.N.I.T. backend.
 Handles random image selection for survey.
 """
 
-import random
-
-from flask import jsonify, request, current_app
+from flask import jsonify, request
 from sqlalchemy import text
 
 from app.database import get_db
 from app.utils.helpers import create_error_response
 from app.utils.decorators import track_performance
+from app.config import ATTENTION_INTERVAL
 
 
 # ────────────────────────────────────────────────
@@ -28,26 +27,66 @@ image_bp = Blueprint('image', __name__)
 @image_bp.route("/images/random")
 @track_performance
 def random_image():
-    """Get a random image for the survey, optionally excluding specific images."""
+    """Get a random image with deterministic attention-check placement."""
     exclude = request.args.get("exclude", "")
     excluded = [x.strip() for x in exclude.split(",") if x.strip()]
+    public_id = (request.args.get("public_id") or "").strip()
 
     try:
         db = get_db()
-        where = "WHERE image_id NOT IN :ex" if excluded else ""
+        if ATTENTION_INTERVAL <= 0:
+            raise ValueError("ATTENTION_INTERVAL must be > 0")
+
+        should_prioritize_attention = False
+        participant_id = None
+        if public_id:
+            p_row = db.execute(text("""
+                SELECT id FROM participants
+                WHERE public_id = :pub AND is_deleted = false
+            """), {"pub": public_id}).fetchone()
+            if p_row:
+                participant_id = p_row[0]
+                total_submissions = db.execute(text("""
+                    SELECT COUNT(*) FROM submissions
+                    WHERE participant_id = :pid
+                """), {"pid": participant_id}).scalar() or 0
+                should_prioritize_attention = ((total_submissions + 1) % ATTENTION_INTERVAL) == 0
+
+        excluded_clause = "AND i.image_id NOT IN :ex" if excluded else ""
         params = {"ex": tuple(excluded)} if excluded else {}
 
-        count = db.execute(text(f"SELECT COUNT(*) FROM images {where}"), params).scalar()
-        if count == 0:
-            return create_error_response("NO_IMAGES")
+        attention_row = None
+        if should_prioritize_attention:
+            attention_row = db.execute(text(f"""
+                SELECT i.image_id, i.url
+                FROM images i
+                JOIN attention_checks ac ON ac.image_id = i.id
+                WHERE ac.is_active = true
+                {excluded_clause}
+                ORDER BY random()
+                LIMIT 1
+            """), params).fetchone()
 
-        offset = random.randint(0, count - 1)
-        row = db.execute(text(f"""
-            SELECT image_id, url
-            FROM images
-            {where}
-            OFFSET :off LIMIT 1
-        """), {**params, "off": offset}).fetchone()
+        row = attention_row
+        if not row:
+            row = db.execute(text(f"""
+                SELECT i.image_id, i.url
+                FROM images i
+                LEFT JOIN attention_checks ac ON ac.image_id = i.id AND ac.is_active = true
+                WHERE ac.image_id IS NULL
+                {excluded_clause}
+                ORDER BY random()
+                LIMIT 1
+            """), params).fetchone()
+
+        if not row and should_prioritize_attention:
+            row = db.execute(text(f"""
+                SELECT i.image_id, i.url
+                FROM images i
+                {('WHERE i.image_id NOT IN :ex' if excluded else '')}
+                ORDER BY random()
+                LIMIT 1
+            """), params).fetchone()
 
         if not row:
             return create_error_response("INTERNAL_ERROR")

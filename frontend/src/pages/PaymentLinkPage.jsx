@@ -15,6 +15,7 @@ const VERIFICATION_REASON_CODES = {
   missing_bhim_label: 'FRAUD_002_0005',
   ocr_unavailable: 'SYS_001_0004',
   missing_paid_bhim: 'FRAUD_002_0005',
+  note_mismatch: 'FRAUD_002_0002',
 };
 
 export default function PaymentLinkPage({ 

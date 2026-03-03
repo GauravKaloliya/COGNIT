@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
 import PaymentContentPage from "./pages/PaymentContentPage.jsx";
@@ -164,6 +164,8 @@ export default function App() {
   // UI state
   const [toasts, setToasts] = useState([]);
   const [showConfetti, setShowConfetti] = useState(false);
+  const canTrackEngagement = ["payment", "survey", "finished"].includes(stage);
+  const currentPageRef = useRef("consent");
 
   // Persist state
   useEffect(() => { saveStoredValue("publicId", publicId); }, [publicId]);
@@ -187,6 +189,67 @@ export default function App() {
       setToasts((prev) => prev.filter((toast) => toast.id !== id));
     }, 4000);
   }, []);
+
+  const trackEngagementEvent = useCallback((eventType, eventData = {}) => {
+    if (!publicId || !canTrackEngagement) return;
+    endpoints.trackEngagement({
+      public_id: publicId,
+      event_type: eventType,
+      event_data: eventData
+    }).catch(() => {});
+  }, [publicId, canTrackEngagement]);
+
+  useEffect(() => {
+    if (!canTrackEngagement) return;
+    const page = stage === "payment" ? `payment-${paymentSubStage}` : stage;
+    currentPageRef.current = page;
+    trackEngagementEvent("page_view", {
+      page,
+      stage,
+      payment_sub_stage: stage === "payment" ? paymentSubStage : null,
+      path: window.location.pathname
+    });
+  }, [canTrackEngagement, stage, paymentSubStage, trackEngagementEvent]);
+
+  useEffect(() => {
+    if (!canTrackEngagement || !publicId) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        trackEngagementEvent("tab_switch", { page: currentPageRef.current });
+      }
+    };
+
+    const handleOffline = () => {
+      trackEngagementEvent("network_disconnect", { page: currentPageRef.current });
+    };
+
+    const handleBeforeUnload = () => {
+      const payload = JSON.stringify({
+        public_id: publicId,
+        event_type: "page_close_attempt",
+        event_data: {
+          page: currentPageRef.current
+        }
+      });
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon(getApiUrl("/engagement/track"), blob);
+      } else {
+        trackEngagementEvent("page_close_attempt", { page: currentPageRef.current });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [canTrackEngagement, publicId, trackEngagementEvent]);
   
   // Online/offline detection
   useEffect(() => {
@@ -413,7 +476,7 @@ export default function App() {
     setImageError(null);
 
     try {
-      const data = await endpoints.getRandomImage(shownImages);
+      const data = await endpoints.getRandomImage(shownImages, publicId);
       // Track this image as shown
       setShownImages(prev => [...prev, data.image_id]);
       setSurvey(data);
@@ -445,10 +508,19 @@ export default function App() {
         network_disconnects: engagementData.networkDisconnects || 0
       });
 
-      if (result.attention_passed === false) {
-        addToast("Please follow the special instructions next time!", "warning");
+      const attentionStatus = result.attention_status || {};
+      if (attentionStatus.is_attention_check && result.attention_passed === false) {
+        if (attentionStatus.failure_reasons?.includes("too_fast_attention")) {
+          addToast("Attention check failed: response was too fast. Please read image instructions carefully.", "warning");
+        } else {
+          addToast("Attention check failed: please follow the special instructions shown in the image.", "warning");
+        }
       } else {
         addToast("Your response was saved!", "success");
+      }
+
+      if (attentionStatus.hard_flag_triggered) {
+        addToast("Multiple attention failures detected. Please slow down and answer carefully.", "warning");
       }
 
       setShowConfetti(true);

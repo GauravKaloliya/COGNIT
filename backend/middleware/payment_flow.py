@@ -5,7 +5,7 @@ Server-side enforcement of payment flow with strict state transitions
 
 import functools
 from datetime import datetime, timezone
-from flask import request, jsonify, g, current_app
+from flask import request, jsonify, g
 from sqlalchemy import text
 import json
 

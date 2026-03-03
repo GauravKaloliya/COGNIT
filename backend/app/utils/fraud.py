@@ -6,6 +6,7 @@ Provides duplicate detection, screenshot validation, and fraud scoring.
 from typing import Optional, Tuple
 
 from sqlalchemy import text
+from PIL import Image
 
 
 # ────────────────────────────────────────────────
@@ -72,3 +73,59 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
         print(f"[WARN] Rejected screenshot check failed: {e}", flush=True)
         return False
 
+
+def compute_dhash(image: Image.Image, hash_size: int = 8) -> str:
+    """
+    Compute a perceptual difference hash (dHash) for near-duplicate detection.
+
+    Returns:
+        Hex string representation of the hash.
+    """
+    gray = image.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
+    pixels = list(gray.getdata())
+    rows = [pixels[i * (hash_size + 1):(i + 1) * (hash_size + 1)] for i in range(hash_size)]
+    bits = []
+    for row in rows:
+        for i in range(hash_size):
+            bits.append(1 if row[i] > row[i + 1] else 0)
+    bit_string = "".join("1" if b else "0" for b in bits)
+    return f"{int(bit_string, 2):0{hash_size * hash_size // 4}x}"
+
+
+def _hamming_distance_hex(hash_a: str, hash_b: str) -> int:
+    """Compute Hamming distance between two hex hashes."""
+    if not hash_a or not hash_b:
+        return 999
+    if len(hash_a) != len(hash_b):
+        return 999
+    value = int(hash_a, 16) ^ int(hash_b, 16)
+    return value.bit_count()
+
+
+def check_near_duplicate_screenshot(db, image_hash: str, threshold: int = 6) -> Tuple[bool, Optional[int], Optional[int]]:
+    """
+    Check near-duplicate screenshot using perceptual hash distance.
+
+    Returns:
+        Tuple of (is_near_duplicate, existing_payment_id, min_distance)
+    """
+    try:
+        rows = db.execute(text("""
+            SELECT pf.payment_id, pf.image_phash
+            FROM payment_files pf
+            WHERE pf.image_phash IS NOT NULL
+            LIMIT 5000
+        """)).fetchall()
+        best_payment = None
+        best_distance = None
+        for payment_id, stored_hash in rows:
+            distance = _hamming_distance_hex(image_hash, stored_hash)
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_payment = payment_id
+        if best_distance is not None and best_distance <= threshold:
+            return True, best_payment, best_distance
+        return False, None, best_distance
+    except Exception as e:
+        print(f"[WARN] Near-duplicate screenshot check failed: {e}", flush=True)
+        return False, None, None
