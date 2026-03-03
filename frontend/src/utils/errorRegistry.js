@@ -110,6 +110,8 @@ const TRANSLATIONS = {
     'FRAUD_001_0002': 'Could not read the screenshot text. Please retake.',
     'FRAUD_001_0003': 'Please use Google Pay, Paytm, or BHIM',
     'FRAUD_001_0004': 'Payment not made to correct beneficiary',
+    'FRAUD_001_0006': 'Payment time is outside the allowed 5-minute window. Please upload a recent screenshot.',
+    'FRAUD_001_0007': 'Could not read payment date/time from screenshot. Please upload a clearer screenshot.',
     
     // Payment mismatch issues
     'FRAUD_002_0001': 'Payment not made to correct UPI ID',
@@ -268,10 +270,11 @@ export function parseErrorResponse(response) {
   const { code, message, field, fields, details } = response.error;
   const category = code?.split('_')[0] || 'SYS';
   const categoryInfo = ERROR_CATEGORIES[category] || ERROR_CATEGORIES.SYS;
+  const mappedMessage = code && hasErrorCode(code) ? getErrorMessage(code) : null;
   
   return {
     code,
-    message: getErrorMessage(code) || message,
+    message: message || mappedMessage || getErrorMessage('SYS_001_0001'),
     originalMessage: message,
     category,
     field,
