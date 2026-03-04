@@ -6,18 +6,26 @@ import { parseErrorResponse, getErrorMessage } from './errorRegistry';
  */
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
+  const method = String(options.method || "GET").toUpperCase();
+  const hasBody = options.body !== undefined && options.body !== null;
   const requestId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const baseHeaders = { ...(options.headers || {}) };
+
+  // Keep GET/HEAD requests as "simple requests" to avoid unnecessary CORS preflights.
+  // Add tracing/content headers only for requests that send a body or mutate state.
+  if (hasBody && !baseHeaders['Content-Type']) {
+    baseHeaders['Content-Type'] = 'application/json';
+  }
+  if (method !== 'GET' && method !== 'HEAD' && !baseHeaders['X-Request-ID']) {
+    baseHeaders['X-Request-ID'] = requestId;
+  }
   
   try {
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Request-ID': requestId,
-        ...options.headers
-      }
+      headers: baseHeaders
     });
     
     const data = await response.json().catch(() => null);
