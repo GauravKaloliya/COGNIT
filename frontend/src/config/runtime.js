@@ -31,6 +31,7 @@ export const runtimeConfig = {
   paymentTimerDurationMs: toInt(import.meta.env.VITE_PAYMENT_TIMER_DURATION_MS, 5 * 60 * 1000),
   paymentTimerTickMs: toInt(import.meta.env.VITE_PAYMENT_TIMER_TICK_MS, 1000),
   maxUploadMb: toFloat(import.meta.env.VITE_MAX_UPLOAD_MB, 8),
+  paymentUploadMaxMb: toFloat(import.meta.env.VITE_PAYMENT_UPLOAD_MAX_MB, toFloat(import.meta.env.VITE_MAX_UPLOAD_MB, 8)),
   minScreenshotWidth: toInt(import.meta.env.VITE_MIN_SCREENSHOT_WIDTH, 360),
   minScreenshotHeight: toInt(import.meta.env.VITE_MIN_SCREENSHOT_HEIGHT, 640),
   minLaplacianVariance: toFloat(import.meta.env.VITE_MIN_LAPLACIAN_VARIANCE, 22),
