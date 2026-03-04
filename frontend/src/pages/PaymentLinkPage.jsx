@@ -1124,10 +1124,32 @@ export default function PaymentLinkPage({
               </div>
 
               <div className="payment-upload-meta-box">
-                <p className="payment-upload-file-name">
-                  {uploadFile ? `✅ ${uploadFile.name}` : "No image selected"}
-                </p>
-                <p className="payment-note">Click image above to change</p>
+                <div className="payment-upload-meta-head">
+                  <p className="payment-upload-file-name">
+                    {uploadFile ? `✅ ${uploadFile.name}` : "No image selected"}
+                  </p>
+                  <p className="payment-note">Click image above to change</p>
+                  <p className="payment-upload-file-meta">
+                    {uploadFile
+                      ? `Size: ${(uploadFile.size / (1024 * 1024)).toFixed(2)}MB | Max: ${MAX_UPLOAD_MB}MB`
+                      : `Allowed formats: JPG, JPEG, PNG, WEBP | Max: ${MAX_UPLOAD_MB}MB`}
+                  </p>
+                </div>
+
+                <div className="payment-upload-guidance">
+                  <p className="payment-upload-guidance-title">Quick checklist</p>
+                  <ul>
+                    <li>Payment status is visible</li>
+                    <li>Recipient shows COGNIT / Gaurav</li>
+                    <li>Amount shows exactly ₹1</li>
+                    <li>Date and time are clearly readable</li>
+                  </ul>
+                </div>
+
+                <div className="payment-upload-verification-note">
+                  Verification usually completes in a few seconds. Keep this tab open until status updates.
+                </div>
+
                 <div className="payment-upload-actions">
                   <button
                     className="ghost"

@@ -10,6 +10,7 @@ const AGE_MIN = runtimeConfig.ageMin;
 const AGE_MAX = runtimeConfig.ageMax;
 const LOCATION_MIN_LENGTH = runtimeConfig.locationMinLength;
 const LOCATION_PERMISSION_REQUIRED_MESSAGE = "You have to enable location permission to submit this form.";
+const MOBILE_LOCATION_FALLBACK_MESSAGE = "Location auto-detect failed on this browser. Enter location manually to continue.";
 
 const DUPLICATE_ERROR_CODES = {
   username: 'DUP_001_0001',
@@ -32,9 +33,19 @@ export default function UserDetailsPage({
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
+  const [manualLocationAllowed, setManualLocationAllowed] = useState(false);
   const debounceTimerRef = useRef({ username: null, email: null, phone: null });
   const reverseGeocodeAbortRef = useRef(null);
   const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
+  const isMobileClient = useRef(false);
+
+  useEffect(() => {
+    const ua = navigator.userAgent || "";
+    const byUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const byViewport = typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false;
+    const byTouch = typeof window !== "undefined" ? window.matchMedia("(pointer: coarse)").matches : false;
+    isMobileClient.current = byUa || (byViewport && byTouch);
+  }, []);
 
   useEffect(() => {
     document.title = "User Details - C.O.G.N.I.T.";
@@ -116,6 +127,7 @@ export default function UserDetailsPage({
   const setDetectedLocation = useCallback((value) => {
     setDemographics((prev) => ({ ...prev, location: value }));
     setLocationPermissionDenied(false);
+    setManualLocationAllowed(false);
     setErrors((prev) => {
       if (!prev.location) return prev;
       const next = { ...prev };
@@ -125,13 +137,21 @@ export default function UserDetailsPage({
   }, [setDemographics]);
 
   const detectLocation = useCallback(() => {
+    setManualLocationAllowed(false);
     if (!navigator.geolocation) {
-      setLocationStatus("Geolocation is not supported in this browser.");
-      setLocationPermissionDenied(true);
-      setErrors((prev) => ({
-        ...prev,
-        location: LOCATION_PERMISSION_REQUIRED_MESSAGE,
-      }));
+      const allowManual = isMobileClient.current;
+      setLocationStatus(allowManual ? MOBILE_LOCATION_FALLBACK_MESSAGE : "Geolocation is not supported in this browser.");
+      setLocationPermissionDenied(!allowManual);
+      setManualLocationAllowed(allowManual);
+      setErrors((prev) => {
+        const next = { ...prev };
+        if (allowManual) {
+          delete next.location;
+        } else {
+          next.location = LOCATION_PERMISSION_REQUIRED_MESSAGE;
+        }
+        return next;
+      });
       return;
     }
 
@@ -177,14 +197,25 @@ export default function UserDetailsPage({
       },
       (error) => {
         const denied = error?.code === 1;
-        setLocationPermissionDenied(denied);
-        setLocationStatus(denied ? "Location permission denied." : "Unable to detect location.");
-        setErrors((prev) => ({
-          ...prev,
-          location: denied
-            ? LOCATION_PERMISSION_REQUIRED_MESSAGE
-            : "Unable to detect location. Please try again.",
-        }));
+        const allowManual = isMobileClient.current;
+        setLocationPermissionDenied(denied && !allowManual);
+        setManualLocationAllowed(allowManual);
+        setLocationStatus(
+          allowManual
+            ? MOBILE_LOCATION_FALLBACK_MESSAGE
+            : (denied ? "Location permission denied." : "Unable to detect location.")
+        );
+        setErrors((prev) => {
+          const next = { ...prev };
+          if (allowManual) {
+            delete next.location;
+          } else {
+            next.location = denied
+              ? LOCATION_PERMISSION_REQUIRED_MESSAGE
+              : "Unable to detect location. Please try again.";
+          }
+          return next;
+        });
         setLocating(false);
       },
       {
@@ -234,7 +265,7 @@ export default function UserDetailsPage({
     const ageError = validateAgeInput(demographics.age);
     if (ageError) newErrors.age = ageError;
 
-    const locationError = locationPermissionDenied
+    const locationError = (locationPermissionDenied && !manualLocationAllowed)
       ? LOCATION_PERMISSION_REQUIRED_MESSAGE
       : validateLocationInput(demographics.location);
     if (locationError) newErrors.location = locationError;
@@ -572,17 +603,31 @@ export default function UserDetailsPage({
           <input
             type="text"
             className={errors.location ? 'error-input' : ''}
-            placeholder={locating ? "Detecting your location..." : "Auto-detected location"}
+            placeholder={
+              locating
+                ? "Detecting your location..."
+                : (manualLocationAllowed ? "Enter your location manually" : "Auto-detected location")
+            }
             value={demographics.location || ''}
-            disabled
-            readOnly
+            disabled={locating || !manualLocationAllowed}
+            readOnly={!manualLocationAllowed}
+            onChange={(e) => {
+              if (manualLocationAllowed) {
+                updateField("location", e.target.value);
+              }
+            }}
+            onBlur={(e) => {
+              if (manualLocationAllowed) {
+                handleFieldBlur("location", e.target.value);
+              }
+            }}
           />
           {locating && !(demographics.location || "").trim() && (
             <div className="location-skeleton-wrap">
               <SectionSkeleton title="Detecting your location" rows={2} dense />
             </div>
           )}
-          {locationPermissionDenied && !locating && (
+          {locationPermissionDenied && !locating && !manualLocationAllowed && (
             <button
               type="button"
               className="ghost location-permission-btn"
@@ -663,7 +708,7 @@ export default function UserDetailsPage({
             !systemReady ||
             submitting ||
             !isFormComplete ||
-            locationPermissionDenied ||
+            (locationPermissionDenied && !manualLocationAllowed) ||
             Object.keys(errors).length > 0
           }
         >
