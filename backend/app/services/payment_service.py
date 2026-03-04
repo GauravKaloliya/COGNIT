@@ -16,6 +16,7 @@ def create_payment_upload_attempt(
     file_size: Optional[int] = None,
     image_phash: Optional[str] = None,
     status: str = "started",
+    detected_app: Optional[str] = "unknown",
     details: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     try:
@@ -29,6 +30,8 @@ def create_payment_upload_attempt(
                 mime_type,
                 file_size,
                 image_phash,
+                detected_app,
+                fraud_score,
                 status,
                 details
             ) VALUES (
@@ -40,6 +43,8 @@ def create_payment_upload_attempt(
                 :mime_type,
                 :file_size,
                 :image_phash,
+                :detected_app,
+                :fraud_score,
                 :status,
                 CAST(:details AS jsonb)
             )
@@ -53,6 +58,8 @@ def create_payment_upload_attempt(
             "mime_type": mime_type,
             "file_size": file_size,
             "image_phash": image_phash,
+            "detected_app": detected_app or "unknown",
+            "fraud_score": 0.0,
             "status": status,
             "details": json.dumps(details or {}),
         }).fetchone()
@@ -80,7 +87,7 @@ def finalize_payment_upload_attempt(
             SET status = :status,
                 detected_app = :detected_app,
                 failure_reasons = CAST(:failure_reasons AS jsonb),
-                fraud_score = :fraud_score,
+                fraud_score = COALESCE(:fraud_score, 0),
                 details = COALESCE(details, '{}'::jsonb) || CAST(:details AS jsonb),
                 completed_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
@@ -88,7 +95,7 @@ def finalize_payment_upload_attempt(
         """), {
             "attempt_id": attempt_id,
             "status": status,
-            "detected_app": detected_app,
+            "detected_app": detected_app or "unknown",
             "failure_reasons": json.dumps(failure_reasons or []),
             "fraud_score": fraud_score,
             "details": json.dumps(details or {}),
