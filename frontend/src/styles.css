@@ -836,8 +836,8 @@ body.dark .section-skeleton {
 
 @media (max-width: 768px) {
   .skeleton-page-frame {
-    min-height: clamp(400px, 58vh, 640px);
-    height: clamp(400px, 58vh, 640px);
+    min-height: calc(100dvh - 16px);
+    height: calc(100dvh - 16px);
   }
 
   .skeleton-grid {
@@ -846,6 +846,15 @@ body.dark .section-skeleton {
   .skeleton-button {
     width: 100%;
     max-width: 100%;
+  }
+}
+
+@supports not (height: 100dvh) {
+  @media (max-width: 768px) {
+    .skeleton-page-frame {
+      min-height: calc(100vh - 16px);
+      height: calc(100vh - 16px);
+    }
   }
 }
 
@@ -2805,7 +2814,7 @@ body.dark .payment-qr-code {
   gap: 0.5rem;
   width: 100%;
   padding: 1rem 1.5rem;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: var(--primary);
   color: white;
   border-radius: 12px;
   font-weight: 600;
@@ -2813,26 +2822,29 @@ body.dark .payment-qr-code {
   text-decoration: none;
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.3s;
   position: relative;
+  text-align: center;
 }
 
 .payment-upi-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.4);
 }
 
 .payment-upi-timer {
-  margin-left: auto;
-  padding-left: 0.75rem;
-  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
   font-size: 0.9rem;
   font-weight: 500;
   white-space: nowrap;
+  width: 100%;
+  text-align: center;
 }
 
 @media (max-width: 479px) {
   .payment-upi-button {
     font-size: var(--text-base);
-    justify-content: flex-start;
+    justify-content: center;
     gap: var(--space-2);
     padding: 0.875rem 1rem;
   }
@@ -2843,6 +2855,7 @@ body.dark .payment-qr-code {
     border-left: none;
     padding-left: 0;
     padding-top: var(--space-1);
+    text-align: center;
   }
 }
 
@@ -2917,6 +2930,7 @@ body.dark .payment-qr-code {
   margin: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .payment-upload-meta-box {
@@ -2943,6 +2957,7 @@ body.dark .payment-qr-code {
 }
 
 .payment-upload-guidance {
+  margin-top: var(--space-2);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--panel) 90%, var(--accent) 10%);
@@ -2968,7 +2983,8 @@ body.dark .payment-qr-code {
 }
 
 .payment-upload-verification-note {
-  margin: 0;
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--accent-bg);
   border-left: 3px solid var(--primary);
