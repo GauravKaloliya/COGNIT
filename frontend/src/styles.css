@@ -2856,7 +2856,7 @@ body.dark .payment-qr-code {
 
 .payment-upload-stack {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: stretch;
   gap: var(--space-3);
   margin-top: var(--space-3);
@@ -2885,6 +2885,7 @@ body.dark .payment-qr-code {
 .payment-upload-preview-box {
   flex: 1.25;
   min-height: 180px;
+  max-height: 500px;
   padding: var(--space-2);
   display: flex;
   align-items: center;
@@ -2921,8 +2922,54 @@ body.dark .payment-qr-code {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  justify-content: center;
+  justify-content: space-between;
   border: 1px solid var(--border);
+}
+
+.payment-upload-meta-head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.payment-upload-file-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.payment-upload-guidance {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--panel) 90%, var(--accent) 10%);
+  padding: var(--space-2);
+}
+
+.payment-upload-guidance-title {
+  margin: 0 0 var(--space-1);
+  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.payment-upload-guidance ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.2rem;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.payment-upload-verification-note {
+  margin: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-bg);
+  border-left: 3px solid var(--primary);
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text);
 }
 
 .payment-upload-actions {
@@ -2941,13 +2988,12 @@ body.dark .payment-qr-code {
   margin-top: 0;
   width: 100%;
   max-width: 100%;
-  max-height: 340px;
   object-fit: contain;
 }
 
 @media (max-width: 768px) {
   .payment-upload-stack {
-    flex-direction: column;
+    flex-direction: row;
     gap: var(--space-2);
     margin-top: var(--space-2);
     padding: var(--space-2);
@@ -2964,10 +3010,7 @@ body.dark .payment-qr-code {
     flex: none;
     padding: var(--space-2);
     border: 1px solid var(--border);
-  }
-
-  .payment-upload-preview-box .payment-upload-preview {
-    max-height: 260px;
+    justify-content: flex-start;
   }
 
   .payment-upload-file-name {
@@ -2994,9 +3037,6 @@ body.dark .payment-qr-code {
     min-height: 140px;
   }
 
-  .payment-upload-preview-box .payment-upload-preview {
-    max-height: 220px;
-  }
 }
 
 @media (max-width: 360px) {
