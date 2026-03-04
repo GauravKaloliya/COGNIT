@@ -1,17 +1,66 @@
 import React, { useState, useEffect } from "react";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { runtimeConfig } from "../config/runtime";
+import PageSkeleton from "../components/PageSkeleton.jsx";
+import PanelState from "../components/PanelState.jsx";
+
+const CONSENT_DRAFT_SCHEMA_VERSION = runtimeConfig.consentDraftSchemaVersion;
+const CONSENT_DRAFT_TTL_MS = runtimeConfig.consentDraftTtlMs;
+
+const readConsentDraft = () => {
+  try {
+    const raw = sessionStorage.getItem("consent_checked_draft");
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      parsed.__schema_version !== CONSENT_DRAFT_SCHEMA_VERSION ||
+      typeof parsed.expires_at !== "number"
+    ) {
+      return false;
+    }
+    if (Date.now() > parsed.expires_at) {
+      sessionStorage.removeItem("consent_checked_draft");
+      return false;
+    }
+    return parsed.data === true;
+  } catch {
+    return false;
+  }
+};
+
+const writeConsentDraft = (checked) => {
+  try {
+    const now = Date.now();
+    sessionStorage.setItem(
+      "consent_checked_draft",
+      JSON.stringify({
+        __schema_version: CONSENT_DRAFT_SCHEMA_VERSION,
+        saved_at: now,
+        expires_at: now + CONSENT_DRAFT_TTL_MS,
+        data: checked === true
+      })
+    );
+  } catch {
+    // Ignore storage errors.
+  }
+};
 
 export default function ConsentPage({ 
   onConsentGiven, 
   systemReady 
 }) {
-  const [consentChecked, setConsentChecked] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(() => readConsentDraft());
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     document.title = "Consent Form - C.O.G.N.I.T.";
   }, []);
+
+  useEffect(() => {
+    writeConsentDraft(consentChecked);
+  }, [consentChecked]);
 
   const resolveConsentError = (err) => {
     const message = err?.message || "";
@@ -40,12 +89,23 @@ export default function ConsentPage({
 
     try {
       await onConsentGiven();
+      sessionStorage.removeItem("consent_checked_draft");
     } catch (err) {
       setError(resolveConsentError(err));
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (submitting) {
+    return (
+      <PageSkeleton
+        title="Saving consent"
+        subtitle="Securing your participation preferences"
+        variant="consent"
+      />
+    );
+  }
 
   return (
     <div className="panel">
@@ -167,9 +227,12 @@ export default function ConsentPage({
       </div>
       
       {error && (
-        <div className="banner warning spaced">
-          {error}
-        </div>
+        <PanelState
+          variant="warning"
+          title="Action required"
+          message={error}
+          icon="!"
+        />
       )}
       
       <div className={`consent-checkbox ${error && !consentChecked ? 'error' : ''}`}>
@@ -190,7 +253,7 @@ export default function ConsentPage({
         </label>
       </div>
       
-      <div className="page-actions">
+      <div className="page-actions sticky-mobile-actions">
         <button
           className="primary"
           onClick={handleSubmit}

@@ -57,22 +57,54 @@ def calculate_quality_score(
     att: Optional[bool], 
     ts: Optional[float], 
     fb_len: int, 
-    bot: bool
+    bot: bool,
+    distinct_word_count: Optional[int] = None,
+    tab_switch_count: int = 0,
+    page_close_attempts: int = 0,
+    network_disconnects: int = 0,
+    too_fast_threshold: float = TOO_FAST_SECONDS,
 ) -> float:
     """
-    Calculate submission quality score based on multiple factors.
-    
-    Weights:
-    - Word count: 40%
-    - Attention check: 30%
-    - Time spent: 20%
-    - Feedback length: 10%
+    Calculate submission quality score based on writing quality and behavior signals.
     """
-    s_word = min(wc / 150.0, 1.0)
-    s_att = 1.0 if att is None else (1.0 if att else 0.0)
-    s_time = 0.5 if ts is not None and ts < TOO_FAST_SECONDS else 1.0
-    s_fb = min(fb_len / 50.0, 1.0)
-    score = 0.4 * s_word + 0.3 * s_att + 0.2 * s_time + 0.1 * s_fb
+    safe_wc = max(0, int(wc or 0))
+    safe_fb_len = max(0, int(fb_len or 0))
+    safe_distinct = max(0, int(distinct_word_count or 0))
+
+    s_word = min(max((safe_wc - 40) / 140.0, 0.0), 1.0)
+    s_att = 1.0 if att is None else (1.0 if bool(att) else 0.0)
+    s_fb = min(safe_fb_len / 120.0, 1.0)
+
+    if ts is None:
+        s_time = 0.0
+    else:
+        try:
+            ts_val = max(0.0, float(ts))
+        except Exception:
+            ts_val = 0.0
+        time_target = max(float(too_fast_threshold or TOO_FAST_SECONDS), 1.0) * 3.0
+        s_time = min(ts_val / time_target, 1.0)
+
+    if safe_wc > 0:
+        lexical_ratio = safe_distinct / float(safe_wc)
+        s_lex = min(max((lexical_ratio - 0.25) / 0.45, 0.0), 1.0)
+    else:
+        s_lex = 0.0
+
+    tsc = max(0, int(tab_switch_count or 0))
+    pca = max(0, int(page_close_attempts or 0))
+    nd = max(0, int(network_disconnects or 0))
+    engagement_penalty = min(0.25, (tsc * 0.01) + (pca * 0.03) + (nd * 0.02))
+    s_engagement = 1.0 - engagement_penalty
+
+    score = (
+        0.32 * s_word +
+        0.18 * s_lex +
+        0.20 * s_att +
+        0.15 * s_time +
+        0.10 * s_fb +
+        0.05 * s_engagement
+    )
     if bot:
         score *= 0.3
     return round(score, 4)
@@ -82,25 +114,31 @@ def calculate_quality_score(
 # Audit Logging
 # ────────────────────────────────────────────────
 
-def log_audit(db, event_type: str, participant_id: Optional[int] = None, details: str = ""):
+def log_audit(
+    db,
+    event_type: str,
+    participant_id: Optional[int] = None,
+    details: str = "",
+    status_code: Optional[int] = 200,
+):
     """Log an audit event to the database."""
     try:
-        with db.begin_nested():
-            db.execute(text("""
-                INSERT INTO audit_log (
-                    event_type, participant_id, endpoint, http_method,
-                    ip_hash, user_agent, details, request_id
-                ) VALUES (:ev, :pid, :ep, :meth, :iph, :ua, :det, :rid)
-            """), {
-                "ev": event_type,
-                "pid": participant_id,
-                "ep": request.path,
-                "meth": request.method,
-                "iph": get_ip_hash(),
-                "ua": request.headers.get("User-Agent", "")[:512],
-                "det": details[:8000],
-                "rid": getattr(g, "request_id", None),
-            })
+        db.execute(text("""
+            INSERT INTO audit_log (
+                event_type, participant_id, endpoint, http_method,
+                status_code, ip_hash, user_agent, details, request_id
+            ) VALUES (:ev, :pid, :ep, :meth, :st, :iph, :ua, :det, :rid)
+        """), {
+            "ev": event_type,
+            "pid": participant_id,
+            "ep": request.path,
+            "meth": request.method,
+            "st": int(status_code) if status_code is not None else 200,
+            "iph": get_ip_hash(),
+            "ua": request.headers.get("User-Agent", "")[:512],
+            "det": details[:8000],
+            "rid": getattr(g, "request_id", None),
+        })
     except Exception as exc:
         print(f"[WARN] audit log insert failed: {exc}", flush=True)
 

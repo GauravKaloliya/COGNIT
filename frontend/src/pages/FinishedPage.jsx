@@ -1,4 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { runtimeConfig } from "../config/runtime";
+import PageSkeleton from "../components/PageSkeleton.jsx";
+import PanelState from "../components/PanelState.jsx";
 
 export default function FinishedPage({ surveyCompleted, publicId }) {
   const [rewardStatus, setRewardStatus] = useState(null);
@@ -14,12 +17,30 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
 
   const handleFinish = () => {
     // Preserve dark mode setting before clearing
-    const darkMode = sessionStorage.getItem("darkMode");
+    let darkMode = null;
+    try {
+      const stored = sessionStorage.getItem("darkMode");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        darkMode = parsed?.data;
+      }
+    } catch {
+      darkMode = null;
+    }
     // Clear session storage and reload
     sessionStorage.clear();
     // Restore dark mode setting
-    if (darkMode !== null) {
-      sessionStorage.setItem("darkMode", darkMode);
+    if (typeof darkMode === "boolean") {
+      const now = Date.now();
+      sessionStorage.setItem(
+        "darkMode",
+        JSON.stringify({
+          __schema_version: runtimeConfig.uiStateSchemaVersion,
+          saved_at: now,
+          expires_at: now + runtimeConfig.uiStateTtlMs,
+          data: darkMode
+        })
+      );
     }
     window.location.href = "/";
   };
@@ -27,6 +48,16 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
   const isWinner = rewardStatus?.is_winner;
   const totalWords = rewardStatus?.total_words || 0;
   const priorityEligible = rewardStatus?.priority_eligible;
+
+  if (loading) {
+    return (
+      <PageSkeleton
+        title="Finalizing your session"
+        subtitle="Wrapping up rewards and completion state"
+        variant="finish"
+      />
+    );
+  }
 
   return (
     <div className="panel finish-panel">
@@ -38,36 +69,25 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
         </p>
         
         {!loading && (
-          <div className={`finish-reward ${isWinner ? "winner" : "default"}`}>
-            {isWinner ? (
-              <>
-                <div className="finish-reward-icon">🎉</div>
-                <h3 className="finish-reward-title">Congratulations!</h3>
-                <p className="finish-reward-lead">
-                  You've been selected as a reward winner!
-                </p>
-                <p className="finish-reward-body">
-                  Thank you for your valuable participation. Your reward will be processed shortly.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="finish-reward-icon">🎁</div>
-                <h3 className="finish-reward-title">Thank You for Participating!</h3>
-                <p className="finish-reward-body">
-                  Your responses are valuable to our research and contribute to advancing language understanding models.
-                </p>
-                {totalWords > 0 && (
-                  <p className="finish-reward-body">
-                    You wrote <strong>{totalWords} words</strong> across your responses.
-                    {priorityEligible
-                      ? " Your detailed participation puts you in the priority pool for future opportunities!"
-                      : " Keep participating in future studies for more chances to win!"}
-                  </p>
-                )}
-              </>
+          <PanelState
+            variant="success"
+            icon={isWinner ? "★" : "✓"}
+            title={isWinner ? "Congratulations!" : "Thank You for Participating"}
+            message={
+              isWinner
+                ? "You've been selected as a reward winner. Your reward will be processed shortly."
+                : "Your responses were recorded successfully and help improve image-text research quality."
+            }
+          >
+            {totalWords > 0 && (
+              <p className="finish-reward-body">
+                You wrote <strong>{totalWords} words</strong> across your responses.
+                {priorityEligible
+                  ? " Your detailed participation puts you in the priority pool for future opportunities!"
+                  : " Keep participating in future studies for more chances to win!"}
+              </p>
             )}
-          </div>
+          </PanelState>
         )}
 
         <div className="finish-reminder">
@@ -87,7 +107,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
           contribute to improving image-text understanding and generation systems.
         </p>
 
-        <div className="page-actions">
+        <div className="page-actions sticky-mobile-actions">
           <button className="primary" onClick={handleFinish}>
             Finish
           </button>

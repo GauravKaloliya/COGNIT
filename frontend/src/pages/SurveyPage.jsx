@@ -1,25 +1,104 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getApiUrl } from "../utils/apiBase";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { uiText } from "../utils/uiText.js";
+import { runtimeConfig } from "../config/runtime";
+import PageSkeleton from "../components/PageSkeleton.jsx";
+import SectionSkeleton from "../components/SectionSkeleton.jsx";
+import PanelState from "../components/PanelState.jsx";
 
-const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
-const MIN_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MIN_DESCRIPTION_LENGTH || "60", 10);
-const MAX_DESCRIPTION_LENGTH = parseInt(import.meta.env.VITE_MAX_DESCRIPTION_LENGTH || "10000", 10);
-const MIN_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MIN_FEEDBACK_LENGTH || "5", 10);
-const MAX_FEEDBACK_LENGTH = parseInt(import.meta.env.VITE_MAX_FEEDBACK_LENGTH || "2000", 10);
-const COPY_PASTE_DISABLED = (import.meta.env.VITE_DISABLE_COPY_PASTE ?? "true").toLowerCase() === "true";
+const MIN_WORDS = runtimeConfig.minWords;
+const PRIORITY_WORD_TARGET = runtimeConfig.priorityDescWordTarget;
+const MIN_DESCRIPTION_LENGTH = runtimeConfig.minDescriptionLength;
+const MAX_DESCRIPTION_LENGTH = runtimeConfig.maxDescriptionLength;
+const MIN_FEEDBACK_LENGTH = runtimeConfig.minFeedbackLength;
+const MAX_FEEDBACK_LENGTH = runtimeConfig.maxFeedbackLength;
+const PRIORITY_FEEDBACK_TARGET = runtimeConfig.priorityFeedbackTarget;
+const UI_TOTAL_STEPS = runtimeConfig.surveyUiTotalSteps;
+const COPY_PASTE_DISABLED = runtimeConfig.disableCopyPaste;
+const SURVEY_DRAFT_SCHEMA_VERSION = runtimeConfig.surveyDraftSchemaVersion;
+const SURVEY_DRAFT_TTL_MS = runtimeConfig.surveyDraftTtlMs;
+const DESCRIPTION_NOTES = [
+  "Strong start. Add one more concrete visual detail.",
+  "Nice momentum. Expand with color, position, and context.",
+  "Good flow. Mention object relationships to boost clarity.",
+  "Great effort. Add scene depth and small visible cues.",
+  "You are building quality. Add sequence or action details.",
+  "High-value response. Add what stands out most and why.",
+  "Excellent pace. Add contrast, count, or spatial references.",
+  "Almost priority-ready. Add richer context and precision.",
+  "Very close to priority tier. Add one strong final paragraph.",
+  "Priority target reached. Keep this detail level for top quality."
+];
+const FEEDBACK_NOTES = [
+  "Start with one clear thought about the task.",
+  "Good start. Add what felt easy or difficult.",
+  "Add a practical suggestion to improve the prompt.",
+  "Great. Mention whether image quality affected your response.",
+  "Helpful feedback. Add one specific improvement idea.",
+  "Strong direction. Explain what increased your confidence.",
+  "Useful signal. Add an example to make feedback actionable.",
+  "Almost priority-ready. Add one concise final insight.",
+  "Very close. Add what would make this task smoother.",
+  "Priority feedback reached. Clear, detailed, and actionable."
+];
 
 const sanitizeAlphaNumericSpace = (value) =>
   value.replace(/[\t\r\n]+/g, ' ').replace(/[^a-zA-Z0-9 ]+/g, '');
 
-const getDraftKey = (imageId) => (imageId ? `survey_draft_${imageId}` : null);
+const getDraftKey = (publicId, imageId) =>
+  imageId ? `survey_draft_${publicId || "anon"}_${imageId}` : null;
+const getActiveDraftKey = (publicId) => `survey_draft_active_${publicId || "anon"}`;
+
+const readSurveyDraft = (key) => {
+  if (!key) return null;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      parsed.__schema_version !== SURVEY_DRAFT_SCHEMA_VERSION ||
+      typeof parsed.expires_at !== "number"
+    ) {
+      return null;
+    }
+    if (Date.now() > parsed.expires_at) {
+      sessionStorage.removeItem(key);
+      return null;
+    }
+    return parsed.data || null;
+  } catch {
+    return null;
+  }
+};
+
+const writeSurveyDraft = (key, data) => {
+  if (!key) return;
+  try {
+    const now = Date.now();
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        __schema_version: SURVEY_DRAFT_SCHEMA_VERSION,
+        saved_at: now,
+        expires_at: now + SURVEY_DRAFT_TTL_MS,
+        data
+      })
+    );
+  } catch {
+    // Ignore storage failures.
+  }
+};
 
 export default function SurveyPage({
   survey,
   publicId,
+  surveyCompleted = 0,
   onSubmit,
   fetchError = null,
-  onRetry
+  onRetry,
+  isFetchingImage = false,
 }) {
   const [description, setDescription] = useState("");
   const [rating, setRating] = useState(0);
@@ -27,10 +106,13 @@ export default function SurveyPage({
   const [isZoomed, setIsZoomed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [retryDisabled, setRetryDisabled] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
+  const [submitLocked, setSubmitLocked] = useState(false);
 
   // Engagement tracking state
   const [engagementData, setEngagementData] = useState({
@@ -41,15 +123,39 @@ export default function SurveyPage({
 
   const surveyStartTime = useRef(Date.now());
   const timerIntervalRef = useRef(null);
+  const submitUnlockTimeoutRef = useRef(null);
   const descriptionRef = useRef(null);
   const commentsRef = useRef(null);
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
   const charCount = description.length;
+  const feedbackCount = comments.trim().length;
   const descriptionValid = description.length >= MIN_DESCRIPTION_LENGTH && description.length <= MAX_DESCRIPTION_LENGTH;
   const commentsValid = comments.trim().length >= MIN_FEEDBACK_LENGTH && comments.trim().length <= MAX_FEEDBACK_LENGTH;
   const imageReady = imageLoaded && !imageError;
   const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && descriptionValid && !submitting && imageReady;
-  const draftKey = getDraftKey(survey?.image_id);
+  const wordProgress = Math.min(100, Math.round((wordCount / PRIORITY_WORD_TARGET) * 100));
+  const feedbackProgress = Math.min(100, Math.round((feedbackCount / PRIORITY_FEEDBACK_TARGET) * 100));
+  const wordShortfall = Math.max(0, PRIORITY_WORD_TARGET - wordCount);
+  const feedbackShortfall = Math.max(0, PRIORITY_FEEDBACK_TARGET - feedbackCount);
+  const descriptionPriorityReady = wordCount >= PRIORITY_WORD_TARGET;
+  const feedbackPriorityReady = feedbackCount >= PRIORITY_FEEDBACK_TARGET;
+  const descriptionNoteIndex = Math.min(9, Math.floor(wordProgress / 10));
+  const feedbackNoteIndex = Math.min(9, Math.floor(feedbackProgress / 10));
+  const currentStep = Math.max(1, surveyCompleted + 1);
+  const minimumMet = wordCount >= MIN_WORDS && comments.trim().length >= MIN_FEEDBACK_LENGTH && rating > 0;
+  const priorityMet = descriptionPriorityReady && feedbackPriorityReady;
+  const draftKey = getDraftKey(publicId, survey?.image_id);
+  const activeDraftKey = getActiveDraftKey(publicId);
+
+  const unlockSubmit = useCallback((delayMs = runtimeConfig.submitUnlockDelayMs) => {
+    if (submitUnlockTimeoutRef.current) {
+      clearTimeout(submitUnlockTimeoutRef.current);
+    }
+    submitUnlockTimeoutRef.current = setTimeout(() => {
+      setSubmitLocked(false);
+      submitUnlockTimeoutRef.current = null;
+    }, delayMs);
+  }, []);
 
   // Local engagement counters for submission payload.
   // Global backend event tracking is handled in App.jsx for all pages.
@@ -149,12 +255,28 @@ export default function SurveyPage({
     };
   }, [preventCopyPaste]);
 
+  useEffect(() => {
+    return () => {
+      if (submitUnlockTimeoutRef.current) {
+        clearTimeout(submitUnlockTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleRetryImage = () => {
+    if (retryDisabled || isFetchingImage) return;
+    setRetryDisabled(true);
     setImageError(false);
     setImageLoaded(false);
     setTimerActive(false);
-    onRetry();
+    onRetry({ clearCurrent: true });
   };
+
+  useEffect(() => {
+    if (imageError || fetchError) {
+      setRetryDisabled(false);
+    }
+  }, [imageError, fetchError]);
 
   useEffect(() => {
     setElapsed(0);
@@ -162,20 +284,40 @@ export default function SurveyPage({
     setImageError(false);
     setIsZoomed(false);
     setSubmitError("");
+    setShowValidationErrors(false);
     setTimerActive(false);
     surveyStartTime.current = Date.now();
     setDescription("");
     setRating(0);
     setComments("");
+    setEngagementData({
+      tabSwitchCount: 0,
+      pageCloseAttempts: 0,
+      networkDisconnects: 0
+    });
+    surveyStartTime.current = Date.now();
 
     if (survey?.image_id) {
       try {
-        const saved = sessionStorage.getItem(getDraftKey(survey.image_id));
+        const saved =
+          readSurveyDraft(getDraftKey(publicId, survey.image_id)) ||
+          readSurveyDraft(getActiveDraftKey(publicId));
         if (saved) {
-          const draft = JSON.parse(saved);
+          const draft = saved;
           setDescription(typeof draft.description === "string" ? draft.description : "");
           setRating(Number.isInteger(draft.rating) ? draft.rating : 0);
           setComments(typeof draft.comments === "string" ? draft.comments : "");
+          setElapsed(Number.isFinite(draft.elapsed) ? Math.max(0, draft.elapsed) : 0);
+          setEngagementData({
+            tabSwitchCount: Number.isFinite(draft.engagementData?.tabSwitchCount) ? Math.max(0, draft.engagementData.tabSwitchCount) : 0,
+            pageCloseAttempts: Number.isFinite(draft.engagementData?.pageCloseAttempts) ? Math.max(0, draft.engagementData.pageCloseAttempts) : 0,
+            networkDisconnects: Number.isFinite(draft.engagementData?.networkDisconnects) ? Math.max(0, draft.engagementData.networkDisconnects) : 0
+          });
+          if (Number.isFinite(draft.startedAt)) {
+            surveyStartTime.current = draft.startedAt;
+          } else if (Number.isFinite(draft.elapsed)) {
+            surveyStartTime.current = Date.now() - Math.max(0, draft.elapsed) * runtimeConfig.msPerSecond;
+          }
         }
       } catch {
         // Ignore malformed draft payload and continue with fresh inputs.
@@ -193,22 +335,39 @@ export default function SurveyPage({
         timerIntervalRef.current = null;
       }
     };
-  }, [survey?.image_id]);
+  }, [survey?.image_id, publicId]);
 
   useEffect(() => {
-    if (!draftKey) return;
+    if (!draftKey || !survey?.image_id) return;
+    const payload = {
+      imageId: survey.image_id,
+      description,
+      rating,
+      comments,
+      elapsed,
+      startedAt: surveyStartTime.current,
+      engagementData
+    };
     try {
-      sessionStorage.setItem(draftKey, JSON.stringify({ description, rating, comments }));
-    } catch {
-      // Storage quota issues should not block typing.
-    }
-  }, [draftKey, description, rating, comments]);
+      writeSurveyDraft(draftKey, payload);
+      writeSurveyDraft(activeDraftKey, payload);
+    } catch {}
+  }, [
+    draftKey,
+    activeDraftKey,
+    survey?.image_id,
+    description,
+    rating,
+    comments,
+    elapsed,
+    engagementData
+  ]);
 
   useEffect(() => {
     if (timerActive) {
       timerIntervalRef.current = setInterval(() => {
         setElapsed((prev) => prev + 1);
-      }, 1000);
+      }, runtimeConfig.surveyTimerTickMs);
     } else if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -222,27 +381,29 @@ export default function SurveyPage({
     };
   }, [timerActive]);
 
-  useEffect(() => {
-    if (submitError) {
-      setSubmitError("");
-    }
-  }, [description, rating, comments]);
-
   const handleSubmit = async () => {
+    if (submitting || submitLocked) {
+      return;
+    }
+
+    setSubmitLocked(true);
+    setShowValidationErrors(true);
     if (!canSubmit) {
       setSubmitError(getSubmitTooltip());
+      unlockSubmit(runtimeConfig.submitUnlockInvalidDelayMs);
       return;
     }
 
     // Additional validation before submit
     if (!survey || !survey.image_id) {
       setSubmitError(getErrorMessage('SYS_002_0004'));
+      unlockSubmit(runtimeConfig.submitUnlockInvalidDelayMs);
       return;
     }
 
     setSubmitting(true);
     setSubmitError("");
-    const timeSpentSeconds = Math.round((Date.now() - surveyStartTime.current) / 1000);
+    const timeSpentSeconds = Math.round((Date.now() - surveyStartTime.current) / runtimeConfig.msPerSecond);
 
     try {
       await onSubmit({
@@ -256,6 +417,7 @@ export default function SurveyPage({
       if (draftKey) {
         sessionStorage.removeItem(draftKey);
       }
+      sessionStorage.removeItem(activeDraftKey);
 
       // Reset form and engagement data after successful submission
       setDescription("");
@@ -274,6 +436,7 @@ export default function SurveyPage({
       }
     } finally {
       setSubmitting(false);
+      unlockSubmit(runtimeConfig.submitUnlockCompleteDelayMs);
     }
   };
 
@@ -291,7 +454,7 @@ export default function SurveyPage({
 
   const getSubmitTooltip = () => {
     if (!imageReady) return getErrorMessage('SYS_002_0018');
-    if (submitting) return "Submitting...";
+    if (submitting || submitLocked) return "Submitting...";
     if (wordCount < MIN_WORDS) {
       return getErrorMessage('VAL_002_0004', 'en', { min_words: MIN_WORDS, actual: wordCount });
     }
@@ -304,6 +467,59 @@ export default function SurveyPage({
     return "Submit your response";
   };
 
+  useEffect(() => {
+    const onKeyboardSubmit = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter") return;
+      e.preventDefault();
+      handleSubmit();
+    };
+    window.addEventListener("keydown", onKeyboardSubmit);
+    return () => window.removeEventListener("keydown", onKeyboardSubmit);
+  }, [handleSubmit]);
+
+  useEffect(() => {
+    const onRatingAndZoomKeys = (e) => {
+      const activeTag = String(document.activeElement?.tagName || "").toLowerCase();
+      const typingTarget = activeTag === "textarea" || activeTag === "input";
+      if (e.key === "Escape" && isZoomed) {
+        setIsZoomed(false);
+        return;
+      }
+      if (!imageReady || typingTarget) return;
+      if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setRating((prev) => Math.min(10, Math.max(1, prev + 1)));
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setRating((prev) => Math.max(1, prev > 0 ? prev - 1 : 1));
+      }
+    };
+    window.addEventListener("keydown", onRatingAndZoomKeys);
+    return () => window.removeEventListener("keydown", onRatingAndZoomKeys);
+  }, [imageReady, isZoomed]);
+
+  useEffect(() => {
+    const isCritical = submitting || submitLocked;
+    if (!isCritical) return undefined;
+
+    const preventUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+    const preventBack = () => {
+      window.history.pushState(null, "", window.location.href);
+      setSubmitError("Submission in progress. Please wait before leaving this page.");
+    };
+    window.history.pushState(null, "", window.location.href);
+    window.addEventListener("beforeunload", preventUnload);
+    window.addEventListener("popstate", preventBack);
+    return () => {
+      window.removeEventListener("beforeunload", preventUnload);
+      window.removeEventListener("popstate", preventBack);
+    };
+  }, [submitting, submitLocked]);
+
   const imageSrc = survey?.url
     ? (survey.url.startsWith('http') ? survey.url : getApiUrl(survey.url))
     : "";
@@ -312,30 +528,38 @@ export default function SurveyPage({
   if (!survey || !survey.image_id) {
     return (
       <div className="panel status-panel">
-        {fetchError ? (
-          <div className="image-error">
-            <p className="status-message error">{fetchError}</p>
-            {onRetry && (
-              <button
-                className="primary small"
-                onClick={onRetry}
-              >
-                Retry
-              </button>
-            )}
-          </div>
+        {isFetchingImage ? (
+          <PageSkeleton
+            title={uiText("survey.loadingImage")}
+            subtitle="Preparing your survey canvas"
+            variant="survey"
+          />
+        ) : fetchError ? (
+          <PanelState
+            variant="error"
+            icon="!"
+            title="Image load failed"
+            message={fetchError}
+            actionLabel={isFetchingImage ? uiText("survey.retrying") : uiText("survey.retry")}
+            onAction={onRetry ? handleRetryImage : null}
+            disabled={retryDisabled || isFetchingImage}
+          />
         ) : (
-          <>
-            <div className="spinner"></div>
-            <p className="status-message">Loading image...</p>
-          </>
+          <PageSkeleton
+            title={uiText("survey.loadingImage")}
+            subtitle="Preparing your survey canvas"
+            variant="survey"
+          />
         )}
       </div>
     );
   }
 
   return (
-    <div className="panel">
+    <div className="panel survey-page-panel">
+      <div className="meta meta-step-top">
+        <span className="step-chip">Survey {currentStep} of {Math.min(UI_TOTAL_STEPS, currentStep)}</span>
+      </div>
       <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
         {!imageError ? (
           <img
@@ -353,15 +577,15 @@ export default function SurveyPage({
             <button
               className="primary small button-top"
               onClick={handleRetryImage}
+              disabled={retryDisabled || isFetchingImage}
             >
-              Retry
+              {isFetchingImage ? "Retrying..." : "Retry"}
             </button>
           </div>
         )}
         {!imageLoaded && !imageError && (
           <div className="image-loading">
-            <div className="spinner"></div>
-            <p>Loading image...</p>
+            <SectionSkeleton title={uiText("survey.loadingImage")} rows={4} dense />
           </div>
         )}
         <button
@@ -377,46 +601,74 @@ export default function SurveyPage({
         <span className="timer">Time: {elapsed}s</span>
       </div>
 
+      {(minimumMet || priorityMet) && (
+        <div className="survey-badges">
+          {minimumMet && <span className="status-badge met">Minimum met</span>}
+          {priorityMet && <span className="status-badge met">Priority met</span>}
+        </div>
+      )}
+
+      <h3 className="survey-section-heading">Response Details</h3>
       <div className="field">
-        <label>Description</label>
-        <textarea
-          ref={descriptionRef}
-          className={!isSurvey && description.length > 0 && (
-            description.length < MIN_DESCRIPTION_LENGTH ||
-            description.length > MAX_DESCRIPTION_LENGTH
-          ) ? 'error-input' : ''}
-          value={description}
-          onChange={(e) => {
-            const value = sanitizeAlphaNumericSpace(e.target.value);
-            if (value.length <= MAX_DESCRIPTION_LENGTH) {
-              setDescription(value);
-            }
-          }}
-          placeholder="Describe what you see..."
-          spellCheck
-          disabled={!imageReady}
-          maxLength={MAX_DESCRIPTION_LENGTH}
-          onCopy={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onCut={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onPaste={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onContextMenu={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onDrop={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onDragOver={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onKeyDown={COPY_PASTE_DISABLED ? preventClipboardShortcuts : undefined}
-        />
+        <label>Description <span className="required" aria-label="required">*</span></label>
+        <div className="textarea-wrap">
+          <textarea
+            ref={descriptionRef}
+            className={showValidationErrors && description.length > 0 && (
+              description.length < MIN_DESCRIPTION_LENGTH ||
+              description.length > MAX_DESCRIPTION_LENGTH
+            ) ? 'error-input' : ''}
+            value={description}
+            onChange={(e) => {
+              const value = sanitizeAlphaNumericSpace(e.target.value);
+              if (value.length <= MAX_DESCRIPTION_LENGTH) {
+                setDescription(value);
+              }
+            }}
+            placeholder="Describe what you see..."
+            spellCheck
+            disabled={!imageReady}
+            maxLength={MAX_DESCRIPTION_LENGTH}
+            onCopy={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onCut={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onPaste={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onContextMenu={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onDrop={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onDragOver={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onKeyDown={COPY_PASTE_DISABLED ? preventClipboardShortcuts : undefined}
+          />
+          <div className="textarea-counter">Words {wordCount} | Chars {charCount}/{MAX_DESCRIPTION_LENGTH}</div>
+        </div>
+        <div className="counts">
+          <span>Words: {wordCount} / Min {MIN_WORDS}</span>
+          <span className={showValidationErrors && wordCount < MIN_WORDS ? "warning" : "ok"}>
+            Minimum: {MIN_WORDS} words
+          </span>
+          <span className={descriptionPriorityReady ? "ok" : "warning"}>Priority target: {PRIORITY_WORD_TARGET}+ words</span>
+        </div>
+        <div className={`priority-field-note ${descriptionPriorityReady ? "ready" : ""}`}>
+          <div className="priority-field-head">
+            <span>Priority target: {PRIORITY_WORD_TARGET}+ words</span>
+            <strong>{wordCount}/{PRIORITY_WORD_TARGET}</strong>
+          </div>
+          <div className="priority-inline-bar">
+            <span style={{ width: `${wordProgress}%` }} />
+          </div>
+          <p>
+            {descriptionPriorityReady
+              ? "Description target reached for priority queue consideration."
+              : `Write ${wordShortfall} more words to reach priority level.`}
+          </p>
+          <p className="priority-micro-note">{DESCRIPTION_NOTES[descriptionNoteIndex]}</p>
+        </div>
       </div>
 
-      <div className="counts">
-        <span>Words: {wordCount} / Min {MIN_WORDS}</span>
-        <span>Characters: {charCount} / {MAX_DESCRIPTION_LENGTH}</span>
-        <span className={wordCount >= MIN_WORDS ? "ok" : "warning"}>
-          Minimum: {MIN_WORDS} words
-        </span>
-      </div>
-
+      <h3 className="survey-section-heading">Difficulty Rating</h3>
       <div className="field effort-rating">
-        <label>Image rating {rating > 0 ? `${rating}/10` : ""}</label>
-        <div className="rating-scale">
+        <label>
+          Image rating <span className="required" aria-label="required">*</span> {rating > 0 ? `${rating}/10` : ""}
+        </label>
+        <div className={`rating-scale ${!imageReady ? "rating-scale-disabled" : ""}`}>
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
             <label key={val} className="rating-option">
               <input
@@ -437,57 +689,85 @@ export default function SurveyPage({
         </div>
       </div>
 
-      <div className="field">
-        <label>Comments</label>
-        <textarea
-          ref={commentsRef}
-          className={!isSurvey && comments.length > 0 && (
-            comments.length < MIN_FEEDBACK_LENGTH ||
-            comments.length > MAX_FEEDBACK_LENGTH
-          ) ? 'error-input' : ''}
-          value={comments}
-          onChange={(e) => {
-            const value = sanitizeAlphaNumericSpace(e.target.value);
-            if (value.length <= MAX_FEEDBACK_LENGTH) {
-              setComments(value);
-            }
-          }}
-          placeholder="Share any additional notes..."
-          disabled={!imageReady}
-          maxLength={MAX_FEEDBACK_LENGTH}
-          onCopy={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onCut={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onPaste={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onContextMenu={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onDrop={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onDragOver={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
-          onKeyDown={COPY_PASTE_DISABLED ? preventClipboardShortcuts : undefined}
-        />
-        {comments.length > 0 && (
-          <div className="counts">
-            <span className={comments.length >= MIN_FEEDBACK_LENGTH ? "ok" : "warning"}>
-              Characters: {comments.length} / {MAX_FEEDBACK_LENGTH}
-            </span>
+      <h3 className="survey-section-heading">Reflection</h3>
+      <div className="field feedback-field">
+        <label>Comments <span className="required" aria-label="required">*</span></label>
+        <div className="textarea-wrap">
+          <textarea
+            ref={commentsRef}
+            className={showValidationErrors && comments.length > 0 && (
+              comments.length < MIN_FEEDBACK_LENGTH ||
+              comments.length > MAX_FEEDBACK_LENGTH
+            ) ? 'error-input' : ''}
+            value={comments}
+            onChange={(e) => {
+              const value = sanitizeAlphaNumericSpace(e.target.value);
+              if (value.length <= MAX_FEEDBACK_LENGTH) {
+                setComments(value);
+              }
+            }}
+            placeholder="Share any additional notes..."
+            disabled={!imageReady}
+            maxLength={MAX_FEEDBACK_LENGTH}
+            onCopy={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onCut={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onPaste={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onContextMenu={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onDrop={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onDragOver={COPY_PASTE_DISABLED ? preventCopyPaste : undefined}
+            onKeyDown={COPY_PASTE_DISABLED ? preventClipboardShortcuts : undefined}
+          />
+          <div className="textarea-counter">Chars {comments.length}/{MAX_FEEDBACK_LENGTH}</div>
+        </div>
+        <div className="counts">
+          <span className={showValidationErrors && comments.length < MIN_FEEDBACK_LENGTH ? "warning" : ""}>
+            Characters: {comments.length} / Min 4
+          </span>
+          <span className="ok">
+            Minimum: 4 characters
+          </span>
+          <span className={feedbackCount >= PRIORITY_FEEDBACK_TARGET ? "ok" : "warning"}>
+            Priority target: {PRIORITY_FEEDBACK_TARGET}+ characters
+          </span>
+        </div>
+        <div className={`priority-field-note ${feedbackPriorityReady ? "ready" : ""}`}>
+          <div className="priority-field-head">
+            <span>Priority feedback target: {PRIORITY_FEEDBACK_TARGET}+ characters</span>
+            <strong>{feedbackCount}/{PRIORITY_FEEDBACK_TARGET}</strong>
           </div>
-        )}
+          <div className="priority-inline-bar">
+            <span style={{ width: `${feedbackProgress}%` }} />
+          </div>
+          <p>
+            {feedbackPriorityReady
+              ? "Feedback target reached for stronger priority profile."
+              : `Add ${feedbackShortfall} more characters to strengthen priority chances.`}
+          </p>
+          <p className="priority-micro-note">{FEEDBACK_NOTES[feedbackNoteIndex]}</p>
+        </div>
       </div>
 
       {submitError && <div className="banner warning">{submitError}</div>}
 
-      <div className="actions survey-submit-actions">
+      <div className="actions survey-submit-actions survey-sticky-footer">
+        <div className="submit-info-box">
+          <p className="submit-trust-note">{uiText("survey.autosave")}</p>
+          <p className="submit-shortcut-hint">{uiText("survey.submitShortcut")}</p>
+        </div>
         <button
           className={`primary ${submitting ? "wiggle" : ""}`}
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || submitLocked}
           title={getSubmitTooltip()}
         >
-          {submitting ? "Submitting..." : "Submit"}
+          {submitting ? (
+            <>
+              <span className="button-spinner" />
+              Submitting...
+            </>
+          ) : submitLocked ? "Please wait..." : "Submit"}
         </button>
       </div>
-
-      {!isSurvey && (
-        <p className="hint">You can stop at any time using the Finish button above</p>
-      )}
     </div>
   );
 }

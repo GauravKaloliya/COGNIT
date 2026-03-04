@@ -15,3 +15,6 @@ configure_logging()
 
 # Import the Flask app from main (which imports from app.extensions)
 from main import app
+
+# WSGI compatibility alias used by some runtimes.
+application = app

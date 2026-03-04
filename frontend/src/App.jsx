@@ -7,51 +7,91 @@ import SurveyPage from "./pages/SurveyPage.jsx";
 import SurveyFeedPage from "./pages/SurveyFeedPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
+import PageSkeleton from "./components/PageSkeleton.jsx";
 import { getApiUrl } from "./utils/apiBase";
 import { endpoints } from "./utils/api.js";
 import { getErrorMessage } from "./utils/errorRegistry.js";
+import { uiText } from "./utils/uiText.js";
+import { useSystemHealth } from "./hooks/useSystemHealth";
+import { usePaymentFlow } from "./hooks/usePaymentFlow";
+import { useSurveyFlow } from "./hooks/useSurveyFlow";
+import { runtimeConfig } from "./config/runtime";
+
+const UI_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
+const UI_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
+const ACTIVE_TAB_LOCK_KEY = "cognit_active_tab_lock_v1";
+const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
+const ACTIVE_TAB_HEARTBEAT_MS = runtimeConfig.activeTabHeartbeatMs;
+const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
+const ENGAGEMENT_QUEUE_KEY = "engagement_queue_v1";
 
 function createId() {
-  if (crypto?.randomUUID) {
-    return crypto.randomUUID();
-  }
-  // Fallback UUID generation
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
 
 function getStoredValue(key, fallback) {
-  const stored = sessionStorage.getItem(key);
-  return stored ? JSON.parse(stored) : fallback;
+  // Client storage is UX-only and user-controllable.
+  // Backend must remain source of truth for security-critical decisions.
+  try {
+    const stored = sessionStorage.getItem(key);
+    if (!stored) return fallback;
+    const parsed = JSON.parse(stored);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      parsed.__schema_version !== UI_STATE_SCHEMA_VERSION ||
+      typeof parsed.saved_at !== "number" ||
+      typeof parsed.expires_at !== "number"
+    ) {
+      return fallback;
+    }
+    if (Date.now() > parsed.expires_at) {
+      sessionStorage.removeItem(key);
+      return fallback;
+    }
+    return parsed.data ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function saveStoredValue(key, value) {
-  sessionStorage.setItem(key, JSON.stringify(value));
+  // Client storage is UX-only and user-controllable.
+  // Backend must remain source of truth for security-critical decisions.
+  try {
+    const now = Date.now();
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        __schema_version: UI_STATE_SCHEMA_VERSION,
+        saved_at: now,
+        expires_at: now + UI_STATE_TTL_MS,
+        data: value
+      })
+    );
+  } catch {
+    // Ignore storage failures; app should remain usable.
+  }
 }
 
-// Stage order for secure navigation (CONSOLIDATED - NEW)
 const STAGE_ORDER = ["consent", "user-details", "payment", "survey", "finished"];
 
 const validateStageTransition = (currentStage, targetStage, paymentVerified = false) => {
   const currentIndex = STAGE_ORDER.indexOf(currentStage);
   const targetIndex = STAGE_ORDER.indexOf(targetStage);
-  
-  // Allow going back to previous stages
-  if (targetIndex <= currentIndex) {
-    return true;
-  }
-  
-  // Only allow moving forward to next stage if current stage is complete
+  if (targetIndex <= currentIndex) return true;
+
   switch (currentStage) {
     case "consent":
       return targetStage === "user-details";
     case "user-details":
       return targetStage === "payment";
     case "payment":
-      // Require payment verification before allowing survey access
       return targetStage === "survey" && paymentVerified;
     case "survey":
       return targetStage === "finished";
@@ -78,8 +118,8 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="panel">
-          <h1>{getErrorMessage('SYS_001_0001')}</h1>
-          <p>{getErrorMessage('SYS_002_0023')}</p>
+          <h1>{getErrorMessage("SYS_001_0001")}</h1>
+          <p>{getErrorMessage("SYS_002_0023")}</p>
         </div>
       );
     }
@@ -125,23 +165,15 @@ function Confetti({ show }) {
 }
 
 export default function App() {
-  // System state
-  const [systemReady, setSystemReady] = useState(false);
-  const [systemError, setSystemError] = useState(null);
-  const [systemChecking, setSystemChecking] = useState(true);
-  const [retryTrigger, setRetryTrigger] = useState(0);
-  const [online, setOnline] = useState(navigator.onLine);
+  const tabIdRef = useRef(createId());
+  const [isActiveTabOwner, setIsActiveTabOwner] = useState(true);
   const [darkMode, setDarkMode] = useState(getStoredValue("darkMode", false));
-  
-  // Flow state
   const [stage, setStage] = useState(getStoredValue("stage", "consent"));
   const [paymentSubStage, setPaymentSubStage] = useState(getStoredValue("paymentSubStage", "content"));
   const [publicId] = useState(() => getStoredValue("publicId", createId()));
   const [sessionId] = useState(() => getStoredValue("sessionId", createId()));
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue("paymentVerified", false));
-  
-  // Demographics state - using new API field names
   const [demographics, setDemographics] = useState(
     getStoredValue("demographics", {
       username: "",
@@ -151,54 +183,310 @@ export default function App() {
       age: "",
       location: "",
       language_code: "",
-      prior_experience: ""
+      prior_experience: "",
     })
   );
-  
-  // Survey state
-  const [survey, setSurvey] = useState(getStoredValue("survey", null));
-  const [surveyCompleted, setSurveyCompleted] = useState(getStoredValue("surveyCompleted", 0));
-  const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(getStoredValue("surveyFeedbackReady", false));
-  const [shownImages, setShownImages] = useState(getStoredValue("shownImages", []));
-  const [imageError, setImageError] = useState(null);
-  
-  // UI state
   const [toasts, setToasts] = useState([]);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const canTrackEngagement = ["payment", "survey", "finished"].includes(stage);
-  const currentPageRef = useRef("consent");
+  const [flowBusyMessage, setFlowBusyMessage] = useState("");
+  const [engagementFlushInFlight, setEngagementFlushInFlight] = useState(false);
+  const toastRef = useRef(new Map());
+  const participantStatusAbortRef = useRef(null);
+  const submitFlowAbortRef = useRef(null);
 
-  // Persist state
-  useEffect(() => { saveStoredValue("publicId", publicId); }, [publicId]);
-  useEffect(() => { saveStoredValue("sessionId", sessionId); }, [sessionId]);
-  useEffect(() => { saveStoredValue("consentGiven", consentGiven); }, [consentGiven]);
-  useEffect(() => { saveStoredValue("paymentVerified", paymentVerified); }, [paymentVerified]);
-  useEffect(() => { saveStoredValue("demographics", demographics); }, [demographics]);
-  useEffect(() => { saveStoredValue("stage", stage); }, [stage]);
-  useEffect(() => { saveStoredValue("paymentSubStage", paymentSubStage); }, [paymentSubStage]);
-  useEffect(() => { saveStoredValue("survey", survey); }, [survey]);
-  useEffect(() => { saveStoredValue("surveyCompleted", surveyCompleted); }, [surveyCompleted]);
-  useEffect(() => { saveStoredValue("surveyFeedbackReady", surveyFeedbackReady); }, [surveyFeedbackReady]);
-  useEffect(() => { saveStoredValue("shownImages", shownImages); }, [shownImages]);
-  useEffect(() => { saveStoredValue("darkMode", darkMode); document.body.classList.toggle("dark", darkMode); }, [darkMode]);
+  const claimActiveTabLock = useCallback(() => {
+    const now = Date.now();
+    const tabId = tabIdRef.current;
+    try {
+      const raw = localStorage.getItem(ACTIVE_TAB_LOCK_KEY);
+      if (!raw) {
+        localStorage.setItem(
+          ACTIVE_TAB_LOCK_KEY,
+          JSON.stringify({
+            __schema_version: ACTIVE_TAB_LOCK_SCHEMA_VERSION,
+            tab_id: tabId,
+            updated_at: now
+          })
+        );
+        setIsActiveTabOwner(true);
+        return true;
+      }
 
-  // Define addToast early since it's used in useEffect below
-  const addToast = useCallback((message, type = "info", action) => {
-    const id = createId();
-    setToasts((prev) => [...prev, { id, message, type, action }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, 4000);
+      const parsed = JSON.parse(raw);
+      const currentOwner = parsed?.tab_id;
+      const updatedAt = Number(parsed?.updated_at || 0);
+      const stale = !updatedAt || now - updatedAt > ACTIVE_TAB_STALE_MS;
+
+      if (currentOwner === tabId || stale) {
+        localStorage.setItem(
+          ACTIVE_TAB_LOCK_KEY,
+          JSON.stringify({
+            __schema_version: ACTIVE_TAB_LOCK_SCHEMA_VERSION,
+            tab_id: tabId,
+            updated_at: now
+          })
+        );
+        setIsActiveTabOwner(true);
+        return true;
+      }
+
+      setIsActiveTabOwner(false);
+      return false;
+    } catch {
+      setIsActiveTabOwner(true);
+      return true;
+    }
   }, []);
 
-  const trackEngagementEvent = useCallback((eventType, eventData = {}) => {
-    if (!publicId || !canTrackEngagement) return;
-    endpoints.trackEngagement({
-      public_id: publicId,
-      event_type: eventType,
-      event_data: eventData
-    }).catch(() => {});
-  }, [publicId, canTrackEngagement]);
+  useEffect(() => {
+    claimActiveTabLock();
+
+    const heartbeat = window.setInterval(() => {
+      claimActiveTabLock();
+    }, ACTIVE_TAB_HEARTBEAT_MS);
+
+    const onStorage = (event) => {
+      if (event.key === ACTIVE_TAB_LOCK_KEY) {
+        claimActiveTabLock();
+      }
+    };
+
+    const releaseLockIfOwner = () => {
+      try {
+        const raw = localStorage.getItem(ACTIVE_TAB_LOCK_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed?.tab_id === tabIdRef.current) {
+          localStorage.removeItem(ACTIVE_TAB_LOCK_KEY);
+        }
+      } catch {
+        // Ignore lock release failures.
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("beforeunload", releaseLockIfOwner);
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("beforeunload", releaseLockIfOwner);
+      releaseLockIfOwner();
+    };
+  }, [claimActiveTabLock]);
+
+  const addToast = useCallback((message, type = "info", action) => {
+    const dedupeKey = `${type}:${message}`;
+    const now = Date.now();
+    const lastShownAt = toastRef.current.get(dedupeKey) || 0;
+    if (now - lastShownAt < runtimeConfig.toastDedupeWindowMs) {
+      return;
+    }
+    toastRef.current.set(dedupeKey, now);
+    const id = createId();
+    setToasts((prev) => [...prev, { id, message, type, action }]);
+    setTimeout(
+      () => setToasts((prev) => prev.filter((toast) => toast.id !== id)),
+      runtimeConfig.toastAutoDismissMs
+    );
+  }, []);
+
+  const {
+    survey,
+    setSurvey,
+    surveyCompleted,
+    setSurveyCompleted,
+    surveyFeedbackReady,
+    setSurveyFeedbackReady,
+    shownImages,
+    setShownImages,
+    imageError,
+    isFetchingImage,
+    showConfetti,
+    fetchImage,
+    handleSubmit,
+    cancelInFlightRequests,
+  } = useSurveyFlow({
+    publicId,
+    addToast,
+    initial: {
+      survey: getStoredValue("survey", null),
+      surveyCompleted: getStoredValue("surveyCompleted", 0),
+      surveyFeedbackReady: getStoredValue("surveyFeedbackReady", false),
+      shownImages: getStoredValue("shownImages", []),
+    },
+  });
+
+  const {
+    systemReady,
+    systemError,
+    systemChecking,
+    online,
+    retryHealthCheck,
+  } = useSystemHealth({
+    publicId,
+    stage,
+    paymentVerified,
+    setPaymentVerified,
+    setStage,
+    setPaymentSubStage,
+    addToast,
+  });
+
+  const {
+    handlePaymentComplete,
+    handlePaymentContentToLink,
+    handlePaymentBack,
+  } = usePaymentFlow({
+    publicId,
+    stage,
+    paymentSubStage,
+    setStage,
+    setPaymentSubStage,
+    setPaymentVerified,
+    addToast,
+    transitionToSurvey: async () => {
+      setFlowBusyMessage("Preparing your first survey...");
+      setPaymentVerified(true);
+      setPaymentSubStage("content");
+      try {
+        const image = await fetchImage({ clearCurrent: true, throwOnError: true });
+        if (!image?.image_id) {
+          setPaymentVerified(false);
+          return false;
+        }
+        if (validateStageTransition("payment", "survey", true)) {
+          setStage("survey");
+        }
+        return true;
+      } catch {
+        setPaymentVerified(false);
+        return false;
+      } finally {
+        setFlowBusyMessage("");
+      }
+    },
+  });
+
+  const canTrackEngagement = isActiveTabOwner && ["payment", "survey", "finished"].includes(stage);
+  const currentPageRef = useRef("consent");
+
+  const readEngagementQueue = useCallback(() => {
+    try {
+      const raw = sessionStorage.getItem(ENGAGEMENT_QUEUE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const writeEngagementQueue = useCallback((items) => {
+    try {
+      sessionStorage.setItem(ENGAGEMENT_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+    } catch {
+      // Ignore queue persistence errors.
+    }
+  }, []);
+
+  const enqueueEngagementEvent = useCallback((event) => {
+    const now = Date.now();
+    const queue = readEngagementQueue();
+    queue.push({
+      ...event,
+      queued_at: now
+    });
+    // Keep bounded queue to avoid unbounded growth.
+    writeEngagementQueue(queue.slice(-runtimeConfig.engagementQueueMax));
+  }, [readEngagementQueue, writeEngagementQueue]);
+
+  const flushEngagementQueue = useCallback(async () => {
+    if (!publicId || !canTrackEngagement || !online || engagementFlushInFlight) return;
+    const queue = readEngagementQueue();
+    if (!queue.length) return;
+
+    setEngagementFlushInFlight(true);
+    const remaining = [];
+    const chunkSize = Math.max(1, runtimeConfig.engagementFlushBatchSize);
+    for (let i = 0; i < queue.length; i += chunkSize) {
+      const chunk = queue.slice(i, i + chunkSize);
+      try {
+        const payload = {
+          public_id: publicId,
+          events: chunk.map((event) => ({
+            event_type: event.event_type,
+            event_data: event.event_data || {}
+          }))
+        };
+        const result = await endpoints.trackEngagementBulk(payload);
+        const rejectedIndexes = new Set(
+          Array.isArray(result?.rejected_items)
+            ? result.rejected_items
+              .map((item) => Number(item?.index))
+              .filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < chunk.length)
+            : []
+        );
+        chunk.forEach((event, idx) => {
+          if (rejectedIndexes.has(idx)) {
+            remaining.push(event);
+          }
+        });
+      } catch {
+        // Fallback to single-event flush for compatibility with older backends.
+        for (const event of chunk) {
+          try {
+            await endpoints.trackEngagement({
+              public_id: event.public_id || publicId,
+              event_type: event.event_type,
+              event_data: event.event_data || {}
+            });
+          } catch {
+            remaining.push(event);
+          }
+        }
+      }
+    }
+    writeEngagementQueue(remaining);
+    setEngagementFlushInFlight(false);
+  }, [publicId, canTrackEngagement, online, engagementFlushInFlight, readEngagementQueue, writeEngagementQueue]);
+
+  useEffect(() => saveStoredValue("publicId", publicId), [publicId]);
+  useEffect(() => saveStoredValue("sessionId", sessionId), [sessionId]);
+  useEffect(() => saveStoredValue("consentGiven", consentGiven), [consentGiven]);
+  useEffect(() => saveStoredValue("paymentVerified", paymentVerified), [paymentVerified]);
+  useEffect(() => saveStoredValue("demographics", demographics), [demographics]);
+  useEffect(() => saveStoredValue("stage", stage), [stage]);
+  useEffect(() => saveStoredValue("paymentSubStage", paymentSubStage), [paymentSubStage]);
+  useEffect(() => saveStoredValue("survey", survey), [survey]);
+  useEffect(() => saveStoredValue("surveyCompleted", surveyCompleted), [surveyCompleted]);
+  useEffect(() => saveStoredValue("surveyFeedbackReady", surveyFeedbackReady), [surveyFeedbackReady]);
+  useEffect(() => saveStoredValue("shownImages", shownImages), [shownImages]);
+  useEffect(() => {
+    saveStoredValue("darkMode", darkMode);
+    document.body.classList.toggle("dark", darkMode);
+  }, [darkMode]);
+
+  const trackEngagementEvent = useCallback(
+    (eventType, eventData = {}) => {
+      if (!publicId || !canTrackEngagement) return;
+      const event = {
+        public_id: publicId,
+        event_type: eventType,
+        event_data: eventData,
+      };
+      if (!online) {
+        enqueueEngagementEvent(event);
+        return;
+      }
+      endpoints.trackEngagement(event).catch(() => {
+        enqueueEngagementEvent(event);
+      });
+    },
+    [publicId, canTrackEngagement, online, enqueueEngagementEvent]
+  );
+
+  useEffect(() => {
+    flushEngagementQueue();
+  }, [flushEngagementQueue, online, stage, paymentSubStage]);
 
   useEffect(() => {
     if (!canTrackEngagement) return;
@@ -208,7 +496,7 @@ export default function App() {
       page,
       stage,
       payment_sub_stage: stage === "payment" ? paymentSubStage : null,
-      path: window.location.pathname
+      path: window.location.pathname,
     });
   }, [canTrackEngagement, stage, paymentSubStage, trackEngagementEvent]);
 
@@ -216,9 +504,7 @@ export default function App() {
     if (!canTrackEngagement || !publicId) return;
 
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        trackEngagementEvent("tab_switch", { page: currentPageRef.current });
-      }
+      if (document.hidden) trackEngagementEvent("tab_switch", { page: currentPageRef.current });
     };
 
     const handleOffline = () => {
@@ -229,13 +515,17 @@ export default function App() {
       const payload = JSON.stringify({
         public_id: publicId,
         event_type: "page_close_attempt",
-        event_data: {
-          page: currentPageRef.current
-        }
+        event_data: { page: currentPageRef.current },
       });
       if (navigator.sendBeacon) {
         const blob = new Blob([payload], { type: "application/json" });
-        navigator.sendBeacon(getApiUrl("/engagement/track"), blob);
+        if (!navigator.sendBeacon(getApiUrl("/engagement/track"), blob)) {
+          enqueueEngagementEvent({
+            public_id: publicId,
+            event_type: "page_close_attempt",
+            event_data: { page: currentPageRef.current },
+          });
+        }
       } else {
         trackEngagementEvent("page_close_attempt", { page: currentPageRef.current });
       }
@@ -244,131 +534,99 @@ export default function App() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("offline", handleOffline);
     window.addEventListener("beforeunload", handleBeforeUnload);
-
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [canTrackEngagement, publicId, trackEngagementEvent]);
-  
-  // Online/offline detection
-  useEffect(() => {
-    const handleOnline = () => setOnline(true);
-    const handleOffline = () => setOnline(false);
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
+  }, [canTrackEngagement, publicId, trackEngagementEvent, enqueueEngagementEvent]);
 
-  // Health check on mount and on manual retry
+  // Server-backed guard for direct navigation to late stages.
   useEffect(() => {
-    let cancelled = false;
+    const verifyStagePrerequisites = async () => {
+      if (!systemReady || !isActiveTabOwner) return;
+      if (!["payment", "survey", "finished"].includes(stage)) return;
 
-    const checkHealth = async () => {
-      setSystemChecking(true);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        let response;
-        try {
-          response = await fetch(getApiUrl('/health'), { signal: controller.signal });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-        if (cancelled) return;
-        if (response.ok) {
-          const data = await response.json();
-          if (data.status === 'healthy' && data.database === 'connected') {
-            setSystemReady(true);
-            setSystemError(null);
-          } else {
-            setSystemReady(false);
-            setSystemError(
-              data.error
-                ? getErrorMessage('SYS_002_0020', 'en', { error: data.error })
-                : getErrorMessage('SYS_002_0021')
-            );
-          }
-        } else {
-          let data = null;
-          try {
-            data = await response.json();
-          } catch (parseError) {
-            data = null;
-          }
-          setSystemReady(false);
-          setSystemError(
-            data?.error
-              ? getErrorMessage('SYS_002_0020', 'en', { error: data.error })
-              : getErrorMessage('SYS_002_0019', 'en', { status: response.status })
-          );
-        }
-      } catch (err) {
-        if (cancelled) return;
-        setSystemReady(false);
-        if (err.name === 'AbortError') {
-          setSystemError(getErrorMessage('SYS_002_0008'));
-        } else {
-          setSystemError(getErrorMessage('SYS_002_0001'));
-        }
-      } finally {
-        if (!cancelled) setSystemChecking(false);
+      if (participantStatusAbortRef.current) {
+        participantStatusAbortRef.current.abort();
       }
-    };
+      const controller = new AbortController();
+      participantStatusAbortRef.current = controller;
 
-    checkHealth();
-    const interval = setInterval(checkHealth, 30000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [retryTrigger]);
+      try {
+        const status = await endpoints.getParticipantPaymentStatus(publicId, { signal: controller.signal });
+        const verified = status?.is_verified === true;
+        setPaymentVerified(verified);
 
-  // Verify payment status when accessing survey stage directly (prevent unauthorized access)
-  useEffect(() => {
-    const verifyPaymentForSurvey = async () => {
-      // Only check if we're at survey stage and haven't verified payment yet
-      if (stage === 'survey' && !paymentVerified && systemReady) {
-        try {
-          const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId);
-          if (paymentStatus.is_verified) {
-            setPaymentVerified(true);
-          } else {
-            // Redirect to payment page if payment is not verified
-            addToast(getErrorMessage('PAY_001_0005'), "error");
-            setStage("payment");
-            setPaymentSubStage("content");
-          }
-        } catch (error) {
-          // Redirect to payment page on error
-          addToast(getErrorMessage('PAY_001_0005'), "error");
+        if ((stage === "survey" || stage === "finished") && !verified) {
           setStage("payment");
           setPaymentSubStage("content");
+          addToast(getErrorMessage("PAY_001_0005"), "warning");
+        }
+      } catch (error) {
+        if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
+          return;
+        }
+        if (stage !== "payment") {
+          setStage("user-details");
+          setPaymentSubStage("content");
+          setPaymentVerified(false);
+        }
+        if (error?.status === 404 || error?.code === "NF_001_0001") {
+          addToast(getErrorMessage("NF_001_0001"), "warning");
+        }
+      } finally {
+        if (participantStatusAbortRef.current === controller) {
+          participantStatusAbortRef.current = null;
         }
       }
     };
 
-    verifyPaymentForSurvey();
-  }, [stage, systemReady, paymentVerified, publicId, addToast]);
+    verifyStagePrerequisites();
+    return () => {
+      if (participantStatusAbortRef.current) {
+        participantStatusAbortRef.current.abort();
+        participantStatusAbortRef.current = null;
+      }
+    };
+  }, [
+    stage,
+    systemReady,
+    publicId,
+    setPaymentVerified,
+    setStage,
+    setPaymentSubStage,
+    addToast,
+    isActiveTabOwner
+  ]);
 
   useEffect(() => {
-    if (stage !== "survey" || !systemReady || !paymentVerified || surveyFeedbackReady) {
-      return;
-    }
-    // Recover gracefully after hard reload if in-memory survey object is missing.
-    if (!survey || !survey.image_id) {
-      fetchImage({ clearCurrent: true });
-    }
-  }, [stage, systemReady, paymentVerified, surveyFeedbackReady, survey]);
+    return () => {
+      cancelInFlightRequests?.();
+      if (participantStatusAbortRef.current) {
+        participantStatusAbortRef.current.abort();
+        participantStatusAbortRef.current = null;
+      }
+      if (submitFlowAbortRef.current) {
+        submitFlowAbortRef.current.abort();
+        submitFlowAbortRef.current = null;
+      }
+    };
+  }, [cancelInFlightRequests]);
 
-  // Create participant in database using standardized API wrapper
+  useEffect(() => {
+    if (stage !== "survey" || !systemReady || !paymentVerified || surveyFeedbackReady) return;
+    if (!survey || !survey.image_id) fetchImage({ clearCurrent: false });
+  }, [stage, systemReady, paymentVerified, surveyFeedbackReady, survey, fetchImage]);
+
   const createParticipant = async () => {
+    if (submitFlowAbortRef.current) {
+      submitFlowAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    submitFlowAbortRef.current = controller;
     try {
-      const data = await endpoints.createParticipant({
+      return await endpoints.createParticipant({
         public_id: publicId,
         session_id: sessionId,
         username: demographics.username,
@@ -378,37 +636,45 @@ export default function App() {
         age: parseInt(demographics.age),
         location: demographics.location,
         language_code: demographics.language_code,
-        prior_experience: demographics.prior_experience
-      });
-      return data;
+        prior_experience: demographics.prior_experience,
+      }, { signal: controller.signal });
     } catch (error) {
-      const errorMessage = error.message || getErrorMessage('SYS_002_0022');
-      throw new Error(errorMessage);
+      if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
+        throw error;
+      }
+      throw new Error(error.message || getErrorMessage("SYS_002_0022"));
+    } finally {
+      if (submitFlowAbortRef.current === controller) {
+        submitFlowAbortRef.current = null;
+      }
     }
   };
 
-  // Record consent in database using standardized API wrapper
   const recordConsent = async () => {
+    if (submitFlowAbortRef.current) {
+      submitFlowAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    submitFlowAbortRef.current = controller;
     try {
-      const data = await endpoints.recordConsent(publicId);
-      return data;
+      return await endpoints.recordConsent(publicId, { signal: controller.signal });
     } catch (error) {
-      const errorMessage = error.message || getErrorMessage('SYS_002_0002');
-      throw new Error(errorMessage);
+      if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
+        throw error;
+      }
+      throw new Error(error.message || getErrorMessage("SYS_002_0002"));
+    } finally {
+      if (submitFlowAbortRef.current === controller) {
+        submitFlowAbortRef.current = null;
+      }
     }
   };
 
-  // Handle user details submission with secure navigation
   const handleUserDetailsSubmit = async () => {
     try {
       await createParticipant();
-      if (consentGiven) {
-        await recordConsent();
-      }
-      if (validateStageTransition("user-details", "payment")) {
-        // Secure navigation: validate transition before moving
-        setStage("payment");
-      }
+      if (consentGiven) await recordConsent();
+      if (validateStageTransition("user-details", "payment")) setStage("payment");
       addToast("Details submitted successfully", "success");
     } catch (err) {
       addToast(err.message, "error");
@@ -416,174 +682,40 @@ export default function App() {
     }
   };
 
-  // Handle consent given with secure navigation
   const handleConsentGiven = async () => {
     setConsentGiven(true);
-    // Secure navigation: validate transition before moving
-    if (validateStageTransition("consent", "user-details")) {
-      setStage("user-details");
-    }
+    if (validateStageTransition("consent", "user-details")) setStage("user-details");
     addToast("Consent recorded successfully", "success");
   };
 
-  // Handle back from user details to consent
-  const handleUserDetailsBack = () => {
-    setStage("consent");
-  };
+  const handleUserDetailsBack = () => setStage("consent");
 
-  // Handle payment completion with secure navigation
-  const handlePaymentComplete = async (options = {}) => {
-    const skipVerification = options?.skipVerification === true;
-
-    if (skipVerification) {
-      setPaymentVerified(true);
-      setPaymentSubStage("content");
-      if (validateStageTransition("payment", "survey", true)) {
-        setStage("survey");
-      }
-      fetchImage({ clearCurrent: true });
-      addToast("Participation confirmed successfully", "success");
-      return;
-    }
-
-    // Verify payment status with backend before allowing survey access
-    try {
-      const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId);
-      if (paymentStatus.is_verified) {
-        setPaymentVerified(true);
-        setPaymentSubStage("content"); // Reset to content for next time
-        if (validateStageTransition("payment", "survey", true)) {
-          setStage("survey");
-        }
-        fetchImage({ clearCurrent: true });
-        addToast("Participation confirmed successfully", "success");
-      } else {
-        addToast(getErrorMessage('PAY_001_0005'), "error");
-      }
-    } catch (error) {
-      // Payment not verified - redirect back to payment page
-      const errorMessage = error.message || getErrorMessage('PAY_001_0005');
-      addToast(errorMessage, "error");
-      setPaymentVerified(false);
-      // Ensure we stay on payment page if verification fails
-      if (stage !== "payment") {
-        setStage("payment");
-        setPaymentSubStage("content");
-      }
-    }
-  };
-
-  // Handle payment content to payment link navigation
-  const handlePaymentContentToLink = () => {
-    setPaymentSubStage("link");
-  };
-
-  // Handle payment back navigation
-  const handlePaymentBack = () => {
-    if (paymentSubStage === "link") {
-      setPaymentSubStage("content");
-    } else {
-      setStage("user-details");
-      setPaymentVerified(false);
-      setPaymentSubStage("content");
-    }
-  };
-
-  // Fetch image using standardized API wrapper
-  const fetchImage = async ({ clearCurrent = false } = {}) => {
-    setSurveyFeedbackReady(false);
-    setImageError(null);
-    if (clearCurrent) {
-      setSurvey(null);
-    }
-
-    try {
-      const data = await endpoints.getRandomImage(shownImages, publicId);
-      // Track this image as shown
-      setShownImages(prev => [...prev, data.image_id]);
-      setSurvey(data);
-    } catch (error) {
-      const errorMessage = error.message || getErrorMessage('SYS_002_0016');
-      addToast(errorMessage, "error");
-      setImageError(errorMessage);
-      setSurvey(null);
-    }
-  };
-
-  // Handle submission using standardized API wrapper
-  const handleSubmit = async (formData) => {
-    // Extract engagement data if provided
-    const engagementData = formData.engagementData || {};
-
-    try {
-      const result = await endpoints.submitDescription({
-        public_id: publicId,
-        image_id: survey.image_id,
-        description: formData.description,
-        rating: formData.rating,
-        feedback: formData.comments,
-        time_spent_seconds: formData.timeSpentSeconds,
-        is_survey: surveyCompleted === 0,
-        survey_index: surveyCompleted === 0 ? 0 : surveyCompleted,
-        tab_switch_count: engagementData.tabSwitchCount || 0,
-        page_close_attempts: engagementData.pageCloseAttempts || 0,
-        network_disconnects: engagementData.networkDisconnects || 0
-      });
-
-      const attentionStatus = result.attention_status || {};
-      if (attentionStatus.is_attention_check && result.attention_passed === false) {
-        if (attentionStatus.failure_reasons?.includes("too_fast_attention")) {
-          addToast("Attention check failed: response was too fast. Please read image instructions carefully.", "warning");
-        } else {
-          addToast("Attention check failed: please follow the special instructions shown in the image.", "warning");
-        }
-      } else {
-        addToast("Your response was saved!", "success");
-      }
-
-      if (attentionStatus.hard_flag_triggered) {
-        addToast("Multiple attention failures detected. Please slow down and answer carefully.", "warning");
-      }
-
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 1200);
-
-      const nextCompleted = surveyCompleted + 1;
-      setSurveyCompleted(nextCompleted);
-
-      // Always show feedback page after each successful survey submission.
-      setSurveyFeedbackReady(true);
-    } catch (error) {
-      const errorMessage = error.message || getErrorMessage('SYS_002_0006');
-      throw new Error(errorMessage);
-    }
-  };
-
-  // Render based on stage
   const renderContent = () => {
-    if (systemChecking && !systemReady) {
+    if (flowBusyMessage) {
       return (
-        <div className="panel status-panel">
-          <h2>Loading C.O.G.N.I.T.</h2>
-          <p className="status-message">Checking system connectivity...</p>
-          <div className="spinner" />
-        </div>
+        <PageSkeleton
+          title={uiText("status.pleaseWait")}
+          subtitle={flowBusyMessage}
+          variant="flow"
+        />
       );
     }
 
-    if (systemError && !systemReady) {
-      return null;
+    if (systemChecking && !systemReady) {
+      return (
+        <PageSkeleton
+          title={uiText("status.loadingApp")}
+          subtitle={uiText("status.checkingConnectivity")}
+          variant="app"
+        />
+      );
     }
+
+    if (systemError && !systemReady) return null;
 
     switch (stage) {
       case "consent":
-        return (
-          <ConsentPage
-            onConsentGiven={handleConsentGiven}
-            systemReady={systemReady}
-          />
-        );
-
+        return <ConsentPage onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
       case "user-details":
         return (
           <UserDetailsPage
@@ -594,25 +726,12 @@ export default function App() {
             systemReady={systemReady}
           />
         );
-      
       case "payment":
-        if (paymentSubStage === "content") {
-          return (
-            <PaymentContentPage
-              onNext={handlePaymentContentToLink}
-              onBack={handlePaymentBack}
-            />
-          );
-        } else {
-          return (
-            <PaymentLinkPage
-              onNext={handlePaymentComplete}
-              onBack={handlePaymentBack}
-              publicId={publicId}
-            />
-          );
-        }
-      
+        return paymentSubStage === "content" ? (
+          <PaymentContentPage onNext={handlePaymentContentToLink} onBack={handlePaymentBack} />
+        ) : (
+          <PaymentLinkPage onNext={handlePaymentComplete} onBack={handlePaymentBack} publicId={publicId} />
+        );
       case "survey":
         if (surveyFeedbackReady) {
           return (
@@ -628,35 +747,69 @@ export default function App() {
           <SurveyPage
             survey={survey}
             publicId={publicId}
+            surveyCompleted={surveyCompleted}
             onSubmit={handleSubmit}
             fetchError={imageError}
             onRetry={fetchImage}
+            isFetchingImage={isFetchingImage}
           />
         );
-      
       case "finished":
         return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} />;
-      
       default:
-        // Secure default: redirect to consent if stage is invalid
         return <ConsentPage onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
     }
   };
+
+  if (!isActiveTabOwner) {
+    return (
+      <ErrorBoundary onError={() => {}}>
+        <div className="app">
+          <header className="header">
+            <div className="brand">
+              <h1>C.O.G.N.I.T.</h1>
+              <p className="subtitle">Describe each image with as much detail as possible</p>
+            </div>
+            <div className="header-actions">
+              <button
+                className="ghost dark-mode-toggle"
+                onClick={() => setDarkMode((prev) => !prev)}
+                title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {darkMode ? "☀️" : "🌙"}
+              </button>
+            </div>
+          </header>
+          <div className="panel status-panel">
+            <h2>Another Tab Is Active</h2>
+            <p className="status-message">
+              This tab is read-only to prevent multi-tab state conflicts. Continue in the other tab or close it to resume here.
+            </p>
+            <button className="primary" onClick={() => claimActiveTabLock()}>
+              Try Reclaiming This Tab
+            </button>
+          </div>
+        </div>
+      </ErrorBoundary>
+    );
+  }
 
   if (systemError && !systemReady && !systemChecking) {
     return (
       <ErrorBoundary onError={() => {}}>
         <ServiceUnavailablePage
           error={systemError}
-          onRetry={() => setRetryTrigger((prev) => prev + 1)}
+          onRetry={retryHealthCheck}
           isRetrying={systemChecking}
+          darkMode={darkMode}
+          onToggleDarkMode={() => setDarkMode((prev) => !prev)}
         />
       </ErrorBoundary>
     );
   }
 
   return (
-    <ErrorBoundary onError={() => addToast(getErrorMessage('SYS_002_0017'), "error")}>
+    <ErrorBoundary onError={() => addToast(getErrorMessage("SYS_002_0017"), "error")}>
       <div className="app">
         <header className="header">
           <div className="brand">
@@ -671,9 +824,7 @@ export default function App() {
             >
               {darkMode ? "☀️" : "🌙"}
             </button>
-            <div className={`status-dot ${online ? "online" : "offline"}`}>
-              {online ? "Online" : "Offline"}
-            </div>
+            <div className={`status-dot ${online ? "online" : "offline"}`}>{online ? "Online" : "Offline"}</div>
           </div>
         </header>
 
@@ -683,13 +834,16 @@ export default function App() {
           </div>
         )}
 
-        {renderContent()}
-
-        <div className="branding-footer">
-          Created by Gaurav Kaloliya
+        <div
+          key={`${stage}-${paymentSubStage}-${surveyFeedbackReady ? "feedback" : "active"}`}
+          className="route-transition"
+        >
+          {renderContent()}
         </div>
+
+        <div className="branding-footer">Created by Gaurav Kaloliya</div>
       </div>
-      
+
       <Confetti show={showConfetti} />
       <Toasts toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
     </ErrorBoundary>

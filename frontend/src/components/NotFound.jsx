@@ -1,7 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import PanelState from './PanelState.jsx';
 
-export default function NotFound() {
+export default function NotFound({ darkMode = false, onToggleDarkMode }) {
   const navigate = useNavigate();
 
   return (
@@ -9,6 +10,15 @@ export default function NotFound() {
       <header className="header">
         <div className="brand">
           <h1>C.O.G.N.I.T.</h1>
+        </div>
+        <div className="header-actions">
+          <button
+            className="ghost dark-mode-toggle"
+            onClick={onToggleDarkMode}
+            title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {darkMode ? "☀️" : "🌙"}
+          </button>
         </div>
       </header>
       <div className="panel">
@@ -81,11 +91,14 @@ export default function NotFound() {
               <ellipse cx="120" cy="55" rx="6" ry="4" fill="#d4956f" opacity="0.6"/>
             </svg>
           </div>
-          <h1 className="hero-title">404</h1>
-          <h2 className="hero-subtitle">Page Not Found</h2>
-          <p className="hero-message">
-            Oops! The page you're looking for doesn't exist.
-          </p>
+          <PanelState
+            variant="warning"
+            icon="404"
+            title="Page Not Found"
+            message="The page you are looking for does not exist or has moved."
+            actionLabel="Go Home"
+            onAction={() => navigate('/')}
+          />
         </div>
       </div>
       <div className="branding-footer">

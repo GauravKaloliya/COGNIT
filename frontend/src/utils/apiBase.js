@@ -14,6 +14,43 @@ const normalizeApiBase = (baseValue) => {
   return `${window.location.protocol}//${trimmed}`;
 };
 
+const isLocalHostName = (hostname) =>
+  hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+
+const resolveConfiguredBase = () => {
+  const rawBase = import.meta.env.VITE_API_BASE || resolveDefaultApiBase();
+  const normalized = normalizeApiBase(rawBase);
+  if (!normalized || typeof window === "undefined") {
+    return normalized;
+  }
+
+  // If base is absolute and points to localhost from a non-local origin,
+  // fall back to same-origin to avoid browser access-control failures.
+  if (/^https?:\/\//i.test(normalized)) {
+    try {
+      const configuredUrl = new URL(normalized);
+      const currentUrl = new URL(window.location.origin);
+
+      if (
+        isLocalHostName(configuredUrl.hostname) &&
+        !isLocalHostName(currentUrl.hostname)
+      ) {
+        return "";
+      }
+
+      // If someone sets an absolute same-origin API base, collapse it to a path base.
+      if (configuredUrl.origin === currentUrl.origin) {
+        const pathBase = configuredUrl.pathname.replace(/\/+$/, "");
+        return pathBase && pathBase !== "/" ? pathBase : "";
+      }
+    } catch {
+      return normalized;
+    }
+  }
+
+  return normalized;
+};
+
 const resolveDefaultApiBase = () => {
   if (typeof window === "undefined") {
     return "";
@@ -26,9 +63,7 @@ const resolveDefaultApiBase = () => {
   return "";
 };
 
-export const API_BASE = normalizeApiBase(
-  import.meta.env.VITE_API_BASE || resolveDefaultApiBase()
-);
+export const API_BASE = resolveConfiguredBase();
 
 // Helper to get full API URL
 export const getApiUrl = (endpoint) => {
@@ -49,7 +84,8 @@ export const checkApiHealth = async () => {
   try {
     const response = await fetch(getApiUrl('/health'));
     if (response.ok) {
-      const data = await response.json();
+      const payload = await response.json();
+      const data = payload?.success === true ? (payload.data || {}) : (payload || {});
       return { ok: true, data };
     }
     return { ok: false, error: `HTTP ${response.status}` };

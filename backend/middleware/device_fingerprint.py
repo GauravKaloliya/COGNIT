@@ -10,6 +10,50 @@ from datetime import datetime, timezone
 from flask import request, g
 from sqlalchemy import text
 
+def _resolve_participant_id(db):
+    """Best-effort participant resolution across route styles."""
+    public_id = None
+    payment_public_id = None
+
+    json_payload = request.get_json(silent=True) or {}
+    if request.is_json and json_payload:
+        public_id = json_payload.get("public_id")
+        payment_public_id = json_payload.get("payment_public_id")
+
+    if not public_id and request.args:
+        public_id = request.args.get("public_id")
+    if not payment_public_id and request.args:
+        payment_public_id = request.args.get("payment_public_id")
+
+    view_args = getattr(request, "view_args", None) or {}
+    if not public_id:
+        public_id = view_args.get("public_id")
+    if not payment_public_id:
+        payment_public_id = (
+            view_args.get("payment_public_id")
+            or view_args.get("payment_id")
+        )
+
+    if public_id:
+        row = db.execute(text("""
+            SELECT id FROM participants
+            WHERE public_id = :pub
+        """), {"pub": public_id}).fetchone()
+        if row:
+            return row[0]
+
+    if payment_public_id:
+        row = db.execute(text("""
+            SELECT participant_id
+            FROM payments
+            WHERE public_id = :pid
+        """), {"pid": payment_public_id}).fetchone()
+        if row:
+            return row[0]
+
+    return None
+
+
 def collect_device_characteristics():
     """Collect device characteristics for fingerprinting"""
     characteristics = {
@@ -142,24 +186,7 @@ def device_fingerprint_middleware():
         if hasattr(g, 'db'):
             db = g.db
             
-            # Try to get participant_id from request context
-            participant_id = None
-            if request.is_json and request.json:
-                public_id = request.json.get('public_id')
-                if public_id:
-                    result = db.execute(text("""
-                        SELECT id FROM participants WHERE public_id = :pub
-                    """), {"pub": public_id}).fetchone()
-                    if result:
-                        participant_id = result[0]
-            elif request.args:
-                public_id = request.args.get('public_id')
-                if public_id:
-                    result = db.execute(text("""
-                        SELECT id FROM participants WHERE public_id = :pub
-                    """), {"pub": public_id}).fetchone()
-                    if result:
-                        participant_id = result[0]
+            participant_id = _resolve_participant_id(db)
             
             # Get or create device fingerprint
             fingerprint_hash, risk_score, characteristics = get_or_create_device_fingerprint(db, participant_id)
