@@ -3,8 +3,6 @@ import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { uiText } from "../utils/uiText.js";
 import { runtimeConfig } from "../config/runtime";
-import PageSkeleton from "../components/PageSkeleton.jsx";
-import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import { useNavigationBlocker } from "../hooks/useNavigationBlocker";
 
@@ -74,7 +72,7 @@ export default function PaymentLinkPage({
     setRetryInSeconds(runtimeConfig.paymentRetrySeconds);
   }, []);
 
-  const getVerificationErrorMessage = (reasons = []) => {
+  const getVerificationErrorMessage = useCallback((reasons = []) => {
     if (!reasons.length) return "";
     return reasons
       .map((reason) => {
@@ -82,7 +80,7 @@ export default function PaymentLinkPage({
         return errorCode ? getErrorMessage(errorCode) : reason;
       })
       .join('. ');
-  };
+  }, []);
 
   const getPaymentRecoverySteps = useCallback((reasons = [], err = null) => {
     const steps = [];
@@ -369,6 +367,66 @@ export default function PaymentLinkPage({
     timerIntervalRef.current = setInterval(updateTimer, runtimeConfig.paymentTimerTickMs);
   }, [calculateTimerValues, saveTimerState, handleExpiry, stopTimer]);
 
+  const createPayment = useCallback(async () => {
+    const operationId = beginOperation();
+
+    if (!publicId) {
+      setError(getErrorMessage('SYS_002_0010'));
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setRetryInSeconds(0);
+
+    try {
+      if (createAbortRef.current) createAbortRef.current.abort();
+      const controller = new AbortController();
+      createAbortRef.current = controller;
+      const data = await endpoints.createPayment(publicId, 1, { signal: controller.signal });
+      if (!isOperationCurrent(operationId)) return;
+      sessionStorage.setItem("payment_id", data.payment_id);
+
+      const expiresAt = new Date(data.expires_at);
+      const now = new Date();
+      if (expiresAt <= now) {
+        throw new Error(getErrorMessage('PAY_001_0001'));
+      }
+
+      setPaymentData(data);
+      startTimer(data.expires_at);
+      savePaymentViewState({
+        publicId,
+        paymentData: data,
+        paymentStatus: "pending",
+        failureReasons: [],
+        error: null
+      });
+    } catch (err) {
+      if (err?.code === "REQ_ABORTED") {
+        return;
+      }
+      if (!isOperationCurrent(operationId)) return;
+      const errorMessage = err.code
+        ? (err.message || getErrorMessage(err.code))
+        : err.message || getErrorMessage('SYS_002_0009');
+      showRetryHintError(errorMessage);
+      sessionStorage.removeItem("payment_id");
+      savePaymentViewState({
+        publicId,
+        paymentData: null,
+        paymentStatus: "failed",
+        failureReasons: [],
+        error: errorMessage
+      });
+    } finally {
+      createAbortRef.current = null;
+      if (isOperationCurrent(operationId)) {
+        setIsLoading(false);
+      }
+    }
+  }, [beginOperation, isOperationCurrent, publicId, savePaymentViewState, showRetryHintError, startTimer]);
+
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
@@ -450,7 +508,7 @@ export default function PaymentLinkPage({
       cancelled = true;
       stopTimer();
     };
-  }, [calculateTimerValues, clearPaymentViewState, getVerificationErrorMessage, handleExpiry, loadPaymentViewState, onNext, startTimer, stopTimer]);
+  }, [calculateTimerValues, clearPaymentViewState, createPayment, getVerificationErrorMessage, handleExpiry, loadPaymentViewState, onNext, startTimer, stopTimer]);
 
   // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
@@ -471,66 +529,6 @@ export default function PaymentLinkPage({
       stopTimer();
     };
   }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, startTimer, handleExpiry, stopTimer]);
-
-  const createPayment = async () => {
-    const operationId = beginOperation();
-
-    if (!publicId) {
-      setError(getErrorMessage('SYS_002_0010'));
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    setRetryInSeconds(0);
-
-    try {
-      if (createAbortRef.current) createAbortRef.current.abort();
-      const controller = new AbortController();
-      createAbortRef.current = controller;
-      const data = await endpoints.createPayment(publicId, 1, { signal: controller.signal });
-      if (!isOperationCurrent(operationId)) return;
-      sessionStorage.setItem("payment_id", data.payment_id);
-
-      const expiresAt = new Date(data.expires_at);
-      const now = new Date();
-      if (expiresAt <= now) {
-        throw new Error(getErrorMessage('PAY_001_0001'));
-      }
-
-      setPaymentData(data);
-      startTimer(data.expires_at);
-      savePaymentViewState({
-        publicId,
-        paymentData: data,
-        paymentStatus: "pending",
-        failureReasons: [],
-        error: null
-      });
-    } catch (err) {
-      if (err?.code === "REQ_ABORTED") {
-        return;
-      }
-      if (!isOperationCurrent(operationId)) return;
-      const errorMessage = err.code
-        ? (err.message || getErrorMessage(err.code))
-        : err.message || getErrorMessage('SYS_002_0009');
-      showRetryHintError(errorMessage);
-      sessionStorage.removeItem("payment_id");
-      savePaymentViewState({
-        publicId,
-        paymentData: null,
-        paymentStatus: "failed",
-        failureReasons: [],
-        error: errorMessage
-      });
-    } finally {
-      createAbortRef.current = null;
-      if (isOperationCurrent(operationId)) {
-        setIsLoading(false);
-      }
-    }
-  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -818,11 +816,10 @@ export default function PaymentLinkPage({
             </button>
           )}
         </div>
-        <PageSkeleton
-          title={uiText("payment.creating")}
-          subtitle={uiText("payment.pleaseWait")}
-          variant="payment"
-        />
+        <div className="status-panel">
+          <h3>{uiText("payment.creating")}</h3>
+          <p>{uiText("payment.pleaseWait")}</p>
+        </div>
       </div>
     );
   }
@@ -903,7 +900,7 @@ export default function PaymentLinkPage({
         <div className="payment-header">
           <div className="payment-header-emoji" aria-hidden="true">❌</div>
           <h2 className="payment-title">Payment Verification Failed</h2>
-          <p className="payment-subtitle">We couldn't verify your payment screenshot</p>
+          <p className="payment-subtitle">We could not verify your payment screenshot</p>
         </div>
         <div className="banner warning spaced">
           {error || getErrorMessage('FRAUD_002_0009')}
@@ -947,11 +944,6 @@ export default function PaymentLinkPage({
           )}
         </div>
         <div className="status-panel">
-          <PageSkeleton
-            title="Preparing payment panel"
-            subtitle="We are restoring your payment session state."
-            variant="payment"
-          />
           <PanelState
             variant="warning"
             title="Payment session needs refresh"
@@ -1069,10 +1061,9 @@ export default function PaymentLinkPage({
               Upload Payment Screenshot
             </h3>
             {verifying ? (
-              <SectionSkeleton
-                title="Verifying screenshot and confirming payment"
-                rows={5}
-              />
+              <div className="payment-verifying-text">
+                Verifying screenshot and confirming payment...
+              </div>
             ) : (
               <>
                 <p>After completing the payment, upload a screenshot from Google Pay, Paytm, or BHIM.</p>

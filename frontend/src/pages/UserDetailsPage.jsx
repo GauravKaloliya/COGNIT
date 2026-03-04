@@ -202,15 +202,16 @@ export default function UserDetailsPage({
   }, [demographics.location, detectLocation]);
 
   useEffect(() => {
+    const availabilityRef = availabilityAbortRef.current;
     return () => {
       if (reverseGeocodeAbortRef.current) {
         reverseGeocodeAbortRef.current.abort();
         reverseGeocodeAbortRef.current = null;
       }
-      Object.keys(availabilityAbortRef.current).forEach((k) => {
-        if (availabilityAbortRef.current[k]) {
-          availabilityAbortRef.current[k].abort();
-          availabilityAbortRef.current[k] = null;
+      Object.keys(availabilityRef).forEach((k) => {
+        if (availabilityRef[k]) {
+          availabilityRef[k].abort();
+          availabilityRef[k] = null;
         }
       });
     };
