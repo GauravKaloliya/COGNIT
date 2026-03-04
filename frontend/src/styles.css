@@ -2866,6 +2866,105 @@ body.dark .payment-qr-code {
   border: 1px solid var(--border);
 }
 
+.payment-upload-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.payment-upload-preview-box,
+.payment-upload-meta-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+}
+
+.payment-upload-preview-box {
+  min-height: 180px;
+  padding: var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+
+.payment-upload-preview-box:hover {
+  border-color: var(--primary);
+  background: var(--accent-bg);
+}
+
+.payment-upload-preview-box:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.payment-upload-placeholder p {
+  margin: 0;
+}
+
+.payment-upload-file-name {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.payment-upload-meta-box {
+  padding: var(--space-3);
+}
+
+.payment-upload-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.payment-upload-actions .ghost,
+.payment-upload-actions .primary {
+  flex: 1;
+}
+
+.payment-upload-preview-box .payment-upload-preview {
+  margin-top: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+}
+
+@media (max-width: 768px) {
+  .payment-upload-stack {
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  .payment-upload-preview-box {
+    min-height: 160px;
+    padding: var(--space-2);
+  }
+
+  .payment-upload-meta-box {
+    padding: var(--space-2);
+  }
+
+  .payment-upload-preview-box .payment-upload-preview {
+    max-height: 260px;
+  }
+
+  .payment-upload-file-name {
+    font-size: var(--text-sm);
+    line-height: 1.4;
+  }
+
+  .payment-upload-actions .ghost,
+  .payment-upload-actions .primary {
+    min-height: 44px;
+    font-size: var(--text-sm);
+  }
+}
+
 .retry-hint {
   margin: var(--space-2) 0;
   text-align: center;
@@ -2881,6 +2980,30 @@ body.dark .payment-qr-code {
 @media (max-width: 479px) {
   .payment-upload-area {
     padding: 1.25rem;
+  }
+
+  .payment-upload-actions {
+    flex-direction: column;
+  }
+
+  .payment-upload-preview-box {
+    min-height: 140px;
+  }
+
+  .payment-upload-preview-box .payment-upload-preview {
+    max-height: 220px;
+  }
+}
+
+@media (max-width: 360px) {
+  .payment-upload-preview-box,
+  .payment-upload-meta-box {
+    border-radius: var(--radius-md);
+  }
+
+  .payment-upload-file-name,
+  .payment-upload-meta-box .payment-note {
+    font-size: 0.82rem;
   }
 }
 

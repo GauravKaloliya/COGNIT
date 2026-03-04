@@ -55,7 +55,15 @@ export default function PaymentLinkPage({
   const [timerProgress, setTimerProgress] = useState(100);
   const timerIntervalRef = useRef(null);
 
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const detectMobileClient = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    const byUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const byViewport = window.matchMedia("(max-width: 768px)").matches;
+    const byTouch = window.matchMedia("(pointer: coarse)").matches;
+    return byUa || (byViewport && byTouch);
+  }, []);
+  const [isMobile, setIsMobile] = useState(detectMobileClient);
   const isCriticalAction = verifying || isLoading;
 
   const beginOperation = useCallback(() => {
@@ -436,6 +444,19 @@ export default function PaymentLinkPage({
       if (verifyAbortRef.current) verifyAbortRef.current.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const updateMobileState = () => {
+      setIsMobile(detectMobileClient());
+    };
+    updateMobileState();
+    window.addEventListener("resize", updateMobileState);
+    window.addEventListener("orientationchange", updateMobileState);
+    return () => {
+      window.removeEventListener("resize", updateMobileState);
+      window.removeEventListener("orientationchange", updateMobileState);
+    };
+  }, [detectMobileClient]);
 
   useEffect(() => {
     document.title = "Payment - C.O.G.N.I.T.";
@@ -1006,8 +1027,10 @@ export default function PaymentLinkPage({
                 <a
                   href={paymentData.upi_link}
                   className="payment-upi-button"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    window.location.href = paymentData.upi_link;
+                  }}
                   style={getButtonStyle()}
                 >
                   <span>💳</span>
@@ -1067,46 +1090,66 @@ export default function PaymentLinkPage({
             ) : (
               <>
                 <p>After completing the payment, upload a screenshot from Google Pay, Paytm, or BHIM.</p>
+                <div className="payment-upload-stack">
+                  <div
+                    className="payment-upload-preview-box"
+                    onClick={() => fileInputRef.current?.click()}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        fileInputRef.current?.click();
+                      }
+                    }}
+                  >
+                    {uploadPreviewUrl ? (
+                      <img src={uploadPreviewUrl} alt="Payment screenshot preview" className="payment-upload-preview" />
+                    ) : (
+                      <div className="payment-upload-placeholder">
+                        <p>📷</p>
+                        <p>Click to upload payment screenshot</p>
+                      </div>
+                    )}
+                  </div>
 
-                <div
-                  className="payment-upload-area"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {uploadFile ? (
-                    <div>
-                      <p>✅ {uploadFile.name}</p>
-                      <p className="payment-note">Click to change</p>
-                      {uploadPreviewUrl && (
-                        <img src={uploadPreviewUrl} alt="Payment screenshot preview" className="payment-upload-preview" />
-                      )}
+                  <div className="payment-upload-meta-box">
+                    <p className="payment-upload-file-name">
+                      {uploadFile ? `✅ ${uploadFile.name}` : "No image selected"}
+                    </p>
+                    <p className="payment-note">Click image above to change</p>
+                    <div className="payment-upload-actions">
+                      <button
+                        className="ghost"
+                        type="button"
+                        onClick={() => {
+                          if (uploadFile) {
+                            clearSelectedFile();
+                            return;
+                          }
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        {uploadFile ? "Remove Image" : "Select Image"}
+                      </button>
+                      <button
+                        className="primary"
+                        onClick={handleUploadAndFinalize}
+                        disabled={!uploadFile}
+                      >
+                        Confirm Payment
+                      </button>
                     </div>
-                  ) : (
-                    <div>
-                      <p>📷</p>
-                      <p>Click to upload payment screenshot</p>
-                    </div>
-                  )}
+                  </div>
+
                   <input
                     type="file"
                     ref={fileInputRef}
                     accept="image/*"
                     onChange={handleFileChange}
-                    style={{ display: 'none' }}
+                    style={{ display: "none" }}
                   />
                 </div>
-                {uploadFile && (
-                  <button className="ghost" type="button" onClick={clearSelectedFile}>
-                    {uiText("payment.clearScreenshot")}
-                  </button>
-                )}
-
-                <button
-                  className="primary"
-                  onClick={handleUploadAndFinalize}
-                  disabled={!uploadFile}
-                >
-                  Confirm Payment
-                </button>
               </>
             )}
           </section>
