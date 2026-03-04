@@ -1,158 +1,80 @@
 -- =====================================================================
--- C.O.G.N.I.T. Image + Attention Seed
--- Compatible with current backend schema and attention logic
+-- C.O.G.N.I.T. Image Seed
+-- Replaced with numbered SVG assets (1.svg ... 62.svg)
 -- Safe to run multiple times (idempotent upserts)
 -- =====================================================================
 
 BEGIN;
 
--- ---------------------------------------------------------------------
--- Images
--- ---------------------------------------------------------------------
 INSERT INTO images (image_id, url, difficulty, object_count, width, height)
 VALUES
-    ('survey/attention-circle.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/attention-circle.svg', 5.0, 1, 800, 600),
-    ('survey/attention-ocean.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/attention-ocean.svg', 5.0, 1, 800, 600),
-    ('survey/attention-red.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/attention-red.svg', 5.0, 1, 800, 600),
-    ('survey/aurora-lake.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/aurora-lake.svg', 5.0, 1, 800, 600),
-    ('survey/bunny-garden.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/bunny-garden.svg', 5.0, 1, 800, 600),
-    ('survey/cat-play.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cat-play.svg', 5.0, 1, 800, 600),
-    ('survey/coral-reef.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/coral-reef.svg', 5.0, 1, 800, 600),
-    ('survey/cute-alpaca.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-alpaca.svg', 5.0, 1, 800, 600),
-    ('survey/cute-bear.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-bear.svg', 5.0, 1, 800, 600),
-    ('survey/cute-bunny.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-bunny.svg', 5.0, 1, 800, 600),
-    ('survey/cute-calf.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-calf.svg', 5.0, 1, 800, 600),
-    ('survey/cute-chick.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-chick.svg', 5.0, 1, 800, 600),
-    ('survey/cute-deer.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-deer.svg', 5.0, 1, 800, 600),
-    ('survey/cute-dolphin.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-dolphin.svg', 5.0, 1, 800, 600),
-    ('survey/cute-duck.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-duck.svg', 5.0, 1, 800, 600),
-    ('survey/cute-elephant.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-elephant.svg', 5.0, 1, 800, 600),
-    ('survey/cute-fox.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-fox.svg', 5.0, 1, 800, 600),
-    ('survey/cute-frog.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-frog.svg', 5.0, 1, 800, 600),
-    ('survey/cute-giraffe.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-giraffe.svg', 5.0, 1, 800, 600),
-    ('survey/cute-hedgehog.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-hedgehog.svg', 5.0, 1, 800, 600),
-    ('survey/cute-kitten.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-kitten.svg', 5.0, 1, 800, 600),
-    ('survey/cute-koala.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-koala.svg', 5.0, 1, 800, 600),
-    ('survey/cute-lamb.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-lamb.svg', 5.0, 1, 800, 600),
-    ('survey/cute-lion.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-lion.svg', 5.0, 1, 800, 600),
-    ('survey/cute-otter.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-otter.svg', 5.0, 1, 800, 600),
-    ('survey/cute-owl.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-owl.svg', 5.0, 1, 800, 600),
-    ('survey/cute-panda.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-panda.svg', 5.0, 1, 800, 600),
-    ('survey/cute-penguin.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-penguin.svg', 5.0, 1, 800, 600),
-    ('survey/cute-piglet.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-piglet.svg', 5.0, 1, 800, 600),
-    ('survey/cute-puppy.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-puppy.svg', 5.0, 1, 800, 600),
-    ('survey/cute-raccoon.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-raccoon.svg', 5.0, 1, 800, 600),
-    ('survey/cute-seal.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-seal.svg', 5.0, 1, 800, 600),
-    ('survey/cute-sloth.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-sloth.svg', 5.0, 1, 800, 600),
-    ('survey/cute-squirrel.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-squirrel.svg', 5.0, 1, 800, 600),
-    ('survey/cute-tiger.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-tiger.svg', 5.0, 1, 800, 600),
-    ('survey/cute-turtle.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-turtle.svg', 5.0, 1, 800, 600),
-    ('survey/cute-unicorn.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/cute-unicorn.svg', 5.0, 1, 800, 600),
-    ('survey/desert-dunes.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/desert-dunes.svg', 5.0, 1, 800, 600),
-    ('survey/dog-sunny.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/dog-sunny.svg', 5.0, 1, 800, 600),
-    ('survey/forest-stream.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/forest-stream.svg', 5.0, 1, 800, 600),
-    ('survey/fox-cloud.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/fox-cloud.svg', 5.0, 1, 800, 600),
-    ('survey/glacier-bay.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/glacier-bay.svg', 5.0, 1, 800, 600),
-    ('survey/golden-temple.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/golden-temple.svg', 5.0, 1, 800, 600),
-    ('survey/hamster-wheel.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/hamster-wheel.svg', 5.0, 1, 800, 600),
-    ('survey/harbor-dawn.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/harbor-dawn.svg', 5.0, 1, 800, 600),
-    ('survey/kitten-yarn.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/kitten-yarn.svg', 5.0, 1, 800, 600),
-    ('survey/lavender-fields.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/lavender-fields.svg', 5.0, 1, 800, 600),
-    ('survey/midnight-city.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/midnight-city.svg', 5.0, 1, 800, 600),
-    ('survey/misty-valley.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/misty-valley.svg', 5.0, 1, 800, 600),
-    ('survey/moonlit-meadow.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/moonlit-meadow.svg', 5.0, 1, 800, 600),
-    ('survey/northern-peaks.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/northern-peaks.svg', 5.0, 1, 800, 600),
-    ('survey/orchid-garden.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/orchid-garden.svg', 5.0, 1, 800, 600),
-    ('survey/puppy-ball.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/puppy-ball.svg', 5.0, 1, 800, 600),
-    ('survey/rainbow-cliff.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/rainbow-cliff.svg', 5.0, 1, 800, 600),
-    ('survey/redwood-survey.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/redwood-survey.svg', 5.0, 1, 800, 600),
-    ('survey/river-canyon.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/river-canyon.svg', 5.0, 1, 800, 600),
-    ('survey/rolling-hills.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/rolling-hills.svg', 5.0, 1, 800, 600),
-    ('survey/rose-castle.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/rose-castle.svg', 5.0, 1, 800, 600),
-    ('survey/saffron-market.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/saffron-market.svg', 5.0, 1, 800, 600),
-    ('survey/sample-normal.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/sample-normal.svg', 5.0, 1, 800, 600),
-    ('survey/sapphire-falls.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/sapphire-falls.svg', 5.0, 1, 800, 600),
-    ('survey/savanna-sunset.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/savanna-sunset.svg', 5.0, 1, 800, 600),
-    ('survey/sea-arch.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/sea-arch.svg', 5.0, 1, 800, 600),
-    ('survey/serene-pond.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/serene-pond.svg', 5.0, 1, 800, 600),
-    ('survey/silk-road.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/silk-road.svg', 5.0, 1, 800, 600),
-    ('survey/silver-bridge.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/silver-bridge.svg', 5.0, 1, 800, 600),
-    ('survey/starry-dunes.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/starry-dunes.svg', 5.0, 1, 800, 600),
-    ('survey/sunlit-bay.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/sunlit-bay.svg', 5.0, 1, 800, 600),
-    ('survey/tropical-lagoon.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/tropical-lagoon.svg', 5.0, 1, 800, 600),
-    ('survey/violet-harbor.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/violet-harbor.svg', 5.0, 1, 800, 600),
-    ('survey/whispering-glade.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/whispering-glade.svg', 5.0, 1, 800, 600)
+    ('1.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/1.svg', 5.0, 1, NULL, NULL),
+    ('2.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/2.svg', 5.0, 1, NULL, NULL),
+    ('3.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/3.svg', 5.0, 1, NULL, NULL),
+    ('4.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/4.svg', 5.0, 1, NULL, NULL),
+    ('5.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/5.svg', 5.0, 1, NULL, NULL),
+    ('6.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/6.svg', 5.0, 1, NULL, NULL),
+    ('7.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/7.svg', 5.0, 1, NULL, NULL),
+    ('8.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/8.svg', 5.0, 1, NULL, NULL),
+    ('9.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/9.svg', 5.0, 1, NULL, NULL),
+    ('10.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/10.svg', 5.0, 1, NULL, NULL),
+    ('11.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/11.svg', 5.0, 1, NULL, NULL),
+    ('12.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/12.svg', 5.0, 1, NULL, NULL),
+    ('13.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/13.svg', 5.0, 1, NULL, NULL),
+    ('14.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/14.svg', 5.0, 1, NULL, NULL),
+    ('15.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/15.svg', 5.0, 1, NULL, NULL),
+    ('16.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/16.svg', 5.0, 1, NULL, NULL),
+    ('17.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/17.svg', 5.0, 1, NULL, NULL),
+    ('18.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/18.svg', 5.0, 1, NULL, NULL),
+    ('19.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/19.svg', 5.0, 1, NULL, NULL),
+    ('20.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/20.svg', 5.0, 1, NULL, NULL),
+    ('21.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/21.svg', 5.0, 1, NULL, NULL),
+    ('22.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/22.svg', 5.0, 1, NULL, NULL),
+    ('23.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/23.svg', 5.0, 1, NULL, NULL),
+    ('24.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/24.svg', 5.0, 1, NULL, NULL),
+    ('25.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/25.svg', 5.0, 1, NULL, NULL),
+    ('26.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/26.svg', 5.0, 1, NULL, NULL),
+    ('27.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/27.svg', 5.0, 1, NULL, NULL),
+    ('28.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/28.svg', 5.0, 1, NULL, NULL),
+    ('29.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/29.svg', 5.0, 1, NULL, NULL),
+    ('30.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/30.svg', 5.0, 1, NULL, NULL),
+    ('31.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/31.svg', 5.0, 1, NULL, NULL),
+    ('32.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/32.svg', 5.0, 1, NULL, NULL),
+    ('33.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/33.svg', 5.0, 1, NULL, NULL),
+    ('34.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/34.svg', 5.0, 1, NULL, NULL),
+    ('35.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/35.svg', 5.0, 1, NULL, NULL),
+    ('36.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/36.svg', 5.0, 1, NULL, NULL),
+    ('37.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/37.svg', 5.0, 1, NULL, NULL),
+    ('38.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/38.svg', 5.0, 1, NULL, NULL),
+    ('39.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/39.svg', 5.0, 1, NULL, NULL),
+    ('40.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/40.svg', 5.0, 1, NULL, NULL),
+    ('41.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/41.svg', 5.0, 1, NULL, NULL),
+    ('42.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/42.svg', 5.0, 1, NULL, NULL),
+    ('43.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/43.svg', 5.0, 1, NULL, NULL),
+    ('44.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/44.svg', 5.0, 1, NULL, NULL),
+    ('45.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/45.svg', 5.0, 1, NULL, NULL),
+    ('46.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/46.svg', 5.0, 1, NULL, NULL),
+    ('47.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/47.svg', 5.0, 1, NULL, NULL),
+    ('48.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/48.svg', 5.0, 1, NULL, NULL),
+    ('49.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/49.svg', 5.0, 1, NULL, NULL),
+    ('50.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/50.svg', 5.0, 1, NULL, NULL),
+    ('51.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/51.svg', 5.0, 1, NULL, NULL),
+    ('52.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/52.svg', 5.0, 1, NULL, NULL),
+    ('53.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/53.svg', 5.0, 1, NULL, NULL),
+    ('54.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/54.svg', 5.0, 1, NULL, NULL),
+    ('55.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/55.svg', 5.0, 1, NULL, NULL),
+    ('56.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/56.svg', 5.0, 1, NULL, NULL),
+    ('57.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/57.svg', 5.0, 1, NULL, NULL),
+    ('58.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/58.svg', 5.0, 1, NULL, NULL),
+    ('59.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/59.svg', 5.0, 1, NULL, NULL),
+    ('60.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/60.svg', 5.0, 1, NULL, NULL),
+    ('61.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/61.svg', 5.0, 1, NULL, NULL),
+    ('62.svg', 'https://cognitapi.s3.us-east-1.amazonaws.com/survey/62.svg', 5.0, 1, NULL, NULL)
 ON CONFLICT (image_id) DO UPDATE SET
     url          = EXCLUDED.url,
     difficulty   = EXCLUDED.difficulty,
     object_count = EXCLUDED.object_count,
     width        = EXCLUDED.width,
     height       = EXCLUDED.height;
-
--- ---------------------------------------------------------------------
--- Attention checks
--- NOTE: expected_word supports multi-terms (e.g. "circle|round")
--- with current backend parsing logic.
--- ---------------------------------------------------------------------
-
-UPDATE attention_checks ac
-SET expected_word = 'circle|round',
-    is_strict = true,
-    is_active = true
-FROM images i
-WHERE i.image_id = 'survey/attention-circle.svg'
-  AND ac.image_id = i.id
-  AND ac.is_active = true;
-
-INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
-SELECT i.id, 'circle|round', true, true
-FROM images i
-WHERE i.image_id = 'survey/attention-circle.svg'
-  AND NOT EXISTS (
-      SELECT 1
-      FROM attention_checks ac
-      WHERE ac.image_id = i.id
-        AND ac.is_active = true
-  );
-
-UPDATE attention_checks ac
-SET expected_word = 'ocean|sea',
-    is_strict = true,
-    is_active = true
-FROM images i
-WHERE i.image_id = 'survey/attention-ocean.svg'
-  AND ac.image_id = i.id
-  AND ac.is_active = true;
-
-INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
-SELECT i.id, 'ocean|sea', true, true
-FROM images i
-WHERE i.image_id = 'survey/attention-ocean.svg'
-  AND NOT EXISTS (
-      SELECT 1
-      FROM attention_checks ac
-      WHERE ac.image_id = i.id
-        AND ac.is_active = true
-  );
-
-UPDATE attention_checks ac
-SET expected_word = 'red|crimson',
-    is_strict = true,
-    is_active = true
-FROM images i
-WHERE i.image_id = 'survey/attention-red.svg'
-  AND ac.image_id = i.id
-  AND ac.is_active = true;
-
-INSERT INTO attention_checks (image_id, expected_word, is_strict, is_active)
-SELECT i.id, 'red|crimson', true, true
-FROM images i
-WHERE i.image_id = 'survey/attention-red.svg'
-  AND NOT EXISTS (
-      SELECT 1
-      FROM attention_checks ac
-      WHERE ac.image_id = i.id
-        AND ac.is_active = true
-  );
 
 COMMIT;

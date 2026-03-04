@@ -577,7 +577,7 @@ CREATE TABLE IF NOT EXISTS payments (
         CHECK (status IN ('pending','processing','success','failed','rejected_fraud','expired','refunded')),
     verified_at          TIMESTAMPTZ,
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    detected_app         VARCHAR(60),
+    detected_app         VARCHAR(60) NOT NULL DEFAULT 'unknown',
     verification_details JSONB NOT NULL DEFAULT '{}',
     metadata             JSONB NOT NULL DEFAULT '{}',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -654,7 +654,7 @@ CREATE TABLE IF NOT EXISTS payment_upload_attempts (
     image_phash      VARCHAR(64),
     status           VARCHAR(32) NOT NULL DEFAULT 'started'
         CHECK (status IN ('started','success','rejected','duplicate','expired','invalid_state','error')),
-    detected_app     VARCHAR(60),
+    detected_app     VARCHAR(60) NOT NULL DEFAULT 'unknown',
     failure_reasons  JSONB NOT NULL DEFAULT '[]',
     fraud_score      NUMERIC(5,2),
     details          JSONB NOT NULL DEFAULT '{}',

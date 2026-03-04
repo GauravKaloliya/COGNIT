@@ -175,9 +175,9 @@ def create_payment():
     try:
         payment_row = db.execute(text("""
             INSERT INTO payments (
-                participant_id, public_id, amount, signature, expires_at, timer_activated_at, metadata
+                participant_id, public_id, amount, signature, expires_at, timer_activated_at, detected_app, metadata
             ) VALUES (
-                :pid, :pub_id, :amt, :sig, :exp, :timer_time,
+                :pid, :pub_id, :amt, :sig, :exp, :timer_time, :detected_app,
                 '{}'::jsonb
             )
             RETURNING id, public_id
@@ -187,7 +187,8 @@ def create_payment():
             "amt": amount,
             "sig": signature,
             "exp": expires_at,
-            "timer_time": datetime.now(timezone.utc)
+            "timer_time": datetime.now(timezone.utc),
+            "detected_app": "unknown",
         }).fetchone()
 
         # Generate UPI link and QR code

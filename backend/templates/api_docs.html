@@ -8,73 +8,103 @@
 </head>
 <body>
     <div class="app">
-        <div class="panel">
-            <div class="doc-header">
-                <h1>C.O.G.N.I.T. API Documentation</h1>
-                <p class="doc-subtitle">Production API Reference</p>
-            </div>
+        <main class="panel">
+            <header class="doc-header">
+                <div>
+                    <h1>C.O.G.N.I.T. API Documentation</h1>
+                    <p class="doc-subtitle">Detailed end-user API reference</p>
+                </div>
+                <div class="base-url-wrap">
+                    <span>Base URL</span>
+                    <code class="code-box">{{ base_url }}</code>
+                </div>
+            </header>
 
-            <div class="tabs">
-                <button class="tab active" data-tab="overview">Overview</button>
-                <button class="tab" data-tab="endpoints">Endpoints</button>
-                <button class="tab" data-tab="examples">Examples</button>
-            </div>
+            <nav class="tabs" role="tablist" aria-label="Documentation tabs">
+                <button class="tab active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
+                <button class="tab" data-tab="endpoints" role="tab" aria-selected="false">Endpoints</button>
+                <button class="tab" data-tab="examples" role="tab" aria-selected="false">Examples</button>
+                <button class="tab" data-tab="errors" role="tab" aria-selected="false">Errors</button>
+            </nav>
 
-            <div id="overview" class="tab-content active">
+            <section id="overview" class="tab-content active" role="tabpanel">
                 <h2>Overview</h2>
-                <p>Production API surface for participant onboarding, payment verification, image delivery, and survey submission workflows.</p>
+                <p>This document includes only routes used by end users through the web app flow.</p>
 
-                <h3>Base URL</h3>
-                <div class="code-box block">{{ base_url }}</div>
+                <h3>Response Envelope</h3>
+                <div class="code-block"><pre>{
+  "success": true,
+  "data": { ... },
+  "message": "optional"
+}</pre></div>
+                <div class="code-block"><pre>{
+  "success": false,
+  "error": {
+    "code": "PAY_001_0004",
+    "message": "Human-readable message",
+    "category": "PAY",
+    "http_status": 400,
+    "retryable": true,
+    "request_id": "uuid"
+  }
+}</pre></div>
 
                 <h3>Core Flow</h3>
                 <ol>
-                    <li>Create participant with <code>/participants</code>.</li>
-                    <li>Record consent with <code>/consent</code>.</li>
-                    <li>Create payment with <code>/payments/create</code> and verify via <code>/payments/{payment_id}/verify-upload</code>.</li>
-                    <li>Fetch image from <code>/images/random</code>.</li>
-                    <li>Submit response through <code>/submit</code>.</li>
+                    <li>Create participant: <code>POST /participants</code></li>
+                    <li>Availability checks while filling form: <code>/check-username</code>, <code>/check-email</code>, <code>/check-phone</code></li>
+                    <li>Record consent: <code>POST /consent</code></li>
+                    <li>Create payment and verify screenshot: <code>POST /payments/create</code> then <code>POST /payments/{payment_id}/verify-upload</code></li>
+                    <li>Fetch image: <code>GET /images/random</code></li>
+                    <li>Submit response: <code>POST /submit</code></li>
                 </ol>
 
                 <h3>General Rules</h3>
                 <ul>
-                    <li>Use JSON request bodies with <code>Content-Type: application/json</code>.</li>
-                    <li>Send <code>X-Idempotency-Key</code> for mutating requests. Supported on <code>/consent</code>, <code>/payments/create</code>, <code>/payments/{payment_id}/verify-upload</code>, and <code>/submit</code>.</li>
-                    <li>Rate limits apply per route.</li>
-                    <li>Response timestamps are UTC ISO 8601.</li>
+                    <li>Use <code>Content-Type: application/json</code> for POST routes.</li>
+                    <li>Use <code>X-Idempotency-Key</code> on mutating routes to avoid duplicate writes.</li>
+                    <li>Use <code>X-Request-ID</code> from response headers for support/debugging.</li>
+                    <li>All timestamps are ISO-8601 UTC strings.</li>
                 </ul>
-            </div>
+            </section>
 
-            <div id="endpoints" class="tab-content">
-                <h2>API Endpoints</h2>
+            <section id="endpoints" class="tab-content" role="tabpanel">
+                <h2>Endpoints</h2>
 
-                <h3 class="section-heading">Health</h3>
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <h3 class="section-heading">System</h3>
+                <article class="endpoint-card expanded">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
                         <code class="endpoint-path">/health</code>
                         <span class="endpoint-toggle">▶</span>
-                    </div>
+                    </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Service and database health status check.</p>
+                        <p class="endpoint-desc">Health probe used by frontend online/offline system checks.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> exempt</p>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "database": "connected"
+  }
+}</pre></div>
                     </div>
-                </div>
+                </article>
 
                 <h3 class="section-heading">Participant</h3>
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
                         <code class="endpoint-path">/participants</code>
                         <span class="endpoint-toggle">▶</span>
-                    </div>
+                    </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Create participant profile.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
+                        <p class="endpoint-desc">Create participant profile. <code>public_id</code> and <code>session_id</code> are auto-generated if omitted.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
                         <h4>Request Body</h4>
                         <div class="code-block"><pre>{
-  "public_id": "550e8400-e29b-41d4-a716-446655440000",
-  "session_id": "sess_abc123xyz",
-  "username": "user123",
+  "username": "user_123",
   "email": "user@gmail.com",
   "phone": "9876543210",
   "gender_code": "male",
@@ -83,187 +113,367 @@
   "language_code": "en",
   "prior_experience": "some experience"
 }</pre></div>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "status": "created",
+    "public_id": "uuid",
+    "session_id": "sess_xxx"
+  }
+}</pre></div>
                     </div>
-                </div>
+                </article>
 
-                <div class="endpoint-grid">
-                    <div class="endpoint-card">
-                        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                            <span class="method-badge GET">GET</span>
-                            <code class="endpoint-path">/check-username?username=&lt;value&gt;</code>
-                            <span class="endpoint-toggle">▶</span>
-                        </div>
-                        <div class="endpoint-body">
-                            <p class="endpoint-desc">Check username availability.</p>
-                            <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
-                        </div>
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/check-username?username=&lt;value&gt;</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </button>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Check if username is available.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{ "success": true, "data": { "available": true } }</pre></div>
                     </div>
+                </article>
 
-                    <div class="endpoint-card">
-                        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                            <span class="method-badge GET">GET</span>
-                            <code class="endpoint-path">/check-email?email=&lt;value&gt;</code>
-                            <span class="endpoint-toggle">▶</span>
-                        </div>
-                        <div class="endpoint-body">
-                            <p class="endpoint-desc">Check email availability.</p>
-                            <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
-                        </div>
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/check-email?email=&lt;value&gt;</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </button>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Check if email is available.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{ "success": true, "data": { "available": true } }</pre></div>
                     </div>
+                </article>
 
-                    <div class="endpoint-card">
-                        <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                            <span class="method-badge GET">GET</span>
-                            <code class="endpoint-path">/check-phone?phone=&lt;value&gt;</code>
-                            <span class="endpoint-toggle">▶</span>
-                        </div>
-                        <div class="endpoint-body">
-                            <p class="endpoint-desc">Check phone availability.</p>
-                            <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
-                        </div>
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/check-phone?phone=&lt;value&gt;</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </button>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Check if phone number is available.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{ "success": true, "data": { "available": true } }</pre></div>
                     </div>
-                </div>
+                </article>
 
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
                         <code class="endpoint-path">/consent</code>
                         <span class="endpoint-toggle">▶</span>
-                    </div>
+                    </button>
                     <div class="endpoint-body">
                         <p class="endpoint-desc">Record participant consent.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 20 per minute</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 20 per minute</p>
+                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
+                        <h4>Request Body</h4>
+                        <div class="code-block"><pre>{ "public_id": "participant-public-uuid" }</pre></div>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{ "success": true, "data": { "status": "consent recorded" } }</pre></div>
                     </div>
-                </div>
+                </article>
 
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
                         <code class="endpoint-path">/participants/{public_id}/payment-status</code>
                         <span class="endpoint-toggle">▶</span>
-                    </div>
+                    </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Fetch payment verification state for a participant.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
+                        <p class="endpoint-desc">Get participant payment verification state.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "payment_status": "paid",
+    "is_verified": true,
+    "current_stage": "survey",
+    "payment_id": "payment-public-uuid",
+    "verified_at": "2026-03-04T18:30:00+00:00",
+    "detected_app": "gpay",
+    "reason": null
+  }
+}</pre></div>
                     </div>
-                </div>
+                </article>
 
-                <h3 class="section-heading">Survey</h3>
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/images/random?exclude=img1,img2</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Fetch random image for participant.</p>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/submit</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Submit survey/image response.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 60 per minute</p>
-                    </div>
-                </div>
-
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/engagement/track</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </div>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Track participant engagement events.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 120 per minute</p>
-                    </div>
-                </div>
-
-                <h3 class="section-heading">Payments</h3>
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <h3 class="section-heading">Payment</h3>
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
                         <code class="endpoint-path">/payments/create</code>
                         <span class="endpoint-toggle">▶</span>
-                    </div>
+                    </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Create payment session and get UPI details.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 20 per minute</p>
+                        <p class="endpoint-desc">Create payment session and return UPI details/QR/timer.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 20 per minute</p>
+                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
+                        <h4>Request Body</h4>
+                        <div class="code-block"><pre>{
+  "public_id": "participant-public-uuid",
+  "amount": 1
+}</pre></div>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "payment_id": "payment-public-uuid",
+    "amount": 1,
+    "expires_at": "2026-03-04T18:35:00+00:00",
+    "signature": "sha256-signature",
+    "upi_link": "upi://pay?...",
+    "qr_base64": "...",
+    "timer_activated": true,
+    "time_remaining_seconds": 300
+  }
+}</pre></div>
                     </div>
-                </div>
+                </article>
 
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
                         <code class="endpoint-path">/payments/{payment_id}/status</code>
                         <span class="endpoint-toggle">▶</span>
-                    </div>
+                    </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Check payment status and remaining time.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
+                        <p class="endpoint-desc">Check payment status, expiry, attempts, and verification details.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "payment_id": "payment-public-uuid",
+    "status": "processing",
+    "amount": 1,
+    "expires_at": "2026-03-04T18:35:00+00:00",
+    "is_expired": false,
+    "time_remaining_seconds": 211,
+    "verified_at": null,
+    "verification_attempts": 1,
+    "detected_app": "unknown"
+  }
+}</pre></div>
                     </div>
-                </div>
+                </article>
 
-                <div class="endpoint-card">
-                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
                         <code class="endpoint-path">/payments/{payment_id}/verify-upload</code>
                         <span class="endpoint-toggle">▶</span>
-                    </div>
+                    </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Verify payment screenshot upload.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 20 per minute</p>
+                        <p class="endpoint-desc">Verify payment screenshot upload and finalize payment status.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 20 per minute</p>
+                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
                         <h4>Request Body</h4>
                         <div class="code-block"><pre>{
-  "image_base64": "base64-encoded-image-data",
+  "image_base64": "base64-encoded-image",
   "file_extension": "jpg",
-  "sha256": "sha256-hash"
+  "sha256": "64-char-sha256",
+  "mime_type": "image/jpeg",
+  "original_filename": "payment.jpg",
+  "file_size": 435820
+}</pre></div>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "status": "verified",
+    "payment_id": "payment-public-uuid",
+    "payment_status": "success",
+    "detected_app": "gpay",
+    "fraud_score": 0,
+    "verification_attempts": 1
+  }
 }</pre></div>
                     </div>
-                </div>
-            </div>
+                </article>
 
-            <div id="examples" class="tab-content">
-                <h2>Code Examples</h2>
-                <h3>Fetch</h3>
-                <div class="code-block"><pre>const payment = await fetch('/payments/create', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ public_id: '550e8400-...', amount: 1.00 })
-}).then(res => res.json());
+                <h3 class="section-heading">Survey</h3>
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
+                        <span class="method-badge GET">GET</span>
+                        <code class="endpoint-path">/images/random?public_id=&lt;uuid&gt;&amp;exclude=&lt;id1,id2&gt;</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </button>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Fetch one image at a time with optional exclusion list and attention-check scheduling.</p>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "image_id": "21.svg",
+    "url": "https://...",
+    "is_survey": true,
+    "is_attention_check": false
+  }
+}</pre></div>
+                    </div>
+                </article>
 
-await fetch(`/payments/${payment.payment_id}/verify-upload`, {
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/submit</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </button>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Submit description/feedback/rating for current image.</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 60 per minute</p>
+                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
+                        <h4>Request Body</h4>
+                        <div class="code-block"><pre>{
+  "public_id": "participant-public-uuid",
+  "image_id": "21.svg",
+  "description": "at least 60 words...",
+  "feedback": "at least 5 chars",
+  "rating": 8,
+  "time_spent_seconds": 125,
+  "tab_switch_count": 0,
+  "page_close_attempts": 0,
+  "network_disconnects": 0
+}</pre></div>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "status": "submitted",
+    "word_count": 134,
+    "quality_score": 0.92,
+    "flagged_too_fast": false,
+    "survey_index": 2,
+    "is_survey": true,
+    "is_attention_check": false,
+    "engagement": {
+      "tab_switch_count": 0,
+      "page_close_attempts": 0,
+      "network_disconnects": 0
+    }
+  }
+}</pre></div>
+                    </div>
+                </article>
+
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/engagement/track</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </button>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Track engagement counters (tab switch, page close attempt, disconnect, page view).</p>
+                        <p class="endpoint-meta"><strong>Rate limit:</strong> 120 per minute</p>
+                        <h4>Request Body</h4>
+                        <div class="code-block"><pre>{
+  "public_id": "participant-public-uuid",
+  "event_type": "tab_switch",
+  "event_data": {
+    "at": "2026-03-04T18:31:00+00:00"
+  }
+}</pre></div>
+                        <h4>Success Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "status": "tracked",
+    "event_type": "tab_switch",
+    "total_events": 7
+  }
+}</pre></div>
+                    </div>
+                </article>
+            </section>
+
+            <section id="examples" class="tab-content" role="tabpanel">
+                <h2>Examples</h2>
+                <h3>Minimal Frontend Flow</h3>
+                <div class="code-block"><pre>// 1) Create participant
+const participant = await fetch('/participants', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    image_base64: 'base64string...',
-    file_extension: 'jpg',
-    sha256: 'sha256hash...'
+    username: 'user_123',
+    email: 'user@gmail.com',
+    phone: '9876543210',
+    gender_code: 'male',
+    age: 25,
+    location: 'ahmedabad',
+    language_code: 'en',
+    prior_experience: 'some experience'
   })
-});</pre></div>
-            </div>
+}).then(r => r.json());
 
-            <div class="footer">
-                <p>C.O.G.N.I.T. API Documentation</p>
-            </div>
-        </div>
+// 2) Consent (idempotent)
+await fetch('/consent', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Idempotency-Key': crypto.randomUUID(),
+  },
+  body: JSON.stringify({ public_id: participant.data.public_id }),
+});
+
+// 3) Create payment
+const payment = await fetch('/payments/create', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Idempotency-Key': crypto.randomUUID(),
+  },
+  body: JSON.stringify({ public_id: participant.data.public_id, amount: 1 }),
+}).then(r => r.json());</pre></div>
+            </section>
+
+            <section id="errors" class="tab-content" role="tabpanel">
+                <h2>Common Error Codes</h2>
+                <ul class="error-list">
+                    <li><code>VAL_001_0001</code>: Missing required fields</li>
+                    <li><code>PAR_001_0001</code>: Participant not found</li>
+                    <li><code>PAY_001_0001</code>: Payment not found</li>
+                    <li><code>PAY_001_0002</code>: Payment expired</li>
+                    <li><code>PAY_001_0003</code>: Payment invalid state</li>
+                    <li><code>PAY_001_0004</code>: Invalid payment screenshot / verification failed</li>
+                    <li><code>SUB_001_0003</code>: Description length invalid</li>
+                    <li><code>SUB_001_0004</code>: Feedback length invalid</li>
+                    <li><code>SUB_001_0005</code>: Rating invalid</li>
+                    <li><code>RATE_001_0001</code>: Rate limit exceeded</li>
+                </ul>
+            </section>
+
+            <footer class="footer">
+                <p>C.O.G.N.I.T. API Documentation - End-user routes only</p>
+            </footer>
+        </main>
     </div>
 
     <script>
-        document.querySelectorAll('.tab').forEach((tab) => {
+        const tabs = document.querySelectorAll('.tab');
+        const contents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach((tab) => {
             tab.addEventListener('click', () => {
-                document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
-                tab.classList.add('active');
-
-                document.querySelectorAll('.tab-content').forEach((content) => {
-                    content.classList.remove('active');
+                tabs.forEach((item) => {
+                    item.classList.remove('active');
+                    item.setAttribute('aria-selected', 'false');
                 });
+                tab.classList.add('active');
+                tab.setAttribute('aria-selected', 'true');
 
+                contents.forEach((content) => content.classList.remove('active'));
                 const tabId = tab.getAttribute('data-tab');
                 document.getElementById(tabId).classList.add('active');
             });

@@ -9,7 +9,15 @@ from PIL import Image
 from flask import jsonify
 from sqlalchemy import text
 
-from app.config import S3_BUCKET_NAME, UPI_NAME, PAYMENT_MAX_IMAGE_MB
+from app.config import (
+    S3_BUCKET_NAME,
+    UPI_NAME,
+    PAYMENT_MAX_IMAGE_MB,
+    FRAUD_SCORE_WEIGHTS,
+    FRAUD_UNKNOWN_REASON_WEIGHT,
+    FRAUD_REJECT_THRESHOLD,
+    FRAUD_SUCCESS_MAX_SCORE,
+)
 from app.extensions import s3
 from app.utils.helpers import create_error_response, validate_image_extension, log_audit, get_ip_hash
 from app.utils.ocr import (
@@ -44,26 +52,8 @@ def _calculate_fraud_score(failures, confidence=None) -> float:
     if not failures:
         return 0.0
 
-    weights = {
-        "duplicate_hash": 95,
-        "rejected_reuse": 95,
-        "near_duplicate": 85,
-        "ocr_unavailable": 80,
-        "unrecognized_app": 75,
-        "time_out_of_range": 65,
-        "invalid_datetime_format_gpay": 55,
-        "invalid_datetime_format_paytm": 55,
-        "invalid_datetime_format_bhim": 55,
-        "invalid_banking_name": 50,
-        "invalid_amount": 50,
-        "missing_paid_to_cognit": 45,
-        "missing_paytm_label": 40,
-        "missing_bhim_label": 40,
-        "missing_paid_bhim": 35,
-    }
-
     unique_failures = set(failures or [])
-    score = sum(float(weights.get(f, 25)) for f in unique_failures)
+    score = sum(float(FRAUD_SCORE_WEIGHTS.get(f, FRAUD_UNKNOWN_REASON_WEIGHT)) for f in unique_failures)
 
     if len(unique_failures) >= 3:
         score += 10.0
@@ -250,6 +240,46 @@ def process_verify_upload(
             details=details or {},
         )
 
+    def _reject_payment_for_fraud(failures, confidence=None, details=None):
+        score = _calculate_fraud_score(failures or [], confidence=confidence)
+        verification_details = {
+            "failure_reasons": failures or [],
+            "uploaded_sha256": sha256_hash,
+        }
+        if details:
+            verification_details.update(details)
+
+        db.execute(text("""
+            UPDATE payments
+            SET fraud_score = :score,
+                status = 'rejected_fraud',
+                detected_app = 'unknown',
+                auto_rejected = true,
+                verified_at = CURRENT_TIMESTAMP,
+                verification_details = :verification_details,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {
+            "pid": payment_id,
+            "score": score,
+            "verification_details": json.dumps(verification_details),
+        })
+
+        for failure in (failures or []):
+            db.execute(text("""
+                INSERT INTO payment_fraud_signals (
+                    payment_id, signal_type, signal_score, details
+                ) VALUES (
+                    :pid, :type, :score, :details
+                ) ON CONFLICT DO NOTHING
+            """), {
+                "pid": payment_id,
+                "type": failure,
+                "score": score,
+                "details": json.dumps({"reason": failure}),
+            })
+        return score
+
     if payment_audit_logger:
         payment_audit_logger(
             db,
@@ -347,7 +377,7 @@ def process_verify_upload(
             WHERE id = :pid
         """), {
             "txt": existing_text or "",
-            "fs": existing_fraud if existing_fraud is not None else 0,
+            "fs": min(float(FRAUD_SUCCESS_MAX_SCORE), float(existing_fraud if existing_fraud is not None else 0)),
             "app": existing_app,
             "details": json.dumps(reuse_details),
             "pid": payment_id,
@@ -419,7 +449,13 @@ def process_verify_upload(
                 except Exception:
                     pass
                 return jsonify(payload)
-            _finalize_attempt("duplicate", failures=["duplicate_hash_self"])
+            fraud_score = _reject_payment_for_fraud(["duplicate_hash_self"])
+            _finalize_attempt(
+                "duplicate",
+                detected_app="unknown",
+                failures=["duplicate_hash_self"],
+                fraud_score=fraud_score,
+            )
             db.commit()
             return create_error_response("DUPLICATE_IMAGE_SELF")
 
@@ -432,7 +468,13 @@ def process_verify_upload(
                 details=f"duplicate hash matched payment {existing_payment_id}",
                 fraud_signals={"duplicate_hash": True},
             )
-        _finalize_attempt("duplicate", failures=["duplicate_hash_other"])
+        fraud_score = _reject_payment_for_fraud(["duplicate_hash_other"])
+        _finalize_attempt(
+            "duplicate",
+            detected_app="unknown",
+            failures=["duplicate_hash_other"],
+            fraud_score=fraud_score,
+        )
         db.commit()
         return create_error_response("DUPLICATE_IMAGE")
 
@@ -446,7 +488,13 @@ def process_verify_upload(
                 details="attempted reuse of previously rejected screenshot",
                 fraud_signals={"rejected_reuse": True},
             )
-        _finalize_attempt("rejected", failures=["rejected_reuse"])
+        fraud_score = _reject_payment_for_fraud(["rejected_reuse"])
+        _finalize_attempt(
+            "rejected",
+            detected_app="unknown",
+            failures=["rejected_reuse"],
+            fraud_score=fraud_score,
+        )
         db.commit()
         return create_error_response("REJECTED_REUSE")
 
@@ -512,7 +560,17 @@ def process_verify_upload(
                     except Exception:
                         pass
                     return jsonify(payload)
-                _finalize_attempt("duplicate", failures=["near_duplicate_self"], details={"distance": near_distance})
+                fraud_score = _reject_payment_for_fraud(
+                    ["near_duplicate_self"],
+                    details={"distance": near_distance},
+                )
+                _finalize_attempt(
+                    "duplicate",
+                    detected_app="unknown",
+                    failures=["near_duplicate_self"],
+                    fraud_score=fraud_score,
+                    details={"distance": near_distance},
+                )
                 db.commit()
                 return create_error_response("DUPLICATE_IMAGE_SELF")
 
@@ -525,7 +583,17 @@ def process_verify_upload(
                     details=f"near duplicate matched payment {near_payment_id} with distance {near_distance}",
                     fraud_signals={"near_duplicate": True, "distance": near_distance},
                 )
-            _finalize_attempt("duplicate", failures=["near_duplicate_other"], details={"distance": near_distance})
+            fraud_score = _reject_payment_for_fraud(
+                ["near_duplicate_other"],
+                details={"distance": near_distance},
+            )
+            _finalize_attempt(
+                "duplicate",
+                detected_app="unknown",
+                failures=["near_duplicate_other"],
+                fraud_score=fraud_score,
+                details={"distance": near_distance},
+            )
             db.commit()
             return create_error_response("DUPLICATE_IMAGE")
     except Exception:
@@ -559,12 +627,20 @@ def process_verify_upload(
         )
         detected_app = detected_app or "unknown"
         filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
+        risk_score = _calculate_fraud_score(failures, confidence=confidence)
+        force_policy_reject = bool(is_valid and risk_score >= float(FRAUD_REJECT_THRESHOLD))
+        if force_policy_reject:
+            failures = list(set((failures or []) + ["policy_risk_threshold"]))
+            is_valid = False
+            risk_score = _calculate_fraud_score(failures, confidence=confidence)
 
         verification_details = {
             "ocr_confidence": confidence,
             "failure_reasons": failures,
             "extracted_text_length": len(extracted_text) if extracted_text else 0,
             "uploaded_sha256": sha256_hash,
+            "risk_score": risk_score,
+            "decision_threshold": float(FRAUD_REJECT_THRESHOLD),
         }
 
         if is_valid:
@@ -618,7 +694,7 @@ def process_verify_upload(
                 WHERE id = :pid
             """), {
                 "txt": filtered_text,
-                "fs": _calculate_fraud_score(failures, confidence=confidence),
+                "fs": min(float(FRAUD_SUCCESS_MAX_SCORE), risk_score),
                 "status": "success",
                 "app": detected_app,
                 "details": json.dumps(verification_details),
@@ -630,7 +706,12 @@ def process_verify_upload(
                 "verified": True,
                 "failure_reasons": [],
             }
-            _finalize_attempt("success", detected_app=detected_app, failures=[], fraud_score=_calculate_fraud_score(failures, confidence=confidence))
+            _finalize_attempt(
+                "success",
+                detected_app=detected_app,
+                failures=[],
+                fraud_score=min(float(FRAUD_SUCCESS_MAX_SCORE), risk_score),
+            )
             emit_domain_event(
                 db,
                 event_type="payment_verified",
@@ -657,7 +738,7 @@ def process_verify_upload(
                 WHERE id = :pid
             """), {
                 "txt": filtered_text,
-                "fs": _calculate_fraud_score(failures, confidence=confidence),
+                "fs": risk_score,
                 "status": "rejected_fraud",
                 "app": detected_app,
                 "details": json.dumps(verification_details),
@@ -683,7 +764,7 @@ def process_verify_upload(
                 "verified": True,
                 "failure_reasons": failures,
             }
-            _finalize_attempt("rejected", detected_app=detected_app, failures=failures, fraud_score=_calculate_fraud_score(failures, confidence=confidence))
+            _finalize_attempt("rejected", detected_app=detected_app, failures=failures, fraud_score=risk_score)
 
     except Exception as exc:
         try:
@@ -704,7 +785,11 @@ def process_verify_upload(
                 "verified": False,
                 "error": "verification_failed",
             }
-            _finalize_attempt("error", failures=["verification_failed"])
+            _finalize_attempt(
+                "error",
+                failures=["verification_failed"],
+                fraud_score=_calculate_fraud_score(["verification_failed"]),
+            )
 
     response_payload = {"status": "processed", "verification": verification_result}
     save_idempotent_response(
