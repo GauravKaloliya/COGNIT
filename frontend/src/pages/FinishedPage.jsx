@@ -27,8 +27,29 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
     } catch {
       darkMode = null;
     }
-    // Clear session storage and reload
-    sessionStorage.clear();
+    // Clear only flow/session keys for this app.
+    [
+      "stage",
+      "paymentSubStage",
+      "consentGiven",
+      "paymentVerified",
+      "demographics",
+      "survey",
+      "surveyCompleted",
+      "surveyFeedbackReady",
+      "shownImages",
+      "payment_id",
+      "payment_timer_expires_at",
+      "payment_link_state_v1",
+      "consent_checked_draft",
+      "engagement_queue_v1"
+    ].forEach((k) => {
+      try {
+        sessionStorage.removeItem(k);
+      } catch {
+        // Ignore storage remove failures.
+      }
+    });
     // Restore dark mode setting
     if (typeof darkMode === "boolean") {
       const now = Date.now();

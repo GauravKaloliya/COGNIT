@@ -6,6 +6,7 @@ import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
+import { useNavigationBlocker } from "../hooks/useNavigationBlocker";
 
 const VERIFICATION_REASON_CODES = {
   unrecognized_app: 'FRAUD_001_0003',
@@ -782,30 +783,13 @@ export default function PaymentLinkPage({
     });
   }, [publicId, paymentData, paymentStatus, failureReasons, error, savePaymentViewState]);
 
-  useEffect(() => {
-    if (!isCriticalAction) return undefined;
-
-    const preventUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = "";
-      return "";
-    };
-
-    const preventBack = () => {
-      window.history.pushState(null, "", window.location.href);
-      if (!error) {
-        setError("Action in progress. Please wait for completion before leaving this page.");
-      }
-    };
-
-    window.history.pushState(null, "", window.location.href);
-    window.addEventListener("beforeunload", preventUnload);
-    window.addEventListener("popstate", preventBack);
-    return () => {
-      window.removeEventListener("beforeunload", preventUnload);
-      window.removeEventListener("popstate", preventBack);
-    };
-  }, [isCriticalAction, error]);
+  useNavigationBlocker({
+    enabled: isCriticalAction,
+    message: "Action in progress. Please wait for completion before leaving this page.",
+    onBlocked: (msg) => {
+      if (!error) setError(msg);
+    },
+  });
 
   useEffect(() => {
     if (retryInSeconds <= 0) return;

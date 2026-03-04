@@ -8,6 +8,7 @@ export function useSystemHealth({
   publicId,
   stage,
   paymentVerified,
+  pauseSurveyPaymentGuard = false,
   setPaymentVerified,
   setStage,
   setPaymentSubStage,
@@ -167,7 +168,7 @@ export function useSystemHealth({
 
   useEffect(() => {
     const verifyPaymentForSurvey = async () => {
-      if (stage === "survey" && !paymentVerified && systemReady) {
+      if (stage === "survey" && !paymentVerified && systemReady && !pauseSurveyPaymentGuard) {
         try {
           if (paymentStatusAbortRef.current) {
             paymentStatusAbortRef.current.abort();
@@ -175,6 +176,7 @@ export function useSystemHealth({
           const controller = new AbortController();
           paymentStatusAbortRef.current = controller;
           const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId, { signal: controller.signal });
+          if (pauseSurveyPaymentGuard) return;
           if (paymentStatus.is_verified) {
             setPaymentVerified(true);
           } else {
@@ -186,6 +188,7 @@ export function useSystemHealth({
           if (err?.code === "REQ_ABORTED") {
             return;
           }
+          if (pauseSurveyPaymentGuard) return;
           addToast(getErrorMessage("PAY_001_0005"), "error");
           setStage("payment");
           setPaymentSubStage("content");
@@ -202,7 +205,7 @@ export function useSystemHealth({
         paymentStatusAbortRef.current = null;
       }
     };
-  }, [stage, systemReady, paymentVerified, publicId, addToast, setPaymentVerified, setStage, setPaymentSubStage]);
+  }, [stage, systemReady, paymentVerified, publicId, addToast, setPaymentVerified, setStage, setPaymentSubStage, pauseSurveyPaymentGuard]);
 
   return {
     systemReady,
