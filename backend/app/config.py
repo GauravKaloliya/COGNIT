@@ -4,6 +4,7 @@ Centralized configuration management following 2025 best practices.
 """
 
 import os
+import json
 from typing import Dict, Any
 
 from pathlib import Path
@@ -147,6 +148,46 @@ ENABLE_DUPLICATE_DETECTION = os.getenv("ENABLE_DUPLICATE_DETECTION", "true").low
 ENABLE_DEVICE_FINGERPRINTING = os.getenv("ENABLE_DEVICE_FINGERPRINTING", "true").lower() == "true"
 ENABLE_AUDIT_LOGGING = os.getenv("ENABLE_AUDIT_LOGGING", "true").lower() == "true"
 ENABLE_ERROR_LOGGING = os.getenv("ENABLE_ERROR_LOGGING", "true").lower() == "true"
+FRAUD_REJECT_THRESHOLD = float(os.getenv("FRAUD_REJECT_THRESHOLD", "70"))
+FRAUD_SUCCESS_MAX_SCORE = float(os.getenv("FRAUD_SUCCESS_MAX_SCORE", "20"))
+FRAUD_UNKNOWN_REASON_WEIGHT = float(os.getenv("FRAUD_UNKNOWN_REASON_WEIGHT", "25"))
+
+FRAUD_SCORE_WEIGHTS: Dict[str, float] = {
+    "duplicate_hash": 95,
+    "duplicate_hash_self": 95,
+    "duplicate_hash_other": 95,
+    "rejected_reuse": 95,
+    "near_duplicate": 85,
+    "near_duplicate_self": 85,
+    "near_duplicate_other": 85,
+    "ocr_unavailable": 80,
+    "unrecognized_app": 75,
+    "time_out_of_range": 65,
+    "invalid_datetime_format_gpay": 55,
+    "invalid_datetime_format_paytm": 55,
+    "invalid_datetime_format_bhim": 55,
+    "invalid_banking_name": 50,
+    "invalid_amount": 50,
+    "missing_paid_to_cognit": 45,
+    "missing_paytm_label": 40,
+    "missing_bhim_label": 40,
+    "missing_paid_bhim": 35,
+    "verification_failed": 70,
+    "policy_risk_threshold": 90,
+}
+
+_fraud_weights_json = (os.getenv("FRAUD_SCORE_WEIGHTS_JSON", "") or "").strip()
+if _fraud_weights_json:
+    try:
+        _overrides = json.loads(_fraud_weights_json)
+        if isinstance(_overrides, dict):
+            for _k, _v in _overrides.items():
+                try:
+                    FRAUD_SCORE_WEIGHTS[str(_k)] = float(_v)
+                except Exception:
+                    continue
+    except Exception:
+        pass
 
 
 # ────────────────────────────────────────────────

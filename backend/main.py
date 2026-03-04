@@ -253,16 +253,34 @@ def _build_public_docs(base_url: str) -> dict:
     """Build API docs for public, end-user-facing routes only."""
     return {
         "title": "C.O.G.N.I.T. API",
-        "description": "Public API for participant registration, payment verification, image fetch, and submissions.",
+        "description": "Detailed end-user API for participant onboarding, payment verification, image fetch, engagement tracking, and submissions.",
         "version": "1.0.0",
         "base_url": base_url,
         "authentication": "None (public_id based participant identification)",
+        "response_envelope": {
+            "success": {"success": True, "data": {"...": "..."}, "message": "optional"},
+            "error": {
+                "success": False,
+                "error": {
+                    "code": "ERROR_CODE",
+                    "message": "Human-readable message",
+                    "category": "SYS|VAL|PAY|SUB|PAR|RATE",
+                    "http_status": 400,
+                    "retryable": True,
+                    "request_id": "uuid",
+                },
+            },
+        },
         "endpoints": [
             {
                 "path": "/health",
                 "method": "GET",
                 "description": "Service and database health status.",
-                "rate_limit": "exempt"
+                "rate_limit": "exempt",
+                "success_example": {
+                    "success": True,
+                    "data": {"status": "healthy", "database": "connected"},
+                },
             },
             {
                 "path": "/participants",
@@ -277,29 +295,36 @@ def _build_public_docs(base_url: str) -> dict:
                     "location": "ahmedabad",
                     "language_code": "en",
                     "prior_experience": "some experience"
-                },                
-                "rate_limit": PARTICIPANT_CREATE_RATE_LIMIT
+                },
+                "rate_limit": PARTICIPANT_CREATE_RATE_LIMIT,
+                "success_example": {
+                    "success": True,
+                    "data": {"status": "created", "public_id": "uuid", "session_id": "sess_xxx"},
+                },
             },
             {
                 "path": "/check-username",
                 "method": "GET",
                 "description": "Check username availability.",
                 "query_params": {"username": "string (required)"},
-                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT
+                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
+                "success_example": {"success": True, "data": {"available": True}},
             },
             {
                 "path": "/check-email",
                 "method": "GET",
                 "description": "Check email availability.",
                 "query_params": {"email": "string (required)"},
-                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT
+                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
+                "success_example": {"success": True, "data": {"available": True}},
             },
             {
                 "path": "/check-phone",
                 "method": "GET",
                 "description": "Check phone availability.",
                 "query_params": {"phone": "string (required)"},
-                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT
+                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
+                "success_example": {"success": True, "data": {"available": True}},
             },
             {
                 "path": "/consent",
@@ -307,13 +332,26 @@ def _build_public_docs(base_url: str) -> dict:
                 "description": "Record participant consent.",
                 "body_example": {"public_id": "550e8400-e29b-41d4-a716-446655440000"},
                 "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": CONSENT_RATE_LIMIT
+                "rate_limit": CONSENT_RATE_LIMIT,
+                "success_example": {"success": True, "data": {"status": "consent recorded"}},
             },
             {
                 "path": "/participants/{public_id}/payment-status",
                 "method": "GET",
                 "description": "Get participant payment verification status.",
-                "rate_limit": PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT
+                "rate_limit": PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+                "success_example": {
+                    "success": True,
+                    "data": {
+                        "payment_status": "paid",
+                        "is_verified": True,
+                        "current_stage": "survey",
+                        "payment_id": "payment-public-uuid",
+                        "verified_at": "2026-03-04T18:30:00+00:00",
+                        "detected_app": "gpay",
+                        "reason": None,
+                    },
+                },
             },
             {
                 "path": "/images/random",
@@ -323,40 +361,128 @@ def _build_public_docs(base_url: str) -> dict:
                     "exclude": "comma-separated image_ids (optional)",
                     "public_id": "participant public UUID (optional, recommended for scheduled attention checks)"
                 },
-                "rate_limit": "default"
+                "rate_limit": "default",
+                "success_example": {
+                    "success": True,
+                    "data": {
+                        "image_id": "21.svg",
+                        "url": "https://.../survey/21.svg",
+                        "is_survey": True,
+                        "is_attention_check": False,
+                    },
+                },
             },
             {
                 "path": "/submit",
                 "method": "POST",
                 "description": "Submit image description or survey response.",
                 "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": SUBMIT_RATE_LIMIT
+                "rate_limit": SUBMIT_RATE_LIMIT,
+                "body_example": {
+                    "public_id": "participant-public-uuid",
+                    "image_id": "21.svg",
+                    "description": "at least 60 words...",
+                    "feedback": "at least 5 characters",
+                    "rating": 8,
+                    "time_spent_seconds": 125,
+                    "tab_switch_count": 0,
+                    "page_close_attempts": 0,
+                    "network_disconnects": 0,
+                },
+                "success_example": {
+                    "success": True,
+                    "data": {
+                        "status": "submitted",
+                        "word_count": 134,
+                        "quality_score": 0.92,
+                        "flagged_too_fast": False,
+                        "survey_index": 2,
+                        "is_survey": True,
+                        "is_attention_check": False,
+                    },
+                },
             },
             {
                 "path": "/engagement/track",
                 "method": "POST",
                 "description": "Track participant engagement events.",
-                "rate_limit": ENGAGEMENT_TRACK_RATE_LIMIT
+                "rate_limit": ENGAGEMENT_TRACK_RATE_LIMIT,
+                "body_example": {
+                    "public_id": "participant-public-uuid",
+                    "event_type": "tab_switch|page_close_attempt|network_disconnect|page_view",
+                    "event_data": {"at": "2026-03-04T18:31:00+00:00"},
+                },
+                "success_example": {
+                    "success": True,
+                    "data": {"status": "tracked", "event_type": "tab_switch", "total_events": 7},
+                },
             },
             {
                 "path": "/payments/create",
                 "method": "POST",
                 "description": "Create payment session and return UPI details + QR.",
                 "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": PAYMENT_CREATE_RATE_LIMIT
+                "rate_limit": PAYMENT_CREATE_RATE_LIMIT,
+                "body_example": {"public_id": "participant-public-uuid", "amount": 1},
+                "success_example": {
+                    "success": True,
+                    "data": {
+                        "payment_id": "payment-public-uuid",
+                        "amount": 1,
+                        "expires_at": "2026-03-04T18:35:00+00:00",
+                        "signature": "sha256-signature",
+                        "upi_link": "upi://pay?...",
+                        "qr_base64": "...",
+                        "timer_activated": True,
+                        "time_remaining_seconds": 300,
+                    },
+                },
             },
             {
                 "path": "/payments/{payment_id}/status",
                 "method": "GET",
                 "description": "Get payment status and remaining time.",
-                "rate_limit": PAYMENT_STATUS_RATE_LIMIT
+                "rate_limit": PAYMENT_STATUS_RATE_LIMIT,
+                "success_example": {
+                    "success": True,
+                    "data": {
+                        "payment_id": "payment-public-uuid",
+                        "status": "processing",
+                        "amount": 1,
+                        "expires_at": "2026-03-04T18:35:00+00:00",
+                        "is_expired": False,
+                        "time_remaining_seconds": 211,
+                        "verified_at": None,
+                        "verification_attempts": 1,
+                        "detected_app": "unknown",
+                    },
+                },
             },
             {
                 "path": "/payments/{payment_id}/verify-upload",
                 "method": "POST",
                 "description": "Verify uploaded payment screenshot.",
                 "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT
+                "rate_limit": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
+                "body_example": {
+                    "image_base64": "base64-image",
+                    "file_extension": "jpg",
+                    "sha256": "64-char-sha256",
+                    "mime_type": "image/jpeg",
+                    "original_filename": "payment.jpg",
+                    "file_size": 435820,
+                },
+                "success_example": {
+                    "success": True,
+                    "data": {
+                        "status": "verified",
+                        "payment_id": "payment-public-uuid",
+                        "payment_status": "success",
+                        "detected_app": "gpay",
+                        "fraud_score": 0,
+                        "verification_attempts": 1,
+                    },
+                },
             }
         ],
     }
