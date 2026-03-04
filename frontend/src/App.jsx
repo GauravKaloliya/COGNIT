@@ -189,6 +189,9 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [surveyTransitionInFlight, setSurveyTransitionInFlight] = useState(false);
   const [engagementFlushInFlight, setEngagementFlushInFlight] = useState(false);
+  const engagementFlushInFlightRef = useRef(false);
+  const lastEngagementFlushAtRef = useRef(0);
+  const engagementFlushRetryAfterRef = useRef(0);
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
@@ -369,7 +372,7 @@ export default function App() {
     transitionToSurvey,
   });
 
-  const canTrackEngagement = isActiveTabOwner && ["payment", "survey", "finished"].includes(stage);
+  const canTrackEngagement = isActiveTabOwner && ["survey", "finished"].includes(stage);
   const currentPageRef = useRef("consent");
 
   const readEngagementQueue = useCallback(() => {
@@ -403,10 +406,15 @@ export default function App() {
   }, [readEngagementQueue, writeEngagementQueue]);
 
   const flushEngagementQueue = useCallback(async () => {
-    if (!publicId || !canTrackEngagement || !online || engagementFlushInFlight) return;
+    if (!publicId || !canTrackEngagement || !online || engagementFlushInFlightRef.current) return;
+    const now = Date.now();
+    if (now < engagementFlushRetryAfterRef.current) return;
+    if (now - lastEngagementFlushAtRef.current < runtimeConfig.engagementFlushCooldownMs) return;
     const queue = readEngagementQueue();
     if (!queue.length) return;
 
+    lastEngagementFlushAtRef.current = now;
+    engagementFlushInFlightRef.current = true;
     setEngagementFlushInFlight(true);
     const remaining = [];
     const chunkSize = Math.max(1, runtimeConfig.engagementFlushBatchSize);
@@ -449,8 +457,14 @@ export default function App() {
       }
     }
     writeEngagementQueue(remaining);
+    if (remaining.length) {
+      engagementFlushRetryAfterRef.current = Date.now() + runtimeConfig.engagementFlushRetryMs;
+    } else {
+      engagementFlushRetryAfterRef.current = 0;
+    }
+    engagementFlushInFlightRef.current = false;
     setEngagementFlushInFlight(false);
-  }, [publicId, canTrackEngagement, online, engagementFlushInFlight, readEngagementQueue, writeEngagementQueue]);
+  }, [publicId, canTrackEngagement, online, readEngagementQueue, writeEngagementQueue]);
 
   useEffect(() => saveStoredValue("publicId", publicId), [publicId]);
   useEffect(() => saveStoredValue("sessionId", sessionId), [sessionId]);
@@ -488,8 +502,11 @@ export default function App() {
   );
 
   useEffect(() => {
+    if (!online) return undefined;
     flushEngagementQueue();
-  }, [flushEngagementQueue, online, stage, paymentSubStage]);
+    const interval = setInterval(flushEngagementQueue, runtimeConfig.engagementFlushPollMs);
+    return () => clearInterval(interval);
+  }, [flushEngagementQueue, online]);
 
   useEffect(() => {
     if (!canTrackEngagement) return;
