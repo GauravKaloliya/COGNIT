@@ -532,7 +532,7 @@ export default function App() {
   useEffect(() => {
     const verifyStagePrerequisites = async () => {
       if (!systemReady || !isActiveTabOwner) return;
-      if (!["payment", "survey", "finished"].includes(stage)) return;
+      if (!["survey", "finished"].includes(stage)) return;
 
       if (participantStatusAbortRef.current) {
         participantStatusAbortRef.current.abort();
@@ -554,11 +554,9 @@ export default function App() {
         if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
           return;
         }
-        if (stage !== "payment") {
-          setStage("user-details");
-          setPaymentSubStage("content");
-          setPaymentVerified(false);
-        }
+        setStage("user-details");
+        setPaymentSubStage("content");
+        setPaymentVerified(false);
         if (error?.status === 404 || error?.code === "NF_001_0001") {
           addToast(getErrorMessage("NF_001_0001"), "warning");
         }

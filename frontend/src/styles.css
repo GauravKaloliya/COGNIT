@@ -2871,24 +2871,38 @@ body.dark .payment-qr-code {
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+  padding: var(--space-3);
+}
+
+.payment-upload-stack.is-verifying {
+  opacity: 0.85;
+}
+
+.payment-upload-stack.is-verifying .payment-upload-preview-box {
+  cursor: not-allowed;
 }
 
 .payment-upload-preview-box,
 .payment-upload-meta-box {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--panel-bg);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  width: 100%;
 }
 
 .payment-upload-preview-box {
   min-height: 180px;
-  padding: var(--space-3);
+  padding: var(--space-2);
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s, transform 0.2s;
+  border: 1px dashed var(--border);
 }
 
 .payment-upload-preview-box:hover {
@@ -2912,13 +2926,17 @@ body.dark .payment-qr-code {
 }
 
 .payment-upload-meta-box {
-  padding: var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .payment-upload-actions {
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-2);
+  margin-top: 0;
 }
 
 .payment-upload-actions .ghost,
@@ -2938,6 +2956,7 @@ body.dark .payment-qr-code {
   .payment-upload-stack {
     gap: var(--space-2);
     margin-top: var(--space-2);
+    padding: var(--space-2);
   }
 
   .payment-upload-preview-box {
@@ -2980,10 +2999,6 @@ body.dark .payment-qr-code {
 @media (max-width: 479px) {
   .payment-upload-area {
     padding: 1.25rem;
-  }
-
-  .payment-upload-actions {
-    flex-direction: column;
   }
 
   .payment-upload-preview-box {
@@ -3053,11 +3068,11 @@ body.dark .payment-status-badge.success {
   border: 1px solid #fed7d7;
   border-radius: 8px;
   padding: 1rem 1.25rem;
-  margin: 0.75rem 0;
+  margin: 0;
 }
 
 .payment-failure-details ul {
-  margin: 0.5rem 0 0;
+  margin: 0;
   padding-left: 1.25rem;
 }
 
@@ -3077,7 +3092,7 @@ body.dark .payment-failure-details li {
 }
 
 .payment-next-steps {
-  margin: var(--space-3) 0;
+  margin: 0;
   padding: var(--space-3);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
@@ -3085,7 +3100,7 @@ body.dark .payment-failure-details li {
 }
 
 .payment-next-steps p {
-  margin: 0 0 var(--space-2);
+  margin: 0;
   color: var(--text);
 }
 
@@ -3195,12 +3210,14 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* Payment page specific improvements */
 .payment-panel .page-actions {
-  margin-top: var(--space-5);
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 @media (min-width: 768px) {
   .payment-panel .page-actions {
-    margin-top: var(--space-6);
+    margin-top: 0;
+    margin-bottom: 0;
   }
 }
 
