@@ -190,7 +190,7 @@ def process_verify_upload(
         image_hash = sha256_hash
 
     row = db.execute(text("""
-        SELECT id, participant_id, status, expires_at
+        SELECT id, participant_id, status, expires_at, timer_activated_at
         FROM payments
         WHERE public_id = :pid
         FOR UPDATE
@@ -198,7 +198,7 @@ def process_verify_upload(
     if not row:
         return create_error_response("PAYMENT_NOT_FOUND")
 
-    payment_id, participant_id, status, expires_at = row
+    payment_id, participant_id, status, expires_at, timer_activated_at = row
 
     request_hash = build_request_hash({
         "payment_public_id": payment_public_id,
@@ -541,7 +541,15 @@ def process_verify_upload(
         extracted_text, confidence = extract_text_with_confidence(image)
         payment_row = db.execute(text("SELECT amount FROM payments WHERE id = :pid"), {"pid": payment_id}).fetchone()
         amount = payment_row[0] if payment_row else 1
-        is_valid, detected_app, failures = verify_payment_screenshot(image, extracted_text, amount, confidence, UPI_NAME)
+        is_valid, detected_app, failures = verify_payment_screenshot(
+            image,
+            extracted_text,
+            amount,
+            confidence,
+            UPI_NAME,
+            time_window_start_utc=timer_activated_at,
+            time_window_end_utc=expires_at,
+        )
         detected_app = detected_app or "unknown"
         filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
 
