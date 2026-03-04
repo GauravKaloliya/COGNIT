@@ -73,9 +73,9 @@ const TRANSLATIONS = {
     'DUP_002_0002': 'You have already completed this survey round',
     
     // Payment duplicates
-    'DUP_003_0001': 'This screenshot has already been submitted',
+    'DUP_003_0001': 'This screenshot hash is already linked to another participant. Complete a fresh ₹1 payment and upload the new screenshot.',
     'DUP_003_0002': 'This transaction has already been used',
-    'DUP_003_0003': 'This screenshot was already used by another user',
+    'DUP_003_0003': 'This screenshot was already used by another participant. Please make a fresh payment and upload that success screenshot.',
     
     // =====================================================================
     // AUTH/PERMISSION ERRORS (AUTH)
@@ -130,13 +130,13 @@ const TRANSLATIONS = {
     'FRAUD_002_0005': 'Payment appears to have failed. Check your UPI app.',
     'FRAUD_002_0007': 'Payment timestamp could not be verified. Please upload a recent screenshot.',
     'FRAUD_002_0008': 'Payment time is outside the allowed window. Please upload a recent screenshot.',
-    'FRAUD_002_0009': 'Your payment screenshot could not be verified. Please ensure you are using Google Pay, Paytm, or BHIM.',
+    'FRAUD_002_0009': 'Payment screenshot verification failed. Use Google Pay/Paytm/BHIM, pay exactly ₹1 to COGNIT, and upload a clear success screenshot.',
     'FRAUD_002_0010': 'Payment date/time not found in screenshot',
     
     // Reuse detection
-    'FRAUD_003_0001': 'This screenshot was already submitted by another user',
-    'FRAUD_003_0002': 'This screenshot was previously rejected',
-    'FRAUD_003_0004': 'You already submitted this screenshot. Please use a new payment screenshot.',
+    'FRAUD_003_0001': 'This screenshot belongs to another participant. Please complete a fresh payment and upload a new screenshot.',
+    'FRAUD_003_0002': 'This screenshot was previously rejected and cannot be reused. Upload a fresh screenshot from a new successful payment.',
+    'FRAUD_003_0004': 'You already submitted this screenshot in your account. Upload a screenshot from a new payment attempt.',
     
     // =====================================================================
     // SYSTEM ERRORS (SYS)
@@ -269,13 +269,40 @@ export function getErrorMessage(errorCode, lang = DEFAULT_LANGUAGE, params = {})
  * Parse error response from backend
  */
 export function parseErrorResponse(response) {
-  if (!response || !response.error) {
+  if (!response) {
     return {
       code: 'SYS_001_0001',
       message: getErrorMessage('SYS_001_0001'),
       category: 'SYS',
       severity: 'error',
       action: 'retry'
+    };
+  }
+
+  // Handle non-standard backend payloads gracefully.
+  if (!response.error) {
+    const fallbackMessage =
+      response.message ||
+      response.error_message ||
+      response.detail ||
+      getErrorMessage('SYS_001_0001');
+    const fallbackCode = response.code || 'SYS_001_0001';
+    const fallbackCategory = String(fallbackCode).split('_')[0] || 'SYS';
+    const categoryInfo = ERROR_CATEGORIES[fallbackCategory] || ERROR_CATEGORIES.SYS;
+    return {
+      code: fallbackCode,
+      message: fallbackMessage,
+      originalMessage: fallbackMessage,
+      category: fallbackCategory,
+      field: response.field,
+      fields: response.fields,
+      details: response.details || response,
+      status: response.http_status || response.status,
+      retryable: response.retryable,
+      requestId: response.request_id || response.requestId,
+      severity: categoryInfo.severity,
+      action: categoryInfo.action,
+      timestamp: new Date().toISOString()
     };
   }
   

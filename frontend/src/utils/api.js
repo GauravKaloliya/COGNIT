@@ -51,8 +51,24 @@ export async function apiFetch(endpoint, options = {}) {
       throw error;
     }
     
+    // Backend success envelope: { success: true, data: ... }
+    if (data && typeof data === "object" && data.success === true) {
+      return data.data ?? data;
+    }
     return data;
   } catch (error) {
+    if (error?.name === "AbortError") {
+      error.code = "REQ_ABORTED";
+      error.category = "SYS";
+      error.severity = "info";
+      error.action = "ignore";
+      error.message = "Request cancelled";
+      if (!error.requestId) {
+        error.requestId = requestId;
+      }
+      throw error;
+    }
+
     // Network errors or other fetch failures
     if (!error.code) {
       error.code = 'SYS_002_0007';
@@ -68,6 +84,25 @@ export async function apiFetch(endpoint, options = {}) {
   }
 }
 
+const generateIdempotencyKey = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `idem_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+const withIdempotencyHeader = (options = {}) => {
+  const method = String(options.method || "").toUpperCase();
+  const isMutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  if (!isMutating) return options;
+
+  const headers = {
+    ...(options.headers || {})
+  };
+  if (!headers["X-Idempotency-Key"]) {
+    headers["X-Idempotency-Key"] = generateIdempotencyKey();
+  }
+  return { ...options, headers };
+};
+
 /**
  * Convenience methods for common HTTP verbs
  */
@@ -77,22 +112,22 @@ export const api = {
     ...options
   }),
   
-  post: (endpoint, body, options = {}) => apiFetch(endpoint, { 
+  post: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
     method: 'POST',
     body: JSON.stringify(body),
     ...options
-  }),
+  })),
   
-  put: (endpoint, body, options = {}) => apiFetch(endpoint, { 
+  put: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
     method: 'PUT',
     body: JSON.stringify(body),
     ...options
-  }),
+  })),
   
-  delete: (endpoint, options = {}) => apiFetch(endpoint, { 
+  delete: (endpoint, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
     method: 'DELETE',
     ...options
-  })
+  }))
 };
 
 /**
@@ -103,39 +138,41 @@ export const endpoints = {
   health: (options = {}) => api.get('/health', options),
   
   // Participant management
-  createParticipant: (data) => api.post('/participants', data),
-  checkUsername: (username) => api.get(`/check-username?username=${encodeURIComponent(username)}`),
-  checkEmail: (email) => api.get(`/check-email?email=${encodeURIComponent(email)}`),
-  checkPhone: (phone) => api.get(`/check-phone?phone=${encodeURIComponent(phone)}`),
+  createParticipant: (data, options = {}) => api.post('/participants', data, options),
+  checkUsername: (username, options = {}) => api.get(`/check-username?username=${encodeURIComponent(username)}`, options),
+  checkEmail: (email, options = {}) => api.get(`/check-email?email=${encodeURIComponent(email)}`, options),
+  checkPhone: (phone, options = {}) => api.get(`/check-phone?phone=${encodeURIComponent(phone)}`, options),
   
   // Consent
-  recordConsent: (publicId) => api.post('/consent', { public_id: publicId }),
+  recordConsent: (publicId, options = {}) => api.post('/consent', { public_id: publicId }, options),
   
   // Images
-  getRandomImage: (exclude = [], publicId = null) => {
+  getRandomImage: (exclude = [], publicId = null, options = {}) => {
     const params = new URLSearchParams();
     if (exclude.length > 0) params.set('exclude', exclude.join(','));
     if (publicId) params.set('public_id', publicId);
     const qs = params.toString();
-    return api.get(`/images/random${qs ? `?${qs}` : ''}`);
+    return api.get(`/images/random${qs ? `?${qs}` : ''}`, options);
   },
   
   // Submissions
-  submitDescription: (data) => api.post('/submit', data),
-  trackEngagement: (data) => api.post('/engagement/track', data),
+  submitDescription: (data, options = {}) => api.post('/submit', data, options),
+  trackEngagement: (data, options = {}) => api.post('/engagement/track', data, options),
+  trackEngagementBulk: (data, options = {}) => api.post('/engagement/track/bulk', data, options),
   
   // Payment
-  createPayment: (publicId, amount) => api.post('/payments/create', {
+  createPayment: (publicId, amount, options = {}) => api.post('/payments/create', {
     public_id: publicId,
     amount
-  }),
-  getPaymentStatus: (paymentId) => api.get(`/payments/${paymentId}/status`),
-  getParticipantPaymentStatus: (publicId) => api.get(`/participants/${publicId}/payment-status`),
-  verifyUpload: (paymentId, imageBase64, fileExtension, sha256) => api.post(`/payments/${paymentId}/verify-upload`, {
+  }, options),
+  getPaymentStatus: (paymentId, options = {}) => api.get(`/payments/${paymentId}/status`, options),
+  getParticipantPaymentStatus: (publicId, options = {}) => api.get(`/participants/${publicId}/payment-status`, options),
+  verifyUpload: (paymentId, imageBase64, fileExtension, sha256, extra = {}, options = {}) => api.post(`/payments/${paymentId}/verify-upload`, {
     image_base64: imageBase64,
     file_extension: fileExtension,
-    sha256: sha256
-  }),
+    sha256: sha256,
+    ...extra
+  }, options),
 };
 
 /**

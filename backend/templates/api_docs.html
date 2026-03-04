@@ -39,6 +39,7 @@
                 <h3>General Rules</h3>
                 <ul>
                     <li>Use JSON request bodies with <code>Content-Type: application/json</code>.</li>
+                    <li>Send <code>X-Idempotency-Key</code> for mutating requests. Supported on <code>/consent</code>, <code>/payments/create</code>, <code>/payments/{payment_id}/verify-upload</code>, and <code>/submit</code>.</li>
                     <li>Rate limits apply per route.</li>
                     <li>Response timestamps are UTC ISO 8601.</li>
                 </ul>
@@ -179,7 +180,27 @@
                     </div>
                     <div class="endpoint-body">
                         <p class="endpoint-desc">Track participant engagement events.</p>
-                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 60 per minute</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 120 per minute</p>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/engagement/track/bulk</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </div>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Track multiple engagement events in one request.</p>
+                        <p class="endpoint-meta"><strong>Rate Limit:</strong> 30 per minute</p>
+                        <h4>Request Body</h4>
+                        <div class="code-block"><pre>{
+  "public_id": "550e8400-e29b-41d4-a716-446655440000",
+  "events": [
+    { "event_type": "page_view", "event_data": { "page": "survey" } },
+    { "event_type": "tab_switch", "event_data": { "page": "survey" } }
+  ]
+}</pre></div>
                     </div>
                 </div>
 

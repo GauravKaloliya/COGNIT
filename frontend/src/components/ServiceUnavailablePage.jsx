@@ -1,7 +1,61 @@
 import React from 'react';
 import { getErrorMessage } from '../utils/errorRegistry.js';
+import { uiText } from '../utils/uiText.js';
+import { runtimeConfig } from '../config/runtime';
+import PageSkeleton from './PageSkeleton.jsx';
+import PanelState from './PanelState.jsx';
 
-export default function ServiceUnavailablePage({ error }) {
+export default function ServiceUnavailablePage({ error, darkMode = false, onToggleDarkMode, onRetry, isRetrying = false }) {
+  const [retryInSeconds, setRetryInSeconds] = React.useState(runtimeConfig.serviceRetrySeconds);
+
+  if (isRetrying) {
+    return (
+      <div className="app">
+        <header className="header">
+          <div className="brand">
+            <h1>C.O.G.N.I.T.</h1>
+            <p className="subtitle">Describe each image with as much detail as possible</p>
+          </div>
+          <div className="header-actions">
+            <button
+              className="ghost dark-mode-toggle"
+              onClick={onToggleDarkMode}
+              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {darkMode ? "☀️" : "🌙"}
+            </button>
+          </div>
+        </header>
+        <div className="panel">
+          <PageSkeleton
+            title="Retrying service health check"
+            subtitle="Reconnecting to backend services"
+            variant="service"
+            compact
+          />
+        </div>
+      </div>
+    );
+  }
+
+  React.useEffect(() => {
+    if (retryInSeconds <= 0) return;
+    const t = setTimeout(
+      () => setRetryInSeconds((prev) => Math.max(0, prev - 1)),
+      runtimeConfig.countdownTickMs
+    );
+    return () => clearTimeout(t);
+  }, [retryInSeconds]);
+
+  const handleRetry = () => {
+    setRetryInSeconds(runtimeConfig.serviceRetrySeconds);
+    if (onRetry) {
+      onRetry();
+      return;
+    }
+    window.location.reload();
+  };
+
   return (
     <div className="app">
       <header className="header">
@@ -9,16 +63,28 @@ export default function ServiceUnavailablePage({ error }) {
           <h1>C.O.G.N.I.T.</h1>
           <p className="subtitle">Describe each image with as much detail as possible</p>
         </div>
+        <div className="header-actions">
+          <button
+            className="ghost dark-mode-toggle"
+            onClick={onToggleDarkMode}
+            title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {darkMode ? "☀️" : "🌙"}
+          </button>
+        </div>
       </header>
 
       <div className="panel">
         <div className="page-hero">
-          <div className="service-unavailable-icon">⚠️</div>
-          <h1 className="hero-title warning">Something Went Wrong</h1>
-          <h2 className="hero-subtitle">Service Unavailable</h2>
-          <p className="hero-message">
-            {error || getErrorMessage('SYS_001_0004')}
-          </p>
+          <PanelState
+            variant="warning"
+            icon="!"
+            title="Service Unavailable"
+            message={error || getErrorMessage('SYS_001_0004')}
+            actionLabel={isRetrying ? "Retrying..." : "Reload"}
+            onAction={handleRetry}
+            disabled={isRetrying}
+          />
 
           <div className="service-unavailable-card">
             <p className="service-unavailable-card-title">
@@ -32,11 +98,7 @@ export default function ServiceUnavailablePage({ error }) {
             </ul>
           </div>
 
-          <div className="page-actions">
-            <button className="primary" onClick={() => window.location.reload()}>
-              Reload
-            </button>
-          </div>
+          {retryInSeconds > 0 && <p className="retry-hint">{uiText("common.tryAgainIn", { seconds: retryInSeconds })}</p>}
         </div>
       </div>
 
