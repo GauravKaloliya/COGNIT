@@ -50,7 +50,6 @@ export function useSystemHealth({
           method: "GET",
           cache: "no-store",
           signal: controller.signal,
-          headers: { "X-Connectivity-Probe": "1" },
         });
       } finally {
         clearTimeout(timeoutId);
