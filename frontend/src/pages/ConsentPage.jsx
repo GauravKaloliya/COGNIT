@@ -212,7 +212,7 @@ export default function ConsentPage({
         <p><strong>Email:</strong> <a href="mailto:research@cognit.online">research@cognit.online</a></p>
 
         <h3>Statement of Consent</h3>
-        <p>By selecting "I Consent & Proceed", you confirm that you:</p>
+        <p>By selecting &quot;I Consent &amp; Proceed&quot;, you confirm that you:</p>
         <ul>
           <li>Have carefully read and understood this information</li>
           <li>Freely and voluntarily agree to participate</li>

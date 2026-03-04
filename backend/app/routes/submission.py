@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from flask import request, g
+from flask import request, g, make_response
 from sqlalchemy import text
 
 from app.config import (
@@ -29,9 +29,7 @@ from app.config import (
     PRIORITY_ATTENTION_THRESHOLD,
     SUBMIT_RATE_LIMIT,
     ENGAGEMENT_TRACK_RATE_LIMIT,
-    ENGAGEMENT_BULK_RATE_LIMIT,
     ENGAGEMENT_EVENT_HISTORY_LIMIT,
-    ENGAGEMENT_BULK_MAX_EVENTS,
 )
 from app.extensions import limiter
 from app.database import get_db
@@ -674,77 +672,7 @@ def track_engagement():
         return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
 
 
-@submission_bp.route("/engagement/track/bulk", methods=["POST"])
-@limiter.limit(ENGAGEMENT_BULK_RATE_LIMIT)
-@track_performance
-def track_engagement_bulk():
-    """Track a burst of engagement events in one request."""
-    data = request.json or {}
-    logger.info("track_engagement_bulk request_id=%s", getattr(g, "request_id", None))
-    public_id = data.get("public_id")
-    events = data.get("events") or []
-
-    if not public_id:
-        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
-    if not isinstance(events, list) or len(events) == 0:
-        return create_error_response("MISSING_FIELDS", {"fields": ["events"]})
-    if len(events) > ENGAGEMENT_BULK_MAX_EVENTS:
-        return create_error_response(
-            "INVALID_FORMAT",
-            {"field": "events", "reason": f"max {ENGAGEMENT_BULK_MAX_EVENTS} events per request"},
-        )
-
-    db = None
-    try:
-        db = get_db()
-        participant_id, current_meta = _load_participant_for_engagement(db, public_id)
-        if not participant_id:
-            return create_error_response("PARTICIPANT_NOT_FOUND")
-
-        accepted = 0
-        rejected = 0
-        rejected_items = []
-        for idx, event in enumerate(events):
-            if not isinstance(event, dict):
-                rejected += 1
-                rejected_items.append({"index": idx, "reason": "invalid_event_shape"})
-                continue
-            event_type = event.get("event_type")
-            event_data = event.get("event_data") or {}
-            if event_type not in ALLOWED_ENGAGEMENT_EVENTS:
-                rejected += 1
-                rejected_items.append({"index": idx, "reason": "invalid_event_type"})
-                continue
-            _apply_engagement_event(current_meta, event_type, event_data)
-            accepted += 1
-
-        if accepted > 0:
-            db.execute(text("""
-                UPDATE participants
-                SET extra_metadata = :meta, updated_at = CURRENT_TIMESTAMP
-                WHERE id = :pid
-            """), {
-                "meta": json.dumps(current_meta),
-                "pid": participant_id
-            })
-            db.commit()
-        else:
-            db.rollback()
-
-        tracking = current_meta.get("engagement_tracking", {})
-        return success_response({
-            "status": "tracked",
-            "accepted": accepted,
-            "rejected": rejected,
-            "total_events": tracking.get("total_events", 0),
-            "rejected_items": rejected_items[:20],
-        })
-
-    except Exception as e:
-        try:
-            if db is not None:
-                db.rollback()
-        except Exception:
-            pass
-        logger.error("track engagement bulk failed request_id=%s public_id=%s error=%s", getattr(g, "request_id", None), public_id, e)
-        return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
+@submission_bp.route("/engagement/track", methods=["OPTIONS"])
+@limiter.exempt
+def track_engagement_options():
+    return make_response("", 204)

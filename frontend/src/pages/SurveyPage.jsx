@@ -6,6 +6,7 @@ import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
+import { useNavigationBlocker } from "../hooks/useNavigationBlocker";
 
 const MIN_WORDS = runtimeConfig.minWords;
 const PRIORITY_WORD_TARGET = runtimeConfig.priorityDescWordTarget;
@@ -348,10 +349,8 @@ export default function SurveyPage({
       startedAt: surveyStartTime.current,
       engagementData
     };
-    try {
-      writeSurveyDraft(draftKey, payload);
-      writeSurveyDraft(activeDraftKey, payload);
-    } catch {}
+    writeSurveyDraft(draftKey, payload);
+    writeSurveyDraft(activeDraftKey, payload);
   }, [
     draftKey,
     activeDraftKey,
@@ -381,7 +380,22 @@ export default function SurveyPage({
     };
   }, [timerActive]);
 
-  const handleSubmit = async () => {
+  const getSubmitTooltip = useCallback(() => {
+    if (!imageReady) return getErrorMessage('SYS_002_0018');
+    if (submitting || submitLocked) return "Submitting...";
+    if (wordCount < MIN_WORDS) {
+      return getErrorMessage('VAL_002_0004', 'en', { min_words: MIN_WORDS, actual: wordCount });
+    }
+    if (description.length < MIN_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0002');
+    if (description.length > MAX_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0003');
+    if (rating === 0) return getErrorMessage('VAL_002_0008');
+    const commentsLength = comments.trim().length;
+    if (commentsLength < MIN_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0006');
+    if (commentsLength > MAX_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0007');
+    return "Submit your response";
+  }, [imageReady, submitting, submitLocked, wordCount, description, rating, comments]);
+
+  const handleSubmit = useCallback(async () => {
     if (submitting || submitLocked) {
       return;
     }
@@ -438,7 +452,21 @@ export default function SurveyPage({
       setSubmitting(false);
       unlockSubmit(runtimeConfig.submitUnlockCompleteDelayMs);
     }
-  };
+  }, [
+    submitting,
+    submitLocked,
+    canSubmit,
+    getSubmitTooltip,
+    survey,
+    onSubmit,
+    description,
+    rating,
+    comments,
+    engagementData,
+    draftKey,
+    activeDraftKey,
+    unlockSubmit
+  ]);
 
   const handleImageLoad = () => {
     setImageLoaded(true);
@@ -450,21 +478,6 @@ export default function SurveyPage({
     setImageError(true);
     setImageLoaded(false);
     setTimerActive(false);
-  };
-
-  const getSubmitTooltip = () => {
-    if (!imageReady) return getErrorMessage('SYS_002_0018');
-    if (submitting || submitLocked) return "Submitting...";
-    if (wordCount < MIN_WORDS) {
-      return getErrorMessage('VAL_002_0004', 'en', { min_words: MIN_WORDS, actual: wordCount });
-    }
-    if (description.length < MIN_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0002');
-    if (description.length > MAX_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0003');
-    if (rating === 0) return getErrorMessage('VAL_002_0008');
-    const commentsLength = comments.trim().length;
-    if (commentsLength < MIN_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0006');
-    if (commentsLength > MAX_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0007');
-    return "Submit your response";
   };
 
   useEffect(() => {
@@ -498,27 +511,11 @@ export default function SurveyPage({
     return () => window.removeEventListener("keydown", onRatingAndZoomKeys);
   }, [imageReady, isZoomed]);
 
-  useEffect(() => {
-    const isCritical = submitting || submitLocked;
-    if (!isCritical) return undefined;
-
-    const preventUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = "";
-      return "";
-    };
-    const preventBack = () => {
-      window.history.pushState(null, "", window.location.href);
-      setSubmitError("Submission in progress. Please wait before leaving this page.");
-    };
-    window.history.pushState(null, "", window.location.href);
-    window.addEventListener("beforeunload", preventUnload);
-    window.addEventListener("popstate", preventBack);
-    return () => {
-      window.removeEventListener("beforeunload", preventUnload);
-      window.removeEventListener("popstate", preventBack);
-    };
-  }, [submitting, submitLocked]);
+  useNavigationBlocker({
+    enabled: submitting || submitLocked,
+    message: "Submission in progress. Please wait before leaving this page.",
+    onBlocked: setSubmitError,
+  });
 
   const imageSrc = survey?.url
     ? (survey.url.startsWith('http') ? survey.url : getApiUrl(survey.url))

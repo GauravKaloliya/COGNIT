@@ -30,7 +30,6 @@ from app.config import (
     PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
     SUBMIT_RATE_LIMIT,
     ENGAGEMENT_TRACK_RATE_LIMIT,
-    ENGAGEMENT_BULK_RATE_LIMIT,
     PAYMENT_CREATE_RATE_LIMIT,
     PAYMENT_STATUS_RATE_LIMIT,
     PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
@@ -338,12 +337,6 @@ def _build_public_docs(base_url: str) -> dict:
                 "method": "POST",
                 "description": "Track participant engagement events.",
                 "rate_limit": ENGAGEMENT_TRACK_RATE_LIMIT
-            },
-            {
-                "path": "/engagement/track/bulk",
-                "method": "POST",
-                "description": "Track participant engagement events in a bulk request.",
-                "rate_limit": ENGAGEMENT_BULK_RATE_LIMIT
             },
             {
                 "path": "/payments/create",

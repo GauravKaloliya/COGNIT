@@ -9,7 +9,19 @@ const normalizeApiBase = (baseValue) => {
   trimmed = trimmed.trim();
 
   if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const u = new URL(trimmed);
+      // Backend routes are rooted at "/"; guard against accidental "/api" suffix in env.
+      if (u.pathname === "/api" || u.pathname === "/api/") {
+        u.pathname = "";
+        return u.toString().replace(/\/+$/, "");
+      }
+      return trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
   if (trimmed.startsWith("/")) return trimmed;
   return `${window.location.protocol}//${trimmed}`;
 };
@@ -68,7 +80,9 @@ export const API_BASE = resolveConfiguredBase();
 // Helper to get full API URL
 export const getApiUrl = (endpoint) => {
   // Ensure endpoint starts with / and remove any leading slashes to avoid doubles
-  const cleanEndpoint = (endpoint || "").trim().replace(/^\/+/, "");
+  let cleanEndpoint = (endpoint || "").trim().replace(/^\/+/, "");
+  // Defensive: if caller passes "/api/..." while base already points to backend root.
+  cleanEndpoint = cleanEndpoint.replace(/^api\/+/, "");
   const normalizedEndpoint = `/${cleanEndpoint}`;
 
   if (API_BASE) {
