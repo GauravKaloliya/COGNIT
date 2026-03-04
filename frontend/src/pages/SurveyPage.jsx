@@ -6,6 +6,7 @@ import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
+import { useNavigationBlocker } from "../hooks/useNavigationBlocker";
 
 const MIN_WORDS = runtimeConfig.minWords;
 const PRIORITY_WORD_TARGET = runtimeConfig.priorityDescWordTarget;
@@ -498,27 +499,11 @@ export default function SurveyPage({
     return () => window.removeEventListener("keydown", onRatingAndZoomKeys);
   }, [imageReady, isZoomed]);
 
-  useEffect(() => {
-    const isCritical = submitting || submitLocked;
-    if (!isCritical) return undefined;
-
-    const preventUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = "";
-      return "";
-    };
-    const preventBack = () => {
-      window.history.pushState(null, "", window.location.href);
-      setSubmitError("Submission in progress. Please wait before leaving this page.");
-    };
-    window.history.pushState(null, "", window.location.href);
-    window.addEventListener("beforeunload", preventUnload);
-    window.addEventListener("popstate", preventBack);
-    return () => {
-      window.removeEventListener("beforeunload", preventUnload);
-      window.removeEventListener("popstate", preventBack);
-    };
-  }, [submitting, submitLocked]);
+  useNavigationBlocker({
+    enabled: submitting || submitLocked,
+    message: "Submission in progress. Please wait before leaving this page.",
+    onBlocked: setSubmitError,
+  });
 
   const imageSrc = survey?.url
     ? (survey.url.startsWith('http') ? survey.url : getApiUrl(survey.url))

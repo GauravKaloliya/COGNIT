@@ -187,7 +187,7 @@ export default function App() {
     })
   );
   const [toasts, setToasts] = useState([]);
-  const [flowBusyMessage, setFlowBusyMessage] = useState("");
+  const [surveyTransitionInFlight, setSurveyTransitionInFlight] = useState(false);
   const [engagementFlushInFlight, setEngagementFlushInFlight] = useState(false);
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
@@ -325,11 +325,34 @@ export default function App() {
     publicId,
     stage,
     paymentVerified,
+    pauseSurveyPaymentGuard: surveyTransitionInFlight,
     setPaymentVerified,
     setStage,
     setPaymentSubStage,
     addToast,
   });
+
+  const transitionToSurvey = useCallback(async () => {
+    setSurveyTransitionInFlight(true);
+    setPaymentVerified(true);
+    setPaymentSubStage("content");
+    try {
+      const image = await fetchImage({ clearCurrent: true, throwOnError: true });
+      if (!image?.image_id) {
+        setPaymentVerified(false);
+        return false;
+      }
+      if (validateStageTransition("payment", "survey", true)) {
+        setStage("survey");
+      }
+      return true;
+    } catch {
+      setPaymentVerified(false);
+      return false;
+    } finally {
+      setSurveyTransitionInFlight(false);
+    }
+  }, [fetchImage, setPaymentSubStage, setPaymentVerified, setStage]);
 
   const {
     handlePaymentComplete,
@@ -343,27 +366,7 @@ export default function App() {
     setPaymentSubStage,
     setPaymentVerified,
     addToast,
-    transitionToSurvey: async () => {
-      setFlowBusyMessage("Preparing your first survey...");
-      setPaymentVerified(true);
-      setPaymentSubStage("content");
-      try {
-        const image = await fetchImage({ clearCurrent: true, throwOnError: true });
-        if (!image?.image_id) {
-          setPaymentVerified(false);
-          return false;
-        }
-        if (validateStageTransition("payment", "survey", true)) {
-          setStage("survey");
-        }
-        return true;
-      } catch {
-        setPaymentVerified(false);
-        return false;
-      } finally {
-        setFlowBusyMessage("");
-      }
-    },
+    transitionToSurvey,
   });
 
   const canTrackEngagement = isActiveTabOwner && ["payment", "survey", "finished"].includes(stage);
@@ -691,16 +694,6 @@ export default function App() {
   const handleUserDetailsBack = () => setStage("consent");
 
   const renderContent = () => {
-    if (flowBusyMessage) {
-      return (
-        <PageSkeleton
-          title={uiText("status.pleaseWait")}
-          subtitle={flowBusyMessage}
-          variant="flow"
-        />
-      );
-    }
-
     if (systemChecking && !systemReady) {
       return (
         <PageSkeleton
@@ -834,10 +827,7 @@ export default function App() {
           </div>
         )}
 
-        <div
-          key={`${stage}-${paymentSubStage}-${surveyFeedbackReady ? "feedback" : "active"}`}
-          className="route-transition"
-        >
+        <div className="route-transition">
           {renderContent()}
         </div>
 
