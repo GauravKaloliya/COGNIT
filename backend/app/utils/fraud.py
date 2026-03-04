@@ -69,10 +69,20 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
     try:
         result = db.execute(text("""
             SELECT 1
-            FROM payment_files pf
-            JOIN payments p ON p.id = pf.payment_id
-            WHERE pf.sha256 = :hash
-              AND p.status = 'rejected_fraud'
+            FROM payments p
+            LEFT JOIN payment_files pf ON pf.payment_id = p.id
+            WHERE p.status = 'rejected_fraud'
+              AND (
+                    pf.sha256 = :hash
+                    OR EXISTS (
+                        SELECT 1
+                        FROM payment_upload_attempts pua
+                        WHERE pua.payment_id = p.id
+                          AND pua.sha256 = :hash
+                    )
+                    OR p.metadata->>'uploaded_sha256' = :hash
+                    OR p.verification_details->>'uploaded_sha256' = :hash
+              )
             LIMIT 1
         """), {"hash": sha256_hash}).scalar()
         
@@ -128,7 +138,7 @@ def check_near_duplicate_screenshot(
             FROM payment_files pf
             JOIN payments p ON p.id = pf.payment_id
             WHERE pf.image_phash IS NOT NULL
-            LIMIT 5000
+            ORDER BY p.created_at DESC, p.id DESC
         """)).fetchall()
         best_payment = None
         best_distance = None
@@ -148,3 +158,52 @@ def check_near_duplicate_screenshot(
     except Exception as e:
         print(f"[WARN] Near-duplicate screenshot check failed: {e}", flush=True)
         return False, None, None, False
+
+
+def is_same_person_by_fingerprint(
+    db,
+    participant_id: Optional[int],
+    other_participant_id: Optional[int],
+    current_fingerprint: Optional[str] = None
+) -> bool:
+    """
+    Best-effort same-person check using device fingerprint overlap.
+
+    Returns True when participants share at least one fingerprint hash or the
+    current request fingerprint matches the other participant.
+    """
+    if not participant_id or not other_participant_id:
+        return False
+    if participant_id == other_participant_id:
+        return True
+    try:
+        if current_fingerprint:
+            hit = db.execute(text("""
+                SELECT 1
+                FROM device_fingerprints
+                WHERE participant_id = :other_pid
+                  AND fingerprint_hash = :fph
+                LIMIT 1
+            """), {
+                "other_pid": other_participant_id,
+                "fph": current_fingerprint,
+            }).scalar()
+            if hit:
+                return True
+
+        overlap = db.execute(text("""
+            SELECT 1
+            FROM device_fingerprints a
+            JOIN device_fingerprints b
+              ON a.fingerprint_hash = b.fingerprint_hash
+            WHERE a.participant_id = :pid
+              AND b.participant_id = :other_pid
+            LIMIT 1
+        """), {
+            "pid": participant_id,
+            "other_pid": other_participant_id,
+        }).scalar()
+        return bool(overlap)
+    except Exception as e:
+        print(f"[WARN] Fingerprint same-person check failed: {e}", flush=True)
+        return False

@@ -6,9 +6,16 @@ Handles SQLAlchemy engine, session management, and database connection lifecycle
 from flask import g
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import QueuePool
 
-from app.config import DATABASE_URL, DATABASE_SSLMODE
+from app.config import (
+    DATABASE_URL,
+    DATABASE_SSLMODE,
+    DB_POOL_SIZE,
+    DB_MAX_OVERFLOW,
+    DB_POOL_TIMEOUT_SECONDS,
+    DB_POOL_RECYCLE_SECONDS,
+)
 from app.extensions import app
 
 
@@ -37,7 +44,11 @@ def _database_connect_args():
 
 engine = create_engine(
     DATABASE_URL,
-    poolclass=NullPool,
+    poolclass=QueuePool,
+    pool_size=max(1, DB_POOL_SIZE),
+    max_overflow=max(0, DB_MAX_OVERFLOW),
+    pool_timeout=max(1, DB_POOL_TIMEOUT_SECONDS),
+    pool_recycle=max(30, DB_POOL_RECYCLE_SECONDS),
     pool_pre_ping=True,
     connect_args=_database_connect_args()
 )

@@ -1,6 +1,29 @@
 import React from "react";
+import PageSkeleton from "../components/PageSkeleton.jsx";
 
 export default function PaymentContentPage({ onNext, onBack }) {
+  const [continuing, setContinuing] = React.useState(false);
+
+  const handleContinue = async () => {
+    if (continuing) return;
+    setContinuing(true);
+    try {
+      await onNext?.();
+    } finally {
+      setContinuing(false);
+    }
+  };
+
+  if (continuing) {
+    return (
+      <PageSkeleton
+        title="Preparing payment screen"
+        subtitle="Generating secure payment context"
+        variant="payment"
+      />
+    );
+  }
+
   return (
     <div className="panel payment-panel">
       <div className="page-top-actions">
@@ -73,8 +96,8 @@ export default function PaymentContentPage({ onNext, onBack }) {
         </section>
       </div>
 
-      <div className="page-actions">
-        <button className="primary" onClick={onNext}>
+      <div className="page-actions sticky-mobile-actions">
+        <button className="primary" onClick={handleContinue}>
           Continue to Payment
         </button>
       </div>

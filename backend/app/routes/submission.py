@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from flask import jsonify, request, g
+from flask import request, g
 from sqlalchemy import text
 
 from app.config import (
@@ -27,6 +27,11 @@ from app.config import (
     PRIORITY_WORD_THRESHOLD,
     PRIORITY_ROUNDS_THRESHOLD,
     PRIORITY_ATTENTION_THRESHOLD,
+    SUBMIT_RATE_LIMIT,
+    ENGAGEMENT_TRACK_RATE_LIMIT,
+    ENGAGEMENT_BULK_RATE_LIMIT,
+    ENGAGEMENT_EVENT_HISTORY_LIMIT,
+    ENGAGEMENT_BULK_MAX_EVENTS,
 )
 from app.extensions import limiter
 from app.database import get_db
@@ -36,8 +41,21 @@ from app.utils.helpers import (
     calculate_quality_score,
     log_audit,
     create_error_response,
+    success_response,
 )
 from app.utils.decorators import track_performance
+from app.services import (
+    build_request_hash,
+    load_idempotent_response,
+    save_idempotent_response,
+    clamp_time_spent_seconds,
+    normalize_engagement_counts,
+    dynamic_too_fast_threshold as compute_dynamic_too_fast_threshold,
+    evaluate_priority_and_rewards,
+    ensure_submission_workflow_state,
+    StateTransitionError,
+    emit_domain_event,
+)
 from middleware.payment_flow import require_payment_completed
 
 ATTN_TOKEN_SPLIT_RE = re.compile(r"[|,;/]+")
@@ -83,6 +101,7 @@ def _alphabetic_tokens(text: str):
 from flask import Blueprint
 submission_bp = Blueprint('submission', __name__)
 logger = logging.getLogger(__name__)
+ALLOWED_ENGAGEMENT_EVENTS = {"tab_switch", "page_close_attempt", "network_disconnect", "page_view"}
 
 
 # ────────────────────────────────────────────────
@@ -91,12 +110,17 @@ logger = logging.getLogger(__name__)
 
 @submission_bp.route("/submit", methods=["POST"])
 @require_payment_completed
-@limiter.limit("60 per minute")
+@limiter.limit(SUBMIT_RATE_LIMIT)
 @track_performance
 def submit():
     """Submit an image description or survey response."""
     d = request.json or {}
     logger.info("submit request_id=%s", getattr(g, "request_id", None))
+    idempotency_key = (
+        request.headers.get("X-Idempotency-Key")
+        or d.get("idempotency_key")
+        or ""
+    ).strip()[:128]
     public_id = d.get("public_id")
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
@@ -124,40 +148,60 @@ def submit():
     if word_count < MIN_WORD_COUNT:
         return create_error_response("WORD_COUNT", {"actual": word_count})
 
-    ts = d.get("time_spent_seconds")
-    if ts is not None:
-        try:
-            ts = float(ts)
-            if ts < 0:
-                ts = None
-        except:
-            ts = None
+    ts = clamp_time_spent_seconds(d.get("time_spent_seconds"))
 
-    is_survey = bool(d.get("is_survey"))
+    # Derive survey/attention behavior from selected image, not client defaults.
+    is_survey = False
     survey_index = None
-    if is_survey:
-        try:
-            survey_index = int(d["survey_index"])
-            if survey_index < 0:
-                raise ValueError
-        except:
-            return create_error_response("INVALID_FORMAT", {"field": "survey_index", "message": "survey_index must be >= 0"})
 
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
+    request_hash = build_request_hash({
+        "public_id": public_id,
+        "image_id": image_id_str,
+        "description": description,
+        "feedback": feedback,
+        "rating": rating,
+        "time_spent_seconds": ts,
+        "tab_switch_count": d.get("tab_switch_count"),
+        "page_close_attempts": d.get("page_close_attempts"),
+        "network_disconnects": d.get("network_disconnects"),
+    })
 
     try:
         db = get_db()
+        _idem, replay = load_idempotent_response(
+            db,
+            endpoint="/submit",
+            idempotency_key=idempotency_key,
+            participant_public_id=public_id,
+            request_hash=request_hash,
+        )
+        if replay:
+            payload, status_code = replay
+            return success_response(payload), status_code
+
         p_row = db.execute(text("""
-            SELECT id, consent_given, is_deleted, extra_metadata
+            SELECT id, consent_given, is_deleted, extra_metadata, payment_status, current_stage
             FROM participants
             WHERE public_id = :pub
+            FOR UPDATE
         """), {"pub": public_id}).fetchone()
 
         if not p_row or p_row[2]:
             return create_error_response("PARTICIPANT_NOT_FOUND")
         if not p_row[1]:
             return create_error_response("CONSENT_REQUIRED")
+        try:
+            ensure_submission_workflow_state(p_row[4], p_row[5])
+        except StateTransitionError as workflow_err:
+            logger.warning(
+                "submit blocked by state machine request_id=%s public_id=%s reason=%s",
+                getattr(g, "request_id", None),
+                public_id,
+                workflow_err,
+            )
+            return create_error_response("PAYMENT_INVALID_STATE")
 
         participant_id = p_row[0]
         participant_meta = p_row[3] or {}
@@ -174,15 +218,39 @@ def submit():
         if flagged:
             return create_error_response("FLAGGED_ACCOUNT")
 
-        img_row = db.execute(text("SELECT id FROM images WHERE image_id = :iid"), {"iid": image_id_str}).fetchone()
+        img_row = db.execute(text("""
+            SELECT
+                i.id,
+                CASE
+                    WHEN i.tags IS NULL THEN true
+                    WHEN 'non-survey' = ANY(i.tags) THEN false
+                    ELSE true
+                END AS is_survey_image
+            FROM images i
+            WHERE i.image_id = :iid
+        """), {"iid": image_id_str}).fetchone()
         if not img_row:
             return create_error_response("INVALID_IMAGE_ID")
         image_id_fk = img_row[0]
+        is_survey = bool(img_row[1])
 
-        if not is_survey:
+        if is_survey:
+            next_survey_index = db.execute(text("""
+                SELECT COALESCE(MAX(survey_index), 0) + 1
+                FROM submissions
+                WHERE participant_id = :pid
+                  AND is_survey = true
+            """), {"pid": participant_id}).scalar()
+            survey_index = int(next_survey_index or 1)
+        else:
+            survey_index = None
+
             dup = db.execute(text("""
-                SELECT 1 FROM submissions
-                WHERE participant_id = :pid AND image_id = :iid AND is_survey = false
+                SELECT 1
+                FROM submissions
+                WHERE participant_id = :pid
+                  AND image_id = :iid
+                  AND is_survey = false
             """), {"pid": participant_id, "iid": image_id_fk}).scalar()
             if dup:
                 return create_error_response("DUPLICATE_SUBMISSION")
@@ -233,11 +301,11 @@ def submit():
                 attention_passed = False
                 attention_failure_reasons.append("copied_attention_pattern")
 
-        too_fast = ts is not None and ts < TOO_FAST_SECONDS
+        dynamic_too_fast_threshold = compute_dynamic_too_fast_threshold(TOO_FAST_SECONDS, word_count)
+        too_fast = ts is not None and ts < dynamic_too_fast_threshold
         if is_attention and too_fast:
             attention_passed = False
             attention_failure_reasons.append("too_fast_attention")
-        quality = calculate_quality_score(word_count, attention_passed, ts, len(feedback), False)
 
         submission_meta = {}
         if is_attention:
@@ -250,10 +318,25 @@ def submit():
                 "content_fingerprint": description_fingerprint
             }
 
-        # Get engagement tracking data
-        tab_switch_count = d.get("tab_switch_count", 0)
-        page_close_attempts = d.get("page_close_attempts", 0)
-        network_disconnects = d.get("network_disconnects", 0)
+        # Get engagement tracking data (prefer payload, fallback to participant metadata counters).
+        meta_engagement = participant_meta.get("engagement_tracking", {}) if isinstance(participant_meta, dict) else {}
+        engagement = normalize_engagement_counts(d, meta_engagement)
+        tab_switch_count = engagement["tab_switch_count"]
+        page_close_attempts = engagement["page_close_attempts"]
+        network_disconnects = engagement["network_disconnects"]
+
+        quality = calculate_quality_score(
+            word_count,
+            attention_passed,
+            ts,
+            len(feedback),
+            False,
+            distinct_word_count=distinct_word_count,
+            tab_switch_count=tab_switch_count,
+            page_close_attempts=page_close_attempts,
+            network_disconnects=network_disconnects,
+            too_fast_threshold=dynamic_too_fast_threshold,
+        )
 
         submission_row = db.execute(text("""
             INSERT INTO submissions (
@@ -378,8 +461,47 @@ def submit():
             "ath": PRIORITY_ATTENTION_THRESHOLD
         })
 
+        # Link submission to participant's latest successful payment (if any).
+        latest_success_payment_id = db.execute(text("""
+            SELECT id
+            FROM payments
+            WHERE participant_id = :pid
+              AND status = 'success'
+            ORDER BY COALESCE(verified_at, created_at) DESC, id DESC
+            LIMIT 1
+        """), {"pid": participant_id}).scalar()
+        if latest_success_payment_id:
+            db.execute(text("""
+                INSERT INTO payment_submissions (payment_id, submission_id)
+                VALUES (:payment_id, :submission_id)
+                ON CONFLICT DO NOTHING
+            """), {
+                "payment_id": latest_success_payment_id,
+                "submission_id": submission_id
+            })
+
         log_audit(db, "submission", participant_id=participant_id,
                   details=f"wc={word_count} q={quality:.3f} survey={is_survey}")
+        emit_domain_event(
+            db,
+            event_type="submission_saved",
+            correlation_id=str(getattr(g, "request_id", None) or ""),
+            participant_id=participant_id,
+            payload={
+                "submission_id": int(submission_id),
+                "image_id": image_id_str,
+                "is_survey": bool(is_survey),
+                "is_attention_check": bool(is_attention),
+                "survey_index": survey_index,
+                "quality_score": float(quality),
+            },
+        )
+
+        evaluate_priority_and_rewards(
+            db,
+            participant_id,
+            correlation_id=str(getattr(g, "request_id", None) or ""),
+        )
 
         db.commit()
         logger.info(
@@ -392,12 +514,20 @@ def submit():
             attention_passed,
         )
 
-        return jsonify({
+        response_payload = {
             "status": "submitted",
             "word_count": word_count,
             "quality_score": quality,
             "attention_passed": attention_passed,
             "flagged_too_fast": too_fast,
+            "survey_index": survey_index,
+            "is_survey": is_survey,
+            "is_attention_check": is_attention,
+            "engagement": {
+                "tab_switch_count": tab_switch_count,
+                "page_close_attempts": page_close_attempts,
+                "network_disconnects": network_disconnects
+            },
             "attention_status": {
                 "is_attention_check": is_attention,
                 "passed": attention_passed if is_attention else None,
@@ -408,7 +538,21 @@ def submit():
                 "recent_attention_score": recent_attention_score,
                 "hard_flag_triggered": hard_flag_triggered
             }
-        })
+        }
+        save_idempotent_response(
+            db,
+            endpoint="/submit",
+            idempotency_key=idempotency_key,
+            participant_public_id=public_id,
+            request_hash=request_hash,
+            response_body=response_payload,
+            status_code=200,
+        )
+        try:
+            db.commit()
+        except Exception:
+            pass
+        return success_response(response_payload)
 
     except Exception as exc:
         try:
@@ -425,8 +569,58 @@ def submit():
 # Engagement Tracking
 # ────────────────────────────────────────────────
 
+
+def _load_participant_for_engagement(db, public_id: str):
+    row = db.execute(text("""
+        SELECT id, extra_metadata
+        FROM participants
+        WHERE public_id = :pub AND is_deleted = false
+    """), {"pub": public_id}).fetchone()
+    if not row:
+        return None, None
+    participant_id = row[0]
+    current_meta = row[1] or {}
+    if isinstance(current_meta, str):
+        current_meta = json.loads(current_meta)
+    return participant_id, current_meta
+
+
+def _ensure_engagement_meta(meta: dict):
+    if "engagement_tracking" not in meta:
+        meta["engagement_tracking"] = {
+            "tab_switches": 0,
+            "page_close_attempts": 0,
+            "network_disconnects": 0,
+            "page_views": 0,
+            "total_events": 0,
+            "events": []
+        }
+    return meta["engagement_tracking"]
+
+
+def _apply_engagement_event(meta: dict, event_type: str, event_data: dict):
+    tracking = _ensure_engagement_meta(meta)
+    if event_type == "tab_switch":
+        tracking["tab_switches"] += 1
+    elif event_type == "page_close_attempt":
+        tracking["page_close_attempts"] += 1
+    elif event_type == "network_disconnect":
+        tracking["network_disconnects"] += 1
+    elif event_type == "page_view":
+        tracking["page_views"] += 1
+
+    tracking["total_events"] += 1
+    tracking["events"].append({
+        "type": event_type,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data": event_data or {}
+    })
+    if len(tracking["events"]) > ENGAGEMENT_EVENT_HISTORY_LIMIT:
+        tracking["events"] = tracking["events"][-ENGAGEMENT_EVENT_HISTORY_LIMIT:]
+
+
 @submission_bp.route("/engagement/track", methods=["POST"])
-@limiter.limit("60 per minute")
+@limiter.limit(ENGAGEMENT_TRACK_RATE_LIMIT)
 @track_performance
 def track_engagement():
     """Track engagement events for all frontend pages."""
@@ -442,65 +636,17 @@ def track_engagement():
     if not event_type:
         return create_error_response("MISSING_FIELDS", {"fields": ["event_type"]})
     
-    # Validate event_type
-    allowed_events = ["tab_switch", "page_close_attempt", "network_disconnect", "page_view"]
-    if event_type not in allowed_events:
-        return create_error_response("INVALID_FORMAT", {"field": "event_type", "allowed": allowed_events})
+    if event_type not in ALLOWED_ENGAGEMENT_EVENTS:
+        return create_error_response("INVALID_FORMAT", {"field": "event_type", "allowed": sorted(ALLOWED_ENGAGEMENT_EVENTS)})
     
+    db = None
     try:
         db = get_db()
         
-        # Get participant
-        row = db.execute(text("""
-            SELECT id FROM participants
-            WHERE public_id = :pub AND is_deleted = false
-        """), {"pub": public_id}).fetchone()
-        
-        if not row:
+        participant_id, current_meta = _load_participant_for_engagement(db, public_id)
+        if not participant_id:
             return create_error_response("PARTICIPANT_NOT_FOUND")
-        
-        participant_id = row[0]
-
-        # Get current metadata
-        current_meta = db.execute(text("""
-            SELECT extra_metadata FROM participants WHERE id = :pid
-        """), {"pid": participant_id}).scalar() or {}
-        
-        if isinstance(current_meta, str):
-            current_meta = json.loads(current_meta)
-        
-        # Initialize engagement tracking if not exists
-        if "engagement_tracking" not in current_meta:
-            current_meta["engagement_tracking"] = {
-                "tab_switches": 0,
-                "page_close_attempts": 0,
-                "network_disconnects": 0,
-                "page_views": 0,
-                "total_events": 0,
-                "events": []
-            }
-        
-        # Update the specific counter
-        if event_type == "tab_switch":
-            current_meta["engagement_tracking"]["tab_switches"] += 1
-        elif event_type == "page_close_attempt":
-            current_meta["engagement_tracking"]["page_close_attempts"] += 1
-        elif event_type == "network_disconnect":
-            current_meta["engagement_tracking"]["network_disconnects"] += 1
-        elif event_type == "page_view":
-            current_meta["engagement_tracking"]["page_views"] += 1
-
-        current_meta["engagement_tracking"]["total_events"] += 1
-        current_meta["engagement_tracking"]["events"].append({
-            "type": event_type,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "data": event_data
-        })
-        
-        # Keep only last 100 events to prevent unbounded growth
-        if len(current_meta["engagement_tracking"]["events"]) > 100:
-            current_meta["engagement_tracking"]["events"] = current_meta["engagement_tracking"]["events"][-100:]
-        
+        _apply_engagement_event(current_meta, event_type, event_data)
         db.execute(text("""
             UPDATE participants
             SET extra_metadata = :meta, updated_at = CURRENT_TIMESTAMP
@@ -511,17 +657,94 @@ def track_engagement():
         })
         
         db.commit()
-        
-        return jsonify({
+        tracking = current_meta.get("engagement_tracking", {})
+        return success_response({
             "status": "tracked",
             "event_type": event_type,
-            "total_events": current_meta["engagement_tracking"]["total_events"]
+            "total_events": tracking.get("total_events", 0)
         })
         
     except Exception as e:
         try:
-            db.rollback()
+            if db is not None:
+                db.rollback()
         except:
             pass
         logger.error("track engagement failed request_id=%s public_id=%s event_type=%s error=%s", getattr(g, "request_id", None), public_id, event_type, e)
+        return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
+
+
+@submission_bp.route("/engagement/track/bulk", methods=["POST"])
+@limiter.limit(ENGAGEMENT_BULK_RATE_LIMIT)
+@track_performance
+def track_engagement_bulk():
+    """Track a burst of engagement events in one request."""
+    data = request.json or {}
+    logger.info("track_engagement_bulk request_id=%s", getattr(g, "request_id", None))
+    public_id = data.get("public_id")
+    events = data.get("events") or []
+
+    if not public_id:
+        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
+    if not isinstance(events, list) or len(events) == 0:
+        return create_error_response("MISSING_FIELDS", {"fields": ["events"]})
+    if len(events) > ENGAGEMENT_BULK_MAX_EVENTS:
+        return create_error_response(
+            "INVALID_FORMAT",
+            {"field": "events", "reason": f"max {ENGAGEMENT_BULK_MAX_EVENTS} events per request"},
+        )
+
+    db = None
+    try:
+        db = get_db()
+        participant_id, current_meta = _load_participant_for_engagement(db, public_id)
+        if not participant_id:
+            return create_error_response("PARTICIPANT_NOT_FOUND")
+
+        accepted = 0
+        rejected = 0
+        rejected_items = []
+        for idx, event in enumerate(events):
+            if not isinstance(event, dict):
+                rejected += 1
+                rejected_items.append({"index": idx, "reason": "invalid_event_shape"})
+                continue
+            event_type = event.get("event_type")
+            event_data = event.get("event_data") or {}
+            if event_type not in ALLOWED_ENGAGEMENT_EVENTS:
+                rejected += 1
+                rejected_items.append({"index": idx, "reason": "invalid_event_type"})
+                continue
+            _apply_engagement_event(current_meta, event_type, event_data)
+            accepted += 1
+
+        if accepted > 0:
+            db.execute(text("""
+                UPDATE participants
+                SET extra_metadata = :meta, updated_at = CURRENT_TIMESTAMP
+                WHERE id = :pid
+            """), {
+                "meta": json.dumps(current_meta),
+                "pid": participant_id
+            })
+            db.commit()
+        else:
+            db.rollback()
+
+        tracking = current_meta.get("engagement_tracking", {})
+        return success_response({
+            "status": "tracked",
+            "accepted": accepted,
+            "rejected": rejected,
+            "total_events": tracking.get("total_events", 0),
+            "rejected_items": rejected_items[:20],
+        })
+
+    except Exception as e:
+        try:
+            if db is not None:
+                db.rollback()
+        except Exception:
+            pass
+        logger.error("track engagement bulk failed request_id=%s public_id=%s error=%s", getattr(g, "request_id", None), public_id, e)
         return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")

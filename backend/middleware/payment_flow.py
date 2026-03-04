@@ -95,7 +95,7 @@ def require_valid_payment_session(f):
         db = get_db()
 
         result = db.execute(text("""
-            SELECT status, expires_at, amount
+            SELECT status, expires_at
             FROM payments
             WHERE public_id = :pid
         """), {"pid": payment_public_id}).fetchone()
@@ -103,7 +103,7 @@ def require_valid_payment_session(f):
         if not result:
             return create_error_response("NF_PAYMENT")
 
-        status, expires_at, amount = result
+        status, expires_at = result
 
         current_route = request.endpoint or ""
         if "upload" in current_route or "finalize" in current_route:
@@ -132,13 +132,6 @@ def require_valid_payment_session(f):
             return create_error_response(
                 "PAY_EXPIRED",
                 custom_message="Payment session has expired. Please start a new payment.",
-            )
-
-        expected_amount = 1
-        if amount != expected_amount:
-            return create_error_response(
-                "PAY_INVALID_AMOUNT",
-                details=f"Expected {expected_amount}, got {amount}",
             )
 
         return f(*args, **kwargs)

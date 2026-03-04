@@ -1,17 +1,23 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { runtimeConfig } from "../config/runtime";
+import PageSkeleton from "../components/PageSkeleton.jsx";
+import SectionSkeleton from "../components/SectionSkeleton.jsx";
 
-const USERNAME_MIN_LENGTH = parseInt(import.meta.env.VITE_USERNAME_MIN_LENGTH || "2", 10);
-const AGE_MIN = parseInt(import.meta.env.VITE_AGE_MIN || "13", 10);
-const AGE_MAX = parseInt(import.meta.env.VITE_AGE_MAX || "100", 10);
-const LOCATION_MIN_LENGTH = parseInt(import.meta.env.VITE_LOCATION_MIN_LENGTH || "2", 10);
+const USERNAME_MIN_LENGTH = runtimeConfig.usernameMinLength;
+const AGE_MIN = runtimeConfig.ageMin;
+const AGE_MAX = runtimeConfig.ageMax;
+const LOCATION_MIN_LENGTH = runtimeConfig.locationMinLength;
+const LOCATION_PERMISSION_REQUIRED_MESSAGE = "You have to enable location permission to submit this form.";
 
 const DUPLICATE_ERROR_CODES = {
   username: 'DUP_001_0001',
   email: 'DUP_001_0002',
   phone: 'DUP_001_0003'
 };
+
+const sanitizeUsername = (value) => value.replace(/[^a-zA-Z0-9_]/g, "");
 
 export default function UserDetailsPage({
   demographics,
@@ -23,79 +29,220 @@ export default function UserDetailsPage({
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState({ username: false, email: false, phone: false });
+  const [locating, setLocating] = useState(false);
+  const [locationStatus, setLocationStatus] = useState("");
+  const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const debounceTimerRef = useRef({ username: null, email: null, phone: null });
+  const reverseGeocodeAbortRef = useRef(null);
+  const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
 
   useEffect(() => {
     document.title = "User Details - C.O.G.N.I.T.";
   }, []);
 
+  const validateUsernameInput = useCallback((rawUsername) => {
+    const value = String(rawUsername ?? "").trim();
+    if (!value || value.length < USERNAME_MIN_LENGTH) {
+      return getErrorMessage('VAL_001_0010', 'en', { min: USERNAME_MIN_LENGTH });
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+      return getErrorMessage('VAL_001_0011');
+    }
+    return "";
+  }, []);
+
+  const validateEmailInput = useCallback((rawEmail) => {
+    const value = String(rawEmail ?? "").trim().toLowerCase();
+    const allowedEmailDomains = ['gmail.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'me.com', 'mac.com'];
+    if (!value) {
+      return getErrorMessage('VAL_001_0012');
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value)) {
+      return getErrorMessage('VAL_001_0013');
+    }
+    const domain = value.split('@')[1];
+    if (!allowedEmailDomains.includes(domain)) {
+      return getErrorMessage('VAL_001_0014');
+    }
+    return "";
+  }, []);
+
+  const validatePhoneInput = useCallback((rawPhone) => {
+    const phoneDigits = String(rawPhone ?? "").replace(/\D/g, '');
+    if (!phoneDigits) {
+      return getErrorMessage('VAL_001_0015');
+    }
+    const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) ||
+      (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
+    if (!isValidIndian) {
+      return getErrorMessage('VAL_001_0016');
+    }
+    return "";
+  }, []);
+
+  const validateGenderInput = useCallback((rawGender) => {
+    return String(rawGender ?? "").trim() ? "" : getErrorMessage('VAL_001_0017');
+  }, []);
+
+  const validateAgeInput = useCallback((rawAge) => {
+    const trimmed = String(rawAge ?? "").trim();
+    if (!trimmed) {
+      return getErrorMessage('VAL_001_0018');
+    }
+    if (!/^\d+$/.test(trimmed)) {
+      return getErrorMessage('VAL_001_0019', 'en', { min: AGE_MIN, max: AGE_MAX });
+    }
+    const ageNum = Number(trimmed);
+    if (!Number.isInteger(ageNum) || ageNum < AGE_MIN || ageNum > AGE_MAX) {
+      return getErrorMessage('VAL_001_0019', 'en', { min: AGE_MIN, max: AGE_MAX });
+    }
+    return "";
+  }, []);
+
+  const validateLocationInput = useCallback((rawLocation) => {
+    const value = String(rawLocation ?? "").trim();
+    return value.length >= LOCATION_MIN_LENGTH ? "" : getErrorMessage('VAL_001_0020');
+  }, []);
+
+  const validateLanguageInput = useCallback((rawLanguage) => {
+    return String(rawLanguage ?? "").trim() ? "" : getErrorMessage('VAL_001_0021');
+  }, []);
+
+  const validatePriorExperienceInput = useCallback((rawPriorExperience) => {
+    return String(rawPriorExperience ?? "").trim() ? "" : getErrorMessage('VAL_001_0022');
+  }, []);
+
+  const setDetectedLocation = useCallback((value) => {
+    setDemographics((prev) => ({ ...prev, location: value }));
+    setLocationPermissionDenied(false);
+    setErrors((prev) => {
+      if (!prev.location) return prev;
+      const next = { ...prev };
+      delete next.location;
+      return next;
+    });
+  }, [setDemographics]);
+
+  const detectLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationStatus("Geolocation is not supported in this browser.");
+      setLocationPermissionDenied(true);
+      setErrors((prev) => ({
+        ...prev,
+        location: LOCATION_PERMISSION_REQUIRED_MESSAGE,
+      }));
+      return;
+    }
+
+    setLocating(true);
+    setLocationStatus("Requesting location permission...");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const fallback = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        let detectedLocation = fallback;
+
+        try {
+          if (reverseGeocodeAbortRef.current) {
+            reverseGeocodeAbortRef.current.abort();
+          }
+          const controller = new AbortController();
+          reverseGeocodeAbortRef.current = controller;
+          const reverse = await fetch(
+            `${runtimeConfig.reverseGeocodeUrl}?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
+            { signal: controller.signal }
+          );
+          if (reverse.ok) {
+            const data = await reverse.json();
+            const address = data?.address || {};
+            const city = address.city || address.town || address.village || address.hamlet;
+            const state = address.state;
+            const country = address.country;
+            const composed = [city, state, country].filter(Boolean).join(", ");
+            if (composed.length >= LOCATION_MIN_LENGTH) {
+              detectedLocation = composed;
+            }
+          }
+        } catch (_err) {
+          // Keep coordinate fallback when reverse geocoding fails.
+        } finally {
+          reverseGeocodeAbortRef.current = null;
+        }
+
+        setDetectedLocation(detectedLocation);
+        setLocationStatus("Location detected successfully.");
+        setLocating(false);
+      },
+      (error) => {
+        const denied = error?.code === 1;
+        setLocationPermissionDenied(denied);
+        setLocationStatus(denied ? "Location permission denied." : "Unable to detect location.");
+        setErrors((prev) => ({
+          ...prev,
+          location: denied
+            ? LOCATION_PERMISSION_REQUIRED_MESSAGE
+            : "Unable to detect location. Please try again.",
+        }));
+        setLocating(false);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: runtimeConfig.geolocationTimeoutMs,
+        maximumAge: runtimeConfig.geolocationMaxAgeMs,
+      }
+    );
+  }, [setDetectedLocation]);
+
+  useEffect(() => {
+    if (!demographics.location || demographics.location.trim().length < LOCATION_MIN_LENGTH) {
+      detectLocation();
+    }
+  }, [demographics.location, detectLocation]);
+
+  useEffect(() => {
+    return () => {
+      if (reverseGeocodeAbortRef.current) {
+        reverseGeocodeAbortRef.current.abort();
+        reverseGeocodeAbortRef.current = null;
+      }
+      Object.keys(availabilityAbortRef.current).forEach((k) => {
+        if (availabilityAbortRef.current[k]) {
+          availabilityAbortRef.current[k].abort();
+          availabilityAbortRef.current[k] = null;
+        }
+      });
+    };
+  }, []);
+
   const validateForm = () => {
     const newErrors = {};
+    const usernameError = validateUsernameInput(demographics.username);
+    if (usernameError) newErrors.username = usernameError;
 
-    // Username validation - no spaces, no special chars except underscore
-    if (!demographics.username || demographics.username.trim().length < USERNAME_MIN_LENGTH) {
-      newErrors.username = getErrorMessage('VAL_001_0010', 'en', { min: USERNAME_MIN_LENGTH });
-    } else if (!/^[a-zA-Z0-9_]+$/.test(demographics.username)) {
-      newErrors.username = getErrorMessage('VAL_001_0011');
-    }
-    
-    // Email validation - only Gmail, Microsoft (Outlook/Hotmail), Apple (iCloud)
-    const allowedEmailDomains = ['gmail.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'me.com', 'mac.com'];
-    if (!demographics.email) {
-      newErrors.email = getErrorMessage('VAL_001_0012');
-    } else {
-      const emailLower = demographics.email.toLowerCase().trim();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(emailLower)) {
-        newErrors.email = getErrorMessage('VAL_001_0013');
-      } else {
-        const domain = emailLower.split('@')[1];
-        if (!allowedEmailDomains.includes(domain)) {
-          newErrors.email = getErrorMessage('VAL_001_0014');
-        }
-      }
-    }
-    
-    // Phone validation - Indian numbers only (10 digits, starts with 6-9)
-    if (!demographics.phone) {
-      newErrors.phone = getErrorMessage('VAL_001_0015');
-    } else {
-      // Remove all non-digit characters
-      const phoneDigits = demographics.phone.replace(/\D/g, '');
-      // Indian mobile numbers: 10 digits starting with 6, 7, 8, or 9
-      // Also handle +91 prefix (12 digits total)
-      const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
-                            (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
-      if (!isValidIndian) {
-        newErrors.phone = getErrorMessage('VAL_001_0016');
-      }
-    }
-    
-    if (!demographics.gender_code) {
-      newErrors.gender_code = getErrorMessage('VAL_001_0017');
-    }
-    
-    // Age validation - AGE_MIN to AGE_MAX only
-    if (!demographics.age) {
-      newErrors.age = getErrorMessage('VAL_001_0018');
-    } else {
-      const ageNum = parseInt(demographics.age);
-      if (isNaN(ageNum) || ageNum < AGE_MIN || ageNum > AGE_MAX) {
-        newErrors.age = getErrorMessage('VAL_001_0019', 'en', { min: AGE_MIN, max: AGE_MAX });
-      }
-    }
+    const emailError = validateEmailInput(demographics.email);
+    if (emailError) newErrors.email = emailError;
 
-    if (!demographics.location || demographics.location.trim().length < LOCATION_MIN_LENGTH) {
-      newErrors.location = getErrorMessage('VAL_001_0020');
-    }
-    
-    if (!demographics.language_code) {
-      newErrors.language_code = getErrorMessage('VAL_001_0021');
-    }
-    
-    if (!demographics.prior_experience) {
-      newErrors.prior_experience = getErrorMessage('VAL_001_0022');
-    }
+    const phoneError = validatePhoneInput(demographics.phone);
+    if (phoneError) newErrors.phone = phoneError;
+
+    const genderError = validateGenderInput(demographics.gender_code);
+    if (genderError) newErrors.gender_code = genderError;
+
+    const ageError = validateAgeInput(demographics.age);
+    if (ageError) newErrors.age = ageError;
+
+    const locationError = locationPermissionDenied
+      ? LOCATION_PERMISSION_REQUIRED_MESSAGE
+      : validateLocationInput(demographics.location);
+    if (locationError) newErrors.location = locationError;
+
+    const languageError = validateLanguageInput(demographics.language_code);
+    if (languageError) newErrors.language_code = languageError;
+
+    const priorExperienceError = validatePriorExperienceInput(demographics.prior_experience);
+    if (priorExperienceError) newErrors.prior_experience = priorExperienceError;
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -176,6 +323,38 @@ export default function UserDetailsPage({
     }
   };
 
+  const getFieldError = useCallback((field, value) => {
+    switch (field) {
+      case "username":
+        return validateUsernameInput(value);
+      case "email":
+        return validateEmailInput(value);
+      case "phone":
+        return validatePhoneInput(value);
+      case "gender_code":
+        return validateGenderInput(value);
+      case "age":
+        return validateAgeInput(value);
+      case "location":
+        return validateLocationInput(value);
+      case "language_code":
+        return validateLanguageInput(value);
+      case "prior_experience":
+        return validatePriorExperienceInput(value);
+      default:
+        return "";
+    }
+  }, [
+    validateUsernameInput,
+    validateEmailInput,
+    validatePhoneInput,
+    validateGenderInput,
+    validateAgeInput,
+    validateLocationInput,
+    validateLanguageInput,
+    validatePriorExperienceInput,
+  ]);
+
   const checkAvailability = useCallback(async (field, value) => {
     if (!value || value.trim().length === 0) return;
     
@@ -195,11 +374,16 @@ export default function UserDetailsPage({
     setChecking(prev => ({ ...prev, [field]: true }));
     
     try {
+      if (availabilityAbortRef.current[field]) {
+        availabilityAbortRef.current[field].abort();
+      }
+      const controller = new AbortController();
+      availabilityAbortRef.current[field] = controller;
       const request = field === "username"
-        ? endpoints.checkUsername(value.trim())
+        ? endpoints.checkUsername(value.trim(), { signal: controller.signal })
         : field === "email"
-          ? endpoints.checkEmail(value.trim())
-          : endpoints.checkPhone(value.trim());
+          ? endpoints.checkEmail(value.trim(), { signal: controller.signal })
+          : endpoints.checkPhone(value.trim(), { signal: controller.signal });
       const data = await request;
       
       if (!data.available) {
@@ -210,8 +394,12 @@ export default function UserDetailsPage({
         }));
       }
     } catch (error) {
+      if (error?.code === "REQ_ABORTED") {
+        return;
+      }
       // Silently fail - don't block user on network errors
     } finally {
+      availabilityAbortRef.current[field] = null;
       setChecking(prev => ({ ...prev, [field]: false }));
     }
   }, []);
@@ -222,8 +410,24 @@ export default function UserDetailsPage({
     }
     debounceTimerRef.current[field] = setTimeout(() => {
       checkAvailability(field, value);
-    }, 500);
+    }, runtimeConfig.availabilityDebounceMs);
   }, [checkAvailability]);
+
+  const handleFieldBlur = useCallback((field, value, checkDuplicate = false) => {
+    const error = getFieldError(field, value);
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (error) {
+        next[field] = error;
+      } else {
+        delete next[field];
+      }
+      return next;
+    });
+    if (!error && checkDuplicate) {
+      debouncedCheck(field, value);
+    }
+  }, [getFieldError, debouncedCheck]);
 
   const requiredFields = [
     "username",
@@ -243,6 +447,16 @@ export default function UserDetailsPage({
     }
     return value !== null && value !== undefined && value !== "";
   });
+
+  if (submitting) {
+    return (
+      <PageSkeleton
+        title="Saving participant details"
+        subtitle="Validating identity and availability checks"
+        variant="user"
+      />
+    );
+  }
 
   return (
     <div className="panel">
@@ -269,8 +483,8 @@ export default function UserDetailsPage({
             className={errors.username ? 'error-input' : ''}
             placeholder="Enter your username"
             value={demographics.username || ''}
-            onChange={(e) => updateField('username', e.target.value)}
-            onBlur={(e) => debouncedCheck('username', e.target.value)}
+            onChange={(e) => updateField('username', sanitizeUsername(e.target.value))}
+            onBlur={(e) => handleFieldBlur('username', e.target.value, true)}
           />
           {checking.username && <span className="checking-text">Checking...</span>}
           {errors.username && <span className="error-text">{errors.username}</span>}
@@ -284,7 +498,7 @@ export default function UserDetailsPage({
             placeholder="yourname@gmail.com"
             value={demographics.email || ''}
             onChange={(e) => updateField('email', e.target.value)}
-            onBlur={(e) => debouncedCheck('email', e.target.value)}
+            onBlur={(e) => handleFieldBlur('email', e.target.value, true)}
           />
           {checking.email && <span className="checking-text">Checking...</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
@@ -305,7 +519,7 @@ export default function UserDetailsPage({
             }}
             onBlur={(e) => {
               const value = e.target.value.replace(/\D/g, '');
-              debouncedCheck('phone', value);
+              handleFieldBlur('phone', value, true);
             }}
           />
           {checking.phone && <span className="checking-text">Checking...</span>}
@@ -318,6 +532,7 @@ export default function UserDetailsPage({
             className={errors.gender_code ? 'error-input' : ''}
             value={demographics.gender_code || ''}
             onChange={(e) => updateField('gender_code', e.target.value)}
+            onBlur={(e) => handleFieldBlur('gender_code', e.target.value)}
           >
             <option value="" disabled>Select gender</option>
             <option value="male">Male</option>
@@ -344,6 +559,9 @@ export default function UserDetailsPage({
               const value = e.target.value.replace(/\D/g, '');
               updateField('age', value);
             }}
+            onBlur={(e) => {
+              handleFieldBlur('age', e.target.value);
+            }}
           />
           {errors.age && <span className="error-text">{errors.age}</span>}
         </div>
@@ -353,10 +571,26 @@ export default function UserDetailsPage({
           <input
             type="text"
             className={errors.location ? 'error-input' : ''}
-            placeholder="e.g., Mumbai, India"
+            placeholder={locating ? "Detecting your location..." : "Auto-detected location"}
             value={demographics.location || ''}
-            onChange={(e) => updateField('location', e.target.value)}
+            disabled
+            readOnly
           />
+          {locating && !(demographics.location || "").trim() && (
+            <div className="location-skeleton-wrap">
+              <SectionSkeleton title="Detecting your location" rows={2} dense />
+            </div>
+          )}
+          {locationPermissionDenied && !locating && (
+            <button
+              type="button"
+              className="ghost location-permission-btn"
+              onClick={detectLocation}
+            >
+              Enable Location Permission
+            </button>
+          )}
+          {locationStatus && <span className="checking-text">{locationStatus}</span>}
           {errors.location && <span className="error-text">{errors.location}</span>}
         </div>
 
@@ -366,6 +600,7 @@ export default function UserDetailsPage({
             className={errors.language_code ? 'error-input' : ''}
             value={demographics.language_code || ''}
             onChange={(e) => updateField('language_code', e.target.value)}
+            onBlur={(e) => handleFieldBlur('language_code', e.target.value)}
           >
             <option value="" disabled>Select native language</option>
             <option value="en">English</option>
@@ -389,6 +624,7 @@ export default function UserDetailsPage({
             className={errors.prior_experience ? 'error-input' : ''}
             value={demographics.prior_experience || ''}
             onChange={(e) => updateField('prior_experience', e.target.value)}
+            onBlur={(e) => handleFieldBlur('prior_experience', e.target.value)}
           >
             <option value="" disabled>Select prior experience</option>
             <optgroup label="Technical Skills">
@@ -418,11 +654,17 @@ export default function UserDetailsPage({
         </div>
       </div>
 
-      <div className="page-actions">
+      <div className="page-actions sticky-mobile-actions">
         <button
           className="primary"
           onClick={handleSubmit}
-          disabled={!systemReady || submitting || !isFormComplete || Object.keys(errors).length > 0}
+          disabled={
+            !systemReady ||
+            submitting ||
+            !isFormComplete ||
+            locationPermissionDenied ||
+            Object.keys(errors).length > 0
+          }
         >
           {submitting ? "Submitting..." : "Continue"}
         </button>
