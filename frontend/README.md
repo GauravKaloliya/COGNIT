@@ -157,7 +157,7 @@ Set production env in Vercel:
 
 ---
 
-## Resume-Ready Contribution Signals
+## Contribution Signals
 
 - Built a robust multi-stage UX with backend-compatible transition guards.
 - Implemented refresh-safe and reconnect-safe client state restoration.
