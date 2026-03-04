@@ -20,7 +20,7 @@ This repo demonstrates **product thinking + systems engineering + secure backend
 
 ---
 
-## Why This Stands Out (Resume Signal)
+## Why This Stands Out
 
 - Built a **stateful, multi-stage flow engine** across frontend + backend.
 - Implemented **payment screenshot verification** using OCR extraction (Amazon Textract), duplicate hash checks, near-duplicate perceptual hash checks, rejected-reuse detection, and weighted fraud scoring + policy thresholds.
@@ -32,7 +32,7 @@ This repo demonstrates **product thinking + systems engineering + secure backend
 
 ---
 
-## Recruiter-Friendly Project Summary
+## Project Summary
 
 C.O.G.N.I.T. is a research-grade data collection platform where participant trust, anti-fraud protection, and data quality are all first-class. The system combines secure backend validation with a user-friendly frontend to keep completion rates high while minimizing low-quality or fraudulent submissions.
 
@@ -295,22 +295,13 @@ Template env files:
 
 ---
 
-## Engineering Decisions Worth Highlighting
+## Engineering Decisions
 
 - Kept backend as source of truth for critical transitions.
 - Used service layer (`payment_service`, `payment_verify_service`, `submission_service`) to keep route handlers lean.
 - Added domain event emission (`submission_saved`, `priority_qualified`, `reward_selected`) for traceability.
 - Used storage schema versioning + expiry for resilient client-side flow restore.
 - Guarded duplicate writes through idempotency on high-risk mutating routes.
-
----
-
-## Resume Bullet Options (Copy/Paste)
-
-- Designed and delivered a production-style research platform (React + Flask + PostgreSQL) with a multi-stage participant lifecycle and robust payment-gated access control.
-- Built an OCR-driven anti-fraud payment verification engine using AWS Textract + S3 with duplicate, near-duplicate, and rejected-reuse detection plus weighted risk scoring.
-- Implemented idempotency, state-machine guards, standardized error contracts, and audit logging to improve reliability under retries, refreshes, and intermittent connectivity.
-- Architected quality-aware submission scoring and automated priority/reward eligibility pipelines based on behavioral and textual quality signals.
 
 ---
 
