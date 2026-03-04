@@ -186,7 +186,7 @@ Production recommendations:
 
 ---
 
-## Resume-Ready Contribution Signals
+## Contribution Signals
 
 - Designed a service-oriented Flask backend with state-machine guarded workflows.
 - Built OCR + fraud-scored payment verification with duplicate and near-duplicate protection.
