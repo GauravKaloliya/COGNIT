@@ -20,7 +20,7 @@ const VERIFICATION_REASON_CODES = {
   ocr_unavailable: 'SYS_001_0004',
   missing_paid_bhim: 'FRAUD_002_0005',
 };
-const MAX_UPLOAD_MB = runtimeConfig.maxUploadMb;
+const MAX_UPLOAD_MB = runtimeConfig.paymentUploadMaxMb;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const PAYMENT_STATE_KEY = "payment_link_state_v1";
 const PAYMENT_STATE_SCHEMA_VERSION = runtimeConfig.paymentStateSchemaVersion;
@@ -768,7 +768,11 @@ export default function PaymentLinkPage({
         return;
       }
 
-      if (err.code) {
+      if (err.code === "VAL_003_0005" || err.status === 413) {
+        const actualMb = (uploadFile?.size || 0) / (1024 * 1024);
+        const sizeLabel = Number.isFinite(actualMb) ? actualMb.toFixed(2) : "unknown";
+        showRetryHintError(`File size is ${sizeLabel}MB. Max allowed is ${MAX_UPLOAD_MB}MB.`);
+      } else if (err.code) {
         showRetryHintError(err.message || getErrorMessage(err.code));
       } else if (err.message && err.message.toLowerCase().includes('timeout')) {
         showRetryHintError(getErrorMessage('SYS_002_0008'));

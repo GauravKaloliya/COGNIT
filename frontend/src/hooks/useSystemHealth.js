@@ -80,11 +80,11 @@ export function useSystemHealth({
   }, [probeApiReachability]);
 
   useEffect(() => {
-    if (!browserOnline) return undefined;
+    if (!browserOnline || apiReachable) return undefined;
     probeApiReachability();
     const interval = setInterval(probeApiReachability, runtimeConfig.networkProbeIntervalMs);
     return () => clearInterval(interval);
-  }, [browserOnline, probeApiReachability]);
+  }, [browserOnline, apiReachable, probeApiReachability]);
 
   useEffect(() => {
     let cancelled = false;
