@@ -349,10 +349,8 @@ export default function SurveyPage({
       startedAt: surveyStartTime.current,
       engagementData
     };
-    try {
-      writeSurveyDraft(draftKey, payload);
-      writeSurveyDraft(activeDraftKey, payload);
-    } catch {}
+    writeSurveyDraft(draftKey, payload);
+    writeSurveyDraft(activeDraftKey, payload);
   }, [
     draftKey,
     activeDraftKey,
@@ -382,7 +380,22 @@ export default function SurveyPage({
     };
   }, [timerActive]);
 
-  const handleSubmit = async () => {
+  const getSubmitTooltip = useCallback(() => {
+    if (!imageReady) return getErrorMessage('SYS_002_0018');
+    if (submitting || submitLocked) return "Submitting...";
+    if (wordCount < MIN_WORDS) {
+      return getErrorMessage('VAL_002_0004', 'en', { min_words: MIN_WORDS, actual: wordCount });
+    }
+    if (description.length < MIN_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0002');
+    if (description.length > MAX_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0003');
+    if (rating === 0) return getErrorMessage('VAL_002_0008');
+    const commentsLength = comments.trim().length;
+    if (commentsLength < MIN_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0006');
+    if (commentsLength > MAX_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0007');
+    return "Submit your response";
+  }, [imageReady, submitting, submitLocked, wordCount, description, rating, comments]);
+
+  const handleSubmit = useCallback(async () => {
     if (submitting || submitLocked) {
       return;
     }
@@ -439,7 +452,21 @@ export default function SurveyPage({
       setSubmitting(false);
       unlockSubmit(runtimeConfig.submitUnlockCompleteDelayMs);
     }
-  };
+  }, [
+    submitting,
+    submitLocked,
+    canSubmit,
+    getSubmitTooltip,
+    survey,
+    onSubmit,
+    description,
+    rating,
+    comments,
+    engagementData,
+    draftKey,
+    activeDraftKey,
+    unlockSubmit
+  ]);
 
   const handleImageLoad = () => {
     setImageLoaded(true);
@@ -451,21 +478,6 @@ export default function SurveyPage({
     setImageError(true);
     setImageLoaded(false);
     setTimerActive(false);
-  };
-
-  const getSubmitTooltip = () => {
-    if (!imageReady) return getErrorMessage('SYS_002_0018');
-    if (submitting || submitLocked) return "Submitting...";
-    if (wordCount < MIN_WORDS) {
-      return getErrorMessage('VAL_002_0004', 'en', { min_words: MIN_WORDS, actual: wordCount });
-    }
-    if (description.length < MIN_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0002');
-    if (description.length > MAX_DESCRIPTION_LENGTH) return getErrorMessage('VAL_002_0003');
-    if (rating === 0) return getErrorMessage('VAL_002_0008');
-    const commentsLength = comments.trim().length;
-    if (commentsLength < MIN_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0006');
-    if (commentsLength > MAX_FEEDBACK_LENGTH) return getErrorMessage('VAL_002_0007');
-    return "Submit your response";
   };
 
   useEffect(() => {

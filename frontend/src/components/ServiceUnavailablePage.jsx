@@ -8,6 +8,15 @@ import PanelState from './PanelState.jsx';
 export default function ServiceUnavailablePage({ error, darkMode = false, onToggleDarkMode, onRetry, isRetrying = false }) {
   const [retryInSeconds, setRetryInSeconds] = React.useState(runtimeConfig.serviceRetrySeconds);
 
+  React.useEffect(() => {
+    if (retryInSeconds <= 0 || isRetrying) return;
+    const t = setTimeout(
+      () => setRetryInSeconds((prev) => Math.max(0, prev - 1)),
+      runtimeConfig.countdownTickMs
+    );
+    return () => clearTimeout(t);
+  }, [retryInSeconds, isRetrying]);
+
   if (isRetrying) {
     return (
       <div className="app">
@@ -37,15 +46,6 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
       </div>
     );
   }
-
-  React.useEffect(() => {
-    if (retryInSeconds <= 0) return;
-    const t = setTimeout(
-      () => setRetryInSeconds((prev) => Math.max(0, prev - 1)),
-      runtimeConfig.countdownTickMs
-    );
-    return () => clearTimeout(t);
-  }, [retryInSeconds]);
 
   const handleRetry = () => {
     setRetryInSeconds(runtimeConfig.serviceRetrySeconds);

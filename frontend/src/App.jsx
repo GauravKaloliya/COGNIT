@@ -188,7 +188,6 @@ export default function App() {
   );
   const [toasts, setToasts] = useState([]);
   const [surveyTransitionInFlight, setSurveyTransitionInFlight] = useState(false);
-  const [engagementFlushInFlight, setEngagementFlushInFlight] = useState(false);
   const engagementFlushInFlightRef = useRef(false);
   const lastEngagementFlushAtRef = useRef(0);
   const engagementFlushRetryAfterRef = useRef(0);
@@ -294,13 +293,10 @@ export default function App() {
 
   const {
     survey,
-    setSurvey,
     surveyCompleted,
-    setSurveyCompleted,
     surveyFeedbackReady,
     setSurveyFeedbackReady,
     shownImages,
-    setShownImages,
     imageError,
     isFetchingImage,
     showConfetti,
@@ -415,45 +411,17 @@ export default function App() {
 
     lastEngagementFlushAtRef.current = now;
     engagementFlushInFlightRef.current = true;
-    setEngagementFlushInFlight(true);
+    // keep UI quiet; use ref-only lock for engagement flush.
     const remaining = [];
-    const chunkSize = Math.max(1, runtimeConfig.engagementFlushBatchSize);
-    for (let i = 0; i < queue.length; i += chunkSize) {
-      const chunk = queue.slice(i, i + chunkSize);
+    for (const event of queue) {
       try {
-        const payload = {
-          public_id: publicId,
-          events: chunk.map((event) => ({
-            event_type: event.event_type,
-            event_data: event.event_data || {}
-          }))
-        };
-        const result = await endpoints.trackEngagementBulk(payload);
-        const rejectedIndexes = new Set(
-          Array.isArray(result?.rejected_items)
-            ? result.rejected_items
-              .map((item) => Number(item?.index))
-              .filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < chunk.length)
-            : []
-        );
-        chunk.forEach((event, idx) => {
-          if (rejectedIndexes.has(idx)) {
-            remaining.push(event);
-          }
+        await endpoints.trackEngagement({
+          public_id: event.public_id || publicId,
+          event_type: event.event_type,
+          event_data: event.event_data || {}
         });
       } catch {
-        // Fallback to single-event flush for compatibility with older backends.
-        for (const event of chunk) {
-          try {
-            await endpoints.trackEngagement({
-              public_id: event.public_id || publicId,
-              event_type: event.event_type,
-              event_data: event.event_data || {}
-            });
-          } catch {
-            remaining.push(event);
-          }
-        }
+        remaining.push(event);
       }
     }
     writeEngagementQueue(remaining);
@@ -463,7 +431,6 @@ export default function App() {
       engagementFlushRetryAfterRef.current = 0;
     }
     engagementFlushInFlightRef.current = false;
-    setEngagementFlushInFlight(false);
   }, [publicId, canTrackEngagement, online, readEngagementQueue, writeEngagementQueue]);
 
   useEffect(() => saveStoredValue("publicId", publicId), [publicId]);

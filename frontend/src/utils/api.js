@@ -158,7 +158,6 @@ export const endpoints = {
   // Submissions
   submitDescription: (data, options = {}) => api.post('/submit', data, options),
   trackEngagement: (data, options = {}) => api.post('/engagement/track', data, options),
-  trackEngagementBulk: (data, options = {}) => api.post('/engagement/track/bulk', data, options),
   
   // Payment
   createPayment: (publicId, amount, options = {}) => api.post('/payments/create', {
