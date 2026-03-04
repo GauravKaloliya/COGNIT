@@ -9,7 +9,7 @@ from PIL import Image
 from flask import jsonify
 from sqlalchemy import text
 
-from app.config import S3_BUCKET_NAME, UPI_NAME
+from app.config import S3_BUCKET_NAME, UPI_NAME, PAYMENT_MAX_IMAGE_MB
 from app.extensions import s3
 from app.utils.helpers import create_error_response, validate_image_extension, log_audit, get_ip_hash
 from app.utils.ocr import (
@@ -180,6 +180,13 @@ def process_verify_upload(
         if "," in image_base64:
             image_base64 = image_base64.split(",")[1]
         image_bytes = base64.b64decode(image_base64)
+        max_bytes = max(1, int(PAYMENT_MAX_IMAGE_MB)) * 1024 * 1024
+        if len(image_bytes) > max_bytes:
+            return create_error_response(
+                "VAL_FILE_TOO_LARGE",
+                details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": "payment_image_too_large"},
+                custom_message=f"The file is too large. Please upload an image smaller than {int(PAYMENT_MAX_IMAGE_MB)}MB."
+            )
         image = Image.open(BytesIO(image_bytes))
     except Exception:
         return create_error_response("INVALID_FORMAT", {"field": "image_base64", "message": "Invalid image data"})
