@@ -81,9 +81,13 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
             icon="!"
             title="Service Unavailable"
             message={error || getErrorMessage('SYS_001_0004')}
-            actionLabel={isRetrying ? "Retrying..." : "Reload"}
+            actionLabel={
+              isRetrying
+                ? "Retrying..."
+                : (retryInSeconds > 0 ? uiText("common.tryAgainIn", { seconds: retryInSeconds }) : "Reload")
+            }
             onAction={handleRetry}
-            disabled={isRetrying}
+            disabled={isRetrying || retryInSeconds > 0}
           />
 
           <div className="service-unavailable-card">
@@ -97,8 +101,6 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
               <li>Contact support if the problem continues</li>
             </ul>
           </div>
-
-          {retryInSeconds > 0 && <p className="retry-hint">{uiText("common.tryAgainIn", { seconds: retryInSeconds })}</p>}
         </div>
       </div>
 

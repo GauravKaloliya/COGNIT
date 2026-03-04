@@ -1017,8 +1017,6 @@ export default function PaymentLinkPage({
           </ul>
         </div>
       )}
-      {retryInSeconds > 0 && <p className="retry-hint">{uiText("payment.tryAgainIn", { seconds: retryInSeconds })}</p>}
-
       <div className="payment-content">
         {paymentData && paymentStatus === "pending" && (
           <section className="payment-card">
