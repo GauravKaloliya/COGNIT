@@ -103,6 +103,7 @@ if not PAYMENT_SECRET:
 PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 PAYMENT_SCREENSHOT_TIMEZONE = os.getenv("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
 PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = int(os.getenv("PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS", "300"))
+PAYMENT_VERIFICATION_TIME_GRACE_SECONDS = int(os.getenv("PAYMENT_VERIFICATION_TIME_GRACE_SECONDS", "180"))
 
 
 # ────────────────────────────────────────────────
@@ -265,7 +266,7 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "FRAUD_UNRECOGNIZED_APP": {"code": "FRAUD_001_0003", "message": "Please use Google Pay, Paytm, or BHIM", "status": 400, "category": "FRAUD"},
     "FRAUD_INVALID_BANKING_NAME": {"code": "FRAUD_001_0004", "message": "Payment not made to the correct beneficiary", "status": 400, "category": "FRAUD"},
     "FRAUD_INVALID_AMOUNT": {"code": "FRAUD_001_0005", "message": "Payment amount must be exactly ₹1", "status": 400, "category": "FRAUD"},
-    "FRAUD_TIME_OUT_OF_RANGE": {"code": "FRAUD_001_0006", "message": "Payment time is not within the valid 5-minute window", "status": 400, "category": "FRAUD"},
+    "FRAUD_TIME_OUT_OF_RANGE": {"code": "FRAUD_001_0006", "message": "Payment time is outside the allowed payment-session window", "status": 400, "category": "FRAUD"},
     "FRAUD_INVALID_TIMESTAMP": {"code": "FRAUD_001_0007", "message": "Could not read payment time from screenshot", "status": 400, "category": "FRAUD"},
     "FRAUD_MISSING_TIMESTAMP": {"code": "FRAUD_001_0008", "message": "Payment time not found in screenshot", "status": 400, "category": "FRAUD"},
     "FRAUD_VPA_MISMATCH": {"code": "FRAUD_002_0001", "message": "Payment not made to correct UPI ID", "status": 400, "category": "FRAUD"},

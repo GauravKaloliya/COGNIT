@@ -27,6 +27,7 @@ from app.config import (
     AWS_SECRET_ACCESS_KEY,
     PAYMENT_SCREENSHOT_TIMEZONE,
     PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS,
+    PAYMENT_VERIFICATION_TIME_GRACE_SECONDS,
 )
 from app.extensions import s3
 
@@ -342,7 +343,9 @@ def verify_payment_screenshot(
     text: str,
     expected_amount: float,
     confidence: float,
-    expected_upi_name: str
+    expected_upi_name: str,
+    time_window_start_utc: Optional[datetime] = None,
+    time_window_end_utc: Optional[datetime] = None,
 ) -> Tuple[bool, Optional[str], List[str]]:
     """
     Validate UPI payment screenshot with app-specific and global rules.
@@ -431,7 +434,8 @@ def verify_payment_screenshot(
     if re.search(r"(?:₹\s*1(?:\.00)?\b|rs\.?\s*1(?:\.00)?\b)", lower, re.IGNORECASE) is None:
         failures.append("invalid_amount")
 
-    # Rule 3: app-specific date+time must be parsable/unambiguous and within 5 minutes.
+    # Rule 3: app-specific date+time must be parsable/unambiguous and within
+    # either the payment session window (preferred) or fallback absolute diff window.
     if _is_datetime_ambiguous(text, detected_app):
         if detected_app == "gpay":
             failures.append("invalid_datetime_format_gpay")
@@ -442,11 +446,26 @@ def verify_payment_screenshot(
     else:
         transaction_time = _extract_timestamp(text, detected_app)
         if transaction_time:
-            now = datetime.now(timezone.utc)
             transaction_time_utc = transaction_time.astimezone(timezone.utc)
-            time_diff = abs((now - transaction_time_utc).total_seconds())
-            if time_diff > PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS:
-                failures.append("time_out_of_range")
+            grace = max(0, int(PAYMENT_VERIFICATION_TIME_GRACE_SECONDS))
+
+            if time_window_start_utc and time_window_end_utc:
+                start_utc = time_window_start_utc
+                end_utc = time_window_end_utc
+
+                if start_utc.tzinfo is None:
+                    start_utc = start_utc.replace(tzinfo=timezone.utc)
+                if end_utc.tzinfo is None:
+                    end_utc = end_utc.replace(tzinfo=timezone.utc)
+
+                txn_ts = transaction_time_utc.timestamp()
+                if txn_ts < (start_utc.timestamp() - grace) or txn_ts > (end_utc.timestamp() + grace):
+                    failures.append("time_out_of_range")
+            else:
+                now = datetime.now(timezone.utc)
+                time_diff = abs((now - transaction_time_utc).total_seconds())
+                if time_diff > PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS:
+                    failures.append("time_out_of_range")
         else:
             if detected_app == "gpay":
                 failures.append("invalid_datetime_format_gpay")

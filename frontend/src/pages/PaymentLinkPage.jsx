@@ -65,6 +65,10 @@ export default function PaymentLinkPage({
   }, []);
   const [isMobile, setIsMobile] = useState(detectMobileClient);
   const isCriticalAction = verifying || isLoading;
+  const retryBlocked = retryInSeconds > 0;
+  const retryButtonLabel = retryBlocked
+    ? uiText("payment.tryAgainIn", { seconds: retryInSeconds })
+    : "Try Again";
 
   const beginOperation = useCallback(() => {
     opVersionRef.current += 1;
@@ -870,10 +874,9 @@ export default function PaymentLinkPage({
             ))}
           </ul>
         </div>
-        {retryInSeconds > 0 && <p className="retry-hint">{uiText("payment.tryAgainIn", { seconds: retryInSeconds })}</p>}
         <div className="page-actions">
-          <button className="primary" onClick={restartPayment}>
-            Try Again
+          <button className="primary" onClick={restartPayment} disabled={retryBlocked}>
+            {retryButtonLabel}
           </button>
         </div>
       </div>
@@ -898,10 +901,9 @@ export default function PaymentLinkPage({
         <div className="banner warning spaced">
           {error || getErrorMessage('PAY_001_0001')}
         </div>
-        {retryInSeconds > 0 && <p className="retry-hint">{uiText("payment.tryAgainIn", { seconds: retryInSeconds })}</p>}
         <div className="page-actions">
-          <button className="primary" onClick={restartPayment}>
-            Try Again
+          <button className="primary" onClick={restartPayment} disabled={retryBlocked}>
+            {retryButtonLabel}
           </button>
         </div>
       </div>
@@ -926,7 +928,6 @@ export default function PaymentLinkPage({
         <div className="banner warning spaced">
           {error || getErrorMessage('FRAUD_002_0009')}
         </div>
-        {retryInSeconds > 0 && <p className="retry-hint">{uiText("payment.tryAgainIn", { seconds: retryInSeconds })}</p>}
         {failureReasons.length > 0 && (
           <div className="payment-failure-details">
             <p><strong>Verification issues:</strong></p>
@@ -946,8 +947,8 @@ export default function PaymentLinkPage({
           </ul>
         </div>
         <div className="page-actions">
-          <button className="primary" onClick={restartPayment}>
-            Try Again
+          <button className="primary" onClick={restartPayment} disabled={retryBlocked}>
+            {retryButtonLabel}
           </button>
         </div>
       </div>
@@ -1083,75 +1084,79 @@ export default function PaymentLinkPage({
               <span className="payment-card-emoji" aria-hidden="true">📤</span>
               Upload Payment Screenshot
             </h3>
-            {verifying ? (
+            <p>After completing the payment, upload a screenshot from Google Pay, Paytm, or BHIM.</p>
+            {verifying && (
               <div className="payment-verifying-text">
                 Verifying screenshot and confirming payment...
               </div>
-            ) : (
-              <>
-                <p>After completing the payment, upload a screenshot from Google Pay, Paytm, or BHIM.</p>
-                <div className="payment-upload-stack">
-                  <div
-                    className="payment-upload-preview-box"
-                    onClick={() => fileInputRef.current?.click()}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        fileInputRef.current?.click();
+            )}
+            <div className={`payment-upload-stack${verifying ? " is-verifying" : ""}`}>
+              <div
+                className="payment-upload-preview-box"
+                onClick={() => {
+                  if (!verifying) {
+                    fileInputRef.current?.click();
+                  }
+                }}
+                role="button"
+                tabIndex={verifying ? -1 : 0}
+                aria-disabled={verifying}
+                onKeyDown={(event) => {
+                  if (verifying) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+              >
+                {uploadPreviewUrl ? (
+                  <img src={uploadPreviewUrl} alt="Payment screenshot preview" className="payment-upload-preview" />
+                ) : (
+                  <div className="payment-upload-placeholder">
+                    <p>📷</p>
+                    <p>Click to upload payment screenshot</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="payment-upload-meta-box">
+                <p className="payment-upload-file-name">
+                  {uploadFile ? `✅ ${uploadFile.name}` : "No image selected"}
+                </p>
+                <p className="payment-note">Click image above to change</p>
+                <div className="payment-upload-actions">
+                  <button
+                    className="ghost"
+                    type="button"
+                    disabled={verifying}
+                    onClick={() => {
+                      if (uploadFile) {
+                        clearSelectedFile();
+                        return;
                       }
+                      fileInputRef.current?.click();
                     }}
                   >
-                    {uploadPreviewUrl ? (
-                      <img src={uploadPreviewUrl} alt="Payment screenshot preview" className="payment-upload-preview" />
-                    ) : (
-                      <div className="payment-upload-placeholder">
-                        <p>📷</p>
-                        <p>Click to upload payment screenshot</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="payment-upload-meta-box">
-                    <p className="payment-upload-file-name">
-                      {uploadFile ? `✅ ${uploadFile.name}` : "No image selected"}
-                    </p>
-                    <p className="payment-note">Click image above to change</p>
-                    <div className="payment-upload-actions">
-                      <button
-                        className="ghost"
-                        type="button"
-                        onClick={() => {
-                          if (uploadFile) {
-                            clearSelectedFile();
-                            return;
-                          }
-                          fileInputRef.current?.click();
-                        }}
-                      >
-                        {uploadFile ? "Remove Image" : "Select Image"}
-                      </button>
-                      <button
-                        className="primary"
-                        onClick={handleUploadAndFinalize}
-                        disabled={!uploadFile}
-                      >
-                        Confirm Payment
-                      </button>
-                    </div>
-                  </div>
-
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    style={{ display: "none" }}
-                  />
+                    {uploadFile ? "Remove Image" : "Select Image"}
+                  </button>
+                  <button
+                    className="primary"
+                    onClick={handleUploadAndFinalize}
+                    disabled={!uploadFile || verifying}
+                  >
+                    {verifying ? "Verifying..." : "Confirm Payment"}
+                  </button>
                 </div>
-              </>
-            )}
+              </div>
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleFileChange}
+                style={{ display: "none" }}
+              />
+            </div>
           </section>
         )}
       </div>
