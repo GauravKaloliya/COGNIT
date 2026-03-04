@@ -10,6 +10,7 @@ configure_logging()
 import logging
 import uuid
 from datetime import datetime, timezone
+import time
 
 from flask import jsonify, render_template, request, g
 from sqlalchemy import text
@@ -17,8 +18,36 @@ from sqlalchemy import text
 from app.extensions import app, limiter
 from app.database import engine, get_db
 from app.utils.decorators import track_performance
-from app.utils.helpers import create_error_response
+from app.utils.helpers import create_error_response, success_response
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
+from app.config import (
+    DOCS_BASE_URL,
+    ROOT_RATE_LIMIT,
+    DOCS_RATE_LIMIT,
+    PARTICIPANT_CREATE_RATE_LIMIT,
+    PARTICIPANT_CHECK_RATE_LIMIT,
+    CONSENT_RATE_LIMIT,
+    PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+    SUBMIT_RATE_LIMIT,
+    ENGAGEMENT_TRACK_RATE_LIMIT,
+    ENGAGEMENT_BULK_RATE_LIMIT,
+    PAYMENT_CREATE_RATE_LIMIT,
+    PAYMENT_STATUS_RATE_LIMIT,
+    PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
+    FLASK_DEBUG,
+    FLASK_HOST,
+    FLASK_PORT,
+    SECURITY_HSTS_ENABLED,
+    SECURITY_HSTS_MAX_AGE,
+    SECURITY_HSTS_INCLUDE_SUBDOMAINS,
+    SECURITY_HSTS_PRELOAD,
+    SECURITY_FRAME_OPTIONS,
+    SECURITY_REFERRER_POLICY,
+    SECURITY_PERMISSIONS_POLICY,
+    SECURITY_CONTENT_TYPE_OPTIONS,
+    SECURITY_XSS_PROTECTION,
+    HEALTH_CACHE_TTL_SECONDS,
+)
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -81,11 +110,46 @@ def log_response(response):
             except Exception:
                 pass
 
+    # Normalize successful JSON responses to strict envelope:
+    # { "success": true, "data": ... }
+    try:
+        if response.is_json and 200 <= int(response.status_code) < 400:
+            payload = response.get_json(silent=True)
+            if isinstance(payload, dict) and "success" not in payload:
+                wrapped = jsonify({"success": True, "data": payload})
+                wrapped.status_code = response.status_code
+                response = wrapped
+    except Exception:
+        # Never block response on envelope normalization failure.
+        pass
+
     if hasattr(g, 'request_start_time'):
         duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
         logger.info(
             f"RESPONSE {request.method} {request.path} - {response.status_code} - {duration_ms}ms request_id={request_id}"
         )
+
+    # Security headers (production-safe defaults; env overridable).
+    try:
+        if SECURITY_CONTENT_TYPE_OPTIONS:
+            response.headers.setdefault("X-Content-Type-Options", SECURITY_CONTENT_TYPE_OPTIONS)
+        if SECURITY_FRAME_OPTIONS:
+            response.headers.setdefault("X-Frame-Options", SECURITY_FRAME_OPTIONS)
+        if SECURITY_REFERRER_POLICY:
+            response.headers.setdefault("Referrer-Policy", SECURITY_REFERRER_POLICY)
+        if SECURITY_PERMISSIONS_POLICY:
+            response.headers.setdefault("Permissions-Policy", SECURITY_PERMISSIONS_POLICY)
+        if SECURITY_XSS_PROTECTION:
+            response.headers.setdefault("X-XSS-Protection", SECURITY_XSS_PROTECTION)
+        if SECURITY_HSTS_ENABLED and request.is_secure:
+            hsts_value = f"max-age={SECURITY_HSTS_MAX_AGE}"
+            if SECURITY_HSTS_INCLUDE_SUBDOMAINS:
+                hsts_value += "; includeSubDomains"
+            if SECURITY_HSTS_PRELOAD:
+                hsts_value += "; preload"
+            response.headers.setdefault("Strict-Transport-Security", hsts_value)
+    except Exception:
+        pass
     return response
 
 
@@ -135,14 +199,42 @@ def handle_unexpected_error(error):
 def health():
     """Server and database health check endpoint."""
     logger.info("Health check initiated")
+    now_ts = time.time()
+    cache = getattr(app, "_health_cache", None)
+    if cache and (now_ts - cache.get("checked_at", 0.0)) <= max(0.5, HEALTH_CACHE_TTL_SECONDS):
+        cached_ok = bool(cache.get("ok"))
+        if cached_ok:
+            return success_response(cache.get("data", {"status": "healthy", "database": "connected"}))
+        return create_error_response(
+            "SYS_INTERNAL_ERROR",
+            details=cache.get("details", {}),
+            custom_message=cache.get("message", "Service degraded")
+        )
+
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info("Health check passed")
-        return jsonify({"status": "healthy", "database": "connected"})
+        data = {"status": "healthy", "database": "connected"}
+        app._health_cache = {
+            "checked_at": now_ts,
+            "ok": True,
+            "data": data,
+        }
+        return success_response(data)
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return jsonify({"status": "degraded", "error": str(e)}), 503
+        app._health_cache = {
+            "checked_at": now_ts,
+            "ok": False,
+            "message": "Service degraded",
+            "details": {"status": "degraded", "error": str(e)},
+        }
+        return create_error_response(
+            "SYS_INTERNAL_ERROR",
+            details={"status": "degraded", "error": str(e)},
+            custom_message="Service degraded"
+        )
 
 
 # ────────────────────────────────────────────────
@@ -150,11 +242,11 @@ def health():
 # ────────────────────────────────────────────────
 
 @app.route("/")
-@limiter.limit("30 per minute")
+@limiter.limit(ROOT_RATE_LIMIT)
 @track_performance
 def root():
     """Root endpoint with API documentation page."""
-    base_url = "https://api.cognit.online"
+    base_url = DOCS_BASE_URL
     return render_template("api_docs.html", base_url=base_url)
 
 
@@ -176,10 +268,8 @@ def _build_public_docs(base_url: str) -> dict:
             {
                 "path": "/participants",
                 "method": "POST",
-                "description": "Register a participant.",
+                "description": "Register a participant. `public_id` and `session_id` are auto-generated if omitted.",
                 "body_example": {
-                    "public_id": "550e8400-e29b-41d4-a716-446655440000",
-                    "session_id": "sess_abc123xyz",
                     "username": "user123",
                     "email": "user@gmail.com",
                     "phone": "9876543210",
@@ -188,42 +278,43 @@ def _build_public_docs(base_url: str) -> dict:
                     "location": "ahmedabad",
                     "language_code": "en",
                     "prior_experience": "some experience"
-                },
-                "rate_limit": "30/min"
+                },                
+                "rate_limit": PARTICIPANT_CREATE_RATE_LIMIT
             },
             {
                 "path": "/check-username",
                 "method": "GET",
                 "description": "Check username availability.",
                 "query_params": {"username": "string (required)"},
-                "rate_limit": "30/min"
+                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT
             },
             {
                 "path": "/check-email",
                 "method": "GET",
                 "description": "Check email availability.",
                 "query_params": {"email": "string (required)"},
-                "rate_limit": "30/min"
+                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT
             },
             {
                 "path": "/check-phone",
                 "method": "GET",
                 "description": "Check phone availability.",
                 "query_params": {"phone": "string (required)"},
-                "rate_limit": "30/min"
+                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT
             },
             {
                 "path": "/consent",
                 "method": "POST",
                 "description": "Record participant consent.",
                 "body_example": {"public_id": "550e8400-e29b-41d4-a716-446655440000"},
-                "rate_limit": "20/min"
+                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
+                "rate_limit": CONSENT_RATE_LIMIT
             },
             {
                 "path": "/participants/{public_id}/payment-status",
                 "method": "GET",
                 "description": "Get participant payment verification status.",
-                "rate_limit": "30/min"
+                "rate_limit": PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT
             },
             {
                 "path": "/images/random",
@@ -239,43 +330,52 @@ def _build_public_docs(base_url: str) -> dict:
                 "path": "/submit",
                 "method": "POST",
                 "description": "Submit image description or survey response.",
-                "rate_limit": "60/min"
+                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
+                "rate_limit": SUBMIT_RATE_LIMIT
             },
             {
                 "path": "/engagement/track",
                 "method": "POST",
                 "description": "Track participant engagement events.",
-                "rate_limit": "60/min"
+                "rate_limit": ENGAGEMENT_TRACK_RATE_LIMIT
+            },
+            {
+                "path": "/engagement/track/bulk",
+                "method": "POST",
+                "description": "Track participant engagement events in a bulk request.",
+                "rate_limit": ENGAGEMENT_BULK_RATE_LIMIT
             },
             {
                 "path": "/payments/create",
                 "method": "POST",
                 "description": "Create payment session and return UPI details + QR.",
-                "rate_limit": "20/min"
+                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
+                "rate_limit": PAYMENT_CREATE_RATE_LIMIT
             },
             {
                 "path": "/payments/{payment_id}/status",
                 "method": "GET",
                 "description": "Get payment status and remaining time.",
-                "rate_limit": "30/min"
+                "rate_limit": PAYMENT_STATUS_RATE_LIMIT
             },
             {
                 "path": "/payments/{payment_id}/verify-upload",
                 "method": "POST",
                 "description": "Verify uploaded payment screenshot.",
-                "rate_limit": "20/min"
+                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
+                "rate_limit": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT
             }
         ],
     }
 
 
 @app.route("/docs")
-@limiter.limit("30 per minute")
+@limiter.limit(DOCS_RATE_LIMIT)
 @track_performance
 def api_docs():
     """JSON API documentation endpoint."""
-    base_url = "https://api.cognit.online"
-    return jsonify(_build_public_docs(base_url))
+    base_url = DOCS_BASE_URL
+    return success_response(_build_public_docs(base_url))
 
 
 # ────────────────────────────────────────────────
@@ -283,4 +383,4 @@ def api_docs():
 # ────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=FLASK_DEBUG, host=FLASK_HOST, port=FLASK_PORT)

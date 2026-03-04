@@ -4,8 +4,9 @@ Handles participant registration, validation, and consent.
 """
 
 import re
+import uuid
 
-from flask import jsonify, request
+from flask import request
 from sqlalchemy import text
 
 from app.extensions import limiter
@@ -14,8 +15,21 @@ from app.utils.helpers import (
     get_ip_hash,
     log_audit,
     create_error_response,
+    success_response,
 )
+from app.utils.runtime_cache import set_cached_participant_id
 from app.utils.decorators import track_performance
+from app.services import (
+    build_request_hash,
+    load_idempotent_response,
+    save_idempotent_response,
+)
+from app.config import (
+    PARTICIPANT_CREATE_RATE_LIMIT,
+    PARTICIPANT_CHECK_RATE_LIMIT,
+    CONSENT_RATE_LIMIT,
+    PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+)
 
 
 # ────────────────────────────────────────────────
@@ -31,19 +45,20 @@ participant_bp = Blueprint('participant', __name__)
 # ────────────────────────────────────────────────
 
 @participant_bp.route("/participants", methods=["POST"])
-@limiter.limit("30 per minute")
+@limiter.limit(PARTICIPANT_CREATE_RATE_LIMIT)
 @track_performance
 def create_participant():
     """Create a new participant registration."""
     data = request.json or {}
-    required = ["public_id", "session_id", "username", "email", "phone", "gender_code", "age", "location", "language_code", "prior_experience"]
+    required = ["username", "email", "phone", "gender_code", "age", "location", "language_code", "prior_experience"]
     missing = [f for f in required if f not in data or not data[f]]
     if missing:
         return create_error_response("MISSING_FIELDS", {"fields": missing})
 
-    public_id = str(data["public_id"]).strip()
-    if not re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', public_id, re.I):
+    public_id = str(data.get("public_id") or uuid.uuid4()).strip()
+    if data.get("public_id") and not re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', public_id, re.I):
         return create_error_response("INVALID_UUID", {"field": "public_id"})
+    session_id = str(data.get("session_id") or f"sess_{uuid.uuid4().hex}").strip()[:128]
 
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
@@ -61,7 +76,7 @@ def create_participant():
             RETURNING id
         """), {
             "pub": public_id,
-            "sid": str(data["session_id"]).strip()[:128],
+            "sid": session_id,
             "un": str(data["username"]).strip()[:50],
             "em": str(data["email"]).strip().lower()[:255],
             "ph": str(data["phone"]).strip()[:20],
@@ -76,11 +91,12 @@ def create_participant():
         participant_id = result.scalar()
         if participant_id is None:
             raise RuntimeError("participant insert did not return id")
+        set_cached_participant_id(public_id, int(participant_id))
         
         log_audit(db, "participant_created", participant_id=participant_id, details=f"public_id={public_id}")
         db.commit()
         print(f"[INFO] Participant created: {public_id[:8]}...", flush=True)
-        return jsonify({"status": "created", "public_id": public_id}), 201
+        return success_response({"status": "created", "public_id": public_id, "session_id": session_id}), 201
     except Exception as e:
         try:
             db.rollback()
@@ -125,7 +141,7 @@ def create_participant():
 
 
 @participant_bp.route("/check-username")
-@limiter.limit("30 per minute")
+@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
 @track_performance
 def check_username():
     """Check if username is available for registration."""
@@ -133,7 +149,7 @@ def check_username():
     if not username:
         return create_error_response("MISSING_FIELDS", {"fields": ["username"]})
     if len(username) < 2:
-        return jsonify({"available": True})
+        return success_response({"available": True})
     try:
         db = get_db()
         exists = db.execute(text("""
@@ -141,14 +157,14 @@ def check_username():
             WHERE username = :un AND is_deleted = false
             LIMIT 1
         """), {"un": username}).scalar()
-        return jsonify({"available": not bool(exists)})
+        return success_response({"available": not bool(exists)})
     except Exception as e:
         print(f"[ERROR] check_username failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
 @participant_bp.route("/check-email")
-@limiter.limit("30 per minute")
+@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
 @track_performance
 def check_email():
     """Check if email is already registered."""
@@ -162,14 +178,14 @@ def check_email():
             WHERE email = :em AND is_deleted = false
             LIMIT 1
         """), {"em": email}).scalar()
-        return jsonify({"available": not bool(exists)})
+        return success_response({"available": not bool(exists)})
     except Exception as e:
         print(f"[ERROR] check_email failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
 @participant_bp.route("/check-phone")
-@limiter.limit("30 per minute")
+@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
 @track_performance
 def check_phone():
     """Check if phone number is already registered."""
@@ -183,42 +199,69 @@ def check_phone():
             WHERE phone = :ph AND is_deleted = false
             LIMIT 1
         """), {"ph": phone}).scalar()
-        return jsonify({"available": not bool(exists)})
+        return success_response({"available": not bool(exists)})
     except Exception as e:
         print(f"[ERROR] check_phone failed: {e}", flush=True)
         return create_error_response("DATABASE_ERROR")
 
 
 @participant_bp.route("/consent", methods=["POST"])
-@limiter.limit("20 per minute")
+@limiter.limit(CONSENT_RATE_LIMIT)
 @track_performance
 def record_consent():
     """Record participant consent agreement."""
     data = request.json or {}
     public_id = data.get("public_id")
+    idempotency_key = (
+        request.headers.get("X-Idempotency-Key")
+        or data.get("idempotency_key")
+        or ""
+    ).strip()[:128]
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
     try:
         db = get_db()
+        request_hash = ""
+        if idempotency_key:
+            request_hash = build_request_hash({
+                "public_id": str(public_id).strip(),
+            })
+            _idem, replay = load_idempotent_response(
+                db,
+                endpoint="/consent",
+                idempotency_key=idempotency_key,
+                participant_public_id=str(public_id).strip(),
+                request_hash=request_hash,
+            )
+            if replay:
+                payload, status_code = replay
+                return success_response(payload), status_code
+
         row = db.execute(text("""
-            SELECT id FROM participants
+            UPDATE participants
+            SET consent_given = true, consent_at = CURRENT_TIMESTAMP
             WHERE public_id = :pub AND is_deleted = false
-            FOR UPDATE
+            RETURNING id
         """), {"pub": public_id}).fetchone()
         if not row:
             return create_error_response("PARTICIPANT_NOT_FOUND")
         pid = row[0]
-
-        db.execute(text("""
-            UPDATE participants
-            SET consent_given = true, consent_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {"pid": pid})
         log_audit(db, "consent_recorded", participant_id=pid)
+        response_payload = {"status": "consent recorded"}
+        if idempotency_key:
+            save_idempotent_response(
+                db,
+                endpoint="/consent",
+                idempotency_key=idempotency_key,
+                participant_public_id=str(public_id).strip(),
+                request_hash=request_hash,
+                response_body=response_payload,
+                status_code=200,
+            )
         db.commit()
         print(f"[INFO] Consent recorded for participant: {public_id[:8]}...", flush=True)
-        return jsonify({"status": "consent recorded"})
+        return success_response(response_payload)
     except Exception as e:
         try:
             db.rollback()
@@ -229,7 +272,7 @@ def record_consent():
 
 
 @participant_bp.route("/participants/<public_id>/payment-status")
-@limiter.limit("30 per minute")
+@limiter.limit(PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT)
 @track_performance
 def get_participant_payment_status(public_id):
     """
@@ -255,11 +298,7 @@ def get_participant_payment_status(public_id):
         
         # Check for successful payment
         is_paid = payment_status == 'paid'
-        
-        # If payment is not verified, return error
-        if not is_paid:
-            return create_error_response("PAYMENT_NOT_VERIFIED")
-        
+
         # Check for any successful payment record
         payment_row = db.execute(text("""
             SELECT public_id, status, verified_at, detected_app
@@ -268,14 +307,15 @@ def get_participant_payment_status(public_id):
             ORDER BY created_at DESC
             LIMIT 1
         """), {"pid": participant_id}).fetchone()
-        
-        return jsonify({
+
+        return success_response({
             "payment_status": payment_status,
-            "is_verified": True,
+            "is_verified": bool(is_paid and payment_row),
             "current_stage": current_stage,
             "payment_id": str(payment_row[0]) if payment_row else None,
             "verified_at": payment_row[2].isoformat() if payment_row and payment_row[2] else None,
-            "detected_app": payment_row[3] if payment_row else None
+            "detected_app": payment_row[3] if payment_row else None,
+            "reason": None if is_paid else "payment_not_verified",
         })
     except Exception as e:
         print(f"[ERROR] get_participant_payment_status failed: {e}", flush=True)

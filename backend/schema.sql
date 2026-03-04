@@ -418,7 +418,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     word_count          INTEGER NOT NULL CHECK (word_count >= 0),
     rating              SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 10),
     feedback            TEXT NOT NULL CHECK (length(feedback) BETWEEN 5 AND 2000),
-    time_spent_seconds  REAL CHECK (time_spent_seconds >= 0),
+    time_spent_seconds  REAL NOT NULL DEFAULT 0 CHECK (time_spent_seconds >= 0),
     is_survey           BOOLEAN NOT NULL DEFAULT FALSE,
     is_attention_check  BOOLEAN NOT NULL DEFAULT FALSE,
     attention_passed    BOOLEAN,
@@ -427,9 +427,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     ip_hash             CHAR(64) NOT NULL,
     user_agent          VARCHAR(512),
     extra_metadata      JSONB NOT NULL DEFAULT '{}',
-    tab_switch_count    INTEGER NOT NULL DEFAULT 0,
-    page_close_attempts INTEGER NOT NULL DEFAULT 0,
-    network_disconnects INTEGER NOT NULL DEFAULT 0,
+    tab_switch_count    INTEGER NOT NULL DEFAULT 0 CHECK (tab_switch_count >= 0),
+    page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (page_close_attempts >= 0),
+    network_disconnects INTEGER NOT NULL DEFAULT 0 CHECK (network_disconnects >= 0),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
@@ -529,6 +529,33 @@ CREATE TRIGGER trg_activity_stats_updated
 
 CREATE INDEX IF NOT EXISTS idx_activity_priority_eligible ON participant_activity_stats (priority_eligible);
 
+CREATE TABLE IF NOT EXISTS priority_participants (
+    id                        BIGSERIAL PRIMARY KEY,
+    participant_id            BIGINT NOT NULL UNIQUE REFERENCES participants(id) ON DELETE CASCADE,
+    total_words               BIGINT NOT NULL DEFAULT 0 CHECK (total_words >= 0),
+    completed_rounds          INTEGER NOT NULL DEFAULT 0 CHECK (completed_rounds >= 0),
+    total_tab_switch          INTEGER NOT NULL DEFAULT 0 CHECK (total_tab_switch >= 0),
+    total_page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (total_page_close_attempts >= 0),
+    total_network_disconnects INTEGER NOT NULL DEFAULT 0 CHECK (total_network_disconnects >= 0),
+    avg_time_spent_seconds    NUMERIC(10,2) DEFAULT 0 CHECK (avg_time_spent_seconds >= 0),
+    avg_feedback_length       NUMERIC(10,2) DEFAULT 0 CHECK (avg_feedback_length >= 0),
+    avg_rating                NUMERIC(5,2)  DEFAULT 0 CHECK (avg_rating >= 0),
+    avg_quality_score         NUMERIC(5,4)  DEFAULT 0 CHECK (avg_quality_score BETWEEN 0 AND 1),
+    is_eligible               BOOLEAN NOT NULL DEFAULT FALSE,
+    reason_code               VARCHAR(60),
+    metadata                  JSONB NOT NULL DEFAULT '{}',
+    last_evaluated_at         TIMESTAMPTZ,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_priority_participants_updated
+    BEFORE UPDATE ON priority_participants
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_priority_participants_eligible
+    ON priority_participants (is_eligible, avg_quality_score DESC, completed_rounds DESC);
+
 -- =====================================================================
 -- PAYMENTS & FRAUD
 -- =====================================================================
@@ -615,6 +642,32 @@ CREATE TRIGGER trg_payment_files_status_guard
     BEFORE INSERT OR UPDATE OF payment_id ON payment_files
     FOR EACH ROW EXECUTE FUNCTION validate_payment_file_status();
 
+CREATE TABLE IF NOT EXISTS payment_upload_attempts (
+    id               BIGSERIAL PRIMARY KEY,
+    payment_id       BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+    participant_id   BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    idempotency_key  VARCHAR(128),
+    sha256           CHAR(64) NOT NULL CHECK (length(sha256) = 64),
+    file_extension   VARCHAR(16),
+    mime_type        VARCHAR(120),
+    file_size        BIGINT CHECK (file_size IS NULL OR file_size >= 0),
+    image_phash      VARCHAR(64),
+    status           VARCHAR(32) NOT NULL DEFAULT 'started'
+        CHECK (status IN ('started','success','rejected','duplicate','expired','invalid_state','error')),
+    detected_app     VARCHAR(60),
+    failure_reasons  JSONB NOT NULL DEFAULT '[]',
+    fraud_score      NUMERIC(5,2),
+    details          JSONB NOT NULL DEFAULT '{}',
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at     TIMESTAMPTZ,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment ON payment_upload_attempts (payment_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_sha256 ON payment_upload_attempts (sha256);
+CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_status ON payment_upload_attempts (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_idempotency ON payment_upload_attempts (idempotency_key) WHERE idempotency_key IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS payment_fraud_signals (
     id           BIGSERIAL PRIMARY KEY,
     payment_id   BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
@@ -650,13 +703,11 @@ CREATE INDEX IF NOT EXISTS idx_payment_submissions_submission_payment ON payment
 CREATE TABLE IF NOT EXISTS reward_winners (
     id             BIGSERIAL PRIMARY KEY,
     participant_id BIGINT NOT NULL UNIQUE REFERENCES participants(id) ON DELETE CASCADE,
-    reward_amount  INTEGER NOT NULL CHECK (reward_amount > 0),
     reason_code    VARCHAR(60),
+    is_selected    BOOLEAN NOT NULL DEFAULT TRUE,
     selected_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status         VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending','paid','cancelled','expired')),
-    paid_at        TIMESTAMPTZ,
-    transaction_ref VARCHAR(120),
     notes          TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -730,6 +781,24 @@ CREATE INDEX IF NOT EXISTS idx_payment_audit_payment     ON payment_audit_log (p
 CREATE INDEX IF NOT EXISTS idx_payment_audit_participant ON payment_audit_log (participant_id);
 CREATE INDEX IF NOT EXISTS idx_payment_audit_event_type  ON payment_audit_log (event_type);
 CREATE INDEX IF NOT EXISTS idx_payment_audit_created     ON payment_audit_log (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    id                    BIGSERIAL PRIMARY KEY,
+    endpoint              VARCHAR(120) NOT NULL,
+    idempotency_key       VARCHAR(128) NOT NULL,
+    participant_public_id UUID,
+    request_hash          CHAR(64) NOT NULL CHECK (length(request_hash) = 64),
+    response_body         JSONB NOT NULL DEFAULT '{}',
+    status_code           INTEGER NOT NULL DEFAULT 200,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at            TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_unique
+    ON idempotency_keys (endpoint, idempotency_key, participant_public_id);
+CREATE INDEX IF NOT EXISTS idx_idempotency_created
+    ON idempotency_keys (created_at DESC);
 
 -- =====================================================================
 -- PERFORMANCE METRICS (optional but useful)

@@ -61,9 +61,25 @@ PRIORITY_WORD_THRESHOLD = int(os.getenv("PRIORITY_WORD_THRESHOLD", "500"))
 PRIORITY_ROUNDS_THRESHOLD = int(os.getenv("PRIORITY_ROUNDS_THRESHOLD", "3"))
 PRIORITY_ATTENTION_THRESHOLD = float(os.getenv("PRIORITY_ATTENTION_THRESHOLD", "0.75"))
 PRIORITY_MIN_SUBMISSIONS = int(os.getenv("PRIORITY_MIN_SUBMISSIONS", "3"))
+PRIORITY_QUEUE_MIN_TOTAL_WORDS = int(os.getenv("PRIORITY_QUEUE_MIN_TOTAL_WORDS", "120"))
+PRIORITY_QUEUE_MIN_ROUNDS = int(os.getenv("PRIORITY_QUEUE_MIN_ROUNDS", "3"))
+REWARD_MAX_AVG_TIME_SECONDS = float(os.getenv("REWARD_MAX_AVG_TIME_SECONDS", "180"))
+REWARD_MIN_AVG_FEEDBACK_LENGTH = int(os.getenv("REWARD_MIN_AVG_FEEDBACK_LENGTH", "20"))
+REWARD_MIN_AVG_RATING = float(os.getenv("REWARD_MIN_AVG_RATING", "7"))
+REWARD_MIN_AVG_QUALITY_SCORE = float(os.getenv("REWARD_MIN_AVG_QUALITY_SCORE", "0.75"))
 
 PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.10"))
+ENABLE_PERFORMANCE_METRICS = os.getenv("ENABLE_PERFORMANCE_METRICS", "true").lower() == "true"
 MAX_CONTENT_LENGTH_MB = int(os.getenv("MAX_CONTENT_LENGTH_MB", "8"))
+
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+DB_POOL_TIMEOUT_SECONDS = int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "30"))
+DB_POOL_RECYCLE_SECONDS = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
+PARTICIPANT_CACHE_TTL_SECONDS = int(os.getenv("PARTICIPANT_CACHE_TTL_SECONDS", "600"))
+IMAGE_POOL_CACHE_TTL_SECONDS = int(os.getenv("IMAGE_POOL_CACHE_TTL_SECONDS", "60"))
+
+HEALTH_CACHE_TTL_SECONDS = float(os.getenv("HEALTH_CACHE_TTL_SECONDS", "5.0"))
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 VERCEL_ENV = os.getenv("VERCEL_ENV", "development")
@@ -86,6 +102,7 @@ if not PAYMENT_SECRET:
     raise ValueError("PAYMENT_SECRET is required")
 PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
 PAYMENT_SCREENSHOT_TIMEZONE = os.getenv("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
+PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = int(os.getenv("PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS", "300"))
 
 
 # ────────────────────────────────────────────────
@@ -102,6 +119,7 @@ SUCCESS_KEYWORDS = ["success", "successful", "completed", "paid", "payment succe
 FAILURE_KEYWORDS = ["failed", "pending", "declined", "cancelled"]
 MIN_OCR_CONFIDENCE = int(os.getenv("MIN_OCR_CONFIDENCE", "55"))
 MIN_IMAGE_WIDTH = int(os.getenv("MIN_IMAGE_WIDTH", "600"))
+IMAGE_VALIDATE_URL_AVAILABILITY = os.getenv("IMAGE_VALIDATE_URL_AVAILABILITY", "false").lower() == "true"
 
 
 # ────────────────────────────────────────────────
@@ -275,6 +293,7 @@ _ERROR_KEY_ALIASES = {
     "MISSING_FIELDS": "VAL_MISSING_FIELDS",
     "INVALID_FORMAT": "VAL_INVALID_FORMAT",
     "INVALID_UUID": "VAL_INVALID_REQUEST_ID",
+    "RATE_LIMIT": "RATE_LIMIT_EXCEEDED",
     "DESCRIPTION_LENGTH": "VAL_DESC_LENGTH",
     "FEEDBACK_LENGTH": "VAL_FEEDBACK_LENGTH",
     "RATING_INVALID": "VAL_RATING_INVALID",
@@ -296,6 +315,7 @@ _ERROR_KEY_ALIASES = {
     "DUPLICATE_IMAGE": "FRAUD_DUPLICATE_IMAGE",
     "DUPLICATE_IMAGE_SELF": "FRAUD_DUPLICATE_IMAGE_SELF",
     "REJECTED_REUSE": "FRAUD_REJECTED_REUSE",
+    "PAYMENT_REJECTED": "FRAUD_MISSING_SUCCESS",
 }
 for _legacy_key, _canonical_key in _ERROR_KEY_ALIASES.items():
     if _canonical_key in ERROR_CODES:
@@ -352,6 +372,25 @@ if not SECRET_KEY:
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
 CORS_SUPPORTS_CREDENTIALS = os.getenv("CORS_SUPPORTS_CREDENTIALS", "true").lower() == "true"
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "true").lower() == "true"
+
+
+# ────────────────────────────────────────────────
+# HTTP Security Headers
+# ────────────────────────────────────────────────
+
+SECURITY_HSTS_ENABLED = os.getenv("SECURITY_HSTS_ENABLED", "true").lower() == "true"
+SECURITY_HSTS_MAX_AGE = int(os.getenv("SECURITY_HSTS_MAX_AGE", "31536000"))
+SECURITY_HSTS_INCLUDE_SUBDOMAINS = os.getenv("SECURITY_HSTS_INCLUDE_SUBDOMAINS", "true").lower() == "true"
+SECURITY_HSTS_PRELOAD = os.getenv("SECURITY_HSTS_PRELOAD", "false").lower() == "true"
+SECURITY_FRAME_OPTIONS = os.getenv("SECURITY_FRAME_OPTIONS", "DENY")
+SECURITY_REFERRER_POLICY = os.getenv("SECURITY_REFERRER_POLICY", "strict-origin-when-cross-origin")
+SECURITY_PERMISSIONS_POLICY = os.getenv(
+    "SECURITY_PERMISSIONS_POLICY",
+    "geolocation=(), microphone=(), camera=()"
+)
+SECURITY_CONTENT_TYPE_OPTIONS = os.getenv("SECURITY_CONTENT_TYPE_OPTIONS", "nosniff")
+SECURITY_XSS_PROTECTION = os.getenv("SECURITY_XSS_PROTECTION", "0")
 
 
 # ────────────────────────────────────────────────
@@ -359,3 +398,34 @@ CORS_SUPPORTS_CREDENTIALS = os.getenv("CORS_SUPPORTS_CREDENTIALS", "true").lower
 # ────────────────────────────────────────────────
 
 RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+
+
+# ────────────────────────────────────────────────
+# Route Rate Limits & Runtime Tunables
+# ────────────────────────────────────────────────
+
+DOCS_BASE_URL = os.getenv("DOCS_BASE_URL", WEBSITE_URL)
+FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
+FLASK_PORT = int(os.getenv("FLASK_PORT", os.getenv("PORT", "5000")))
+FLASK_DEBUG = os.getenv("FLASK_DEBUG", "true").lower() == "true"
+
+ROOT_RATE_LIMIT = os.getenv("ROOT_RATE_LIMIT", "30 per minute")
+DOCS_RATE_LIMIT = os.getenv("DOCS_RATE_LIMIT", "30 per minute")
+PARTICIPANT_CREATE_RATE_LIMIT = os.getenv("PARTICIPANT_CREATE_RATE_LIMIT", "30 per minute")
+PARTICIPANT_CHECK_RATE_LIMIT = os.getenv("PARTICIPANT_CHECK_RATE_LIMIT", "30 per minute")
+CONSENT_RATE_LIMIT = os.getenv("CONSENT_RATE_LIMIT", "20 per minute")
+PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT = os.getenv("PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT", "30 per minute")
+SUBMIT_RATE_LIMIT = os.getenv("SUBMIT_RATE_LIMIT", "60 per minute")
+PAYMENT_CREATE_RATE_LIMIT = os.getenv("PAYMENT_CREATE_RATE_LIMIT", "20 per minute")
+PAYMENT_VERIFY_UPLOAD_RATE_LIMIT = os.getenv("PAYMENT_VERIFY_UPLOAD_RATE_LIMIT", "20 per minute")
+PAYMENT_STATUS_RATE_LIMIT = os.getenv("PAYMENT_STATUS_RATE_LIMIT", "30 per minute")
+ENGAGEMENT_TRACK_RATE_LIMIT = os.getenv("ENGAGEMENT_TRACK_RATE_LIMIT", "120 per minute")
+ENGAGEMENT_BULK_RATE_LIMIT = os.getenv("ENGAGEMENT_BULK_RATE_LIMIT", "30 per minute")
+
+ENGAGEMENT_EVENT_HISTORY_LIMIT = int(os.getenv("ENGAGEMENT_EVENT_HISTORY_LIMIT", "100"))
+ENGAGEMENT_BULK_MAX_EVENTS = int(os.getenv("ENGAGEMENT_BULK_MAX_EVENTS", "50"))
+OFFLINE_ENGAGEMENT_QUEUE_MAX = int(os.getenv("OFFLINE_ENGAGEMENT_QUEUE_MAX", "200"))
+
+IMAGE_PICK_ATTEMPTS_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_ATTENTION", "4"))
+IMAGE_PICK_ATTEMPTS_NON_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_NON_ATTENTION", "8"))
+IMAGE_PICK_ATTEMPTS_FALLBACK = int(os.getenv("IMAGE_PICK_ATTEMPTS_FALLBACK", "10"))

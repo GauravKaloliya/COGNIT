@@ -26,6 +26,7 @@ from app.config import (
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     PAYMENT_SCREENSHOT_TIMEZONE,
+    PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS,
 )
 from app.extensions import s3
 
@@ -356,7 +357,7 @@ def verify_payment_screenshot(
     Global rules (apply to all apps):
     - Banking name: Must contain "gaurav" (case-insensitive)
     - Amount: Must contain "₹" and "1" (case insensitive for Rs/rs)
-    - Time: Within 5 minutes of NOW (absolute difference ≤ 300 seconds)
+    - Time: Within configured window of NOW (absolute difference <= PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS)
 
     Args:
         image: PIL Image object
@@ -375,14 +376,16 @@ def verify_payment_screenshot(
 
     has_paytm = re.search(r"\bpaytm\b", lower, re.IGNORECASE) is not None
     has_bhim = re.search(r"\bbhim\b", lower, re.IGNORECASE) is not None
+    has_paid_to_cognit = re.search(r"paid\s+to\s+cognit", lower, re.IGNORECASE) is not None
 
-    # Google Pay usually has no app-name text, so fallback to gpay by default.
     if has_paytm:
         detected_app = "paytm"
     elif has_bhim:
         detected_app = "bhim"
-    else:
+    elif has_paid_to_cognit:
         detected_app = "gpay"
+    else:
+        detected_app = "unknown"
 
     # Explicitly reject known non-allowed app names if present.
     disallowed_app_markers = [
@@ -392,16 +395,20 @@ def verify_payment_screenshot(
     ]
     if any(re.search(p, lower, re.IGNORECASE) for p in disallowed_app_markers):
         failures.append("unrecognized_app")
-        return False, None, failures
+        return False, "unknown", failures
 
     # Enforce OCR confidence floor.
     if confidence < MIN_OCR_CONFIDENCE:
         failures.append("ocr_unavailable")
         return False, detected_app, failures
 
+    if detected_app == "unknown":
+        failures.append("unrecognized_app")
+        return False, detected_app, failures
+
     # App-specific rules
     if detected_app == "gpay":
-        if re.search(r"paid\s+to\s+cognit", lower, re.IGNORECASE) is None:
+        if not has_paid_to_cognit:
             failures.append("missing_paid_to_cognit")
     elif detected_app == "paytm":
         if not has_paytm:
@@ -438,7 +445,7 @@ def verify_payment_screenshot(
             now = datetime.now(timezone.utc)
             transaction_time_utc = transaction_time.astimezone(timezone.utc)
             time_diff = abs((now - transaction_time_utc).total_seconds())
-            if time_diff > 300:  # 5 minutes = 300 seconds
+            if time_diff > PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS:
                 failures.append("time_out_of_range")
         else:
             if detected_app == "gpay":
