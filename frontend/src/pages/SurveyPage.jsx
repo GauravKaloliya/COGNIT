@@ -605,7 +605,6 @@ export default function SurveyPage({
         </div>
       )}
 
-      <h3 className="survey-section-heading">Response Details</h3>
       <div className="field">
         <label>Description <span className="required" aria-label="required">*</span></label>
         <div className="textarea-wrap">
@@ -660,7 +659,6 @@ export default function SurveyPage({
         </div>
       </div>
 
-      <h3 className="survey-section-heading">Difficulty Rating</h3>
       <div className="field effort-rating">
         <label>
           Image rating <span className="required" aria-label="required">*</span> {rating > 0 ? `${rating}/10` : ""}
@@ -686,7 +684,6 @@ export default function SurveyPage({
         </div>
       </div>
 
-      <h3 className="survey-section-heading">Reflection</h3>
       <div className="field feedback-field">
         <label>Comments <span className="required" aria-label="required">*</span></label>
         <div className="textarea-wrap">

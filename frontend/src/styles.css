@@ -575,26 +575,32 @@ body.dark .status-dot.offline {
 
 .panel-state-warning {
   border-color: color-mix(in srgb, var(--warning) 45%, var(--border-light) 55%);
+  background: color-mix(in srgb, var(--warning) 12%, var(--panel) 88%);
 }
 .panel-state-warning .panel-state-icon {
   color: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 45%, var(--border-light) 55%);
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
 }
 
 .panel-state-error {
   border-color: color-mix(in srgb, var(--error) 45%, var(--border-light) 55%);
+  background: color-mix(in srgb, var(--error) 12%, var(--panel) 88%);
 }
 .panel-state-error .panel-state-icon {
   color: var(--error);
   border-color: color-mix(in srgb, var(--error) 45%, var(--border-light) 55%);
+  background: color-mix(in srgb, var(--error) 18%, transparent);
 }
 
 .panel-state-success {
   border-color: color-mix(in srgb, var(--success) 45%, var(--border-light) 55%);
+  background: color-mix(in srgb, var(--success) 12%, var(--panel) 88%);
 }
 .panel-state-success .panel-state-icon {
   color: var(--success);
   border-color: color-mix(in srgb, var(--success) 45%, var(--border-light) 55%);
+  background: color-mix(in srgb, var(--success) 18%, transparent);
 }
 
 .skeleton-stack {
@@ -2424,15 +2430,6 @@ body.dark .toast.warning {
   line-height: var(--leading-relaxed);
 }
 
-.survey-section-heading {
-  margin: var(--space-1) 0 var(--space-1);
-  color: var(--primary);
-  font-size: var(--text-sm);
-  font-weight: var(--font-bold);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
 .sticky-mobile-actions {
   width: 100%;
 }
@@ -2557,7 +2554,7 @@ body.dark .toast.warning {
   background-color: var(--accent-bg);
   padding: var(--space-4);
   border-radius: var(--radius-lg);
-  margin: 0 0 var(--space-5);
+  margin: var(--space-3) 0 var(--space-5);
   border-left: 4px solid var(--primary);
   width: 100%;
   max-width: none;
@@ -2719,11 +2716,12 @@ body.dark .toast.warning {
 }
 
 .finish-reminder {
-  background-color: var(--panel);
+  background-color: var(--accent-bg);
   padding: var(--space-4);
   border-radius: var(--radius-md);
+  margin-top: var(--space-3);
   margin-bottom: var(--space-4);
-  border: 2px dashed var(--primary);
+  border: 1px solid var(--border);
   text-align: left;
 }
 
@@ -2848,22 +2846,12 @@ body.dark .payment-qr-code {
   }
 }
 
-.payment-upload-area {
-  border: 2px dashed var(--border-color, var(--border));
-  border-radius: 12px;
-  padding: 2rem;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
-  margin: 1rem 0;
-}
-
 .payment-upload-preview {
   display: block;
   max-width: min(260px, 100%);
   border-radius: var(--radius-md);
   margin-top: var(--space-2);
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .payment-upload-stack {
@@ -2872,6 +2860,7 @@ body.dark .payment-qr-code {
   align-items: stretch;
   gap: var(--space-3);
   margin-top: var(--space-3);
+  min-height: 500px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
@@ -2928,11 +2917,12 @@ body.dark .payment-qr-code {
 
 .payment-upload-meta-box {
   flex: 1;
-  padding: 0;
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   justify-content: center;
+  border: 1px solid var(--border);
 }
 
 .payment-upload-actions {
@@ -2961,6 +2951,7 @@ body.dark .payment-qr-code {
     gap: var(--space-2);
     margin-top: var(--space-2);
     padding: var(--space-2);
+    min-height: auto;
   }
 
   .payment-upload-preview-box {
@@ -2972,6 +2963,7 @@ body.dark .payment-qr-code {
   .payment-upload-meta-box {
     flex: none;
     padding: var(--space-2);
+    border: 1px solid var(--border);
   }
 
   .payment-upload-preview-box .payment-upload-preview {
@@ -2997,16 +2989,7 @@ body.dark .payment-qr-code {
   font-size: var(--text-sm);
 }
 
-.payment-upload-area:hover {
-  border-color: var(--primary-color, var(--primary));
-  background: var(--bg-tertiary, var(--accent-bg));
-}
-
 @media (max-width: 479px) {
-  .payment-upload-area {
-    padding: 1.25rem;
-  }
-
   .payment-upload-preview-box {
     min-height: 140px;
   }
@@ -3531,10 +3514,6 @@ select option {
     width: min(220px, 90vw);
   }
 
-  .payment-upload-area {
-    padding: var(--space-4) var(--space-3);
-  }
-
   .payment-upi-button {
     font-size: var(--text-base);
     min-height: var(--mobile-touch-target);
@@ -3665,7 +3644,6 @@ select option {
 .payment-header,
 .payment-card,
 .payment-qr-container,
-.payment-upload-area,
 .payment-failure-details,
 .survey-feedback-tip,
 .error-details,
@@ -3700,6 +3678,45 @@ select option {
 .survey-feedback-actions button {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------------------
+   Global Mobile Guardrails
+   -------------------------------------------------------------------------- */
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea,
+  button {
+    font-size: 16px;
+  }
+
+  .panel,
+  .payment-card,
+  .status-panel,
+  .service-unavailable-card,
+  .welcome-info,
+  .finish-reminder,
+  .survey-feedback-tip {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
 }
 
 @media (max-width: 767px) {
