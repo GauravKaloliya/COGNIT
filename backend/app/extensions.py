@@ -45,7 +45,11 @@ supports_credentials = CORS_SUPPORTS_CREDENTIALS and "*" not in cors_origins
 CORS(
     app,
     resources={r"/*": {"origins": cors_origins}},
-    supports_credentials=supports_credentials
+    supports_credentials=supports_credentials,
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-Idempotency-Key"],
+    expose_headers=["X-Request-ID"],
+    max_age=86400,
 )
 
 

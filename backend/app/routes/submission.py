@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from flask import request, g
+from flask import request, g, make_response
 from sqlalchemy import text
 
 from app.config import (
@@ -674,6 +674,12 @@ def track_engagement():
         return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
 
 
+@submission_bp.route("/engagement/track", methods=["OPTIONS"])
+@limiter.exempt
+def track_engagement_options():
+    return make_response("", 204)
+
+
 @submission_bp.route("/engagement/track/bulk", methods=["POST"])
 @limiter.limit(ENGAGEMENT_BULK_RATE_LIMIT)
 @track_performance
@@ -748,3 +754,9 @@ def track_engagement_bulk():
             pass
         logger.error("track engagement bulk failed request_id=%s public_id=%s error=%s", getattr(g, "request_id", None), public_id, e)
         return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
+
+
+@submission_bp.route("/engagement/track/bulk", methods=["OPTIONS"])
+@limiter.exempt
+def track_engagement_bulk_options():
+    return make_response("", 204)
