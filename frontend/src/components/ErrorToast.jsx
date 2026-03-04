@@ -175,6 +175,10 @@ export default function ErrorToast({
  */
 export function useErrorToast() {
   const [errors, setErrors] = React.useState([]);
+
+  const dismissError = React.useCallback((errorId) => {
+    setErrors(prev => prev.filter(error => error.id !== errorId));
+  }, []);
   
   const showError = React.useCallback((error, options = {}) => {
     const errorWithId = {
@@ -193,11 +197,7 @@ export function useErrorToast() {
     }
     
     return errorWithId.id;
-  }, []);
-  
-  const dismissError = React.useCallback((errorId) => {
-    setErrors(prev => prev.filter(error => error.id !== errorId));
-  }, []);
+  }, [dismissError]);
   
   const clearAllErrors = React.useCallback(() => {
     setErrors([]);

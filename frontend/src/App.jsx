@@ -187,8 +187,10 @@ export default function App() {
     })
   );
   const [toasts, setToasts] = useState([]);
-  const [flowBusyMessage, setFlowBusyMessage] = useState("");
-  const [engagementFlushInFlight, setEngagementFlushInFlight] = useState(false);
+  const [surveyTransitionInFlight, setSurveyTransitionInFlight] = useState(false);
+  const engagementFlushInFlightRef = useRef(false);
+  const lastEngagementFlushAtRef = useRef(0);
+  const engagementFlushRetryAfterRef = useRef(0);
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
@@ -291,13 +293,10 @@ export default function App() {
 
   const {
     survey,
-    setSurvey,
     surveyCompleted,
-    setSurveyCompleted,
     surveyFeedbackReady,
     setSurveyFeedbackReady,
     shownImages,
-    setShownImages,
     imageError,
     isFetchingImage,
     showConfetti,
@@ -325,11 +324,34 @@ export default function App() {
     publicId,
     stage,
     paymentVerified,
+    pauseSurveyPaymentGuard: surveyTransitionInFlight,
     setPaymentVerified,
     setStage,
     setPaymentSubStage,
     addToast,
   });
+
+  const transitionToSurvey = useCallback(async () => {
+    setSurveyTransitionInFlight(true);
+    setPaymentVerified(true);
+    setPaymentSubStage("content");
+    try {
+      const image = await fetchImage({ clearCurrent: true, throwOnError: true });
+      if (!image?.image_id) {
+        setPaymentVerified(false);
+        return false;
+      }
+      if (validateStageTransition("payment", "survey", true)) {
+        setStage("survey");
+      }
+      return true;
+    } catch {
+      setPaymentVerified(false);
+      return false;
+    } finally {
+      setSurveyTransitionInFlight(false);
+    }
+  }, [fetchImage, setPaymentSubStage, setPaymentVerified, setStage]);
 
   const {
     handlePaymentComplete,
@@ -343,30 +365,10 @@ export default function App() {
     setPaymentSubStage,
     setPaymentVerified,
     addToast,
-    transitionToSurvey: async () => {
-      setFlowBusyMessage("Preparing your first survey...");
-      setPaymentVerified(true);
-      setPaymentSubStage("content");
-      try {
-        const image = await fetchImage({ clearCurrent: true, throwOnError: true });
-        if (!image?.image_id) {
-          setPaymentVerified(false);
-          return false;
-        }
-        if (validateStageTransition("payment", "survey", true)) {
-          setStage("survey");
-        }
-        return true;
-      } catch {
-        setPaymentVerified(false);
-        return false;
-      } finally {
-        setFlowBusyMessage("");
-      }
-    },
+    transitionToSurvey,
   });
 
-  const canTrackEngagement = isActiveTabOwner && ["payment", "survey", "finished"].includes(stage);
+  const canTrackEngagement = isActiveTabOwner && ["survey", "finished"].includes(stage);
   const currentPageRef = useRef("consent");
 
   const readEngagementQueue = useCallback(() => {
@@ -400,54 +402,36 @@ export default function App() {
   }, [readEngagementQueue, writeEngagementQueue]);
 
   const flushEngagementQueue = useCallback(async () => {
-    if (!publicId || !canTrackEngagement || !online || engagementFlushInFlight) return;
+    if (!publicId || !canTrackEngagement || !online || engagementFlushInFlightRef.current) return;
+    const now = Date.now();
+    if (now < engagementFlushRetryAfterRef.current) return;
+    if (now - lastEngagementFlushAtRef.current < runtimeConfig.engagementFlushCooldownMs) return;
     const queue = readEngagementQueue();
     if (!queue.length) return;
 
-    setEngagementFlushInFlight(true);
+    lastEngagementFlushAtRef.current = now;
+    engagementFlushInFlightRef.current = true;
+    // keep UI quiet; use ref-only lock for engagement flush.
     const remaining = [];
-    const chunkSize = Math.max(1, runtimeConfig.engagementFlushBatchSize);
-    for (let i = 0; i < queue.length; i += chunkSize) {
-      const chunk = queue.slice(i, i + chunkSize);
+    for (const event of queue) {
       try {
-        const payload = {
-          public_id: publicId,
-          events: chunk.map((event) => ({
-            event_type: event.event_type,
-            event_data: event.event_data || {}
-          }))
-        };
-        const result = await endpoints.trackEngagementBulk(payload);
-        const rejectedIndexes = new Set(
-          Array.isArray(result?.rejected_items)
-            ? result.rejected_items
-              .map((item) => Number(item?.index))
-              .filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < chunk.length)
-            : []
-        );
-        chunk.forEach((event, idx) => {
-          if (rejectedIndexes.has(idx)) {
-            remaining.push(event);
-          }
+        await endpoints.trackEngagement({
+          public_id: event.public_id || publicId,
+          event_type: event.event_type,
+          event_data: event.event_data || {}
         });
       } catch {
-        // Fallback to single-event flush for compatibility with older backends.
-        for (const event of chunk) {
-          try {
-            await endpoints.trackEngagement({
-              public_id: event.public_id || publicId,
-              event_type: event.event_type,
-              event_data: event.event_data || {}
-            });
-          } catch {
-            remaining.push(event);
-          }
-        }
+        remaining.push(event);
       }
     }
     writeEngagementQueue(remaining);
-    setEngagementFlushInFlight(false);
-  }, [publicId, canTrackEngagement, online, engagementFlushInFlight, readEngagementQueue, writeEngagementQueue]);
+    if (remaining.length) {
+      engagementFlushRetryAfterRef.current = Date.now() + runtimeConfig.engagementFlushRetryMs;
+    } else {
+      engagementFlushRetryAfterRef.current = 0;
+    }
+    engagementFlushInFlightRef.current = false;
+  }, [publicId, canTrackEngagement, online, readEngagementQueue, writeEngagementQueue]);
 
   useEffect(() => saveStoredValue("publicId", publicId), [publicId]);
   useEffect(() => saveStoredValue("sessionId", sessionId), [sessionId]);
@@ -485,8 +469,11 @@ export default function App() {
   );
 
   useEffect(() => {
+    if (!online) return undefined;
     flushEngagementQueue();
-  }, [flushEngagementQueue, online, stage, paymentSubStage]);
+    const interval = setInterval(flushEngagementQueue, runtimeConfig.engagementFlushPollMs);
+    return () => clearInterval(interval);
+  }, [flushEngagementQueue, online]);
 
   useEffect(() => {
     if (!canTrackEngagement) return;
@@ -691,16 +678,6 @@ export default function App() {
   const handleUserDetailsBack = () => setStage("consent");
 
   const renderContent = () => {
-    if (flowBusyMessage) {
-      return (
-        <PageSkeleton
-          title={uiText("status.pleaseWait")}
-          subtitle={flowBusyMessage}
-          variant="flow"
-        />
-      );
-    }
-
     if (systemChecking && !systemReady) {
       return (
         <PageSkeleton
@@ -834,10 +811,7 @@ export default function App() {
           </div>
         )}
 
-        <div
-          key={`${stage}-${paymentSubStage}-${surveyFeedbackReady ? "feedback" : "active"}`}
-          className="route-transition"
-        >
+        <div className="route-transition">
           {renderContent()}
         </div>
 

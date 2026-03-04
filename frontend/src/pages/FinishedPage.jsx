@@ -4,7 +4,7 @@ import PageSkeleton from "../components/PageSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 
 export default function FinishedPage({ surveyCompleted, publicId }) {
-  const [rewardStatus, setRewardStatus] = useState(null);
+  const [rewardStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,8 +27,29 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
     } catch {
       darkMode = null;
     }
-    // Clear session storage and reload
-    sessionStorage.clear();
+    // Clear only flow/session keys for this app.
+    [
+      "stage",
+      "paymentSubStage",
+      "consentGiven",
+      "paymentVerified",
+      "demographics",
+      "survey",
+      "surveyCompleted",
+      "surveyFeedbackReady",
+      "shownImages",
+      "payment_id",
+      "payment_timer_expires_at",
+      "payment_link_state_v1",
+      "consent_checked_draft",
+      "engagement_queue_v1"
+    ].forEach((k) => {
+      try {
+        sessionStorage.removeItem(k);
+      } catch {
+        // Ignore storage remove failures.
+      }
+    });
     // Restore dark mode setting
     if (typeof darkMode === "boolean") {
       const now = Date.now();
@@ -97,7 +118,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
             <li>Active participants who write detailed descriptions get added to a <strong>priority list</strong></li>
             <li>Priority participants have <strong>higher chances</strong> of being selected</li>
             <li>Rewards are sent via <strong>UPI transfer</strong> within 24-48 hours</li>
-            <li>If you're selected, you'll receive an email/SMS with payment confirmation</li>
+            <li>If you&apos;re selected, you&apos;ll receive an email/SMS with payment confirmation</li>
           </ul>
         </div>
 
