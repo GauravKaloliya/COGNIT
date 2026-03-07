@@ -1,5 +1,6 @@
 import { getApiUrl } from './apiBase';
 import { parseErrorResponse, getErrorMessage } from './errorRegistry';
+import { getTurnstileToken } from './turnstile';
 
 /**
  * Enhanced fetch wrapper with standardized error handling
@@ -12,6 +13,7 @@ export async function apiFetch(endpoint, options = {}) {
     ? crypto.randomUUID()
     : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const baseHeaders = { ...(options.headers || {}) };
+  const requestBody = options.body;
 
   // Keep GET/HEAD requests as "simple requests" to avoid unnecessary CORS preflights.
   // Add tracing/content headers only for requests that send a body or mutate state.
@@ -21,11 +23,12 @@ export async function apiFetch(endpoint, options = {}) {
   if (method !== 'GET' && method !== 'HEAD' && !baseHeaders['X-Request-ID']) {
     baseHeaders['X-Request-ID'] = requestId;
   }
-  
+
   try {
     const response = await fetch(url, {
       ...options,
-      headers: baseHeaders
+      headers: baseHeaders,
+      body: requestBody,
     });
     
     const data = await response.json().catch(() => null);
@@ -146,7 +149,17 @@ export const endpoints = {
   health: (options = {}) => api.get('/health', options),
   
   // Participant management
-  createParticipant: (data, options = {}) => api.post('/participants', data, options),
+  createParticipant: async (data, options = {}) => {
+    const turnstileToken = await getTurnstileToken("register_submit");
+    const payload = { ...(data || {}) };
+    // Prevent legacy/stale client ids from causing duplicate public_id conflicts.
+    delete payload.public_id;
+    delete payload.session_id;
+    return api.post('/participants', {
+      ...payload,
+      turnstile_token: turnstileToken || undefined,
+    }, options);
+  },
   checkUsername: (username, options = {}) => api.get(`/check-username?username=${encodeURIComponent(username)}`, options),
   checkEmail: (email, options = {}) => api.get(`/check-email?email=${encodeURIComponent(email)}`, options),
   checkPhone: (phone, options = {}) => api.get(`/check-phone?phone=${encodeURIComponent(phone)}`, options),
@@ -164,22 +177,46 @@ export const endpoints = {
   },
   
   // Submissions
-  submitDescription: (data, options = {}) => api.post('/submit', data, options),
-  trackEngagement: (data, options = {}) => api.post('/engagement/track', data, options),
+  submitDescription: async (data, options = {}) => {
+    const turnstileToken = await getTurnstileToken("submission_submit");
+    return api.post('/submit', {
+      ...data,
+      turnstile_token: turnstileToken || undefined,
+    }, options);
+  },
   
   // Payment
-  createPayment: (publicId, amount, options = {}) => api.post('/payments/create', {
-    public_id: publicId,
-    amount
-  }, options),
+  createPayment: async (publicId, amount, options = {}) => {
+    const turnstileToken = await getTurnstileToken("payment_create");
+    return api.post('/payments/create', {
+      public_id: publicId,
+      amount,
+      turnstile_token: turnstileToken || undefined,
+    }, options);
+  },
+  getPaymentQr: (paymentId, options = {}) => api.get(`/payments/${paymentId}/qr`, options),
   getPaymentStatus: (paymentId, options = {}) => api.get(`/payments/${paymentId}/status`, options),
   getParticipantPaymentStatus: (publicId, options = {}) => api.get(`/participants/${publicId}/payment-status`, options),
-  verifyUpload: (paymentId, imageBase64, fileExtension, sha256, extra = {}, options = {}) => api.post(`/payments/${paymentId}/verify-upload`, {
-    image_base64: imageBase64,
-    file_extension: fileExtension,
-    sha256: sha256,
-    ...extra
-  }, options),
+  getPaymentUploadUrl: (paymentId, payload, options = {}) => api.post(`/payments/${paymentId}/upload-url`, payload, options),
+  verifyUpload: async (paymentId, payloadOrImageBase64, fileExtension, sha256, extra = {}, options = {}) => {
+    const turnstileToken = await getTurnstileToken("payment_verify");
+    if (payloadOrImageBase64 && typeof payloadOrImageBase64 === "object" && !Array.isArray(payloadOrImageBase64)) {
+      const requestOptions = (fileExtension && typeof fileExtension === "object" && !Array.isArray(fileExtension))
+        ? fileExtension
+        : (options || {});
+      return api.post(`/payments/${paymentId}/verify-upload`, {
+        ...payloadOrImageBase64,
+        turnstile_token: turnstileToken || undefined,
+      }, requestOptions);
+    }
+    return api.post(`/payments/${paymentId}/verify-upload`, {
+      image_base64: payloadOrImageBase64,
+      file_extension: fileExtension,
+      sha256: sha256,
+      turnstile_token: turnstileToken || undefined,
+      ...extra
+    }, options);
+  },
 };
 
 /**

@@ -1,4 +1,7 @@
-from typing import Dict, Set
+import json
+from typing import Dict, Set, Optional
+
+from sqlalchemy import text
 
 
 PAYMENT_STATUS_TRANSITIONS: Dict[str, Set[str]] = {
@@ -51,3 +54,51 @@ def ensure_submission_workflow_state(payment_status: str, current_stage: str) ->
         raise StateTransitionError(
             f"Submission not allowed at participant stage='{current_stage}'"
         )
+
+
+def transition_payment_status(
+    db,
+    *,
+    payment_id: int,
+    from_status: str,
+    to_status: str,
+    request_id: Optional[str] = None,
+    details: Optional[dict] = None,
+) -> None:
+    """
+    Validate and persist a payment status transition with an audit trail.
+    """
+    ensure_payment_status_transition(from_status, to_status)
+    db.execute(
+        text(
+            """
+            UPDATE payments
+            SET status = :to_status,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid AND status = :from_status
+            """
+        ),
+        {
+            "pid": int(payment_id),
+            "to_status": str(to_status),
+            "from_status": str(from_status),
+        },
+    )
+    db.execute(
+        text(
+            """
+            INSERT INTO payment_audit_log (
+                event_type, payment_id, details, request_data, response_data
+            ) VALUES (
+                :event_type, :payment_id, :details, CAST(:request_data AS jsonb), CAST(:response_data AS jsonb)
+            )
+            """
+        ),
+        {
+            "event_type": "payment_status_transition",
+            "payment_id": int(payment_id),
+            "details": f"{from_status}->{to_status}",
+            "request_data": '{"request_id": "%s"}' % (request_id or ""),
+            "response_data": json.dumps(details or {}),
+        },
+    )

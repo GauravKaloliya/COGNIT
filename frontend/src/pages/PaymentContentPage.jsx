@@ -1,5 +1,7 @@
 import React from "react";
 import PageSkeleton from "../components/PageSkeleton.jsx";
+import DSCard from "../components/design/DSCard.jsx";
+import DSButton from "../components/design/DSButton.jsx";
 
 export default function PaymentContentPage({ onNext, onBack }) {
   const [continuing, setContinuing] = React.useState(false);
@@ -36,13 +38,13 @@ export default function PaymentContentPage({ onNext, onBack }) {
 
       <div className="payment-header">
         <div className="payment-header-emoji" aria-hidden="true">🎁</div>
-        <h2 className="payment-title">Win ₹10</h2>
+        <h2 className="payment-title ds-title">Win ₹10</h2>
         <p className="payment-subtitle">Participate → Get a chance to receive ₹10</p>
-        <p className="payment-tagline">₹1 entry. Real reward.</p>
+        <p className="payment-tagline ds-subtle">₹1 entry. Real reward.</p>
       </div>
 
-      <div className="payment-content">
-        <section className="payment-card">
+      <div className="payment-content ds-stack">
+        <DSCard className="payment-card">
           <h3>
             <span className="payment-card-emoji" aria-hidden="true">💰</span>
             ₹1 Participation
@@ -52,9 +54,9 @@ export default function PaymentContentPage({ onNext, onBack }) {
             <li>Entry fee: ₹1</li>
             <li>Chance to win ₹10 via UPI</li>
           </ul>
-        </section>
+        </DSCard>
 
-        <section className="payment-card">
+        <DSCard className="payment-card">
           <h3>
             <span className="payment-card-emoji" aria-hidden="true">⚡</span>
             How It Works
@@ -66,9 +68,9 @@ export default function PaymentContentPage({ onNext, onBack }) {
             <li><span className="payment-step-emoji" aria-hidden="true">4️⃣</span> Winners receive ₹10 (24–48 hours)</li>
           </ol>
           <p className="payment-note">Clean. Direct. Transparent.</p>
-        </section>
+        </DSCard>
 
-        <section className="payment-card">
+        <DSCard className="payment-card">
           <h3>
             <span className="payment-card-emoji" aria-hidden="true">🔥</span>
             Increase Your Odds
@@ -80,9 +82,9 @@ export default function PaymentContentPage({ onNext, onBack }) {
             <li><span aria-hidden="true">✔</span> Completing 3+ rounds</li>
           </ul>
           <p className="payment-note">More contribution → Higher probability.</p>
-        </section>
+        </DSCard>
 
-        <section className="payment-card highlight">
+        <DSCard className="payment-card highlight">
           <h3>
             <span className="payment-card-emoji" aria-hidden="true">🎯</span>
             Reward Details
@@ -93,13 +95,13 @@ export default function PaymentContentPage({ onNext, onBack }) {
             <li>Processed within 24–48 hours</li>
             <li>No minimum withdrawal</li>
           </ul>
-        </section>
+        </DSCard>
       </div>
 
       <div className="page-actions sticky-mobile-actions">
-        <button className="primary" onClick={handleContinue}>
+        <DSButton variant="primary" onClick={handleContinue}>
           Continue to Payment
-        </button>
+        </DSButton>
       </div>
     </div>
   );

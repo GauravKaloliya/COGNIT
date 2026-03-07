@@ -8,6 +8,7 @@ import uuid
 
 from flask import request
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import limiter
 from app.database import get_db
@@ -18,7 +19,8 @@ from app.utils.helpers import (
     success_response,
 )
 from app.utils.runtime_cache import set_cached_participant_id
-from app.utils.decorators import track_performance
+from app.utils.decorators import track_performance, require_idempotency_key
+from app.utils.turnstile import verify_turnstile_token
 from app.services import (
     build_request_hash,
     load_idempotent_response,
@@ -47,9 +49,11 @@ participant_bp = Blueprint('participant', __name__)
 @participant_bp.route("/participants", methods=["POST"])
 @limiter.limit(PARTICIPANT_CREATE_RATE_LIMIT)
 @track_performance
+@require_idempotency_key
 def create_participant():
     """Create a new participant registration."""
     data = request.json or {}
+    turnstile_token = (data.get("turnstile_token") or "").strip()
     required = ["username", "email", "phone", "gender_code", "age", "location", "language_code", "prior_experience"]
     missing = [f for f in required if f not in data or not data[f]]
     if missing:
@@ -65,6 +69,40 @@ def create_participant():
 
     try:
         db = get_db()
+        ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr)
+        if not ok:
+            return create_error_response("BOT_CHALLENGE_FAILED")
+
+        username = str(data["username"]).strip()[:50]
+        email = str(data["email"]).strip().lower()[:255]
+        phone = str(data["phone"]).strip()[:20]
+
+        # Resolve likely duplicate conflicts before insert so the API can return
+        # stable field-level error codes for frontend mapping.
+        existing = db.execute(text("""
+            SELECT username, email, phone
+            FROM participants
+            WHERE is_deleted = false
+              AND (
+                username = :un
+                OR email = :em
+                OR phone = :ph
+              )
+            LIMIT 1
+        """), {
+            "un": username,
+            "em": email,
+            "ph": phone,
+        }).fetchone()
+        if existing:
+            existing_username, existing_email, existing_phone = existing
+            if existing_username == username:
+                return create_error_response("DUP_USERNAME")
+            if existing_email == email:
+                return create_error_response("DUP_EMAIL")
+            if existing_phone == phone:
+                return create_error_response("DUP_PHONE")
+
         result = db.execute(text("""
             INSERT INTO participants (
                 public_id, session_id, username, email, phone,
@@ -77,9 +115,9 @@ def create_participant():
         """), {
             "pub": public_id,
             "sid": session_id,
-            "un": str(data["username"]).strip()[:50],
-            "em": str(data["email"]).strip().lower()[:255],
-            "ph": str(data["phone"]).strip()[:20],
+            "un": username,
+            "em": email,
+            "ph": phone,
             "gc": str(data["gender_code"]).strip().lower()[:32],
             "age": int(data["age"]),
             "loc": str(data["location"]).strip()[:120],
@@ -97,15 +135,50 @@ def create_participant():
         db.commit()
         print(f"[INFO] Participant created: {public_id[:8]}...", flush=True)
         return success_response({"status": "created", "public_id": public_id, "session_id": session_id}), 201
+    except IntegrityError as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+        constraint_name = ""
+        try:
+            constraint_name = str(e.orig.diag.constraint_name or "").lower()
+        except Exception:
+            constraint_name = ""
+
+        error_str = str(e).lower()
+        if "username" in constraint_name or "username" in error_str:
+            return create_error_response("DUP_USERNAME")
+        if "email" in constraint_name or "email" in error_str:
+            return create_error_response("DUP_EMAIL")
+        if "phone" in constraint_name or "phone" in error_str:
+            return create_error_response("DUP_PHONE")
+        if "public_id" in constraint_name or "public_id" in error_str:
+            existing = db.execute(text("""
+                SELECT session_id
+                FROM participants
+                WHERE public_id = :pub AND is_deleted = false
+                LIMIT 1
+            """), {"pub": public_id}).fetchone()
+            if existing:
+                return success_response({
+                    "status": "exists",
+                    "public_id": public_id,
+                    "session_id": existing[0]
+                }), 200
+            return create_error_response("DUP_PUBLIC_ID")
+        return create_error_response("PARTICIPANT_EXISTS")
     except Exception as e:
         try:
             db.rollback()
         except:
             pass
         error_str = str(e).lower()
-        
-        # Handle unique/duplicate constraint violations
-        if "unique" in error_str or "duplicate" in error_str:
+
+        # Handle unique/duplicate constraint violations from adapters that
+        # don't map to IntegrityError, while avoiding broad false positives.
+        if "duplicate key value" in error_str or "violates unique constraint" in error_str:
             if "username" in error_str:
                 return create_error_response("DUP_USERNAME")
             elif "email" in error_str:
@@ -113,6 +186,20 @@ def create_participant():
             elif "phone" in error_str:
                 return create_error_response("DUP_PHONE")
             elif "public_id" in error_str:
+                # Treat duplicate public_id as idempotent registration.
+                # This commonly happens on rapid double-submit/retry from same client.
+                existing = db.execute(text("""
+                    SELECT session_id
+                    FROM participants
+                    WHERE public_id = :pub AND is_deleted = false
+                    LIMIT 1
+                """), {"pub": public_id}).fetchone()
+                if existing:
+                    return success_response({
+                        "status": "exists",
+                        "public_id": public_id,
+                        "session_id": existing[0]
+                    }), 200
                 return create_error_response("DUP_PUBLIC_ID")
             return create_error_response("PARTICIPANT_EXISTS")
         

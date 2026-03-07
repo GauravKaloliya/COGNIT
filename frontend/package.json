@@ -9,11 +9,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "perf:budget": "node ./scripts/check-bundle-budget.mjs",
     "lint": "eslint src --ext .js,.jsx",
     "preview": "vite preview",
-    "vercel-build": "vite build",
-    "e2e": "playwright test",
-    "e2e:headed": "playwright test --headed"
+    "vercel-build": "vite build"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
@@ -23,7 +22,6 @@
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
     "@vitejs/plugin-react": "^4.2.1",
     "eslint": "^8.57.1",
     "eslint-plugin-react": "^7.37.5",

@@ -22,7 +22,6 @@ This app handles participant onboarding, payment-gated survey access, resilient 
 - React Router 6
 - Vanilla CSS design system (`src/styles.css`)
 - ESLint (`eslint-plugin-react`, `eslint-plugin-react-hooks`)
-- Playwright (E2E specs)
 
 ---
 
@@ -71,7 +70,6 @@ src/
 - `POST /payments/{payment_id}/verify-upload`
 - `GET /images/random`
 - `POST /submit`
-- `POST /engagement/track`
 
 ---
 
@@ -125,12 +123,6 @@ Lint:
 
 ```bash
 npm run lint
-```
-
-E2E:
-
-```bash
-npm run e2e
 ```
 
 ---

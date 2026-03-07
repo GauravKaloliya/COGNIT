@@ -5,6 +5,7 @@ Centralized configuration management following 2025 best practices.
 
 import os
 import json
+import re
 from typing import Dict, Any
 
 from pathlib import Path
@@ -39,6 +40,79 @@ except ImportError:
         break
 
 
+def _required_env(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or str(value).strip() == "":
+        raise ValueError(f"{name} is required")
+    return value
+
+
+def _required_int_env(name: str) -> int:
+    return int(_required_env(name))
+
+
+def _required_float_env(name: str) -> float:
+    return float(_required_env(name))
+
+
+def _required_bool_env(name: str) -> bool:
+    raw = _required_env(name).strip().lower()
+    if raw in {"true", "1", "yes", "on"}:
+        return True
+    if raw in {"false", "0", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value")
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return bool(default)
+    raw = str(raw).strip().lower()
+    if raw in {"true", "1", "yes", "on"}:
+        return True
+    if raw in {"false", "0", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value")
+
+
+def _int_env(name: str, default: int, *, min_value: int | None = None, max_value: int | None = None) -> int:
+    raw = os.getenv(name)
+    value = int(default if raw is None or str(raw).strip() == "" else raw)
+    if min_value is not None and value < min_value:
+        raise ValueError(f"{name} must be >= {min_value}")
+    if max_value is not None and value > max_value:
+        raise ValueError(f"{name} must be <= {max_value}")
+    return value
+
+
+def _float_env(name: str, default: float, *, min_value: float | None = None, max_value: float | None = None) -> float:
+    raw = os.getenv(name)
+    value = float(default if raw is None or str(raw).strip() == "" else raw)
+    if min_value is not None and value < min_value:
+        raise ValueError(f"{name} must be >= {min_value}")
+    if max_value is not None and value > max_value:
+        raise ValueError(f"{name} must be <= {max_value}")
+    return value
+
+
+def _str_env(name: str, default: str, *, allow_blank: bool = False, choices: set[str] | None = None) -> str:
+    raw = os.getenv(name)
+    value = str(default if raw is None else raw).strip()
+    if not allow_blank and value == "":
+        raise ValueError(f"{name} cannot be blank")
+    if choices is not None and value not in choices:
+        raise ValueError(f"{name} must be one of: {sorted(choices)}")
+    return value
+
+
+def _rate_limit_env(name: str, default: str) -> str:
+    value = _str_env(name, default)
+    if not re.match(r"^\d+\s+per\s+(second|minute|hour|day)$", value, flags=re.IGNORECASE):
+        raise ValueError(f"{name} must match '<number> per <second|minute|hour|day>'")
+    return value
+
+
 # ────────────────────────────────────────────────
 # Application Constants
 # ────────────────────────────────────────────────
@@ -69,10 +143,10 @@ REWARD_MIN_AVG_FEEDBACK_LENGTH = int(os.getenv("REWARD_MIN_AVG_FEEDBACK_LENGTH",
 REWARD_MIN_AVG_RATING = float(os.getenv("REWARD_MIN_AVG_RATING", "7"))
 REWARD_MIN_AVG_QUALITY_SCORE = float(os.getenv("REWARD_MIN_AVG_QUALITY_SCORE", "0.75"))
 
-PERFORMANCE_LOG_SAMPLE_RATE = float(os.getenv("PERFORMANCE_LOG_SAMPLE_RATE", "0.10"))
-ENABLE_PERFORMANCE_METRICS = os.getenv("ENABLE_PERFORMANCE_METRICS", "true").lower() == "true"
-MAX_CONTENT_LENGTH_MB = int(os.getenv("MAX_CONTENT_LENGTH_MB", "16"))
-PAYMENT_MAX_IMAGE_MB = int(os.getenv("PAYMENT_MAX_IMAGE_MB", "8"))
+PERFORMANCE_LOG_SAMPLE_RATE = _float_env("PERFORMANCE_LOG_SAMPLE_RATE", 0.10, min_value=0.0, max_value=1.0)
+ENABLE_PERFORMANCE_METRICS = _bool_env("ENABLE_PERFORMANCE_METRICS", True)
+MAX_CONTENT_LENGTH_MB = _int_env("MAX_CONTENT_LENGTH_MB", 16, min_value=1, max_value=100)
+PAYMENT_MAX_IMAGE_MB = _int_env("PAYMENT_MAX_IMAGE_MB", 8, min_value=1, max_value=50)
 
 DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
 DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
@@ -82,30 +156,36 @@ PARTICIPANT_CACHE_TTL_SECONDS = int(os.getenv("PARTICIPANT_CACHE_TTL_SECONDS", "
 IMAGE_POOL_CACHE_TTL_SECONDS = int(os.getenv("IMAGE_POOL_CACHE_TTL_SECONDS", "60"))
 
 HEALTH_CACHE_TTL_SECONDS = float(os.getenv("HEALTH_CACHE_TTL_SECONDS", "5.0"))
+API_LATENCY_SLO_MS = _int_env("API_LATENCY_SLO_MS", 1200, min_value=50, max_value=60000)
 
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-VERCEL_ENV = os.getenv("VERCEL_ENV", "development")
-WEBSITE_URL = os.getenv("WEBSITE_URL", "http://localhost:5000")
+LOG_LEVEL = _required_env("LOG_LEVEL")
+LOGGING_AUTO_CONFIG = _required_bool_env("LOGGING_AUTO_CONFIG")
+VERCEL_ENV = _required_env("VERCEL_ENV")
+WEBSITE_URL = _required_env("WEBSITE_URL")
 
 
 # ────────────────────────────────────────────────
 # Payment & UPI Configuration
 # ────────────────────────────────────────────────
 
-UPI_VPA = os.getenv("UPI_VPA")
-if not UPI_VPA:
-    raise ValueError("UPI_VPA is required")
-UPI_NAME = os.getenv("UPI_NAME")
-if not UPI_NAME:
-    raise ValueError("UPI_NAME is required")
-PAYMENT_AMOUNT = float(os.getenv("PAYMENT_AMOUNT", "1"))
-PAYMENT_SECRET = os.getenv("PAYMENT_SECRET")
-if not PAYMENT_SECRET:
-    raise ValueError("PAYMENT_SECRET is required")
-PAYMENT_EXPIRY_SECONDS = int(os.getenv("PAYMENT_EXPIRY_SECONDS", "300"))
-PAYMENT_SCREENSHOT_TIMEZONE = os.getenv("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
-PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = int(os.getenv("PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS", "300"))
-PAYMENT_VERIFICATION_TIME_GRACE_SECONDS = int(os.getenv("PAYMENT_VERIFICATION_TIME_GRACE_SECONDS", "180"))
+UPI_VPA = _required_env("UPI_VPA")
+UPI_NAME = _required_env("UPI_NAME")
+PAYMENT_AMOUNT = _required_float_env("PAYMENT_AMOUNT")
+PAYMENT_SECRET = _required_env("PAYMENT_SECRET")
+PAYMENT_EXPIRY_SECONDS = _required_int_env("PAYMENT_EXPIRY_SECONDS")
+PAYMENT_SCREENSHOT_TIMEZONE = _str_env("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
+PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = _required_int_env("PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS")
+PAYMENT_VERIFICATION_TIME_GRACE_SECONDS = _required_int_env("PAYMENT_VERIFICATION_TIME_GRACE_SECONDS")
+PAYMENT_UPLOAD_URL_EXPIRY_SECONDS = _required_int_env("PAYMENT_UPLOAD_URL_EXPIRY_SECONDS")
+PAYMENT_VERIFY_MAX_ATTEMPTS = _required_int_env("PAYMENT_VERIFY_MAX_ATTEMPTS")
+
+# Turnstile / bot-defense configuration
+TURNSTILE_ENABLED = _required_bool_env("TURNSTILE_ENABLED")
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")
+if TURNSTILE_ENABLED and not TURNSTILE_SECRET_KEY:
+    raise ValueError("TURNSTILE_SECRET_KEY is required when TURNSTILE_ENABLED=true")
+TURNSTILE_VERIFY_URL = _required_env("TURNSTILE_VERIFY_URL")
+TURNSTILE_TIMEOUT_SECONDS = _required_float_env("TURNSTILE_TIMEOUT_SECONDS")
 
 
 # ────────────────────────────────────────────────
@@ -122,7 +202,7 @@ SUCCESS_KEYWORDS = ["success", "successful", "completed", "paid", "payment succe
 FAILURE_KEYWORDS = ["failed", "pending", "declined", "cancelled"]
 MIN_OCR_CONFIDENCE = int(os.getenv("MIN_OCR_CONFIDENCE", "55"))
 MIN_IMAGE_WIDTH = int(os.getenv("MIN_IMAGE_WIDTH", "600"))
-IMAGE_VALIDATE_URL_AVAILABILITY = os.getenv("IMAGE_VALIDATE_URL_AVAILABILITY", "false").lower() == "true"
+IMAGE_VALIDATE_URL_AVAILABILITY = _bool_env("IMAGE_VALIDATE_URL_AVAILABILITY", False)
 
 
 # ────────────────────────────────────────────────
@@ -144,10 +224,10 @@ CONTENT_TYPE_MAP = {
 # ────────────────────────────────────────────────
 
 MAX_FRAUD_SCORE = float(os.getenv("MAX_FRAUD_SCORE", "50.0"))
-ENABLE_DUPLICATE_DETECTION = os.getenv("ENABLE_DUPLICATE_DETECTION", "true").lower() == "true"
-ENABLE_DEVICE_FINGERPRINTING = os.getenv("ENABLE_DEVICE_FINGERPRINTING", "true").lower() == "true"
-ENABLE_AUDIT_LOGGING = os.getenv("ENABLE_AUDIT_LOGGING", "true").lower() == "true"
-ENABLE_ERROR_LOGGING = os.getenv("ENABLE_ERROR_LOGGING", "true").lower() == "true"
+ENABLE_DUPLICATE_DETECTION = _bool_env("ENABLE_DUPLICATE_DETECTION", True)
+ENABLE_DEVICE_FINGERPRINTING = _bool_env("ENABLE_DEVICE_FINGERPRINTING", True)
+ENABLE_AUDIT_LOGGING = _bool_env("ENABLE_AUDIT_LOGGING", True)
+ENABLE_ERROR_LOGGING = _bool_env("ENABLE_ERROR_LOGGING", True)
 FRAUD_REJECT_THRESHOLD = float(os.getenv("FRAUD_REJECT_THRESHOLD", "70"))
 FRAUD_SUCCESS_MAX_SCORE = float(os.getenv("FRAUD_SUCCESS_MAX_SCORE", "20"))
 FRAUD_UNKNOWN_REASON_WEIGHT = float(os.getenv("FRAUD_UNKNOWN_REASON_WEIGHT", "25"))
@@ -294,6 +374,9 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "PAY_ALREADY_PROCESSED": {"code": "PAY_001_0004", "message": "Payment has already been processed", "status": 400, "category": "PAY"},
     "PAY_INVALID_IMAGE_TYPE": {"code": "PAY_001_0005", "message": "Invalid image format. Allowed: JPG, PNG, WEBP", "status": 400, "category": "PAY"},
     "PAY_INVALID_SHA256": {"code": "PAY_001_0006", "message": "Invalid file hash", "status": 400, "category": "PAY"},
+    "PAY_VERIFY_ATTEMPTS_EXCEEDED": {"code": "PAY_001_0008", "message": "Maximum verification attempts reached. Please create a new payment session.", "status": 409, "category": "PAY"},
+    "AUTH_INVALID_PAYMENT_TOKEN": {"code": "AUTH_002_0002", "message": "Invalid or expired payment authorization token.", "status": 403, "category": "AUTH"},
+    "BOT_CHALLENGE_FAILED": {"code": "BOT_001_0001", "message": "Human verification failed. Please retry.", "status": 403, "category": "AUTH"},
     "PAYMENT_EXPIRED": {"code": "ERR_PAYMENT_EXPIRED", "message": "Payment session has expired. Please create a new payment.", "status": 410, "category": "PAY"},
     "PAYMENT_INVALID_STATE": {"code": "ERR_PAYMENT_INVALID_STATE", "message": "This payment has already been processed.", "status": 400, "category": "PAY"},
     "INVALID_AMOUNT": {"code": "ERR_INVALID_AMOUNT", "message": "Invalid payment amount.", "status": 400, "category": "PAY"},
@@ -329,6 +412,17 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
     "PAYMENT_REJECTED": {"code": "ERR_PAYMENT_REJECTED", "message": "Payment screenshot could not be verified.", "status": 400, "category": "FRAUD"},
 }
 
+# Prefer shared contract as source of truth when available.
+_shared_error_contract_path = backend_dir.parent / "shared" / "contracts" / "error_contract.json"
+if _shared_error_contract_path.exists():
+    try:
+        with _shared_error_contract_path.open("r", encoding="utf-8") as _fh:
+            _shared_contract = json.load(_fh)
+        if isinstance(_shared_contract, dict):
+            ERROR_CODES = _shared_contract
+    except Exception:
+        pass
+
 # Canonicalize legacy keys to strict modern codes without breaking call sites.
 _ERROR_KEY_ALIASES = {
     "DATABASE_ERROR": "SYS_DATABASE_ERROR",
@@ -343,7 +437,7 @@ _ERROR_KEY_ALIASES = {
     "WORD_COUNT": "VAL_WORD_COUNT",
     "DUPLICATE_SUBMISSION": "DUP_SUBMISSION",
     "SURVEY_EXISTS": "DUP_SURVEY_ROUND",
-    "PARTICIPANT_EXISTS": "DUP_PUBLIC_ID",
+    "PARTICIPANT_EXISTS": "PARTICIPANT_EXISTS",
     "CONSENT_REQUIRED": "AUTH_CONSENT_REQUIRED",
     "FLAGGED_ACCOUNT": "AUTH_ACCOUNT_FLAGGED",
     "PARTICIPANT_NOT_FOUND": "NF_PARTICIPANT",
@@ -369,103 +463,93 @@ for _legacy_key, _canonical_key in _ERROR_KEY_ALIASES.items():
 # AWS S3 Configuration
 # ────────────────────────────────────────────────
 
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-if not AWS_ACCESS_KEY_ID:
-    raise ValueError("AWS_ACCESS_KEY_ID is required")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-if not AWS_SECRET_ACCESS_KEY:
-    raise ValueError("AWS_SECRET_ACCESS_KEY is required")
+AWS_ACCESS_KEY_ID = _required_env("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = _required_env("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", os.getenv("S3_BUCKET", "cognitapi"))
+S3_BUCKET_NAME = _required_env("S3_BUCKET_NAME")
 
 
 # ────────────────────────────────────────────────
 # Security Configuration
 # ────────────────────────────────────────────────
 
-IP_HASH_SALT = os.getenv("IP_HASH_SALT")
-if not IP_HASH_SALT:
-    raise ValueError("IP_HASH_SALT is required")
+IP_HASH_SALT = _required_env("IP_HASH_SALT")
 
 
 # ────────────────────────────────────────────────
 # Database Configuration
 # ────────────────────────────────────────────────
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is required")
+DATABASE_URL = _required_env("DATABASE_URL")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-DATABASE_SSLMODE = os.getenv("DATABASE_SSLMODE", "auto")
+DATABASE_SSLMODE = _str_env(
+    "DATABASE_SSLMODE",
+    "auto",
+    choices={"auto", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"},
+)
 
 
 # ────────────────────────────────────────────────
 # Flask App Configuration
 # ────────────────────────────────────────────────
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    raise ValueError("SECRET_KEY is required")
+SECRET_KEY = _required_env("SECRET_KEY")
 
 
 # ────────────────────────────────────────────────
 # CORS Configuration
 # ────────────────────────────────────────────────
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
-CORS_SUPPORTS_CREDENTIALS = os.getenv("CORS_SUPPORTS_CREDENTIALS", "true").lower() == "true"
-TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "true").lower() == "true"
+CORS_ORIGINS = _str_env("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
+CORS_SUPPORTS_CREDENTIALS = _bool_env("CORS_SUPPORTS_CREDENTIALS", True)
+TRUST_PROXY_HEADERS = _bool_env("TRUST_PROXY_HEADERS", True)
 
 
 # ────────────────────────────────────────────────
 # HTTP Security Headers
 # ────────────────────────────────────────────────
 
-SECURITY_HSTS_ENABLED = os.getenv("SECURITY_HSTS_ENABLED", "true").lower() == "true"
-SECURITY_HSTS_MAX_AGE = int(os.getenv("SECURITY_HSTS_MAX_AGE", "31536000"))
-SECURITY_HSTS_INCLUDE_SUBDOMAINS = os.getenv("SECURITY_HSTS_INCLUDE_SUBDOMAINS", "true").lower() == "true"
-SECURITY_HSTS_PRELOAD = os.getenv("SECURITY_HSTS_PRELOAD", "false").lower() == "true"
-SECURITY_FRAME_OPTIONS = os.getenv("SECURITY_FRAME_OPTIONS", "DENY")
-SECURITY_REFERRER_POLICY = os.getenv("SECURITY_REFERRER_POLICY", "strict-origin-when-cross-origin")
-SECURITY_PERMISSIONS_POLICY = os.getenv(
+SECURITY_HSTS_ENABLED = _bool_env("SECURITY_HSTS_ENABLED", True)
+SECURITY_HSTS_MAX_AGE = _int_env("SECURITY_HSTS_MAX_AGE", 31536000, min_value=0)
+SECURITY_HSTS_INCLUDE_SUBDOMAINS = _bool_env("SECURITY_HSTS_INCLUDE_SUBDOMAINS", True)
+SECURITY_HSTS_PRELOAD = _bool_env("SECURITY_HSTS_PRELOAD", False)
+SECURITY_FRAME_OPTIONS = _str_env("SECURITY_FRAME_OPTIONS", "DENY", choices={"DENY", "SAMEORIGIN"})
+SECURITY_REFERRER_POLICY = _str_env("SECURITY_REFERRER_POLICY", "strict-origin-when-cross-origin")
+SECURITY_PERMISSIONS_POLICY = _str_env(
     "SECURITY_PERMISSIONS_POLICY",
     "geolocation=(), microphone=(), camera=()"
 )
-SECURITY_CONTENT_TYPE_OPTIONS = os.getenv("SECURITY_CONTENT_TYPE_OPTIONS", "nosniff")
-SECURITY_XSS_PROTECTION = os.getenv("SECURITY_XSS_PROTECTION", "0")
+SECURITY_CONTENT_TYPE_OPTIONS = _str_env("SECURITY_CONTENT_TYPE_OPTIONS", "nosniff")
+SECURITY_XSS_PROTECTION = _str_env("SECURITY_XSS_PROTECTION", "0", choices={"0", "1", "1; mode=block"})
 
 
 # ────────────────────────────────────────────────
 # Rate Limiter Configuration
 # ────────────────────────────────────────────────
 
-RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+RATELIMIT_STORAGE_URI = _required_env("RATELIMIT_STORAGE_URI")
 
 
 # ────────────────────────────────────────────────
 # Route Rate Limits & Runtime Tunables
 # ────────────────────────────────────────────────
 
-DOCS_BASE_URL = os.getenv("DOCS_BASE_URL", WEBSITE_URL)
-FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
-FLASK_PORT = int(os.getenv("FLASK_PORT", os.getenv("PORT", "5000")))
-FLASK_DEBUG = os.getenv("FLASK_DEBUG", "true").lower() == "true"
+DOCS_BASE_URL = _str_env("DOCS_BASE_URL", WEBSITE_URL)
+FLASK_HOST = _str_env("FLASK_HOST", "0.0.0.0")
+FLASK_PORT = _int_env("FLASK_PORT", _int_env("PORT", 5000, min_value=1, max_value=65535), min_value=1, max_value=65535)
+FLASK_DEBUG = _bool_env("FLASK_DEBUG", True)
 
-ROOT_RATE_LIMIT = os.getenv("ROOT_RATE_LIMIT", "30 per minute")
-DOCS_RATE_LIMIT = os.getenv("DOCS_RATE_LIMIT", "30 per minute")
-PARTICIPANT_CREATE_RATE_LIMIT = os.getenv("PARTICIPANT_CREATE_RATE_LIMIT", "30 per minute")
-PARTICIPANT_CHECK_RATE_LIMIT = os.getenv("PARTICIPANT_CHECK_RATE_LIMIT", "30 per minute")
-CONSENT_RATE_LIMIT = os.getenv("CONSENT_RATE_LIMIT", "20 per minute")
-PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT = os.getenv("PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT", "30 per minute")
-SUBMIT_RATE_LIMIT = os.getenv("SUBMIT_RATE_LIMIT", "60 per minute")
-PAYMENT_CREATE_RATE_LIMIT = os.getenv("PAYMENT_CREATE_RATE_LIMIT", "20 per minute")
-PAYMENT_VERIFY_UPLOAD_RATE_LIMIT = os.getenv("PAYMENT_VERIFY_UPLOAD_RATE_LIMIT", "20 per minute")
-PAYMENT_STATUS_RATE_LIMIT = os.getenv("PAYMENT_STATUS_RATE_LIMIT", "30 per minute")
-ENGAGEMENT_TRACK_RATE_LIMIT = os.getenv("ENGAGEMENT_TRACK_RATE_LIMIT", "120 per minute")
-
-ENGAGEMENT_EVENT_HISTORY_LIMIT = int(os.getenv("ENGAGEMENT_EVENT_HISTORY_LIMIT", "100"))
-OFFLINE_ENGAGEMENT_QUEUE_MAX = int(os.getenv("OFFLINE_ENGAGEMENT_QUEUE_MAX", "200"))
+ROOT_RATE_LIMIT = _rate_limit_env("ROOT_RATE_LIMIT", "30 per minute")
+DOCS_RATE_LIMIT = _rate_limit_env("DOCS_RATE_LIMIT", "30 per minute")
+PARTICIPANT_CREATE_RATE_LIMIT = _rate_limit_env("PARTICIPANT_CREATE_RATE_LIMIT", "30 per minute")
+PARTICIPANT_CHECK_RATE_LIMIT = _rate_limit_env("PARTICIPANT_CHECK_RATE_LIMIT", "30 per minute")
+CONSENT_RATE_LIMIT = _rate_limit_env("CONSENT_RATE_LIMIT", "20 per minute")
+PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT = _rate_limit_env("PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT", "30 per minute")
+SUBMIT_RATE_LIMIT = _rate_limit_env("SUBMIT_RATE_LIMIT", "60 per minute")
+PAYMENT_CREATE_RATE_LIMIT = _rate_limit_env("PAYMENT_CREATE_RATE_LIMIT", "20 per minute")
+PAYMENT_VERIFY_UPLOAD_RATE_LIMIT = _rate_limit_env("PAYMENT_VERIFY_UPLOAD_RATE_LIMIT", "20 per minute")
+PAYMENT_STATUS_RATE_LIMIT = _rate_limit_env("PAYMENT_STATUS_RATE_LIMIT", "30 per minute")
 
 IMAGE_PICK_ATTEMPTS_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_ATTENTION", "4"))
 IMAGE_PICK_ATTEMPTS_NON_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_NON_ATTENTION", "8"))

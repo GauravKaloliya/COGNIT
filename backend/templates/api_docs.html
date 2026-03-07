@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>C.O.G.N.I.T. API Documentation</title>
+    <title>C.O.G.N.I.T. Public API Documentation</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='api_docs.css') }}">
 </head>
 <body>
@@ -11,8 +11,8 @@
         <main class="panel">
             <header class="doc-header">
                 <div>
-                    <h1>C.O.G.N.I.T. API Documentation</h1>
-                    <p class="doc-subtitle">Detailed end-user API reference</p>
+                    <h1>C.O.G.N.I.T. Public API</h1>
+                    <p class="doc-subtitle">Production documentation for external clients (web, mobile, backend-to-backend)</p>
                 </div>
                 <div class="base-url-wrap">
                     <span>Base URL</span>
@@ -22,54 +22,128 @@
 
             <nav class="tabs" role="tablist" aria-label="Documentation tabs">
                 <button class="tab active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
+                <button class="tab" data-tab="quickstart" role="tab" aria-selected="false">Quickstart</button>
                 <button class="tab" data-tab="endpoints" role="tab" aria-selected="false">Endpoints</button>
-                <button class="tab" data-tab="examples" role="tab" aria-selected="false">Examples</button>
+                <button class="tab" data-tab="security" role="tab" aria-selected="false">Security</button>
                 <button class="tab" data-tab="errors" role="tab" aria-selected="false">Errors</button>
             </nav>
 
             <section id="overview" class="tab-content active" role="tabpanel">
                 <h2>Overview</h2>
-                <p>This document includes only routes used by end users through the web app flow.</p>
+                <p>This API is client-agnostic. Any HTTP client can integrate if it follows the documented protocol for idempotency, payment tokens, and state transitions.</p>
 
-                <h3>Response Envelope</h3>
+                <h3>API Style</h3>
+                <ul>
+                    <li>All POST requests use <code>Content-Type: application/json</code>.</li>
+                    <li>Success envelope: <code>{"success": true, "data": {...}}</code>.</li>
+                    <li>Error envelope: <code>{"success": false, "error": {...}}</code>.</li>
+                    <li>Server returns <code>X-Request-ID</code> on every response.</li>
+                    <li>Timestamps are ISO-8601 UTC.</li>
+                    <li>Mobile clients are fully supported; API does not require browser-only primitives.</li>
+                </ul>
+
+                <h3>Open Contracts</h3>
+                <ul>
+                    <li><code>GET /docs</code>: detailed machine-readable contract</li>
+                    <li><code>/shared/contracts/openapi.v1.json</code>: OpenAPI source</li>
+                    <li><code>/shared/contracts/error_contract.json</code>: stable error catalog</li>
+                    <li><code>/shared/contracts/postman_collection.v1.json</code>: import-ready collection</li>
+                </ul>
+
+                <h3>Response Envelopes</h3>
                 <div class="code-block"><pre>{
   "success": true,
-  "data": { ... },
-  "message": "optional"
-}</pre></div>
-                <div class="code-block"><pre>{
-  "success": false,
-  "error": {
-    "code": "PAY_001_0004",
-    "message": "Human-readable message",
-    "category": "PAY",
-    "http_status": 400,
-    "retryable": true,
-    "request_id": "uuid"
+  "data": {
+    "status": "created"
   }
 }</pre></div>
 
-                <h3>Core Flow</h3>
-                <ol>
-                    <li>Create participant: <code>POST /participants</code></li>
-                    <li>Availability checks while filling form: <code>/check-username</code>, <code>/check-email</code>, <code>/check-phone</code></li>
-                    <li>Record consent: <code>POST /consent</code></li>
-                    <li>Create payment and verify screenshot: <code>POST /payments/create</code> then <code>POST /payments/{payment_id}/verify-upload</code></li>
-                    <li>Fetch image: <code>GET /images/random</code></li>
-                    <li>Submit response: <code>POST /submit</code></li>
-                </ol>
+                <div class="code-block"><pre>{
+  "success": false,
+  "error": {
+    "code": "PAY_001_0002",
+    "message": "Payment session has expired.",
+    "category": "PAY",
+    "http_status": 400,
+    "retryable": true,
+    "request_id": "6e63df73-4c8f-4dbe-a2a7-b7ee202301d3"
+  }
+}</pre></div>
 
-                <h3>General Rules</h3>
-                <ul>
-                    <li>Use <code>Content-Type: application/json</code> for POST routes.</li>
-                    <li>Use <code>X-Idempotency-Key</code> on mutating routes to avoid duplicate writes.</li>
-                    <li>Use <code>X-Request-ID</code> from response headers for support/debugging.</li>
-                    <li>All timestamps are ISO-8601 UTC strings.</li>
-                </ul>
+                <h3>Canonical Integration Flow</h3>
+                <ol>
+                    <li><code>POST /participants</code> to register user.</li>
+                    <li><code>POST /consent</code> after user accepts consent.</li>
+                    <li><code>POST /payments/create</code> to open payment session.</li>
+                    <li><code>GET /payments/{payment_public_id}/status</code> to refresh status/token.</li>
+                    <li><code>POST /payments/{payment_public_id}/upload-url</code> (recommended upload path).</li>
+                    <li><code>POST /payments/{payment_public_id}/verify-upload</code> to verify screenshot.</li>
+                    <li><code>GET /images/random</code> then <code>POST /submit</code> for survey loop.</li>
+                </ol>
+            </section>
+
+            <section id="quickstart" class="tab-content" role="tabpanel">
+                <h2>Quickstart</h2>
+                <p>Minimal cURL sequence for one complete participant and payment verify cycle.</p>
+
+                <h3>1. Register Participant</h3>
+                <div class="code-block"><pre>curl -X POST "{{ base_url }}/participants" \
+  -H "Content-Type: application/json" \
+  -H "X-Idempotency-Key: 7d3f8e28-f2f4-4af7-a4cd-3d1645f8f76c" \
+  -d '{
+    "username":"demo_user_01",
+    "email":"demo01@example.com",
+    "phone":"9876543210",
+    "gender_code":"male",
+    "age":25,
+    "location":"Ahmedabad",
+    "language_code":"en",
+    "prior_experience":"beginner",
+    "turnstile_token":"&lt;token_if_enabled&gt;"
+  }'</pre></div>
+
+                <h3>2. Record Consent</h3>
+                <div class="code-block"><pre>curl -X POST "{{ base_url }}/consent" \
+  -H "Content-Type: application/json" \
+  -d '{"public_id":"&lt;participant_public_id&gt;"}'</pre></div>
+
+                <h3>3. Create Payment Session</h3>
+                <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/create" \
+  -H "Content-Type: application/json" \
+  -H "X-Idempotency-Key: d164e2c4-7d96-4e31-9922-1db4c00c4f80" \
+  -d '{
+    "public_id":"&lt;participant_public_id&gt;",
+    "amount":1,
+    "turnstile_token":"&lt;token_if_enabled&gt;"
+  }'</pre></div>
+
+                <h3>4. Request Upload URL (Recommended Path)</h3>
+                <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/&lt;payment_public_id&gt;/upload-url" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer &lt;payment_token&gt;" \
+  -d '{
+    "sha256":"&lt;sha256_hex&gt;",
+    "file_extension":"jpg",
+    "mime_type":"image/jpeg",
+    "file_size":436521
+  }'</pre></div>
+
+                <h3>5. Verify Upload</h3>
+                <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/&lt;payment_public_id&gt;/verify-upload" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer &lt;payment_token&gt;" \
+  -H "X-Idempotency-Key: 61dc25b8-bfe0-4dc0-9f9b-d7277c4cd6be" \
+  -d '{
+    "upload_object_key":"payments/staging/&lt;payment_public_id&gt;/&lt;uuid&gt;.jpg",
+    "sha256":"&lt;sha256_hex&gt;",
+    "file_extension":"jpg",
+    "mime_type":"image/jpeg",
+    "turnstile_token":"&lt;token_if_enabled&gt;"
+  }'</pre></div>
             </section>
 
             <section id="endpoints" class="tab-content" role="tabpanel">
-                <h2>Endpoints</h2>
+                <h2>Endpoint Reference</h2>
 
                 <h3 class="section-heading">System</h3>
                 <article class="endpoint-card expanded">
@@ -79,16 +153,9 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Health probe used by frontend online/offline system checks.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> exempt</p>
-                        <h4>Success Response</h4>
-                        <div class="code-block"><pre>{
-  "success": true,
-  "data": {
-    "status": "healthy",
-    "database": "connected"
-  }
-}</pre></div>
+                        <p class="endpoint-desc">Health probe (service + database). No auth. Rate-limit exempt.</p>
+                        <h4>200 Example</h4>
+                        <div class="code-block"><pre>{"success":true,"data":{"status":"healthy","database":"connected"}}</pre></div>
                     </div>
                 </article>
 
@@ -100,20 +167,12 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Create participant profile. <code>public_id</code> and <code>session_id</code> are auto-generated if omitted.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
-                        <h4>Request Body</h4>
-                        <div class="code-block"><pre>{
-  "username": "user_123",
-  "email": "user@gmail.com",
-  "phone": "9876543210",
-  "gender_code": "male",
-  "age": 25,
-  "location": "ahmedabad",
-  "language_code": "en",
-  "prior_experience": "some experience"
-}</pre></div>
-                        <h4>Success Response</h4>
+                        <p class="endpoint-desc">Create participant record.</p>
+                        <p class="endpoint-meta"><strong>Required headers:</strong> <code>Content-Type</code>, <code>X-Idempotency-Key</code></p>
+                        <p class="endpoint-meta"><strong>Turnstile:</strong> send <code>turnstile_token</code> when backend challenge is enabled.</p>
+                        <h4>Required Fields</h4>
+                        <div class="code-block"><pre>username, email, phone, gender_code, age, location, language_code, prior_experience</pre></div>
+                        <h4>Response</h4>
                         <div class="code-block"><pre>{
   "success": true,
   "data": {
@@ -132,10 +191,8 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Check if username is available.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
-                        <h4>Success Response</h4>
-                        <div class="code-block"><pre>{ "success": true, "data": { "available": true } }</pre></div>
+                        <p class="endpoint-desc">Username availability check.</p>
+                        <div class="code-block"><pre>{"success":true,"data":{"available":true}}</pre></div>
                     </div>
                 </article>
 
@@ -146,10 +203,8 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Check if email is available.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
-                        <h4>Success Response</h4>
-                        <div class="code-block"><pre>{ "success": true, "data": { "available": true } }</pre></div>
+                        <p class="endpoint-desc">Email availability check.</p>
+                        <div class="code-block"><pre>{"success":true,"data":{"available":false}}</pre></div>
                     </div>
                 </article>
 
@@ -160,10 +215,8 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Check if phone number is available.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
-                        <h4>Success Response</h4>
-                        <div class="code-block"><pre>{ "success": true, "data": { "available": true } }</pre></div>
+                        <p class="endpoint-desc">Phone availability check.</p>
+                        <div class="code-block"><pre>{"success":true,"data":{"available":true}}</pre></div>
                     </div>
                 </article>
 
@@ -174,13 +227,11 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Record participant consent.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 20 per minute</p>
-                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
-                        <h4>Request Body</h4>
-                        <div class="code-block"><pre>{ "public_id": "participant-public-uuid" }</pre></div>
-                        <h4>Success Response</h4>
-                        <div class="code-block"><pre>{ "success": true, "data": { "status": "consent recorded" } }</pre></div>
+                        <p class="endpoint-desc">Record consent for participant.</p>
+                        <h4>Body</h4>
+                        <div class="code-block"><pre>{"public_id":"&lt;participant_public_id&gt;"}</pre></div>
+                        <h4>Response</h4>
+                        <div class="code-block"><pre>{"success":true,"data":{"status":"consent recorded"}}</pre></div>
                     </div>
                 </article>
 
@@ -191,9 +242,7 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Get participant payment verification state.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
-                        <h4>Success Response</h4>
+                        <p class="endpoint-desc">Read participant payment access status used to gate survey entry.</p>
                         <div class="code-block"><pre>{
   "success": true,
   "data": {
@@ -201,9 +250,7 @@
     "is_verified": true,
     "current_stage": "survey",
     "payment_id": "payment-public-uuid",
-    "verified_at": "2026-03-04T18:30:00+00:00",
-    "detected_app": "gpay",
-    "reason": null
+    "verified_at": "2026-03-06T12:10:00+00:00"
   }
 }</pre></div>
                     </div>
@@ -217,25 +264,22 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Create payment session and return UPI details/QR/timer.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 20 per minute</p>
-                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
-                        <h4>Request Body</h4>
-                        <div class="code-block"><pre>{
-  "public_id": "participant-public-uuid",
-  "amount": 1
-}</pre></div>
-                        <h4>Success Response</h4>
+                        <p class="endpoint-desc">Create a time-bound payment session and issue payment write token.</p>
+                        <p class="endpoint-meta"><strong>Required headers:</strong> <code>Content-Type</code>, <code>X-Idempotency-Key</code></p>
+                        <p class="endpoint-meta"><strong>Turnstile:</strong> send <code>turnstile_token</code> when enabled.</p>
+                        <h4>Body</h4>
+                        <div class="code-block"><pre>{"public_id":"&lt;participant_public_id&gt;","amount":1}</pre></div>
+                        <h4>Response</h4>
                         <div class="code-block"><pre>{
   "success": true,
   "data": {
     "payment_id": "payment-public-uuid",
     "amount": 1,
-    "expires_at": "2026-03-04T18:35:00+00:00",
+    "expires_at": "2026-03-06T12:15:00+00:00",
     "signature": "sha256-signature",
+    "payment_token": "&lt;signed-token&gt;",
     "upi_link": "upi://pay?...",
     "qr_base64": "...",
-    "timer_activated": true,
     "time_remaining_seconds": 300
   }
 }</pre></div>
@@ -245,25 +289,20 @@
                 <article class="endpoint-card">
                     <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
-                        <code class="endpoint-path">/payments/{payment_id}/status</code>
+                        <code class="endpoint-path">/payments/{payment_public_id}/status</code>
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Check payment status, expiry, attempts, and verification details.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 30 per minute</p>
-                        <h4>Success Response</h4>
+                        <p class="endpoint-desc">Read payment status. While payment is pending/processing, response includes refreshed <code>payment_token</code>.</p>
                         <div class="code-block"><pre>{
   "success": true,
   "data": {
     "payment_id": "payment-public-uuid",
-    "status": "processing",
-    "amount": 1,
-    "expires_at": "2026-03-04T18:35:00+00:00",
-    "is_expired": false,
-    "time_remaining_seconds": 211,
-    "verified_at": null,
-    "verification_attempts": 1,
-    "detected_app": "unknown"
+    "status": "pending",
+    "expires_at": "2026-03-06T12:15:00+00:00",
+    "time_remaining_seconds": 194,
+    "verification_attempts": 0,
+    "payment_token": "&lt;signed-token&gt;"
   }
 }</pre></div>
                     </div>
@@ -272,38 +311,68 @@
                 <article class="endpoint-card">
                     <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/payments/{payment_id}/verify-upload</code>
+                        <code class="endpoint-path">/payments/{payment_public_id}/upload-url</code>
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Verify payment screenshot upload and finalize payment status.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 20 per minute</p>
-                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
-                        <h4>Request Body</h4>
+                        <p class="endpoint-desc">Get presigned S3 URL for screenshot upload (recommended path).</p>
+                        <p class="endpoint-meta"><strong>Required header:</strong> <code>Authorization: Bearer &lt;payment_token&gt;</code></p>
+                        <h4>Body</h4>
                         <div class="code-block"><pre>{
-  "image_base64": "base64-encoded-image",
-  "file_extension": "jpg",
-  "sha256": "64-char-sha256",
-  "mime_type": "image/jpeg",
-  "original_filename": "payment.jpg",
-  "file_size": 435820
+  "sha256":"&lt;64-char-hex&gt;",
+  "file_extension":"jpg",
+  "mime_type":"image/jpeg",
+  "file_size":436521
 }</pre></div>
-                        <h4>Success Response</h4>
+                        <h4>Response</h4>
+                        <div class="code-block"><pre>{
+  "success": true,
+  "data": {
+    "upload_url": "https://...",
+    "upload_object_key": "payments/staging/&lt;payment_public_id&gt;/&lt;uuid&gt;.jpg",
+    "upload_content_type": "image/jpeg",
+    "expires_in_seconds": 300
+  }
+}</pre></div>
+                    </div>
+                </article>
+
+                <article class="endpoint-card">
+                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
+                        <span class="method-badge POST">POST</span>
+                        <code class="endpoint-path">/payments/{payment_public_id}/verify-upload</code>
+                        <span class="endpoint-toggle">▶</span>
+                    </button>
+                    <div class="endpoint-body">
+                        <p class="endpoint-desc">Run OCR and anti-fraud verification, then mark payment status.</p>
+                        <p class="endpoint-meta"><strong>Required headers:</strong> <code>Content-Type</code>, <code>X-Idempotency-Key</code>, <code>Authorization: Bearer &lt;payment_token&gt;</code></p>
+                        <p class="endpoint-meta"><strong>Body:</strong> provide <code>sha256</code>, <code>file_extension</code> and either <code>upload_object_key</code> (recommended) or <code>image_base64</code> (legacy).</p>
+                        <h4>Body (recommended)</h4>
+                        <div class="code-block"><pre>{
+  "upload_object_key":"payments/staging/&lt;payment_public_id&gt;/&lt;uuid&gt;.jpg",
+  "sha256":"&lt;64-char-hex&gt;",
+  "file_extension":"jpg",
+  "mime_type":"image/jpeg",
+  "original_filename":"payment.jpg",
+  "file_size":436521,
+  "turnstile_token":"&lt;token_if_enabled&gt;"
+}</pre></div>
+                        <h4>Response</h4>
                         <div class="code-block"><pre>{
   "success": true,
   "data": {
     "status": "verified",
     "payment_id": "payment-public-uuid",
     "payment_status": "success",
-    "detected_app": "gpay",
     "fraud_score": 0,
+    "detected_app": "gpay",
     "verification_attempts": 1
   }
 }</pre></div>
                     </div>
                 </article>
 
-                <h3 class="section-heading">Survey</h3>
+                <h3 class="section-heading">Survey + Submission</h3>
                 <article class="endpoint-card">
                     <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
                         <span class="method-badge GET">GET</span>
@@ -311,8 +380,7 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Fetch one image at a time with optional exclusion list and attention-check scheduling.</p>
-                        <h4>Success Response</h4>
+                        <p class="endpoint-desc">Fetch random image. <code>public_id</code> is recommended for attention-check scheduling behavior.</p>
                         <div class="code-block"><pre>{
   "success": true,
   "data": {
@@ -332,130 +400,113 @@
                         <span class="endpoint-toggle">▶</span>
                     </button>
                     <div class="endpoint-body">
-                        <p class="endpoint-desc">Submit description/feedback/rating for current image.</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 60 per minute</p>
-                        <p class="endpoint-meta"><strong>Idempotency:</strong> <code>X-Idempotency-Key</code> supported</p>
-                        <h4>Request Body</h4>
+                        <p class="endpoint-desc">Submit survey response. Payment must be completed server-side.</p>
+                        <p class="endpoint-meta"><strong>Required headers:</strong> <code>Content-Type</code>, <code>X-Idempotency-Key</code></p>
+                        <p class="endpoint-meta"><strong>Turnstile:</strong> send <code>turnstile_token</code> when enabled.</p>
+                        <h4>Body</h4>
                         <div class="code-block"><pre>{
-  "public_id": "participant-public-uuid",
-  "image_id": "21.svg",
-  "description": "at least 60 words...",
-  "feedback": "at least 5 chars",
-  "rating": 8,
-  "time_spent_seconds": 125,
-  "tab_switch_count": 0,
-  "page_close_attempts": 0,
-  "network_disconnects": 0
+  "public_id":"&lt;participant_public_id&gt;",
+  "image_id":"21.svg",
+  "description":"at least 60 words...",
+  "feedback":"at least 5 chars",
+  "rating":8,
+  "time_spent_seconds":125,
+  "tab_switch_count":0,
+  "page_close_attempts":0,
+  "network_disconnects":0,
+  "survey_time_spent_ms":42000,
+  "survey_page_views":2,
+  "survey_tab_switches":1,
+  "survey_page_close_attempts":0,
+  "survey_network_disconnects":0,
+  "survey_max_scroll_depth_pct":67,
+  "survey_clicks":23,
+  "survey_keypresses":140,
+  "turnstile_token":"&lt;token_if_enabled&gt;"
 }</pre></div>
-                        <h4>Success Response</h4>
+                        <h4>Response</h4>
                         <div class="code-block"><pre>{
   "success": true,
   "data": {
     "status": "submitted",
     "word_count": 134,
     "quality_score": 0.92,
-    "flagged_too_fast": false,
-    "survey_index": 2,
-    "is_survey": true,
-    "is_attention_check": false,
-    "engagement": {
-      "tab_switch_count": 0,
-      "page_close_attempts": 0,
-      "network_disconnects": 0
-    }
-  }
-}</pre></div>
-                    </div>
-                </article>
-
-                <article class="endpoint-card">
-                    <button class="endpoint-header" type="button" onclick="toggleEndpoint(this)">
-                        <span class="method-badge POST">POST</span>
-                        <code class="endpoint-path">/engagement/track</code>
-                        <span class="endpoint-toggle">▶</span>
-                    </button>
-                    <div class="endpoint-body">
-                        <p class="endpoint-desc">Track engagement counters (tab switch, page close attempt, disconnect, page view).</p>
-                        <p class="endpoint-meta"><strong>Rate limit:</strong> 120 per minute</p>
-                        <h4>Request Body</h4>
-                        <div class="code-block"><pre>{
-  "public_id": "participant-public-uuid",
-  "event_type": "tab_switch",
-  "event_data": {
-    "at": "2026-03-04T18:31:00+00:00"
-  }
-}</pre></div>
-                        <h4>Success Response</h4>
-                        <div class="code-block"><pre>{
-  "success": true,
-  "data": {
-    "status": "tracked",
-    "event_type": "tab_switch",
-    "total_events": 7
+    "flagged_too_fast": false
   }
 }</pre></div>
                     </div>
                 </article>
             </section>
 
-            <section id="examples" class="tab-content" role="tabpanel">
-                <h2>Examples</h2>
-                <h3>Minimal Frontend Flow</h3>
-                <div class="code-block"><pre>// 1) Create participant
-const participant = await fetch('/participants', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    username: 'user_123',
-    email: 'user@gmail.com',
-    phone: '9876543210',
-    gender_code: 'male',
-    age: 25,
-    location: 'ahmedabad',
-    language_code: 'en',
-    prior_experience: 'some experience'
-  })
-}).then(r => r.json());
+            <section id="security" class="tab-content" role="tabpanel">
+                <h2>Security and Abuse Controls</h2>
 
-// 2) Consent (idempotent)
-await fetch('/consent', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Idempotency-Key': crypto.randomUUID(),
-  },
-  body: JSON.stringify({ public_id: participant.data.public_id }),
-});
+                <h3>1. Server-Only Trust</h3>
+                <ul>
+                    <li>Payment expiry and stage transitions are enforced only in backend state checks.</li>
+                    <li>Client timers are UX-only and never trusted for validity decisions.</li>
+                    <li>Payload format, image/hash consistency, and token integrity are backend-enforced.</li>
+                </ul>
 
-// 3) Create payment
-const payment = await fetch('/payments/create', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Idempotency-Key': crypto.randomUUID(),
-  },
-  body: JSON.stringify({ public_id: participant.data.public_id, amount: 1 }),
-}).then(r => r.json());</pre></div>
+                <h3>2. Turnstile Challenge</h3>
+                <p>When <code>TURNSTILE_ENABLED=true</code>, these endpoints require <code>turnstile_token</code> in request body:</p>
+                <ul>
+                    <li><code>POST /participants</code></li>
+                    <li><code>POST /payments/create</code></li>
+                    <li><code>POST /payments/{payment_public_id}/verify-upload</code></li>
+                    <li><code>POST /submit</code></li>
+                </ul>
+
+                <h3>3. Payment Session Token</h3>
+                <p>Upload and verify routes require a signed payment write token:</p>
+                <ul>
+                    <li>Preferred header: <code>Authorization: Bearer &lt;payment_token&gt;</code></li>
+                    <li>Fallback header: <code>X-Payment-Token: &lt;payment_token&gt;</code></li>
+                    <li>Token is bound to payment id, participant id, signature, session, fingerprint, nonce, and expiry.</li>
+                </ul>
+
+                <h3>4. Idempotency and Replay Resistance</h3>
+                <ul>
+                    <li>Mutating routes require <code>X-Idempotency-Key</code>.</li>
+                    <li>Server stores request hash and rejects conflicting replays.</li>
+                    <li>Payment nonce is one-time and rotated on token issuance/state refresh.</li>
+                </ul>
+
+                <h3>5. Tracking Model</h3>
+                <ul>
+                    <li>Survey page: stored in per-submission columns (<code>submissions.survey_*</code>).</li>
+                </ul>
             </section>
 
             <section id="errors" class="tab-content" role="tabpanel">
-                <h2>Common Error Codes</h2>
+                <h2>Error Model</h2>
+                <p>Use <code>error.code</code> for application logic. Messages may be localized or updated over time.</p>
+
+                <h3>Common Errors</h3>
                 <ul class="error-list">
-                    <li><code>VAL_001_0001</code>: Missing required fields</li>
-                    <li><code>PAR_001_0001</code>: Participant not found</li>
-                    <li><code>PAY_001_0001</code>: Payment not found</li>
-                    <li><code>PAY_001_0002</code>: Payment expired</li>
-                    <li><code>PAY_001_0003</code>: Payment invalid state</li>
-                    <li><code>PAY_001_0004</code>: Invalid payment screenshot / verification failed</li>
-                    <li><code>SUB_001_0003</code>: Description length invalid</li>
-                    <li><code>SUB_001_0004</code>: Feedback length invalid</li>
-                    <li><code>SUB_001_0005</code>: Rating invalid</li>
-                    <li><code>RATE_001_0001</code>: Rate limit exceeded</li>
+                    <li><code>VAL_MISSING_FIELDS</code>: Required fields missing.</li>
+                    <li><code>PAR_001_0001</code>: Participant not found.</li>
+                    <li><code>PAY_001_0001</code>: Payment not found.</li>
+                    <li><code>PAY_001_0002</code>: Payment expired.</li>
+                    <li><code>PAY_001_0003</code>: Invalid payment state.</li>
+                    <li><code>PAY_001_0004</code>: Screenshot verification failed.</li>
+                    <li><code>PAY_001_0011</code>: Verify attempt limit exceeded.</li>
+                    <li><code>AUTH_001_0007</code>: Invalid payment token.</li>
+                    <li><code>BOT_001_0001</code>: Human challenge failed.</li>
+                    <li><code>RATE_001_0001</code>: Rate limit exceeded.</li>
+                </ul>
+
+                <h3>Error Handling Recommendations</h3>
+                <ul>
+                    <li>Log <code>X-Request-ID</code> with every failed call.</li>
+                    <li>Retry only when <code>error.retryable=true</code>.</li>
+                    <li>For payment errors (<code>PAY_*</code>), refresh status using <code>GET /payments/{payment_public_id}/status</code>.</li>
+                    <li>For token errors (<code>AUTH_*</code>), request a refreshed payment token via payment status endpoint.</li>
                 </ul>
             </section>
 
             <footer class="footer">
-                <p>C.O.G.N.I.T. API Documentation - End-user routes only</p>
+                <p>C.O.G.N.I.T. Public API Documentation</p>
             </footer>
         </main>
     </div>
@@ -475,7 +526,8 @@ const payment = await fetch('/payments/create', {
 
                 contents.forEach((content) => content.classList.remove('active'));
                 const tabId = tab.getAttribute('data-tab');
-                document.getElementById(tabId).classList.add('active');
+                const target = document.getElementById(tabId);
+                if (target) target.classList.add('active');
             });
         });
 
