@@ -19,11 +19,6 @@ export default defineConfig(({ mode }) => {
         }
       }
     },
-    resolve: {
-      alias: {
-        "@contracts": path.resolve(process.cwd(), "../shared/contracts"),
-      }
-    },
     build: {
       outDir: "dist",
       sourcemap: mode === "development",
