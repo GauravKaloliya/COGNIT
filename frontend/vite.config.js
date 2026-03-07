@@ -16,6 +16,14 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_DEV_PROXY_TARGET || "http://localhost:5000",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, "")
+        },
+        "/static": {
+          target: env.VITE_DEV_PROXY_TARGET || "http://localhost:5000",
+          changeOrigin: true
+        },
+        "/shared": {
+          target: env.VITE_DEV_PROXY_TARGET || "http://localhost:5000",
+          changeOrigin: true
         }
       }
     },
