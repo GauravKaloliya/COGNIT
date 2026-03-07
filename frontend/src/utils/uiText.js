@@ -1,4 +1,4 @@
-const LANG = (import.meta.env.VITE_UI_LANG || "en").toLowerCase();
+const LANG = "en";
 
 const TEXT = {
   en: {
