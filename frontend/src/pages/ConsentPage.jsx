@@ -134,7 +134,7 @@ export default function ConsentPage({
           <li>Indicate perceived image complexity on a 1–10 scale</li>
           <li>Respond to a small number of instruction-verification items designed to ensure attentive participation</li>
         </ul>
-        <p><strong>Estimated duration:</strong> 15–20 minutes.</p>
+        <p><strong>Estimated duration:</strong> 5–10 minutes.</p>
         <p>You may pause or discontinue at any time. If platform functionality allows, you may resume later.</p>
 
         <h3>Data Quality and Participation Integrity</h3>
@@ -192,7 +192,7 @@ export default function ConsentPage({
         <h3>Foreseeable Risks and Burdens</h3>
         <p>The anticipated burdens are minimal:</p>
         <ul>
-          <li>15–20 minutes of focused attention</li>
+          <li>5–10 minutes of focused attention</li>
           <li>Possible mild cognitive fatigue from descriptive writing</li>
         </ul>
         <p>No physical, emotional, legal, or financial risks beyond ordinary internet usage are expected.</p>
