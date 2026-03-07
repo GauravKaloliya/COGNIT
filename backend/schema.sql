@@ -430,6 +430,14 @@ CREATE TABLE IF NOT EXISTS submissions (
     tab_switch_count    INTEGER NOT NULL DEFAULT 0 CHECK (tab_switch_count >= 0),
     page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (page_close_attempts >= 0),
     network_disconnects INTEGER NOT NULL DEFAULT 0 CHECK (network_disconnects >= 0),
+    survey_time_spent_ms BIGINT NOT NULL DEFAULT 0 CHECK (survey_time_spent_ms >= 0),
+    survey_page_views INTEGER NOT NULL DEFAULT 0 CHECK (survey_page_views >= 0),
+    survey_tab_switches INTEGER NOT NULL DEFAULT 0 CHECK (survey_tab_switches >= 0),
+    survey_page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (survey_page_close_attempts >= 0),
+    survey_network_disconnects INTEGER NOT NULL DEFAULT 0 CHECK (survey_network_disconnects >= 0),
+    survey_max_scroll_depth_pct INTEGER NOT NULL DEFAULT 0 CHECK (survey_max_scroll_depth_pct BETWEEN 0 AND 100),
+    survey_clicks INTEGER NOT NULL DEFAULT 0 CHECK (survey_clicks >= 0),
+    survey_keypresses INTEGER NOT NULL DEFAULT 0 CHECK (survey_keypresses >= 0),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
@@ -612,6 +620,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_per_participant
 CREATE INDEX IF NOT EXISTS idx_payments_expired_pending ON payments (expires_at) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_payments_participant ON payments (participant_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status     ON payments (status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_write_nonce_unique
+    ON payments ((metadata->>'payment_write_nonce'))
+    WHERE (metadata ? 'payment_write_nonce');
 
 CREATE TABLE IF NOT EXISTS payment_files (
     id                BIGSERIAL PRIMARY KEY,
@@ -667,6 +678,9 @@ CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment ON payment_upload
 CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_sha256 ON payment_upload_attempts (sha256);
 CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_status ON payment_upload_attempts (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_idempotency ON payment_upload_attempts (idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment_idempotency_unique
+    ON payment_upload_attempts (payment_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS payment_fraud_signals (
     id           BIGSERIAL PRIMARY KEY,
@@ -797,6 +811,8 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_unique
     ON idempotency_keys (endpoint, idempotency_key, participant_public_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_unique_endpoint_key_hash
+    ON idempotency_keys (endpoint, idempotency_key, request_hash);
 CREATE INDEX IF NOT EXISTS idx_idempotency_created
     ON idempotency_keys (created_at DESC);
 

@@ -75,7 +75,6 @@ Service layer highlights:
 - `POST /payments/{payment_id}/verify-upload`
 - `GET /images/random`
 - `POST /submit`
-- `POST /engagement/track`
 
 Docs endpoints:
 - `GET /` (interactive API docs page)

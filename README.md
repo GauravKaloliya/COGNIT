@@ -13,7 +13,7 @@ C.O.G.N.I.T. solves a hard real-world workflow:
 2. Create time-bound UPI payment session.
 3. Verify screenshot using OCR + fraud scoring.
 4. Unlock survey only after verified payment.
-5. Score submission quality and engagement behavior.
+5. Score submission quality and survey behavior.
 6. Auto-qualify high-quality participants for priority/reward pipelines.
 
 This repo demonstrates **product thinking + systems engineering + secure backend design + resilient frontend UX**.
@@ -60,7 +60,7 @@ C.O.G.N.I.T. is a research-grade data collection platform where participant trus
 - Engagement metrics persisted: tab switches, page close attempts, network disconnects
 
 ### 4) Priority & Rewards Layer
-- Layer 1 eligibility gates (minimum words/rounds + no suspicious engagement patterns)
+- Layer 1 eligibility gates (minimum words/rounds + no suspicious response patterns)
 - Layer 2 selection using quality/time/feedback/rating criteria
 - Inserts into `priority_participants` and `reward_winners`
 
@@ -82,7 +82,6 @@ C.O.G.N.I.T. is a research-grade data collection platform where participant trus
 - React Router
 - Mobile-first CSS system
 - ESLint
-- Playwright (E2E specs)
 
 ### Backend
 - Flask 3
@@ -161,7 +160,6 @@ Primary routes used by the app:
 - `POST /payments/{payment_id}/verify-upload`
 - `GET /images/random`
 - `POST /submit`
-- `POST /engagement/track`
 
 Docs:
 - `GET /` interactive docs page

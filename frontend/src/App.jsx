@@ -8,7 +8,6 @@ import SurveyFeedPage from "./pages/SurveyFeedPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import PageSkeleton from "./components/PageSkeleton.jsx";
-import { getApiUrl } from "./utils/apiBase";
 import { endpoints } from "./utils/api.js";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { uiText } from "./utils/uiText.js";
@@ -23,7 +22,6 @@ const ACTIVE_TAB_LOCK_KEY = "cognit_active_tab_lock_v1";
 const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
 const ACTIVE_TAB_HEARTBEAT_MS = runtimeConfig.activeTabHeartbeatMs;
 const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
-const ENGAGEMENT_QUEUE_KEY = "engagement_queue_v1";
 
 function createId() {
   if (crypto?.randomUUID) return crypto.randomUUID();
@@ -32,6 +30,12 @@ function createId() {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+function normalizePhoneForApi(rawPhone) {
+  const digits = String(rawPhone ?? "").replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  return digits;
 }
 
 function getStoredValue(key, fallback) {
@@ -170,8 +174,8 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(getStoredValue("darkMode", false));
   const [stage, setStage] = useState(getStoredValue("stage", "consent"));
   const [paymentSubStage, setPaymentSubStage] = useState(getStoredValue("paymentSubStage", "content"));
-  const [publicId] = useState(() => getStoredValue("publicId", createId()));
-  const [sessionId] = useState(() => getStoredValue("sessionId", createId()));
+  const [publicId, setPublicId] = useState(() => getStoredValue("publicId", createId()));
+  const [sessionId, setSessionId] = useState(() => getStoredValue("sessionId", createId()));
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue("paymentVerified", false));
   const [demographics, setDemographics] = useState(
@@ -188,9 +192,6 @@ export default function App() {
   );
   const [toasts, setToasts] = useState([]);
   const [surveyTransitionInFlight, setSurveyTransitionInFlight] = useState(false);
-  const engagementFlushInFlightRef = useRef(false);
-  const lastEngagementFlushAtRef = useRef(0);
-  const engagementFlushRetryAfterRef = useRef(0);
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
@@ -368,71 +369,6 @@ export default function App() {
     transitionToSurvey,
   });
 
-  const canTrackEngagement = isActiveTabOwner && ["survey", "finished"].includes(stage);
-  const currentPageRef = useRef("consent");
-
-  const readEngagementQueue = useCallback(() => {
-    try {
-      const raw = sessionStorage.getItem(ENGAGEMENT_QUEUE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, []);
-
-  const writeEngagementQueue = useCallback((items) => {
-    try {
-      sessionStorage.setItem(ENGAGEMENT_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
-    } catch {
-      // Ignore queue persistence errors.
-    }
-  }, []);
-
-  const enqueueEngagementEvent = useCallback((event) => {
-    const now = Date.now();
-    const queue = readEngagementQueue();
-    queue.push({
-      ...event,
-      queued_at: now
-    });
-    // Keep bounded queue to avoid unbounded growth.
-    writeEngagementQueue(queue.slice(-runtimeConfig.engagementQueueMax));
-  }, [readEngagementQueue, writeEngagementQueue]);
-
-  const flushEngagementQueue = useCallback(async () => {
-    if (!publicId || !canTrackEngagement || !online || engagementFlushInFlightRef.current) return;
-    const now = Date.now();
-    if (now < engagementFlushRetryAfterRef.current) return;
-    if (now - lastEngagementFlushAtRef.current < runtimeConfig.engagementFlushCooldownMs) return;
-    const queue = readEngagementQueue();
-    if (!queue.length) return;
-
-    lastEngagementFlushAtRef.current = now;
-    engagementFlushInFlightRef.current = true;
-    // keep UI quiet; use ref-only lock for engagement flush.
-    const remaining = [];
-    for (const event of queue) {
-      try {
-        await endpoints.trackEngagement({
-          public_id: event.public_id || publicId,
-          event_type: event.event_type,
-          event_data: event.event_data || {}
-        });
-      } catch {
-        remaining.push(event);
-      }
-    }
-    writeEngagementQueue(remaining);
-    if (remaining.length) {
-      engagementFlushRetryAfterRef.current = Date.now() + runtimeConfig.engagementFlushRetryMs;
-    } else {
-      engagementFlushRetryAfterRef.current = 0;
-    }
-    engagementFlushInFlightRef.current = false;
-  }, [publicId, canTrackEngagement, online, readEngagementQueue, writeEngagementQueue]);
-
   useEffect(() => saveStoredValue("publicId", publicId), [publicId]);
   useEffect(() => saveStoredValue("sessionId", sessionId), [sessionId]);
   useEffect(() => saveStoredValue("consentGiven", consentGiven), [consentGiven]);
@@ -448,85 +384,6 @@ export default function App() {
     saveStoredValue("darkMode", darkMode);
     document.body.classList.toggle("dark", darkMode);
   }, [darkMode]);
-
-  const trackEngagementEvent = useCallback(
-    (eventType, eventData = {}) => {
-      if (!publicId || !canTrackEngagement) return;
-      const event = {
-        public_id: publicId,
-        event_type: eventType,
-        event_data: eventData,
-      };
-      if (!online) {
-        enqueueEngagementEvent(event);
-        return;
-      }
-      endpoints.trackEngagement(event).catch(() => {
-        enqueueEngagementEvent(event);
-      });
-    },
-    [publicId, canTrackEngagement, online, enqueueEngagementEvent]
-  );
-
-  useEffect(() => {
-    if (!online) return undefined;
-    flushEngagementQueue();
-    const interval = setInterval(flushEngagementQueue, runtimeConfig.engagementFlushPollMs);
-    return () => clearInterval(interval);
-  }, [flushEngagementQueue, online]);
-
-  useEffect(() => {
-    if (!canTrackEngagement) return;
-    const page = stage === "payment" ? `payment-${paymentSubStage}` : stage;
-    currentPageRef.current = page;
-    trackEngagementEvent("page_view", {
-      page,
-      stage,
-      payment_sub_stage: stage === "payment" ? paymentSubStage : null,
-      path: window.location.pathname,
-    });
-  }, [canTrackEngagement, stage, paymentSubStage, trackEngagementEvent]);
-
-  useEffect(() => {
-    if (!canTrackEngagement || !publicId) return;
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) trackEngagementEvent("tab_switch", { page: currentPageRef.current });
-    };
-
-    const handleOffline = () => {
-      trackEngagementEvent("network_disconnect", { page: currentPageRef.current });
-    };
-
-    const handleBeforeUnload = () => {
-      const payload = JSON.stringify({
-        public_id: publicId,
-        event_type: "page_close_attempt",
-        event_data: { page: currentPageRef.current },
-      });
-      if (navigator.sendBeacon) {
-        const blob = new Blob([payload], { type: "application/json" });
-        if (!navigator.sendBeacon(getApiUrl("/engagement/track"), blob)) {
-          enqueueEngagementEvent({
-            public_id: publicId,
-            event_type: "page_close_attempt",
-            event_data: { page: currentPageRef.current },
-          });
-        }
-      } else {
-        trackEngagementEvent("page_close_attempt", { page: currentPageRef.current });
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("offline", handleOffline);
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("offline", handleOffline);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, [canTrackEngagement, publicId, trackEngagementEvent, enqueueEngagementEvent]);
 
   // Server-backed guard for direct navigation to late stages.
   useEffect(() => {
@@ -611,18 +468,19 @@ export default function App() {
     const controller = new AbortController();
     submitFlowAbortRef.current = controller;
     try {
-      return await endpoints.createParticipant({
-        public_id: publicId,
-        session_id: sessionId,
+      const participant = await endpoints.createParticipant({
         username: demographics.username,
         email: demographics.email,
-        phone: demographics.phone,
+        phone: normalizePhoneForApi(demographics.phone),
         gender_code: demographics.gender_code,
         age: parseInt(demographics.age),
         location: demographics.location,
         language_code: demographics.language_code,
         prior_experience: demographics.prior_experience,
       }, { signal: controller.signal });
+      if (participant?.public_id) setPublicId(participant.public_id);
+      if (participant?.session_id) setSessionId(participant.session_id);
+      return participant;
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
         throw error;
@@ -635,14 +493,15 @@ export default function App() {
     }
   };
 
-  const recordConsent = async () => {
+  const recordConsent = async (publicIdOverride = null) => {
     if (submitFlowAbortRef.current) {
       submitFlowAbortRef.current.abort();
     }
     const controller = new AbortController();
     submitFlowAbortRef.current = controller;
     try {
-      return await endpoints.recordConsent(publicId, { signal: controller.signal });
+      const consentPublicId = publicIdOverride || publicId;
+      return await endpoints.recordConsent(consentPublicId, { signal: controller.signal });
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
         throw error;
@@ -657,8 +516,9 @@ export default function App() {
 
   const handleUserDetailsSubmit = async () => {
     try {
-      await createParticipant();
-      if (consentGiven) await recordConsent();
+      const participant = await createParticipant();
+      const consentPublicId = participant?.public_id || publicId;
+      if (consentGiven) await recordConsent(consentPublicId);
       if (validateStageTransition("user-details", "payment")) setStage("payment");
       addToast("Details submitted successfully", "success");
     } catch (err) {

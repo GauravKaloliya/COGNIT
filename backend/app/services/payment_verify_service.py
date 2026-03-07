@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from app.config import (
     FRAUD_UNKNOWN_REASON_WEIGHT,
     FRAUD_REJECT_THRESHOLD,
     FRAUD_SUCCESS_MAX_SCORE,
+    PAYMENT_VERIFY_MAX_ATTEMPTS,
 )
 from app.extensions import s3
 from app.utils.helpers import create_error_response, validate_image_extension, log_audit, get_ip_hash
@@ -25,6 +27,7 @@ from app.utils.ocr import (
     extract_text_with_confidence,
     verify_payment_screenshot,
     sanitize_extracted_text_for_storage,
+    compute_ocr_signature,
     OCRServiceUnavailableError,
     TesseractNotFoundError,
     OCRServiceError,
@@ -33,6 +36,7 @@ from app.utils.fraud import (
     check_duplicate_screenshot,
     check_rejected_screenshot,
     check_near_duplicate_screenshot,
+    check_ocr_signature_replay,
     compute_dhash,
     is_same_person_by_fingerprint,
 )
@@ -43,6 +47,7 @@ from app.services import (
     create_payment_upload_attempt,
     finalize_payment_upload_attempt,
     ensure_payment_status_transition,
+    transition_payment_status,
     StateTransitionError,
     emit_domain_event,
 )
@@ -148,15 +153,16 @@ def process_verify_upload(
     payment_audit_logger: Optional[Callable] = None,
 ):
     image_base64 = data.get("image_base64")
+    upload_object_key = (data.get("upload_object_key") or "").strip()
     file_extension = (data.get("file_extension", "jpg") or "jpg").lower().strip(".")
-    sha256_hash = data.get("sha256")
+    sha256_hash = (data.get("sha256") or "").strip().lower()
     mime_type = (data.get("mime_type") or "").strip()[:120]
     original_filename = (data.get("original_filename") or "").strip()[:255]
     client_file_size = data.get("file_size")
     idempotency_key = (idempotency_key_header or data.get("idempotency_key") or "").strip()[:128]
 
-    if not image_base64:
-        return create_error_response("MISSING_FIELDS", {"fields": ["image_base64"]})
+    if not image_base64 and not upload_object_key:
+        return create_error_response("MISSING_FIELDS", {"fields": ["upload_object_key"]})
     if not sha256_hash:
         return create_error_response("MISSING_FIELDS", {"fields": ["sha256"]})
     if not re.match(r"^[a-f0-9]{64}$", sha256_hash):
@@ -166,28 +172,8 @@ def process_verify_upload(
     if not is_valid_ext:
         return create_error_response("INVALID_IMAGE_TYPE", {"allowed": ["jpg", "jpeg", "png", "webp"]})
 
-    try:
-        if "," in image_base64:
-            image_base64 = image_base64.split(",")[1]
-        image_bytes = base64.b64decode(image_base64)
-        max_bytes = max(1, int(PAYMENT_MAX_IMAGE_MB)) * 1024 * 1024
-        if len(image_bytes) > max_bytes:
-            return create_error_response(
-                "VAL_FILE_TOO_LARGE",
-                details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": "payment_image_too_large"},
-                custom_message=f"The file is too large. Please upload an image smaller than {int(PAYMENT_MAX_IMAGE_MB)}MB."
-            )
-        image = Image.open(BytesIO(image_bytes))
-    except Exception:
-        return create_error_response("INVALID_FORMAT", {"field": "image_base64", "message": "Invalid image data"})
-
-    try:
-        image_hash = compute_dhash(image) or sha256_hash
-    except Exception:
-        image_hash = sha256_hash
-
     row = db.execute(text("""
-        SELECT id, participant_id, status, expires_at, timer_activated_at
+        SELECT id, participant_id, status, expires_at, timer_activated_at, verification_attempts
         FROM payments
         WHERE public_id = :pid
         FOR UPDATE
@@ -195,7 +181,40 @@ def process_verify_upload(
     if not row:
         return create_error_response("PAYMENT_NOT_FOUND")
 
-    payment_id, participant_id, status, expires_at, timer_activated_at = row
+    payment_id, participant_id, status, expires_at, timer_activated_at, verification_attempts = row
+
+    try:
+        if upload_object_key:
+            expected_prefix = f"payments/staging/{payment_public_id}/"
+            if not upload_object_key.startswith(expected_prefix):
+                return create_error_response("VAL_INVALID_FORMAT", {"field": "upload_object_key"})
+            obj = s3.get_object(Bucket=S3_BUCKET_NAME, Key=upload_object_key)
+            image_bytes = obj["Body"].read()
+        else:
+            if "," in image_base64:
+                image_base64 = image_base64.split(",")[1]
+            image_bytes = base64.b64decode(image_base64)
+
+        max_bytes = max(1, int(PAYMENT_MAX_IMAGE_MB)) * 1024 * 1024
+        if len(image_bytes) > max_bytes:
+            return create_error_response(
+                "VAL_FILE_TOO_LARGE",
+                details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": "payment_image_too_large"},
+                custom_message=f"The file is too large. Please upload an image smaller than {int(PAYMENT_MAX_IMAGE_MB)}MB."
+            )
+        actual_sha = hashlib.sha256(image_bytes).hexdigest()
+        if actual_sha != sha256_hash:
+            return create_error_response("PAY_INVALID_SHA256")
+
+        image = Image.open(BytesIO(image_bytes))
+    except Exception:
+        source_field = "upload_object_key" if upload_object_key else "image_base64"
+        return create_error_response("INVALID_FORMAT", {"field": source_field, "message": "Invalid image data"})
+
+    try:
+        image_hash = compute_dhash(image) or sha256_hash
+    except Exception:
+        image_hash = sha256_hash
 
     request_hash = build_request_hash({
         "payment_public_id": payment_public_id,
@@ -203,6 +222,7 @@ def process_verify_upload(
         "file_extension": ext,
         "mime_type": mime_type,
         "file_size": client_file_size,
+        "upload_object_key": upload_object_key or None,
     })
     _idem, replay = load_idempotent_response(
         db,
@@ -226,7 +246,10 @@ def process_verify_upload(
         file_size=int(client_file_size) if isinstance(client_file_size, int) or (isinstance(client_file_size, str) and str(client_file_size).isdigit()) else None,
         image_phash=image_hash,
         status="started",
-        details={"original_filename": original_filename or None},
+        details={
+            "original_filename": original_filename or None,
+            "upload_object_key": upload_object_key or None,
+        },
     )
 
     def _finalize_attempt(status_name: str, detected_app=None, failures=None, fraud_score=None, details=None):
@@ -294,20 +317,22 @@ def process_verify_upload(
                 "mime_type": mime_type or None,
                 "original_filename": original_filename or None,
                 "client_file_size": client_file_size,
+                "upload_object_key": upload_object_key or None,
             },
         )
 
     if expires_at and datetime.now(timezone.utc) > expires_at:
         try:
-            ensure_payment_status_transition(status, "expired")
+            transition_payment_status(
+                db,
+                payment_id=int(payment_id),
+                from_status=str(status),
+                to_status="expired",
+                request_id=request_id,
+                details={"reason": "session_expired_before_verify"},
+            )
         except StateTransitionError:
             return create_error_response("PAYMENT_INVALID_STATE")
-
-        db.execute(text("""
-            UPDATE payments
-            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {"pid": payment_id})
         _finalize_attempt("expired")
         db.commit()
         return create_error_response("PAYMENT_EXPIRED")
@@ -324,6 +349,38 @@ def process_verify_upload(
             )
         _finalize_attempt("invalid_state", details={"current_payment_status": status})
         return create_error_response("PAYMENT_INVALID_STATE")
+
+    if int(verification_attempts or 0) >= int(PAYMENT_VERIFY_MAX_ATTEMPTS):
+        try:
+            transition_payment_status(
+                db,
+                payment_id=int(payment_id),
+                from_status=str(status),
+                to_status="failed",
+                request_id=request_id,
+                details={"reason": "max_verify_attempts_exceeded"},
+            )
+        except StateTransitionError:
+            return create_error_response("PAYMENT_INVALID_STATE")
+        db.execute(text("""
+            UPDATE payments
+            SET verification_details = COALESCE(verification_details, '{}'::jsonb) || CAST(:details AS jsonb),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :pid
+        """), {
+            "pid": payment_id,
+            "details": json.dumps({
+                "failure_reasons": ["max_attempts_exceeded"],
+                "max_attempts": int(PAYMENT_VERIFY_MAX_ATTEMPTS),
+            }),
+        })
+        _finalize_attempt(
+            "invalid_state",
+            failures=["max_attempts_exceeded"],
+            details={"max_attempts": int(PAYMENT_VERIFY_MAX_ATTEMPTS)},
+        )
+        db.commit()
+        return create_error_response("PAY_VERIFY_ATTEMPTS_EXCEEDED")
 
     db.execute(text("""
         UPDATE payments
@@ -627,6 +684,19 @@ def process_verify_upload(
         )
         detected_app = detected_app or "unknown"
         filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
+        ocr_signature = compute_ocr_signature(extracted_text, detected_app)
+        if ocr_signature:
+            is_replay, replay_payment_id, replay_same_participant = check_ocr_signature_replay(
+                db,
+                ocr_signature,
+                sha256_hash,
+                participant_id=participant_id,
+            )
+            if is_replay:
+                replay_reason = "ocr_signature_replay_self" if replay_same_participant else "ocr_signature_replay_other"
+                failures = list(set((failures or []) + [replay_reason]))
+                is_valid = False
+
         risk_score = _calculate_fraud_score(failures, confidence=confidence)
         force_policy_reject = bool(is_valid and risk_score >= float(FRAUD_REJECT_THRESHOLD))
         if force_policy_reject:
@@ -642,6 +712,8 @@ def process_verify_upload(
             "risk_score": risk_score,
             "decision_threshold": float(FRAUD_REJECT_THRESHOLD),
         }
+        if ocr_signature:
+            verification_details["ocr_signature"] = ocr_signature
 
         if is_valid:
             try:
@@ -651,12 +723,26 @@ def process_verify_upload(
 
             object_key = f"payments/{payment_public_id}.{ext}"
             try:
-                s3_response = s3.put_object(
-                    Bucket=S3_BUCKET_NAME,
-                    Key=object_key,
-                    Body=image_bytes,
-                    ContentType=content_type,
-                )
+                if upload_object_key:
+                    s3_response = s3.copy_object(
+                        Bucket=S3_BUCKET_NAME,
+                        CopySource={"Bucket": S3_BUCKET_NAME, "Key": upload_object_key},
+                        Key=object_key,
+                        ContentType=content_type or mime_type or "image/jpeg",
+                        MetadataDirective="REPLACE",
+                    )
+                    try:
+                        if upload_object_key != object_key:
+                            s3.delete_object(Bucket=S3_BUCKET_NAME, Key=upload_object_key)
+                    except Exception:
+                        pass
+                else:
+                    s3_response = s3.put_object(
+                        Bucket=S3_BUCKET_NAME,
+                        Key=object_key,
+                        Body=image_bytes,
+                        ContentType=content_type,
+                    )
             except Exception:
                 db.rollback()
                 _finalize_attempt("error", details={"reason": "s3_upload_failed"})
@@ -675,7 +761,11 @@ def process_verify_upload(
                 "bucket_name": S3_BUCKET_NAME,
                 "key": object_key,
                 "hash": sha256_hash,
-                "etag": (s3_response.get("ETag") or "").strip('"') or None,
+                "etag": (
+                    (s3_response.get("ETag") or "").strip('"')
+                    or (s3_response.get("CopyObjectResult", {}).get("ETag") or "").strip('"')
+                    or None
+                ),
                 "file_size": int(len(image_bytes)),
                 "content_type": content_type or mime_type or None,
                 "uploaded_by_ip_hash": ip_hash or get_ip_hash(),
@@ -711,6 +801,7 @@ def process_verify_upload(
                 detected_app=detected_app,
                 failures=[],
                 fraud_score=min(float(FRAUD_SUCCESS_MAX_SCORE), risk_score),
+                details={"ocr_signature": ocr_signature} if ocr_signature else None,
             )
             emit_domain_event(
                 db,
@@ -764,7 +855,8 @@ def process_verify_upload(
                 "verified": True,
                 "failure_reasons": failures,
             }
-            _finalize_attempt("rejected", detected_app=detected_app, failures=failures, fraud_score=risk_score)
+            reject_details = {"ocr_signature": ocr_signature} if ocr_signature else None
+            _finalize_attempt("rejected", detected_app=detected_app, failures=failures, fraud_score=risk_score, details=reject_details)
 
     except Exception as exc:
         try:
