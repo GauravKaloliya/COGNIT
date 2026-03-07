@@ -137,6 +137,25 @@
         }
       }
     },
+    "/participants/{public_id}/payment-status": {
+      "get": {
+        "parameters": [
+          {
+            "name": "public_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
     "/payments/create": {
       "post": {
         "responses": {
@@ -148,6 +167,44 @@
     },
     "/payments/{payment_public_id}/status": {
       "get": {
+        "parameters": [
+          {
+            "name": "payment_public_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/payments/{payment_public_id}/qr": {
+      "get": {
+        "parameters": [
+          {
+            "name": "payment_public_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/payments/{payment_public_id}/upload-url": {
+      "post": {
         "parameters": [
           {
             "name": "payment_public_id",
