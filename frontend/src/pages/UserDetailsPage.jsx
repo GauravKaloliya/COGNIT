@@ -9,13 +9,26 @@ const USERNAME_MIN_LENGTH = runtimeConfig.usernameMinLength;
 const AGE_MIN = runtimeConfig.ageMin;
 const AGE_MAX = runtimeConfig.ageMax;
 const LOCATION_MIN_LENGTH = runtimeConfig.locationMinLength;
-const LOCATION_PERMISSION_REQUIRED_MESSAGE = "You have to enable location permission to submit this form.";
-const MOBILE_LOCATION_FALLBACK_MESSAGE = "Location auto-detect failed on this browser. Enter location manually to continue.";
+const MAX_AUTO_LOCATION_ATTEMPTS = 2;
+const normalizePhoneForApi = (rawPhone) => {
+  const digits = String(rawPhone ?? "").replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  return digits;
+};
+const LOCATION_PERMISSION_REQUIRED_MESSAGE = "Enable location permission to submit.";
+const LOCATION_FALLBACK_MESSAGE = "Location auto-detect failed. Enter your location manually.";
+const AUTO_LOCATION_PROMPT_KEY = "location_auto_prompt_v1";
+const AUTO_LOCATION_PROMPT_DEDUPE_MS = 2000;
 
 const DUPLICATE_ERROR_CODES = {
   username: 'DUP_001_0001',
   email: 'DUP_001_0002',
   phone: 'DUP_001_0003'
+};
+const ERROR_CODE_TO_FIELD = {
+  DUP_001_0001: "username",
+  DUP_001_0002: "email",
+  DUP_001_0003: "phone",
 };
 
 const sanitizeUsername = (value) => value.replace(/[^a-zA-Z0-9_]/g, "");
@@ -34,19 +47,12 @@ export default function UserDetailsPage({
   const [locationStatus, setLocationStatus] = useState("");
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [manualLocationAllowed, setManualLocationAllowed] = useState(false);
+  const autoLocationAttemptsRef = useRef(0);
+  const autoDetectStartedRef = useRef(false);
+  const userEditedLocationRef = useRef(false);
   const debounceTimerRef = useRef({ username: null, email: null, phone: null });
   const reverseGeocodeAbortRef = useRef(null);
   const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
-  const isMobileClient = useRef(false);
-
-  useEffect(() => {
-    const ua = navigator.userAgent || "";
-    const byUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-    const byViewport = typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false;
-    const byTouch = typeof window !== "undefined" ? window.matchMedia("(pointer: coarse)").matches : false;
-    isMobileClient.current = byUa || (byViewport && byTouch);
-  }, []);
-
   useEffect(() => {
     document.title = "User Details - C.O.G.N.I.T.";
   }, []);
@@ -125,6 +131,10 @@ export default function UserDetailsPage({
   }, []);
 
   const setDetectedLocation = useCallback((value) => {
+    if (userEditedLocationRef.current) {
+      // Do not clobber manual user input with late async auto-detection.
+      return;
+    }
     setDemographics((prev) => ({ ...prev, location: value }));
     setLocationPermissionDenied(false);
     setManualLocationAllowed(false);
@@ -136,30 +146,61 @@ export default function UserDetailsPage({
     });
   }, [setDemographics]);
 
-  const detectLocation = useCallback(() => {
+  const getBrowserPosition = useCallback((options) => (
+    new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    })
+  ), []);
+
+  const detectLocation = useCallback((mode = "manual") => {
+    if (mode === "auto") {
+      if (autoLocationAttemptsRef.current >= MAX_AUTO_LOCATION_ATTEMPTS) {
+        return;
+      }
+      autoLocationAttemptsRef.current += 1;
+    }
     setManualLocationAllowed(false);
+    setLocationPermissionDenied(false);
+    setErrors((prev) => {
+      if (!prev.location) return prev;
+      const next = { ...prev };
+      delete next.location;
+      return next;
+    });
     if (!navigator.geolocation) {
-      const allowManual = isMobileClient.current;
-      setLocationStatus(allowManual ? MOBILE_LOCATION_FALLBACK_MESSAGE : "Geolocation is not supported in this browser.");
-      setLocationPermissionDenied(!allowManual);
-      setManualLocationAllowed(allowManual);
+      setLocationStatus(LOCATION_FALLBACK_MESSAGE);
+      setLocationPermissionDenied(false);
+      setManualLocationAllowed(true);
       setErrors((prev) => {
         const next = { ...prev };
-        if (allowManual) {
-          delete next.location;
-        } else {
-          next.location = LOCATION_PERMISSION_REQUIRED_MESSAGE;
-        }
+        delete next.location;
         return next;
       });
       return;
     }
 
     setLocating(true);
-    setLocationStatus("Requesting location permission...");
+    setLocationStatus("Requesting location access...");
+    const resolveLocation = async () => {
+      try {
+        let position;
+        try {
+          // Fast path: cached/coarse location.
+          position = await getBrowserPosition({
+            enableHighAccuracy: false,
+            timeout: runtimeConfig.geolocationTimeoutMs,
+            maximumAge: runtimeConfig.geolocationMaxAgeMs,
+          });
+        } catch (_firstAttemptError) {
+          setLocationStatus("Retrying location with higher accuracy...");
+          // Retry path: fresh GPS/network fix.
+          position = await getBrowserPosition({
+            enableHighAccuracy: true,
+            timeout: Math.max(runtimeConfig.geolocationTimeoutMs * 2, 20000),
+            maximumAge: 0,
+          });
+        }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
         const { latitude, longitude } = position.coords;
         const fallback = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
         let detectedLocation = fallback;
@@ -191,46 +232,45 @@ export default function UserDetailsPage({
           reverseGeocodeAbortRef.current = null;
         }
 
+        // If user was typing manually before retrying permission, replace it
+        // with detected value and lock the field again.
+        userEditedLocationRef.current = false;
+        setDemographics((prev) => ({ ...prev, location: "" }));
         setDetectedLocation(detectedLocation);
-        setLocationStatus("Location detected successfully.");
-        setLocating(false);
-      },
-      (error) => {
+        setLocationStatus("Location detected.");
+      } catch (error) {
         const denied = error?.code === 1;
-        const allowManual = isMobileClient.current;
-        setLocationPermissionDenied(denied && !allowManual);
-        setManualLocationAllowed(allowManual);
-        setLocationStatus(
-          allowManual
-            ? MOBILE_LOCATION_FALLBACK_MESSAGE
-            : (denied ? "Location permission denied." : "Unable to detect location.")
-        );
+        setLocationPermissionDenied(denied);
+        setManualLocationAllowed(true);
+        setLocationStatus(denied ? "Location permission denied. Enter manually." : LOCATION_FALLBACK_MESSAGE);
         setErrors((prev) => {
           const next = { ...prev };
-          if (allowManual) {
-            delete next.location;
-          } else {
-            next.location = denied
-              ? LOCATION_PERMISSION_REQUIRED_MESSAGE
-              : "Unable to detect location. Please try again.";
-          }
+          delete next.location;
           return next;
         });
+      } finally {
         setLocating(false);
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: runtimeConfig.geolocationTimeoutMs,
-        maximumAge: runtimeConfig.geolocationMaxAgeMs,
       }
-    );
-  }, [setDetectedLocation]);
+    };
+
+    resolveLocation();
+  }, [getBrowserPosition, setDemographics, setDetectedLocation]);
 
   useEffect(() => {
-    if (!demographics.location || demographics.location.trim().length < LOCATION_MIN_LENGTH) {
-      detectLocation();
+    if (autoDetectStartedRef.current) return;
+    autoDetectStartedRef.current = true;
+    try {
+      const lastPromptAt = Number(sessionStorage.getItem(AUTO_LOCATION_PROMPT_KEY) || "0");
+      const now = Date.now();
+      if (now - lastPromptAt < AUTO_LOCATION_PROMPT_DEDUPE_MS) {
+        return;
+      }
+      sessionStorage.setItem(AUTO_LOCATION_PROMPT_KEY, String(now));
+    } catch {
+      // Ignore storage failures; continue with normal behavior.
     }
-  }, [demographics.location, detectLocation]);
+    detectLocation("auto");
+  }, [detectLocation]);
 
   useEffect(() => {
     const availabilityRef = availabilityAbortRef.current;
@@ -286,6 +326,12 @@ export default function UserDetailsPage({
       return;
     }
 
+    setErrors((prev) => {
+      if (!prev.general) return prev;
+      const next = { ...prev };
+      delete next.general;
+      return next;
+    });
     setSubmitting(true);
     setChecking({ username: true, email: true, phone: true });
 
@@ -310,7 +356,7 @@ export default function UserDetailsPage({
       }
       
       if (demographics.phone) {
-        const phoneDigits = demographics.phone.replace(/\D/g, '');
+        const phoneDigits = normalizePhoneForApi(demographics.phone);
         const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
                               (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
         if (isValidIndian) {
@@ -338,6 +384,48 @@ export default function UserDetailsPage({
       }
       
       await onSubmit();
+    } catch (error) {
+      if (error?.code === "REQ_ABORTED") {
+        return;
+      }
+      const mappedField = ERROR_CODE_TO_FIELD[error?.code] || error?.field || null;
+      if (mappedField) {
+        setErrors((prev) => ({
+          ...prev,
+          [mappedField]: error.message || getErrorMessage(DUPLICATE_ERROR_CODES[mappedField] || "SYS_001_0001")
+        }));
+        return;
+      }
+      // Conflict fallback: re-probe availability to map generic 409s to field errors.
+      if (error?.status === 409) {
+        try {
+          const [u, e, p] = await Promise.all([
+            demographics.username?.trim()
+              ? endpoints.checkUsername(demographics.username.trim()).catch(() => ({ available: true }))
+              : Promise.resolve({ available: true }),
+            demographics.email?.trim()
+              ? endpoints.checkEmail(demographics.email.trim()).catch(() => ({ available: true }))
+              : Promise.resolve({ available: true }),
+            demographics.phone
+              ? endpoints.checkPhone(normalizePhoneForApi(demographics.phone)).catch(() => ({ available: true }))
+              : Promise.resolve({ available: true }),
+          ]);
+          const conflictErrors = {};
+          if (u?.available === false) conflictErrors.username = getErrorMessage(DUPLICATE_ERROR_CODES.username);
+          if (e?.available === false) conflictErrors.email = getErrorMessage(DUPLICATE_ERROR_CODES.email);
+          if (p?.available === false) conflictErrors.phone = getErrorMessage(DUPLICATE_ERROR_CODES.phone);
+          if (Object.keys(conflictErrors).length > 0) {
+            setErrors((prev) => ({ ...prev, ...conflictErrors }));
+            return;
+          }
+        } catch {
+          // Fall through to generic message.
+        }
+      }
+      setErrors((prev) => ({
+        ...prev,
+        general: error?.message || getErrorMessage("SYS_001_0001"),
+      }));
     } finally {
       setSubmitting(false);
       setChecking({ username: false, email: false, phone: false });
@@ -397,7 +485,7 @@ export default function UserDetailsPage({
       if (!emailRegex.test(value.trim())) return;
     }
     if (field === "phone") {
-      const phoneDigits = value.replace(/\D/g, '');
+      const phoneDigits = normalizePhoneForApi(value);
       const isValidIndian = /^[6-9]\d{9}$/.test(phoneDigits) || 
                             (phoneDigits.length === 12 && phoneDigits.startsWith('91') && /^[6-9]/.test(phoneDigits.slice(2)));
       if (!isValidIndian) return;
@@ -415,7 +503,7 @@ export default function UserDetailsPage({
         ? endpoints.checkUsername(value.trim(), { signal: controller.signal })
         : field === "email"
           ? endpoints.checkEmail(value.trim(), { signal: controller.signal })
-          : endpoints.checkPhone(value.trim(), { signal: controller.signal });
+          : endpoints.checkPhone(normalizePhoneForApi(value), { signal: controller.signal });
       const data = await request;
       
       if (!data.available) {
@@ -610,16 +698,13 @@ export default function UserDetailsPage({
             }
             value={demographics.location || ''}
             disabled={locating || !manualLocationAllowed}
-            readOnly={!manualLocationAllowed}
+            readOnly={locating || !manualLocationAllowed}
             onChange={(e) => {
-              if (manualLocationAllowed) {
-                updateField("location", e.target.value);
-              }
+              userEditedLocationRef.current = true;
+              updateField("location", e.target.value);
             }}
             onBlur={(e) => {
-              if (manualLocationAllowed) {
-                handleFieldBlur("location", e.target.value);
-              }
+              handleFieldBlur("location", e.target.value);
             }}
           />
           {locating && !(demographics.location || "").trim() && (
@@ -627,11 +712,11 @@ export default function UserDetailsPage({
               <SectionSkeleton title="Detecting your location" rows={2} dense />
             </div>
           )}
-          {locationPermissionDenied && !locating && !manualLocationAllowed && (
+          {locationPermissionDenied && !locating && (
             <button
               type="button"
               className="ghost location-permission-btn"
-              onClick={detectLocation}
+              onClick={() => detectLocation("manual")}
             >
               Enable Location Permission
             </button>
@@ -701,6 +786,7 @@ export default function UserDetailsPage({
       </div>
 
       <div className="page-actions sticky-mobile-actions">
+        {errors.general && <span className="error-text">{errors.general}</span>}
         <button
           className="primary"
           onClick={handleSubmit}

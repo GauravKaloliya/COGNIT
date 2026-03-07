@@ -10,6 +10,7 @@ from flask import request, g
 from sqlalchemy import text
 
 from app.utils.helpers import create_error_response
+from app.utils.security import verify_payment_write_token
 
 
 def require_payment_completed(f):
@@ -95,19 +96,56 @@ def require_valid_payment_session(f):
         db = get_db()
 
         result = db.execute(text("""
-            SELECT status, expires_at
-            FROM payments
-            WHERE public_id = :pid
+            SELECT p.status, p.expires_at, p.participant_id, p.signature, pr.session_id, p.metadata
+            FROM payments p
+            JOIN participants pr ON pr.id = p.participant_id
+            WHERE p.public_id = :pid
         """), {"pid": payment_public_id}).fetchone()
 
         if not result:
             return create_error_response("NF_PAYMENT")
 
-        status, expires_at = result
+        status, expires_at, participant_id, payment_signature, participant_session_id, payment_metadata = result
 
         current_route = request.endpoint or ""
         if "upload" in current_route or "finalize" in current_route:
             valid_states = ["pending"]
+
+            auth_header = (request.headers.get("Authorization") or "").strip()
+            token = ""
+            if auth_header.lower().startswith("bearer "):
+                token = auth_header[7:].strip()
+            if not token:
+                token = (request.headers.get("X-Payment-Token") or "").strip()
+            claims = verify_payment_write_token(token)
+            if not claims:
+                return create_error_response("AUTH_INVALID_PAYMENT_TOKEN")
+            if (
+                str(claims.get("sub")) != str(payment_public_id)
+                or int(claims.get("pid", 0) or 0) != int(participant_id)
+                or str(claims.get("sig") or "") != str(payment_signature or "")
+            ):
+                return create_error_response("AUTH_INVALID_PAYMENT_TOKEN")
+            token_fingerprint = str(claims.get("dfp") or "")
+            request_fingerprint = str(getattr(g, "device_fingerprint", None) or "")
+            if token_fingerprint and request_fingerprint and token_fingerprint != request_fingerprint:
+                return create_error_response("AUTH_INVALID_PAYMENT_TOKEN")
+            token_session = str(claims.get("sid") or "")
+            if token_session and str(participant_session_id or "") and token_session != str(participant_session_id):
+                return create_error_response("AUTH_INVALID_PAYMENT_TOKEN")
+            expected_nonce = ""
+            if isinstance(payment_metadata, dict):
+                expected_nonce = str(payment_metadata.get("payment_write_nonce") or "")
+            else:
+                try:
+                    import json
+                    md = json.loads(payment_metadata or "{}")
+                    expected_nonce = str(md.get("payment_write_nonce") or "")
+                except Exception:
+                    expected_nonce = ""
+            token_nonce = str(claims.get("nonce") or "")
+            if expected_nonce and token_nonce != expected_nonce:
+                return create_error_response("AUTH_INVALID_PAYMENT_TOKEN")
         else:
             valid_states = ["pending", "processing", "success"]
 

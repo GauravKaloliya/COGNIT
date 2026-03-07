@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from app.config import PERFORMANCE_LOG_SAMPLE_RATE, ENABLE_PERFORMANCE_METRICS
 from app.database import engine
+from app.utils.helpers import create_error_response
 
 _METRICS_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="perf-metrics")
 
@@ -111,4 +112,27 @@ def track_performance(f):
                 except Exception:
                     pass
             raise exc
+    return wrapper
+
+
+def require_idempotency_key(f):
+    """
+    Require X-Idempotency-Key for mutating API routes to prevent replay/duplicate writes.
+    """
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        key = (request.headers.get("X-Idempotency-Key") or "").strip()
+        if not key:
+            return create_error_response(
+                "VAL_MISSING_FIELDS",
+                details={"fields": ["X-Idempotency-Key"]},
+                custom_message="Missing required X-Idempotency-Key header.",
+            )
+        if len(key) > 128:
+            return create_error_response(
+                "VAL_INVALID_FORMAT",
+                details={"field": "X-Idempotency-Key"},
+                custom_message="X-Idempotency-Key must be <= 128 characters.",
+            )
+        return f(*args, **kwargs)
     return wrapper

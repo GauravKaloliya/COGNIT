@@ -19,6 +19,7 @@ from app.extensions import app, limiter
 from app.database import engine, get_db
 from app.utils.decorators import track_performance
 from app.utils.helpers import create_error_response, success_response
+from app.utils.observability import log_event
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
 from app.config import (
     DOCS_BASE_URL,
@@ -29,7 +30,6 @@ from app.config import (
     CONSENT_RATE_LIMIT,
     PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
     SUBMIT_RATE_LIMIT,
-    ENGAGEMENT_TRACK_RATE_LIMIT,
     PAYMENT_CREATE_RATE_LIMIT,
     PAYMENT_STATUS_RATE_LIMIT,
     PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
@@ -46,6 +46,7 @@ from app.config import (
     SECURITY_CONTENT_TYPE_OPTIONS,
     SECURITY_XSS_PROTECTION,
     HEALTH_CACHE_TTL_SECONDS,
+    API_LATENCY_SLO_MS,
 )
 
 # Get logger for this module
@@ -88,6 +89,14 @@ def log_request():
         logger.warning(f"Device fingerprint middleware failed: {e}")
 
     logger.info(f"REQUEST {request.method} {request.path} request_id={g.request_id}")
+    log_event(
+        logger,
+        "request_received",
+        method=request.method,
+        path=request.path,
+        request_id=g.request_id,
+        participant_id=getattr(g, "participant_id", None),
+    )
 
 @app.after_request
 def log_response(response):
@@ -127,6 +136,26 @@ def log_response(response):
         logger.info(
             f"RESPONSE {request.method} {request.path} - {response.status_code} - {duration_ms}ms request_id={request_id}"
         )
+        log_event(
+            logger,
+            "request_completed",
+            method=request.method,
+            path=request.path,
+            request_id=request_id,
+            status_code=int(response.status_code),
+            latency_ms=duration_ms,
+        )
+        if duration_ms > API_LATENCY_SLO_MS:
+            log_event(
+                logger,
+                "latency_slo_breach",
+                level=logging.WARNING,
+                method=request.method,
+                path=request.path,
+                request_id=request_id,
+                latency_ms=duration_ms,
+                slo_ms=API_LATENCY_SLO_MS,
+            )
 
     # Security headers (production-safe defaults; env overridable).
     try:
@@ -250,241 +279,350 @@ def root():
 
 
 def _build_public_docs(base_url: str) -> dict:
-    """Build API docs for public, end-user-facing routes only."""
+    """Build public API docs for external client integrators."""
     return {
-        "title": "C.O.G.N.I.T. API",
-        "description": "Detailed end-user API for participant onboarding, payment verification, image fetch, engagement tracking, and submissions.",
+        "title": "C.O.G.N.I.T. Public API",
+        "description": (
+            "Protocol-first API for participant onboarding, payment verification, "
+            "survey image delivery, and submissions."
+        ),
         "version": "1.0.0",
         "base_url": base_url,
-        "authentication": "None (public_id based participant identification)",
-        "response_envelope": {
-            "success": {"success": True, "data": {"...": "..."}, "message": "optional"},
-            "error": {
-                "success": False,
+        "spec": {
+            "openapi": "/shared/contracts/openapi.v1.json",
+            "postman_collection": "/shared/contracts/postman_collection.v1.json",
+            "error_contract": "/shared/contracts/error_contract.json",
+        },
+        "mobile_compatibility": {
+            "supported_clients": ["Mobile web", "Android WebView", "iOS Safari/WebView", "Desktop browsers"],
+            "protocol_model": "Stateless JSON over HTTPS with idempotency and retry-safe writes.",
+            "recommendations": [
+                "Use upload-url flow for images on mobile networks.",
+                "Retry only retryable errors and preserve idempotency keys.",
+                "Refresh payment status after app resume/background wake.",
+            ],
+        },
+        "request_conventions": {
+            "content_type": "application/json",
+            "optional_headers": {
+                "X-Request-ID": "Client request correlation ID (server generates one if omitted).",
+            },
+            "required_headers": {
+                "X-Idempotency-Key": [
+                    "POST /participants",
+                    "POST /payments/create",
+                    "POST /payments/{payment_public_id}/verify-upload",
+                    "POST /submit",
+                ],
+            },
+            "response_envelope": {
+                "success": {"success": True, "data": {"...": "..."}, "message": "optional"},
                 "error": {
-                    "code": "ERROR_CODE",
-                    "message": "Human-readable message",
-                    "category": "SYS|VAL|PAY|SUB|PAR|RATE",
-                    "http_status": 400,
-                    "retryable": True,
-                    "request_id": "uuid",
+                    "success": False,
+                    "error": {
+                        "code": "PAY_001_0004",
+                        "message": "Human-readable message",
+                        "category": "PAY",
+                        "http_status": 400,
+                        "retryable": True,
+                        "request_id": "uuid",
+                    },
                 },
             },
+            "timestamp_format": "ISO-8601 UTC",
+        },
+        "security_model": {
+            "server_truth_only": [
+                "payment expiry",
+                "workflow transitions",
+                "payload/schema validation",
+                "idempotency consistency",
+                "payment-token integrity",
+                "nonce/session/fingerprint binding",
+            ],
+            "turnstile": {
+                "required_when_enabled": [
+                    "POST /participants",
+                    "POST /payments/create",
+                    "POST /payments/{payment_public_id}/verify-upload",
+                    "POST /submit",
+                ],
+                "request_field": "turnstile_token",
+                "note": "If TURNSTILE_ENABLED=false, token validation is skipped server-side.",
+            },
+            "payment_write_token": {
+                "issued_by": [
+                    "POST /payments/create",
+                    "GET /payments/{payment_public_id}/status (pending/processing only)",
+                ],
+                "required_on": [
+                    "POST /payments/{payment_public_id}/upload-url",
+                    "POST /payments/{payment_public_id}/verify-upload",
+                ],
+                "transport": "Authorization: Bearer <payment_token> (or X-Payment-Token)",
+                "claims_bound_to": [
+                    "payment_public_id",
+                    "participant_id",
+                    "signature",
+                    "session_id",
+                    "device_fingerprint",
+                    "nonce",
+                    "expiry",
+                ],
+            },
+            "replay_protection": {
+                "idempotency_scope": "endpoint + idempotency key + participant + request hash",
+                "nonce_model": "one-time payment write nonce rotated on status/token refresh",
+            },
+        },
+        "flow": [
+            "POST /participants",
+            "GET /check-username | /check-email | /check-phone (optional UX checks)",
+            "POST /consent",
+            "POST /payments/create",
+            "GET /payments/{payment_public_id}/status",
+            "POST /payments/{payment_public_id}/upload-url (optional S3 flow)",
+            "POST /payments/{payment_public_id}/verify-upload",
+            "GET /participants/{public_id}/payment-status",
+            "GET /images/random",
+            "POST /submit",
+        ],
+        "rate_limits": {
+            "GET /health": "exempt",
+            "GET /": ROOT_RATE_LIMIT,
+            "GET /docs": DOCS_RATE_LIMIT,
+            "POST /participants": PARTICIPANT_CREATE_RATE_LIMIT,
+            "GET /check-username": PARTICIPANT_CHECK_RATE_LIMIT,
+            "GET /check-email": PARTICIPANT_CHECK_RATE_LIMIT,
+            "GET /check-phone": PARTICIPANT_CHECK_RATE_LIMIT,
+            "POST /consent": CONSENT_RATE_LIMIT,
+            "GET /participants/{public_id}/payment-status": PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+            "POST /payments/create": PAYMENT_CREATE_RATE_LIMIT,
+            "POST /payments/{payment_public_id}/upload-url": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
+            "POST /payments/{payment_public_id}/verify-upload": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
+            "GET /payments/{payment_public_id}/status": PAYMENT_STATUS_RATE_LIMIT,
+            "POST /submit": SUBMIT_RATE_LIMIT,
         },
         "endpoints": [
             {
-                "path": "/health",
                 "method": "GET",
-                "description": "Service and database health status.",
-                "rate_limit": "exempt",
-                "success_example": {
-                    "success": True,
-                    "data": {"status": "healthy", "database": "connected"},
-                },
+                "path": "/health",
+                "summary": "Health check",
+                "response_200": {"success": True, "data": {"status": "healthy", "database": "connected"}},
             },
             {
-                "path": "/participants",
                 "method": "POST",
-                "description": "Register a participant. `public_id` and `session_id` are auto-generated if omitted.",
-                "body_example": {
-                    "username": "user123",
-                    "email": "user@gmail.com",
-                    "phone": "9876543210",
-                    "gender_code": "male",
-                    "age": 25,
-                    "location": "ahmedabad",
-                    "language_code": "en",
-                    "prior_experience": "some experience"
-                },
-                "rate_limit": PARTICIPANT_CREATE_RATE_LIMIT,
-                "success_example": {
+                "path": "/participants",
+                "summary": "Create participant",
+                "required_headers": ["Content-Type: application/json", "X-Idempotency-Key"],
+                "required_body": [
+                    "username",
+                    "email",
+                    "phone",
+                    "gender_code",
+                    "age",
+                    "location",
+                    "language_code",
+                    "prior_experience",
+                ],
+                "optional_body": ["public_id", "session_id", "turnstile_token"],
+                "response_201": {
                     "success": True,
                     "data": {"status": "created", "public_id": "uuid", "session_id": "sess_xxx"},
                 },
             },
             {
+                "method": "GET",
                 "path": "/check-username",
-                "method": "GET",
-                "description": "Check username availability.",
-                "query_params": {"username": "string (required)"},
-                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
-                "success_example": {"success": True, "data": {"available": True}},
+                "summary": "Check username availability",
+                "query": {"username": "string, required"},
             },
             {
+                "method": "GET",
                 "path": "/check-email",
-                "method": "GET",
-                "description": "Check email availability.",
-                "query_params": {"email": "string (required)"},
-                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
-                "success_example": {"success": True, "data": {"available": True}},
+                "summary": "Check email availability",
+                "query": {"email": "string, required"},
             },
             {
+                "method": "GET",
                 "path": "/check-phone",
-                "method": "GET",
-                "description": "Check phone availability.",
-                "query_params": {"phone": "string (required)"},
-                "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
-                "success_example": {"success": True, "data": {"available": True}},
+                "summary": "Check phone availability",
+                "query": {"phone": "string, required"},
             },
             {
-                "path": "/consent",
                 "method": "POST",
-                "description": "Record participant consent.",
-                "body_example": {"public_id": "550e8400-e29b-41d4-a716-446655440000"},
-                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": CONSENT_RATE_LIMIT,
-                "success_example": {"success": True, "data": {"status": "consent recorded"}},
+                "path": "/consent",
+                "summary": "Record participant consent",
+                "required_headers": ["Content-Type: application/json"],
+                "optional_headers": ["X-Idempotency-Key"],
+                "required_body": ["public_id"],
+                "response_200": {"success": True, "data": {"status": "consent recorded"}},
             },
             {
-                "path": "/participants/{public_id}/payment-status",
                 "method": "GET",
-                "description": "Get participant payment verification status.",
-                "rate_limit": PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
-                "success_example": {
+                "path": "/participants/{public_id}/payment-status",
+                "summary": "Get participant-level payment state",
+                "response_200": {
                     "success": True,
                     "data": {
                         "payment_status": "paid",
                         "is_verified": True,
                         "current_stage": "survey",
                         "payment_id": "payment-public-uuid",
-                        "verified_at": "2026-03-04T18:30:00+00:00",
-                        "detected_app": "gpay",
-                        "reason": None,
                     },
                 },
             },
             {
-                "path": "/images/random",
-                "method": "GET",
-                "description": "Get a random image. Supports deterministic attention-check placement using participant public_id.",
-                "query_params": {
-                    "exclude": "comma-separated image_ids (optional)",
-                    "public_id": "participant public UUID (optional, recommended for scheduled attention checks)"
-                },
-                "rate_limit": "default",
-                "success_example": {
-                    "success": True,
-                    "data": {
-                        "image_id": "21.svg",
-                        "url": "https://.../survey/21.svg",
-                        "is_survey": True,
-                        "is_attention_check": False,
-                    },
-                },
-            },
-            {
-                "path": "/submit",
                 "method": "POST",
-                "description": "Submit image description or survey response.",
-                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": SUBMIT_RATE_LIMIT,
-                "body_example": {
-                    "public_id": "participant-public-uuid",
-                    "image_id": "21.svg",
-                    "description": "at least 60 words...",
-                    "feedback": "at least 5 characters",
-                    "rating": 8,
-                    "time_spent_seconds": 125,
-                    "tab_switch_count": 0,
-                    "page_close_attempts": 0,
-                    "network_disconnects": 0,
-                },
-                "success_example": {
-                    "success": True,
-                    "data": {
-                        "status": "submitted",
-                        "word_count": 134,
-                        "quality_score": 0.92,
-                        "flagged_too_fast": False,
-                        "survey_index": 2,
-                        "is_survey": True,
-                        "is_attention_check": False,
-                    },
-                },
-            },
-            {
-                "path": "/engagement/track",
-                "method": "POST",
-                "description": "Track participant engagement events.",
-                "rate_limit": ENGAGEMENT_TRACK_RATE_LIMIT,
-                "body_example": {
-                    "public_id": "participant-public-uuid",
-                    "event_type": "tab_switch|page_close_attempt|network_disconnect|page_view",
-                    "event_data": {"at": "2026-03-04T18:31:00+00:00"},
-                },
-                "success_example": {
-                    "success": True,
-                    "data": {"status": "tracked", "event_type": "tab_switch", "total_events": 7},
-                },
-            },
-            {
                 "path": "/payments/create",
-                "method": "POST",
-                "description": "Create payment session and return UPI details + QR.",
-                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": PAYMENT_CREATE_RATE_LIMIT,
-                "body_example": {"public_id": "participant-public-uuid", "amount": 1},
-                "success_example": {
+                "summary": "Create payment session",
+                "required_headers": ["Content-Type: application/json", "X-Idempotency-Key"],
+                "required_body": ["public_id", "amount"],
+                "optional_body": ["turnstile_token"],
+                "response_200": {
                     "success": True,
                     "data": {
                         "payment_id": "payment-public-uuid",
                         "amount": 1,
-                        "expires_at": "2026-03-04T18:35:00+00:00",
-                        "signature": "sha256-signature",
+                        "expires_at": "2026-03-06T12:00:00+00:00",
+                        "payment_token": "jwt-or-hmac-token",
                         "upi_link": "upi://pay?...",
                         "qr_base64": "...",
-                        "timer_activated": True,
                         "time_remaining_seconds": 300,
                     },
                 },
             },
             {
-                "path": "/payments/{payment_id}/status",
                 "method": "GET",
-                "description": "Get payment status and remaining time.",
-                "rate_limit": PAYMENT_STATUS_RATE_LIMIT,
-                "success_example": {
+                "path": "/payments/{payment_public_id}/status",
+                "summary": "Get payment status and token refresh",
+                "response_200": {
                     "success": True,
                     "data": {
                         "payment_id": "payment-public-uuid",
-                        "status": "processing",
-                        "amount": 1,
-                        "expires_at": "2026-03-04T18:35:00+00:00",
-                        "is_expired": False,
+                        "status": "pending|processing|success|failed|rejected_fraud|expired|refunded",
                         "time_remaining_seconds": 211,
-                        "verified_at": None,
-                        "verification_attempts": 1,
-                        "detected_app": "unknown",
+                        "payment_token": "returned while state is pending/processing",
                     },
                 },
             },
             {
-                "path": "/payments/{payment_id}/verify-upload",
                 "method": "POST",
-                "description": "Verify uploaded payment screenshot.",
-                "headers": {"X-Idempotency-Key": "uuid (recommended)"},
-                "rate_limit": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
-                "body_example": {
-                    "image_base64": "base64-image",
-                    "file_extension": "jpg",
-                    "sha256": "64-char-sha256",
-                    "mime_type": "image/jpeg",
-                    "original_filename": "payment.jpg",
-                    "file_size": 435820,
+                "path": "/payments/{payment_public_id}/upload-url",
+                "summary": "Issue presigned S3 upload URL (optional flow)",
+                "required_headers": ["Authorization: Bearer <payment_token>"],
+                "required_body": ["sha256", "file_extension"],
+                "optional_body": ["mime_type", "file_size"],
+                "response_200": {
+                    "success": True,
+                    "data": {
+                        "upload_url": "https://...",
+                        "upload_object_key": "payments/staging/<payment_public_id>/<uuid>.jpg",
+                        "upload_content_type": "image/jpeg",
+                        "expires_in_seconds": 300,
+                    },
                 },
-                "success_example": {
+            },
+            {
+                "method": "POST",
+                "path": "/payments/{payment_public_id}/verify-upload",
+                "summary": "Verify uploaded screenshot and finalize payment",
+                "required_headers": [
+                    "Content-Type: application/json",
+                    "X-Idempotency-Key",
+                    "Authorization: Bearer <payment_token>",
+                ],
+                "required_body": ["sha256", "file_extension"],
+                "conditional_body": [
+                    "upload_object_key (recommended)",
+                    "image_base64 (legacy fallback path)",
+                ],
+                "optional_body": ["mime_type", "original_filename", "file_size", "turnstile_token"],
+                "response_200": {
                     "success": True,
                     "data": {
                         "status": "verified",
                         "payment_id": "payment-public-uuid",
                         "payment_status": "success",
-                        "detected_app": "gpay",
                         "fraud_score": 0,
-                        "verification_attempts": 1,
+                        "detected_app": "gpay",
                     },
                 },
-            }
+            },
+            {
+                "method": "GET",
+                "path": "/images/random",
+                "summary": "Get one random image",
+                "query": {
+                    "exclude": "comma-separated image IDs, optional",
+                    "public_id": "participant UUID, optional but recommended",
+                },
+                "response_200": {
+                    "success": True,
+                    "data": {
+                        "image_id": "21.svg",
+                        "url": "https://...",
+                        "is_survey": True,
+                        "is_attention_check": False,
+                    },
+                },
+            },
+            {
+                "method": "POST",
+                "path": "/submit",
+                "summary": "Submit survey response",
+                "required_headers": ["Content-Type: application/json", "X-Idempotency-Key"],
+                "required_body": [
+                    "public_id",
+                    "image_id",
+                    "description",
+                    "feedback",
+                    "rating",
+                ],
+                "optional_body": [
+                    "time_spent_seconds",
+                    "tab_switch_count",
+                    "page_close_attempts",
+                    "network_disconnects",
+                    "survey_time_spent_ms",
+                    "survey_page_views",
+                    "survey_tab_switches",
+                    "survey_page_close_attempts",
+                    "survey_network_disconnects",
+                    "survey_max_scroll_depth_pct",
+                    "survey_clicks",
+                    "survey_keypresses",
+                    "turnstile_token",
+                ],
+                "response_200": {
+                    "success": True,
+                    "data": {
+                        "status": "submitted",
+                        "word_count": 134,
+                    "quality_score": 0.92,
+                    "flagged_too_fast": False,
+                    },
+                },
+                "mobile_note": "Survey-specific telemetry is persisted in submissions.survey_* columns.",
+            },
         ],
+        "tracking_model": {
+            "survey_tracking": "Survey-page telemetry is captured per submission in submissions.survey_* columns.",
+        },
+        "error_handling": {
+            "contract": "error.code is stable for programmatic handling",
+            "discover_all_codes": "/shared/contracts/error_contract.json",
+            "common_codes": [
+                "VAL_MISSING_FIELDS",
+                "PAR_001_0001",
+                "PAY_001_0001",
+                "PAY_001_0002",
+                "PAY_001_0003",
+                "PAY_001_0004",
+                "RATE_001_0001",
+                "BOT_001_0001",
+            ],
+        },
     }
 
 

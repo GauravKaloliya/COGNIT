@@ -1,0 +1,34 @@
+{
+  "info": {
+    "name": "COGNIT Public API v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Create Participant",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "url": { "raw": "{{base_url}}/participants", "host": ["{{base_url}}"], "path": ["participants"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"demo_user\",\n  \"email\": \"demo@example.com\",\n  \"phone\": \"9876543210\",\n  \"gender_code\": \"male\",\n  \"age\": 25,\n  \"location\": \"Mumbai\",\n  \"language_code\": \"en\",\n  \"prior_experience\": \"None\"\n}"
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:5000" },
+    { "key": "idem_key", "value": "idem-demo-1" }
+  ]
+}
