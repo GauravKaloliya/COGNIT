@@ -4,6 +4,7 @@ import { getErrorMessage } from "../utils/errorRegistry.js";
 import { uiText } from "../utils/uiText.js";
 import { runtimeConfig } from "../config/runtime";
 import PanelState from "../components/PanelState.jsx";
+import PageSkeleton from "../components/PageSkeleton.jsx";
 import { useNavigationBlocker } from "../hooks/useNavigationBlocker";
 
 const VERIFICATION_REASON_CODES = {
@@ -984,19 +985,11 @@ export default function PaymentLinkPage({
 
   if (isLoading) {
     return (
-      <div className="panel payment-panel">
-        <div className="page-top-actions">
-          {onBack && (
-            <button className="ghost back-button" onClick={handleBackClick} disabled={isCriticalAction}>
-              ← Back
-            </button>
-          )}
-        </div>
-        <div className="status-panel">
-          <h3>{uiText("payment.creating")}</h3>
-          <p>{uiText("payment.pleaseWait")}</p>
-        </div>
-      </div>
+      <PageSkeleton
+        title={uiText("payment.creating")}
+        subtitle={uiText("payment.pleaseWait")}
+        variant="payment"
+      />
     );
   }
 
