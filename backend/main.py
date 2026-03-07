@@ -645,7 +645,17 @@ def shared_contracts(filename):
     if filename not in allowed:
         return create_error_response("NF_ROUTE_NOT_FOUND", details={"path": request.path, "reason": "contract_not_found"})
 
-    contracts_dir = Path(__file__).resolve().parent.parent / "shared" / "contracts"
+    # Support both local monorepo layout (../shared/contracts) and
+    # serverless package layout (./shared/contracts inside backend bundle).
+    base_dir = Path(__file__).resolve().parent
+    candidates = [
+        base_dir / "shared" / "contracts",
+        base_dir.parent / "shared" / "contracts",
+    ]
+    contracts_dir = next((path for path in candidates if path.exists()), None)
+    if contracts_dir is None:
+        return create_error_response("NF_ROUTE_NOT_FOUND", details={"path": request.path, "reason": "contract_dir_missing"})
+
     return send_from_directory(contracts_dir, filename)
 
 
