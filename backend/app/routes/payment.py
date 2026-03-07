@@ -538,12 +538,6 @@ def verify_and_upload_payment(payment_public_id):
     if not ok:
         return create_error_response("BOT_CHALLENGE_FAILED")
 
-    row = db.execute(text("""
-        SELECT participant_id
-        FROM payments
-        WHERE public_id = :pid
-    """), {"pid": payment_public_id}).fetchone()
-    participant_id = int(row[0]) if row else None
     return process_verify_upload(
         db=db,
         payment_public_id=payment_public_id,

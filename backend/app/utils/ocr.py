@@ -16,12 +16,8 @@ from botocore.exceptions import ClientError, BotoCoreError
 from PIL import Image
 
 from app.config import (
-    MIN_IMAGE_WIDTH,
     MIN_OCR_CONFIDENCE,
     ALLOWED_APPS,
-    SUCCESS_KEYWORDS,
-    FAILURE_KEYWORDS,
-    UPI_VPA,
     S3_BUCKET_NAME,
     AWS_REGION,
     AWS_ACCESS_KEY_ID,
@@ -491,7 +487,6 @@ def sanitize_extracted_text_for_storage(
     if not text:
         return ""
 
-    lower = text.lower()
     kept_parts: List[str] = []
 
     def add_match(pattern: str):
