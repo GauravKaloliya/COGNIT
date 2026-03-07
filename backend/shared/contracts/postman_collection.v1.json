@@ -1,0 +1,128 @@
+{
+  "info": {
+    "name": "COGNIT Public API v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Create Participant",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "url": { "raw": "{{base_url}}/participants", "host": ["{{base_url}}"], "path": ["participants"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"demo_user\",\n  \"email\": \"demo@example.com\",\n  \"phone\": \"9876543210\",\n  \"gender_code\": \"male\",\n  \"age\": 25,\n  \"location\": \"Mumbai\",\n  \"language_code\": \"en\",\n  \"prior_experience\": \"None\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Record Consent",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{base_url}}/consent", "host": ["{{base_url}}"], "path": ["consent"] },
+        "body": { "mode": "raw", "raw": "{\n  \"public_id\": \"{{public_id}}\"\n}" }
+      }
+    },
+    {
+      "name": "Create Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "url": { "raw": "{{base_url}}/payments/create", "host": ["{{base_url}}"], "path": ["payments", "create"] },
+        "body": { "mode": "raw", "raw": "{\n  \"public_id\": \"{{public_id}}\",\n  \"amount\": 1\n}" }
+      }
+    },
+    {
+      "name": "Payment Status",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/payments/{{payment_public_id}}/status", "host": ["{{base_url}}"], "path": ["payments", "{{payment_public_id}}", "status"] }
+      }
+    },
+    {
+      "name": "Payment QR",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/payments/{{payment_public_id}}/qr", "host": ["{{base_url}}"], "path": ["payments", "{{payment_public_id}}", "qr"] }
+      }
+    },
+    {
+      "name": "Payment Upload URL",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{payment_token}}" }
+        ],
+        "url": { "raw": "{{base_url}}/payments/{{payment_public_id}}/upload-url", "host": ["{{base_url}}"], "path": ["payments", "{{payment_public_id}}", "upload-url"] },
+        "body": { "mode": "raw", "raw": "{\n  \"sha256\": \"{{sha256}}\",\n  \"file_extension\": \"jpg\"\n}" }
+      }
+    },
+    {
+      "name": "Verify Payment Upload",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{payment_token}}" },
+          { "key": "X-Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "url": { "raw": "{{base_url}}/payments/{{payment_public_id}}/verify-upload", "host": ["{{base_url}}"], "path": ["payments", "{{payment_public_id}}", "verify-upload"] },
+        "body": { "mode": "raw", "raw": "{\n  \"upload_object_key\": \"{{upload_object_key}}\",\n  \"sha256\": \"{{sha256}}\",\n  \"file_extension\": \"jpg\"\n}" }
+      }
+    },
+    {
+      "name": "Participant Payment Status",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/participants/{{public_id}}/payment-status", "host": ["{{base_url}}"], "path": ["participants", "{{public_id}}", "payment-status"] }
+      }
+    },
+    {
+      "name": "Get Random Image",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/images/random?public_id={{public_id}}", "host": ["{{base_url}}"], "path": ["images", "random"], "query": [{ "key": "public_id", "value": "{{public_id}}" }] }
+      }
+    },
+    {
+      "name": "Submit Survey",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "url": { "raw": "{{base_url}}/submit", "host": ["{{base_url}}"], "path": ["submit"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"public_id\": \"{{public_id}}\",\n  \"image_id\": \"21.svg\",\n  \"description\": \"Describe image in at least 60 words ...\",\n  \"feedback\": \"clear\",\n  \"rating\": 8,\n  \"time_spent_seconds\": 45\n}"
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:5000" },
+    { "key": "idem_key", "value": "idem-demo-1" },
+    { "key": "public_id", "value": "" },
+    { "key": "payment_public_id", "value": "" },
+    { "key": "payment_token", "value": "" },
+    { "key": "upload_object_key", "value": "" },
+    { "key": "sha256", "value": "" }
+  ]
+}

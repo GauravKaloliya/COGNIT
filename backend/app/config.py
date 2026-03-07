@@ -413,8 +413,12 @@ ERROR_CODES: Dict[str, Dict[str, Any]] = {
 }
 
 # Prefer shared contract as source of truth when available.
-_shared_error_contract_path = backend_dir.parent / "shared" / "contracts" / "error_contract.json"
-if _shared_error_contract_path.exists():
+_shared_contract_candidates = [
+    backend_dir / "shared" / "contracts" / "error_contract.json",
+    backend_dir.parent / "shared" / "contracts" / "error_contract.json",
+]
+_shared_error_contract_path = next((p for p in _shared_contract_candidates if p.exists()), None)
+if _shared_error_contract_path is not None:
     try:
         with _shared_error_contract_path.open("r", encoding="utf-8") as _fh:
             _shared_contract = json.load(_fh)
