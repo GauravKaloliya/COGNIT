@@ -11,8 +11,9 @@ import logging
 import uuid
 from datetime import datetime, timezone
 import time
+from pathlib import Path
 
-from flask import jsonify, render_template, request, g
+from flask import jsonify, render_template, request, g, send_from_directory
 from sqlalchemy import text
 
 from app.extensions import app, limiter
@@ -633,6 +634,19 @@ def api_docs():
     """JSON API documentation endpoint."""
     base_url = DOCS_BASE_URL
     return success_response(_build_public_docs(base_url))
+
+
+@app.route("/shared/contracts/<path:filename>")
+@limiter.limit(DOCS_RATE_LIMIT)
+@track_performance
+def shared_contracts(filename):
+    """Serve API contract files used by docs and clients."""
+    allowed = {"openapi.v1.json", "postman_collection.v1.json", "error_contract.json"}
+    if filename not in allowed:
+        return create_error_response("NF_ROUTE_NOT_FOUND", details={"path": request.path, "reason": "contract_not_found"})
+
+    contracts_dir = Path(__file__).resolve().parent.parent / "shared" / "contracts"
+    return send_from_directory(contracts_dir, filename)
 
 
 # ────────────────────────────────────────────────

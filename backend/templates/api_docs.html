@@ -4,7 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>COGNIT Platform Docs</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='api_docs.css') }}">
+  <link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='api_docs.css') }}"
+    onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.href='/api/static/api_docs.css';}"
+  >
 </head>
 <body>
   <div class="docs-shell">
@@ -33,10 +37,10 @@
 
       <div class="contract-links">
         <h3>Contracts</h3>
-        <a href="/shared/contracts/openapi.v1.json" target="_blank" rel="noreferrer">OpenAPI</a>
-        <a href="/shared/contracts/postman_collection.v1.json" target="_blank" rel="noreferrer">Postman Collection</a>
-        <a href="/shared/contracts/error_contract.json" target="_blank" rel="noreferrer">Error Contract</a>
-        <a href="/docs" target="_blank" rel="noreferrer">Machine JSON Docs</a>
+        <a data-contract="openapi.v1.json" href="/shared/contracts/openapi.v1.json" target="_blank" rel="noreferrer">OpenAPI</a>
+        <a data-contract="postman_collection.v1.json" href="/shared/contracts/postman_collection.v1.json" target="_blank" rel="noreferrer">Postman Collection</a>
+        <a data-contract="error_contract.json" href="/shared/contracts/error_contract.json" target="_blank" rel="noreferrer">Error Contract</a>
+        <a data-docs-json href="/docs" target="_blank" rel="noreferrer">Machine JSON Docs</a>
       </div>
     </aside>
 
@@ -243,7 +247,7 @@
 
       <section id="schema-explorer" class="doc-section" data-doc-title="Schema Explorer">
         <h2>Schema Explorer (Generated from OpenAPI)</h2>
-        <p class="section-note">This section is generated from <code>/shared/contracts/openapi.v1.json</code>. Update the OpenAPI file to update these field tables.</p>
+        <p class="section-note">This section is generated from the OpenAPI contract file. Update the OpenAPI file to update these field tables.</p>
         <div id="schemaGenerated" class="schema-grid">
           <article class="schema-loading">Loading OpenAPI schemas...</article>
         </div>
@@ -287,6 +291,40 @@
   </div>
 
   <script>
+    const inApiProxyPath = window.location.pathname === '/api' || window.location.pathname.startsWith('/api/');
+    const contractBaseCandidates = inApiProxyPath
+      ? ['/api/shared/contracts', '/shared/contracts']
+      : ['/shared/contracts', '/api/shared/contracts'];
+    const docsJsonCandidates = inApiProxyPath ? ['/api/docs', '/docs'] : ['/docs', '/api/docs'];
+
+    function firstContractUrl(filename) {
+      return `${contractBaseCandidates[0]}/${filename}`;
+    }
+
+    function initContractLinks() {
+      document.querySelectorAll('[data-contract]').forEach((link) => {
+        const filename = link.getAttribute('data-contract');
+        if (!filename) return;
+        link.setAttribute('href', firstContractUrl(filename));
+      });
+      const docsLink = document.querySelector('[data-docs-json]');
+      if (docsLink) docsLink.setAttribute('href', docsJsonCandidates[0]);
+    }
+
+    async function fetchWithFallback(urls, init) {
+      let lastError = null;
+      for (const url of urls) {
+        try {
+          const resp = await fetch(url, init);
+          if (resp.ok) return resp;
+          lastError = new Error(`HTTP ${resp.status} at ${url}`);
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw lastError || new Error('all fetch attempts failed');
+    }
+
     const endpointSearch = document.getElementById('endpointSearch');
     const endpointCards = Array.from(document.querySelectorAll('.endpoint-card'));
 
@@ -416,8 +454,10 @@
       const target = document.getElementById('schemaGenerated');
       if (!target) return;
       try {
-        const resp = await fetch('/shared/contracts/openapi.v1.json', { cache: 'no-store' });
-        if (!resp.ok) throw new Error('openapi fetch failed');
+        const resp = await fetchWithFallback(
+          contractBaseCandidates.map((base) => `${base}/openapi.v1.json`),
+          { cache: 'no-store' }
+        );
         const openapi = await resp.json();
         const paths = openapi.paths || {};
 
@@ -499,6 +539,7 @@
       input.addEventListener('input', (e) => renderMatches(String(e.target.value || '').trim()));
     }
 
+    initContractLinks();
     renderSchemaExplorer();
     initGlobalSearch();
   </script>
