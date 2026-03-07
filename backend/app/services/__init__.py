@@ -17,6 +17,7 @@ from .submission_service import (
 from .reward_service import evaluate_priority_and_rewards
 from .state_machine_service import (
     ensure_payment_status_transition,
+    transition_payment_status,
     ensure_submission_workflow_state,
     StateTransitionError,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "dynamic_too_fast_threshold",
     "evaluate_priority_and_rewards",
     "ensure_payment_status_transition",
+    "transition_payment_status",
     "ensure_submission_workflow_state",
     "StateTransitionError",
     "emit_domain_event",

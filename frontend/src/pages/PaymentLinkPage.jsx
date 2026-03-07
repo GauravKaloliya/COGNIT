@@ -19,6 +19,9 @@ const VERIFICATION_REASON_CODES = {
   missing_bhim_label: 'FRAUD_002_0005',
   ocr_unavailable: 'SYS_001_0004',
   missing_paid_bhim: 'FRAUD_002_0005',
+  ocr_signature_replay_self: 'FRAUD_003_0004',
+  ocr_signature_replay_other: 'FRAUD_003_0001',
+  max_attempts_exceeded: 'PAY_001_0008',
 };
 const MAX_UPLOAD_MB = runtimeConfig.paymentUploadMaxMb;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
@@ -49,11 +52,13 @@ export default function PaymentLinkPage({
   const statusAbortRef = useRef(null);
   const createAbortRef = useRef(null);
   const verifyAbortRef = useRef(null);
+  const qrAbortRef = useRef(null);
 
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [timerProgress, setTimerProgress] = useState(100);
   const timerIntervalRef = useRef(null);
+  const timerTotalMsRef = useRef(runtimeConfig.paymentTimerDurationMs);
 
   const detectMobileClient = useCallback(() => {
     if (typeof window === "undefined") return false;
@@ -68,7 +73,7 @@ export default function PaymentLinkPage({
   const retryBlocked = retryInSeconds > 0;
   const retryButtonLabel = retryBlocked
     ? uiText("payment.tryAgainIn", { seconds: retryInSeconds })
-    : "Try Again";
+    : "Retry";
 
   const beginOperation = useCallback(() => {
     opVersionRef.current += 1;
@@ -100,29 +105,29 @@ export default function PaymentLinkPage({
     const code = err?.code || "";
 
     if (reasonSet.has("missing_paid_to_cognit") || reasonSet.has("invalid_banking_name")) {
-      steps.push("Use Google Pay, Paytm, or BHIM and ensure recipient shows COGNIT before taking screenshot.");
+      steps.push("Use Google Pay, Paytm, or BHIM, and ensure the recipient shows COGNIT.");
     }
     if (reasonSet.has("invalid_amount")) {
-      steps.push("Pay exactly ₹1 (not ₹0.99 or ₹1.01) and upload the success screen screenshot.");
+      steps.push("Pay exactly ₹1 and upload the success screenshot.");
     }
     if (reasonSet.has("time_out_of_range")) {
-      steps.push("Take and upload the screenshot immediately after payment (within the current session timer).");
+      steps.push("Upload the screenshot immediately after payment, within the active timer.");
     }
     if (reasonSet.has("ocr_unavailable") || reasonSet.has("invalid_datetime_format_gpay") || reasonSet.has("invalid_datetime_format_paytm") || reasonSet.has("invalid_datetime_format_bhim")) {
-      steps.push("Upload a clearer screenshot with transaction time and status fully visible (no crop/blur).");
+      steps.push("Upload a clearer screenshot with time and success status fully visible.");
     }
     if (code === "DUP_003_0001" || code === "FRAUD_003_0001") {
-      steps.push("This screenshot hash already exists. Complete a fresh ₹1 payment and upload the new transaction screenshot.");
+      steps.push("This screenshot was already used. Complete a fresh ₹1 payment and upload a new screenshot.");
     }
     if (code === "FRAUD_003_0004") {
-      steps.push("You already used this screenshot in your account. Do a fresh payment and upload a new screenshot.");
+      steps.push("You already used this screenshot. Do a fresh payment and upload a new screenshot.");
     }
     if (code === "FRAUD_003_0002") {
-      steps.push("Previously rejected screenshots cannot be reused. Take a fresh screenshot from a new successful payment.");
+      steps.push("Previously rejected screenshots cannot be reused. Upload a new successful payment screenshot.");
     }
     if (steps.length === 0) {
-      steps.push("Retry with a fresh screenshot that clearly shows app name, paid amount ₹1, recipient, and successful status.");
-      steps.push("If this keeps failing, tap Try Again to create a new payment session and retry once.");
+      steps.push("Retry with a fresh screenshot that clearly shows app name, amount ₹1, recipient, and success status.");
+      steps.push("If it still fails, tap Retry to create a new payment session.");
     }
     return steps;
   }, []);
@@ -294,11 +299,24 @@ export default function PaymentLinkPage({
     }
   }, [clearTimerState]);
 
+  const getServerRemainingMs = useCallback((payload) => {
+    const seconds = Number(payload?.time_remaining_seconds);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.max(0, Math.floor(seconds * 1000));
+    }
+    const expiresAt = payload?.expires_at;
+    if (expiresAt) {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      return Math.max(0, diff);
+    }
+    return 0;
+  }, []);
+
   // Calculate timer values based on expiry
   const calculateTimerValues = useCallback((expiresAt) => {
     const now = new Date().getTime();
     const expiry = new Date(expiresAt).getTime();
-    const totalDuration = runtimeConfig.paymentTimerDurationMs;
+    const totalDuration = Math.max(1000, timerTotalMsRef.current || 1000);
     const remaining = Math.max(0, expiry - now);
     const progress = Math.max(0, (remaining / totalDuration) * 100);
     return { remaining, progress };
@@ -379,6 +397,40 @@ export default function PaymentLinkPage({
     timerIntervalRef.current = setInterval(updateTimer, runtimeConfig.paymentTimerTickMs);
   }, [calculateTimerValues, saveTimerState, handleExpiry, stopTimer]);
 
+  const resumeTimerFromCurrentPayment = useCallback(() => {
+    const expiresAt = paymentData?.expires_at;
+    if (!expiresAt) return;
+    const { remaining } = calculateTimerValues(expiresAt);
+    if (remaining > 0) {
+      startTimer(expiresAt);
+      return;
+    }
+    handleExpiry();
+  }, [paymentData, calculateTimerValues, startTimer, handleExpiry]);
+
+  const fetchPaymentQr = useCallback(async (paymentId, operationId) => {
+    if (!paymentId) return;
+    try {
+      if (qrAbortRef.current) qrAbortRef.current.abort();
+      const controller = new AbortController();
+      qrAbortRef.current = controller;
+      const qrData = await endpoints.getPaymentQr(paymentId, { signal: controller.signal });
+      if (!isOperationCurrent(operationId)) return;
+      const qrBase64 = qrData?.qr_base64;
+      if (!qrBase64) return;
+      setPaymentData((prev) => {
+        if (!prev || prev.payment_id !== paymentId) return prev;
+        return { ...prev, qr_base64: qrBase64 };
+      });
+    } catch (err) {
+      if (err?.code !== "REQ_ABORTED") {
+        // Keep UI functional via upi_link even when QR fetch fails.
+      }
+    } finally {
+      qrAbortRef.current = null;
+    }
+  }, [isOperationCurrent]);
+
   const createPayment = useCallback(async () => {
     const operationId = beginOperation();
 
@@ -405,6 +457,11 @@ export default function PaymentLinkPage({
         throw new Error(getErrorMessage('PAY_001_0001'));
       }
 
+      const serverRemainingMs = getServerRemainingMs(data);
+      timerTotalMsRef.current = Math.max(
+        1000,
+        serverRemainingMs || Math.max(0, expiresAt.getTime() - now.getTime())
+      );
       setPaymentData(data);
       startTimer(data.expires_at);
       savePaymentViewState({
@@ -414,6 +471,9 @@ export default function PaymentLinkPage({
         failureReasons: [],
         error: null
       });
+      if (!isMobile && !data?.qr_base64) {
+        fetchPaymentQr(data.payment_id, operationId);
+      }
     } catch (err) {
       if (err?.code === "REQ_ABORTED") {
         return;
@@ -437,7 +497,7 @@ export default function PaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, isOperationCurrent, publicId, savePaymentViewState, showRetryHintError, startTimer]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOperationCurrent, publicId, savePaymentViewState, showRetryHintError, startTimer]);
 
   useEffect(() => {
     return () => {
@@ -446,6 +506,7 @@ export default function PaymentLinkPage({
       if (statusAbortRef.current) statusAbortRef.current.abort();
       if (createAbortRef.current) createAbortRef.current.abort();
       if (verifyAbortRef.current) verifyAbortRef.current.abort();
+      if (qrAbortRef.current) qrAbortRef.current.abort();
     };
   }, []);
 
@@ -503,16 +564,27 @@ export default function PaymentLinkPage({
           }
 
           if (serverStatus === "pending" || serverStatus === "processing") {
-            const { remaining, progress } = calculateTimerValues(restoredPaymentData.expires_at);
+            const mergedPaymentData = {
+              ...restoredPaymentData,
+              expires_at: statusData?.expires_at || restoredPaymentData.expires_at,
+              time_remaining_seconds: statusData?.time_remaining_seconds ?? restoredPaymentData?.time_remaining_seconds,
+              payment_token: statusData?.payment_token || restoredPaymentData?.payment_token || "",
+            };
+            const serverRemainingMs = getServerRemainingMs(statusData || mergedPaymentData);
+            timerTotalMsRef.current = Math.max(1000, serverRemainingMs || timerTotalMsRef.current);
+            const { remaining, progress } = calculateTimerValues(mergedPaymentData.expires_at);
             if (remaining > 0 && restoredStatus !== "success") {
               if (cancelled) return;
-              setPaymentData(restoredPaymentData);
+              setPaymentData(mergedPaymentData);
               setPaymentStatus(restoredStatus);
               setFailureReasons(Array.isArray(restored?.failureReasons) ? restored.failureReasons : []);
               setError(restored?.error || null);
               setTimeRemaining(remaining);
               setTimerProgress(progress);
-              startTimer(restoredPaymentData.expires_at);
+              startTimer(mergedPaymentData.expires_at);
+              if (!isMobile && !mergedPaymentData?.qr_base64) {
+                fetchPaymentQr(mergedPaymentData.payment_id, opVersionRef.current);
+              }
               return;
             }
           }
@@ -533,7 +605,7 @@ export default function PaymentLinkPage({
       cancelled = true;
       stopTimer();
     };
-  }, [calculateTimerValues, clearPaymentViewState, createPayment, getVerificationErrorMessage, handleExpiry, loadPaymentViewState, onNext, startTimer, stopTimer]);
+  }, [calculateTimerValues, clearPaymentViewState, createPayment, fetchPaymentQr, getServerRemainingMs, getVerificationErrorMessage, handleExpiry, isMobile, loadPaymentViewState, onNext, startTimer, stopTimer]);
 
   // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
@@ -609,6 +681,7 @@ export default function PaymentLinkPage({
     if (statusAbortRef.current) statusAbortRef.current.abort();
     if (createAbortRef.current) createAbortRef.current.abort();
     if (verifyAbortRef.current) verifyAbortRef.current.abort();
+    if (qrAbortRef.current) qrAbortRef.current.abort();
     stopTimer(true);
     sessionStorage.removeItem("payment_id");
     sessionStorage.removeItem("payment_timer_expires_at");
@@ -639,32 +712,93 @@ export default function PaymentLinkPage({
       return;
     }
 
-    stopTimer(true);
+    // Pause timer while verification is running; keep persisted expiry to resume on errors.
+    stopTimer();
     setVerifying(true);
     setError(null);
     setRetryInSeconds(0);
 
     try {
+      // Server-authoritative pre-check before upload/verify.
+      if (statusAbortRef.current) statusAbortRef.current.abort();
+      const precheckController = new AbortController();
+      statusAbortRef.current = precheckController;
+      const precheckStatus = await endpoints.getPaymentStatus(paymentData.payment_id, { signal: precheckController.signal });
+      if (!isOperationCurrent(operationId)) return;
+
+      if (precheckStatus.status === "expired" || precheckStatus.is_expired) {
+        handleExpiry();
+        return;
+      }
+      if (precheckStatus.status === "success") {
+        setPaymentStatus("success");
+        sessionStorage.removeItem("payment_id");
+        clearTimerState();
+        clearPaymentViewState();
+        onNext?.({ skipVerification: true });
+        return;
+      }
+      if (precheckStatus.status === "rejected_fraud") {
+        const reasons = precheckStatus.verification_details?.failure_reasons || [];
+        const specificError = getVerificationErrorMessage(reasons);
+        setPaymentStatus("rejected_fraud");
+        setFailureReasons(reasons);
+        showRetryHintError(specificError || getErrorMessage('FRAUD_002_0009'));
+        savePaymentViewState({
+          publicId,
+          paymentData,
+          paymentStatus: "rejected_fraud",
+          failureReasons: reasons,
+          error: specificError || getErrorMessage('FRAUD_002_0009')
+        });
+        return;
+      }
+      if (precheckStatus.status !== "pending" && precheckStatus.status !== "processing") {
+        showRetryHintError(getErrorMessage('PAY_001_0002'));
+        resumeTimerFromCurrentPayment();
+        return;
+      }
+      const serverRemainingMs = getServerRemainingMs(precheckStatus);
+      if (serverRemainingMs > 0) {
+        timerTotalMsRef.current = Math.max(1000, serverRemainingMs);
+      }
+      if (precheckStatus.expires_at) {
+        setPaymentData((prev) => prev
+          ? {
+              ...prev,
+              expires_at: precheckStatus.expires_at,
+              time_remaining_seconds: precheckStatus.time_remaining_seconds ?? prev.time_remaining_seconds,
+              payment_token: precheckStatus.payment_token || prev.payment_token || "",
+            }
+          : prev);
+      }
+
       const qualityCheck = await validateScreenshotQuality(uploadFile);
       if (!isOperationCurrent(operationId)) return;
       if (!qualityCheck.ok) {
         showRetryHintError(qualityCheck.message || getErrorMessage('VAL_003_0004'));
+        resumeTimerFromCurrentPayment();
         setVerifying(false);
         return;
       }
 
       // Extract file extension from uploaded file
       const fileExtension = uploadFile.name.split('.').pop().toLowerCase();
-
-      // Step 1: Convert file to base64
-      const imageBase64 = await fileToBase64(uploadFile);
-      if (!isOperationCurrent(operationId)) return;
-
-      // Step 2: Calculate SHA256
       const sha256 = await calculateSha256(uploadFile);
       if (!isOperationCurrent(operationId)) return;
 
-      // Step 3: Call verify-upload endpoint which handles verification and S3 upload
+      const paymentWriteToken = precheckStatus.payment_token || paymentData.payment_token || "";
+      if (!paymentWriteToken) {
+        showRetryHintError(getErrorMessage('AUTH_002_0002'));
+        resumeTimerFromCurrentPayment();
+        return;
+      }
+
+      // Step 1: Convert file to base64 and verify. Backend uploads to S3 only on success.
+      const imageBase64 = await fileToBase64(uploadFile);
+      if (!isOperationCurrent(operationId)) return;
+
+      // Step 2: Trigger verification with inline image payload
       if (verifyAbortRef.current) verifyAbortRef.current.abort();
       const verifyController = new AbortController();
       verifyAbortRef.current = verifyController;
@@ -678,7 +812,12 @@ export default function PaymentLinkPage({
           file_size: uploadFile.size || 0,
           original_filename: uploadFile.name || "",
         },
-        { signal: verifyController.signal }
+        {
+          signal: verifyController.signal,
+          headers: {
+            Authorization: `Bearer ${paymentWriteToken}`,
+          },
+        }
       );
       if (!isOperationCurrent(operationId)) return;
 
@@ -752,11 +891,13 @@ export default function PaymentLinkPage({
       if (verification?.status === "error") {
         setVerifying(false);
         showRetryHintError(getErrorMessage('SYS_002_0012'));
+        resumeTimerFromCurrentPayment();
         return;
       }
 
       setVerifying(false);
       showRetryHintError(getErrorMessage('SYS_002_0013'));
+      resumeTimerFromCurrentPayment();
     } catch (err) {
       if (err?.code === "REQ_ABORTED") {
         return;
@@ -765,6 +906,11 @@ export default function PaymentLinkPage({
       // Handle specific error codes with better messaging
       if (err.code === 'PAY_001_0001' || err.code === 'ERR_PAYMENT_EXPIRED') {
         handleExpiry();
+        return;
+      }
+      if (err.code === 'PAY_001_0008') {
+        showRetryHintError(err.message || getErrorMessage('PAY_001_0008'));
+        setPaymentStatus("failed");
         return;
       }
 
@@ -781,6 +927,7 @@ export default function PaymentLinkPage({
       } else {
         showRetryHintError(getErrorMessage('SYS_002_0013'));
       }
+      resumeTimerFromCurrentPayment();
 
     } finally {
       verifyAbortRef.current = null;
@@ -1002,82 +1149,91 @@ export default function PaymentLinkPage({
         </p>
       </div>
 
-      {error && (
-        <div className="banner warning spaced">
-          {error}
-        </div>
-      )}
-      {error && (
-        <div className="payment-next-steps">
-          <p><strong>Next steps:</strong></p>
-          <ul>
-            {getPaymentRecoverySteps(failureReasons).map((step, idx) => (
-              <li key={`live-step-${idx}`}>{step}</li>
-            ))}
-          </ul>
-        </div>
-      )}
       <div className="payment-content">
-        {paymentData && paymentStatus === "pending" && (
-          <section className="payment-card">
-            <h3>
-              <span className="payment-card-emoji" aria-hidden="true">💳</span>
-              {isMobile ? "Pay with UPI" : "Scan QR Code"}
-            </h3>
+        {paymentStatus === "pending" && (
+          <div className="payment-qr-instructions-grid">
+            {paymentData && (
+              <section className="payment-card payment-card-qr">
+                <h3>
+                  <span className="payment-card-emoji" aria-hidden="true">💳</span>
+                  {isMobile ? "Pay with UPI" : "Scan QR Code"}
+                </h3>
 
-            <div className="payment-qr-container" style={!isMobile ? getQrContainerStyle() : undefined}>
-              {isMobile ? (
-                <a
-                  href={paymentData.upi_link}
-                  className="payment-upi-button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    window.location.href = paymentData.upi_link;
-                  }}
-                  style={getButtonStyle()}
-                >
-                  <span>💳</span>
-                  <span>Pay ₹1 with UPI</span>
-                  <span className="payment-upi-timer">
-                    {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
-                  </span>
-                </a>
-              ) : (
-                <>
-                  <img
-                    src={`data:image/png;base64,${paymentData.qr_base64}`}
-                    alt="Payment QR Code"
-                    className="payment-qr-code"
-                  />
-                  <p className="payment-note">Scan with any UPI app to pay ₹1</p>
-                  <p className="payment-note" style={{ fontWeight: 600, color: getTimerColor() }}>
-                    {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
-                  </p>
-                </>
-              )}
-            </div>
+                <div className="payment-qr-container" style={!isMobile ? getQrContainerStyle() : undefined}>
+                  {isMobile ? (
+                    <a
+                      href={paymentData.upi_link}
+                      className="payment-upi-button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        window.location.href = paymentData.upi_link;
+                      }}
+                      style={getButtonStyle()}
+                    >
+                      <span>💳</span>
+                      <span>Pay ₹1 with UPI</span>
+                      <span className="payment-upi-timer">
+                        {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
+                      </span>
+                    </a>
+                  ) : (
+                    <>
+                      {paymentData.qr_base64 ? (
+                        <img
+                          src={`data:image/png;base64,${paymentData.qr_base64}`}
+                          alt="Payment QR Code"
+                          className="payment-qr-code"
+                        />
+                      ) : (
+                        <div className="payment-qr-code" style={{ display: "grid", placeItems: "center", color: "var(--muted)" }}>
+                          Loading QR...
+                        </div>
+                      )}
+                      <p className="payment-note">Scan with any UPI app to pay ₹1</p>
+                      <p className="payment-note" style={{ fontWeight: 600, color: getTimerColor() }}>
+                        {paymentStatus === "expired" ? 'Expired' : formatTime(timeRemaining)}
+                      </p>
+                    </>
+                  )}
+                </div>
 
-            <div className="payment-status-badge pending">
-              <span>⏱️</span>
-              Payment pending — upload screenshot after paying
-            </div>
-          </section>
+                <div className="payment-status-badge pending">
+                  <span>⏱️</span>
+                  Payment pending — upload screenshot after paying
+                </div>
+              </section>
+            )}
+
+            <section className="payment-card highlight payment-card-instructions">
+              <h3>
+                <span className="payment-card-emoji" aria-hidden="true">⚠️</span>
+                Important Instructions
+              </h3>
+              <ul className="payment-steps">
+                <li>Pay exactly ₹1 using a UPI app</li>
+                <li><strong>Use only: Google Pay, Paytm, or BHIM</strong></li>
+                <li>Take a screenshot immediately after payment</li>
+                <li>Upload the screenshot below to verify</li>
+                <li>Payment session expires in {formatTime(timeRemaining)}</li>
+              </ul>
+            </section>
+          </div>
         )}
 
-        {paymentStatus === "pending" && (
-          <section className="payment-card highlight">
-            <h3>
-              <span className="payment-card-emoji" aria-hidden="true">⚠️</span>
-              Important Instructions
-            </h3>
-            <ul className="payment-steps">
-              <li>Pay exactly ₹1 using a UPI app</li>
-              <li><strong>Use only: Google Pay, Paytm, or BHIM</strong></li>
-              <li>Take a screenshot immediately after payment</li>
-              <li>Upload the screenshot below to verify</li>
-              <li>Payment session expires in {formatTime(timeRemaining)}</li>
+        {error && (
+          <div className="banner warning spaced">
+            {error}
+          </div>
+        )}
+        {error && (
+          <div className="payment-next-steps">
+            <p><strong>Next steps:</strong></p>
+            <ul>
+              {getPaymentRecoverySteps(failureReasons).map((step, idx) => (
+                <li key={`live-step-${idx}`}>{step}</li>
+              ))}
             </ul>
-          </section>
+          </div>
         )}
 
         {paymentStatus === "pending" && (
@@ -1126,10 +1282,18 @@ export default function PaymentLinkPage({
                   <p className="payment-upload-file-name">
                     {uploadFile ? `✅ ${uploadFile.name}` : "No image selected"}
                   </p>
-                  <p className="payment-note">Click image above to change</p>
                   <p className="payment-upload-file-meta">
                     {uploadFile
-                      ? `Size: ${(uploadFile.size / (1024 * 1024)).toFixed(2)}MB | Max: ${MAX_UPLOAD_MB}MB`
+                      ? (
+                        <>
+                          <span className="payment-upload-meta-line">
+                            <strong>Size:</strong> {(uploadFile.size / (1024 * 1024)).toFixed(2)}MB | Max: {MAX_UPLOAD_MB}MB
+                          </span>
+                          <span className="payment-upload-meta-line">
+                            <strong>Type:</strong> {uploadFile.type || "Unknown"}
+                          </span>
+                        </>
+                      )
                       : `Allowed formats: JPG, JPEG, PNG, WEBP | Max: ${MAX_UPLOAD_MB}MB`}
                   </p>
                 </div>
@@ -1145,12 +1309,12 @@ export default function PaymentLinkPage({
                 </div>
 
                 <div className="payment-upload-verification-note">
-                  Verification usually completes in a few seconds. Keep this tab open until status updates.
+                  Verification usually takes a few seconds. Keep this tab open.
                 </div>
 
                 <div className="payment-upload-actions">
                   <button
-                    className="ghost"
+                    className={`ghost${uploadFile ? " danger" : ""}`}
                     type="button"
                     disabled={verifying}
                     onClick={() => {

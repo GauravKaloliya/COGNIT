@@ -207,3 +207,41 @@ def is_same_person_by_fingerprint(
     except Exception as e:
         print(f"[WARN] Fingerprint same-person check failed: {e}", flush=True)
         return False
+
+
+def check_ocr_signature_replay(
+    db,
+    ocr_signature: str,
+    sha256_hash: str,
+    participant_id: Optional[int] = None,
+) -> Tuple[bool, Optional[int], bool]:
+    """
+    Detect replay attempts where OCR-verification semantics are identical
+    even if image bytes/hash were modified.
+    """
+    if not ocr_signature:
+        return False, None, False
+    try:
+        row = db.execute(text("""
+            SELECT pua.payment_id, p.participant_id
+            FROM payment_upload_attempts pua
+            JOIN payments p ON p.id = pua.payment_id
+            WHERE pua.status IN ('success', 'rejected', 'duplicate')
+              AND pua.sha256 <> :sha
+              AND COALESCE(pua.details->>'ocr_signature', '') = :ocr_sig
+            ORDER BY pua.created_at DESC
+            LIMIT 1
+        """), {
+            "sha": sha256_hash,
+            "ocr_sig": ocr_signature,
+        }).fetchone()
+        if not row:
+            return False, None, False
+        existing_payment_id, existing_participant_id = row
+        is_same_participant = (
+            participant_id is not None and int(existing_participant_id or 0) == int(participant_id)
+        )
+        return True, int(existing_payment_id), is_same_participant
+    except Exception as e:
+        print(f"[WARN] OCR signature replay check failed: {e}", flush=True)
+        return False, None, False

@@ -1,3 +1,5 @@
+import sharedErrorContract from "@contracts/error_contract.json";
+
 /**
  * Centralized Error Registry
  * Maps backend error codes to user-friendly messages
@@ -5,6 +7,12 @@
  */
 
 const DEFAULT_LANGUAGE = 'en';
+const SHARED_MESSAGES_EN = Object.values(sharedErrorContract || {}).reduce((acc, def) => {
+  if (def && typeof def === "object" && def.code && def.message) {
+    acc[String(def.code)] = String(def.message);
+  }
+  return acc;
+}, {});
 
 // Error message translations
 const TRANSLATIONS = {
@@ -85,6 +93,8 @@ const TRANSLATIONS = {
     'AUTH_001_0002': 'Your account has been flagged. Contact support.',
     'AUTH_001_0003': 'Account has been deactivated',
     'AUTH_002_0001': 'Access denied',
+    'AUTH_002_0002': 'Invalid or expired payment authorization token.',
+    'BOT_001_0001': 'Human verification failed. Please retry.',
     
     // =====================================================================
     // NOT FOUND ERRORS (NF)
@@ -107,6 +117,7 @@ const TRANSLATIONS = {
     'PAY_001_0005': 'Please complete payment before accessing the survey.',
     'PAY_001_0006': 'Invalid file hash',
     'PAY_001_0007': 'Payment not verified. Please complete payment first.',
+    'PAY_001_0008': 'Maximum verification attempts reached. Please create a new payment session.',
     
     // =====================================================================
     // FRAUD DETECTION ERRORS (FRAUD)
@@ -143,7 +154,7 @@ const TRANSLATIONS = {
     // =====================================================================
     
     'SYS_001_0001': 'Something went wrong. Please try again.',
-    'SYS_001_0002': 'File upload failed. Please try again.',
+    'SYS_001_0002': 'Database error occurred. Please try again later.',
     'SYS_001_0003': 'Image processing failed. Please try a different image.',
     'SYS_001_0004': 'Service temporarily unavailable. Please try later.',
     'SYS_001_0005': 'Internal server error. Our team has been notified.',
@@ -255,7 +266,12 @@ export const ERROR_CATEGORIES = {
  */
 export function getErrorMessage(errorCode, lang = DEFAULT_LANGUAGE, params = {}) {
   const messages = TRANSLATIONS[lang] || TRANSLATIONS[DEFAULT_LANGUAGE];
-  let message = messages[errorCode] || messages['SYS_001_0001'] || 'An error occurred';
+  let message =
+    messages[errorCode] ||
+    (lang === DEFAULT_LANGUAGE ? SHARED_MESSAGES_EN[errorCode] : null) ||
+    messages['SYS_001_0001'] ||
+    SHARED_MESSAGES_EN['SYS_001_0001'] ||
+    'An error occurred';
   
   // Replace template variables
   Object.keys(params).forEach(key => {

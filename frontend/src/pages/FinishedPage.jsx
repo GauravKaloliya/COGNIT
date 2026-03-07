@@ -41,8 +41,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
       "payment_id",
       "payment_timer_expires_at",
       "payment_link_state_v1",
-      "consent_checked_draft",
-      "engagement_queue_v1"
+      "consent_checked_draft"
     ].forEach((k) => {
       try {
         sessionStorage.removeItem(k);

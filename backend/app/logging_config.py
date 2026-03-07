@@ -5,7 +5,8 @@ Configures logging handlers that write to stdout for Vercel's runtime log collec
 
 import logging
 import sys
-import os
+
+from app.config import LOG_LEVEL, LOGGING_AUTO_CONFIG
 
 
 _logging_already_configured = False
@@ -31,7 +32,7 @@ def configure_logging(log_level=None):
         return logging.getLogger()
 
     if log_level is None:
-        log_level = os.getenv("LOG_LEVEL", "INFO")
+        log_level = LOG_LEVEL
 
     level = getattr(logging, log_level.upper(), logging.INFO)
 
@@ -86,5 +87,5 @@ def get_logger(name):
     return logging.getLogger(name)
 
 
-if os.getenv("LOGGING_AUTO_CONFIG", "true").lower() == "true":
+if LOGGING_AUTO_CONFIG:
     configure_logging()

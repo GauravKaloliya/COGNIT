@@ -1,6 +1,6 @@
 """
 Submission routes module for C.O.G.N.I.T. backend.
-Handles survey submissions and engagement tracking.
+Handles survey submissions and survey telemetry capture.
 """
 
 import json
@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from flask import request, g, make_response
+from flask import request, g
 from sqlalchemy import text
 
 from app.config import (
@@ -28,8 +28,6 @@ from app.config import (
     PRIORITY_ROUNDS_THRESHOLD,
     PRIORITY_ATTENTION_THRESHOLD,
     SUBMIT_RATE_LIMIT,
-    ENGAGEMENT_TRACK_RATE_LIMIT,
-    ENGAGEMENT_EVENT_HISTORY_LIMIT,
 )
 from app.extensions import limiter
 from app.database import get_db
@@ -41,7 +39,8 @@ from app.utils.helpers import (
     create_error_response,
     success_response,
 )
-from app.utils.decorators import track_performance
+from app.utils.decorators import track_performance, require_idempotency_key
+from app.utils.turnstile import verify_turnstile_token
 from app.services import (
     build_request_hash,
     load_idempotent_response,
@@ -92,6 +91,26 @@ def _alphabetic_tokens(text: str):
     return re.findall(r"\b[a-z]{2,}\b", _normalize_for_attention(text))
 
 
+def _extract_survey_metrics(payload):
+    metrics = payload if isinstance(payload, dict) else {}
+    def _safe_int(value, default=0):
+        try:
+            parsed = int(value)
+            return parsed if parsed >= 0 else int(default)
+        except Exception:
+            return int(default)
+    return {
+        "survey_time_spent_ms": _safe_int(metrics.get("survey_time_spent_ms"), 0),
+        "survey_page_views": _safe_int(metrics.get("survey_page_views"), 0),
+        "survey_tab_switches": _safe_int(metrics.get("survey_tab_switches"), 0),
+        "survey_page_close_attempts": _safe_int(metrics.get("survey_page_close_attempts"), 0),
+        "survey_network_disconnects": _safe_int(metrics.get("survey_network_disconnects"), 0),
+        "survey_max_scroll_depth_pct": max(0, min(100, _safe_int(metrics.get("survey_max_scroll_depth_pct"), 0))),
+        "survey_clicks": _safe_int(metrics.get("survey_clicks"), 0),
+        "survey_keypresses": _safe_int(metrics.get("survey_keypresses"), 0),
+    }
+
+
 # ────────────────────────────────────────────────
 # Blueprint Setup
 # ────────────────────────────────────────────────
@@ -99,7 +118,6 @@ def _alphabetic_tokens(text: str):
 from flask import Blueprint
 submission_bp = Blueprint('submission', __name__)
 logger = logging.getLogger(__name__)
-ALLOWED_ENGAGEMENT_EVENTS = {"tab_switch", "page_close_attempt", "network_disconnect", "page_view"}
 
 
 # ────────────────────────────────────────────────
@@ -110,9 +128,11 @@ ALLOWED_ENGAGEMENT_EVENTS = {"tab_switch", "page_close_attempt", "network_discon
 @require_payment_completed
 @limiter.limit(SUBMIT_RATE_LIMIT)
 @track_performance
+@require_idempotency_key
 def submit():
     """Submit an image description or survey response."""
     d = request.json or {}
+    turnstile_token = (d.get("turnstile_token") or "").strip()
     logger.info("submit request_id=%s", getattr(g, "request_id", None))
     idempotency_key = (
         request.headers.get("X-Idempotency-Key")
@@ -122,6 +142,10 @@ def submit():
     public_id = d.get("public_id")
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
+
+    turnstile_ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr)
+    if not turnstile_ok:
+        return create_error_response("BOT_CHALLENGE_FAILED")
 
     image_id_str = d.get("image_id")
     if not image_id_str:
@@ -164,6 +188,16 @@ def submit():
         "tab_switch_count": d.get("tab_switch_count"),
         "page_close_attempts": d.get("page_close_attempts"),
         "network_disconnects": d.get("network_disconnects"),
+    })
+    survey_metrics = _extract_survey_metrics({
+        "survey_time_spent_ms": d.get("survey_time_spent_ms"),
+        "survey_page_views": d.get("survey_page_views"),
+        "survey_tab_switches": d.get("survey_tab_switches"),
+        "survey_page_close_attempts": d.get("survey_page_close_attempts"),
+        "survey_network_disconnects": d.get("survey_network_disconnects"),
+        "survey_max_scroll_depth_pct": d.get("survey_max_scroll_depth_pct"),
+        "survey_clicks": d.get("survey_clicks"),
+        "survey_keypresses": d.get("survey_keypresses"),
     })
 
     try:
@@ -316,12 +350,20 @@ def submit():
                 "content_fingerprint": description_fingerprint
             }
 
-        # Get engagement tracking data (prefer payload, fallback to participant metadata counters).
-        meta_engagement = participant_meta.get("engagement_tracking", {}) if isinstance(participant_meta, dict) else {}
-        engagement = normalize_engagement_counts(d, meta_engagement)
+        engagement = normalize_engagement_counts(d)
         tab_switch_count = engagement["tab_switch_count"]
         page_close_attempts = engagement["page_close_attempts"]
         network_disconnects = engagement["network_disconnects"]
+        if survey_metrics["survey_time_spent_ms"] == 0 and ts is not None:
+            survey_metrics["survey_time_spent_ms"] = max(0, int(float(ts) * 1000))
+        if survey_metrics["survey_page_views"] == 0:
+            survey_metrics["survey_page_views"] = 1
+        if survey_metrics["survey_tab_switches"] == 0:
+            survey_metrics["survey_tab_switches"] = tab_switch_count
+        if survey_metrics["survey_page_close_attempts"] == 0:
+            survey_metrics["survey_page_close_attempts"] = page_close_attempts
+        if survey_metrics["survey_network_disconnects"] == 0:
+            survey_metrics["survey_network_disconnects"] = network_disconnects
 
         quality = calculate_quality_score(
             word_count,
@@ -342,11 +384,17 @@ def submit():
                 rating, feedback, time_spent_seconds, is_survey, is_attention_check,
                 attention_passed, flagged_too_fast, quality_score,
                 ip_hash, user_agent, extra_metadata,
-                tab_switch_count, page_close_attempts, network_disconnects
+                tab_switch_count, page_close_attempts, network_disconnects,
+                survey_time_spent_ms, survey_page_views, survey_tab_switches,
+                survey_page_close_attempts, survey_network_disconnects,
+                survey_max_scroll_depth_pct, survey_clicks, survey_keypresses
             ) VALUES (
                 :pid, :iid, :sidx, :desc, :wc, :rt, :fb, :ts, :isv, :isa,
                 :ap, :tf, :qs, :iph, :ua, :meta,
-                :tsc, :pca, :nd
+                :tsc, :pca, :nd,
+                :survey_time_spent_ms, :survey_page_views, :survey_tab_switches,
+                :survey_page_close_attempts, :survey_network_disconnects,
+                :survey_max_scroll_depth_pct, :survey_clicks, :survey_keypresses
             ) RETURNING id
         """), {
             "pid": participant_id, "iid": image_id_fk, "sidx": survey_index,
@@ -354,7 +402,15 @@ def submit():
             "ts": ts, "isv": is_survey, "isa": is_attention, "ap": attention_passed,
             "tf": too_fast, "qs": quality, "iph": iph, "ua": ua,
             "meta": json.dumps(submission_meta),
-            "tsc": tab_switch_count, "pca": page_close_attempts, "nd": network_disconnects
+            "tsc": tab_switch_count, "pca": page_close_attempts, "nd": network_disconnects,
+            "survey_time_spent_ms": int(survey_metrics["survey_time_spent_ms"]),
+            "survey_page_views": int(survey_metrics["survey_page_views"]),
+            "survey_tab_switches": int(survey_metrics["survey_tab_switches"]),
+            "survey_page_close_attempts": int(survey_metrics["survey_page_close_attempts"]),
+            "survey_network_disconnects": int(survey_metrics["survey_network_disconnects"]),
+            "survey_max_scroll_depth_pct": int(survey_metrics["survey_max_scroll_depth_pct"]),
+            "survey_clicks": int(survey_metrics["survey_clicks"]),
+            "survey_keypresses": int(survey_metrics["survey_keypresses"]),
         })
         submission_id = submission_row.scalar()
 
@@ -524,7 +580,8 @@ def submit():
             "engagement": {
                 "tab_switch_count": tab_switch_count,
                 "page_close_attempts": page_close_attempts,
-                "network_disconnects": network_disconnects
+                "network_disconnects": network_disconnects,
+                "survey_metrics": survey_metrics,
             },
             "attention_status": {
                 "is_attention_check": is_attention,
@@ -561,118 +618,3 @@ def submit():
             return create_error_response("SURVEY_EXISTS")
         logger.error("submit failed request_id=%s public_id=%s error=%s", getattr(g, "request_id", None), public_id, exc)
         return create_error_response("DATABASE_ERROR")
-
-
-# ────────────────────────────────────────────────
-# Engagement Tracking
-# ────────────────────────────────────────────────
-
-
-def _load_participant_for_engagement(db, public_id: str):
-    row = db.execute(text("""
-        SELECT id, extra_metadata
-        FROM participants
-        WHERE public_id = :pub AND is_deleted = false
-    """), {"pub": public_id}).fetchone()
-    if not row:
-        return None, None
-    participant_id = row[0]
-    current_meta = row[1] or {}
-    if isinstance(current_meta, str):
-        current_meta = json.loads(current_meta)
-    return participant_id, current_meta
-
-
-def _ensure_engagement_meta(meta: dict):
-    if "engagement_tracking" not in meta:
-        meta["engagement_tracking"] = {
-            "tab_switches": 0,
-            "page_close_attempts": 0,
-            "network_disconnects": 0,
-            "page_views": 0,
-            "total_events": 0,
-            "events": []
-        }
-    return meta["engagement_tracking"]
-
-
-def _apply_engagement_event(meta: dict, event_type: str, event_data: dict):
-    tracking = _ensure_engagement_meta(meta)
-    if event_type == "tab_switch":
-        tracking["tab_switches"] += 1
-    elif event_type == "page_close_attempt":
-        tracking["page_close_attempts"] += 1
-    elif event_type == "network_disconnect":
-        tracking["network_disconnects"] += 1
-    elif event_type == "page_view":
-        tracking["page_views"] += 1
-
-    tracking["total_events"] += 1
-    tracking["events"].append({
-        "type": event_type,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "data": event_data or {}
-    })
-    if len(tracking["events"]) > ENGAGEMENT_EVENT_HISTORY_LIMIT:
-        tracking["events"] = tracking["events"][-ENGAGEMENT_EVENT_HISTORY_LIMIT:]
-
-
-@submission_bp.route("/engagement/track", methods=["POST"])
-@limiter.limit(ENGAGEMENT_TRACK_RATE_LIMIT)
-@track_performance
-def track_engagement():
-    """Track engagement events for all frontend pages."""
-    data = request.json or {}
-    logger.info("track_engagement request_id=%s", getattr(g, "request_id", None))
-    public_id = data.get("public_id")
-    event_type = data.get("event_type")
-    event_data = data.get("event_data") or {}
-    
-    if not public_id:
-        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
-    
-    if not event_type:
-        return create_error_response("MISSING_FIELDS", {"fields": ["event_type"]})
-    
-    if event_type not in ALLOWED_ENGAGEMENT_EVENTS:
-        return create_error_response("INVALID_FORMAT", {"field": "event_type", "allowed": sorted(ALLOWED_ENGAGEMENT_EVENTS)})
-    
-    db = None
-    try:
-        db = get_db()
-        
-        participant_id, current_meta = _load_participant_for_engagement(db, public_id)
-        if not participant_id:
-            return create_error_response("PARTICIPANT_NOT_FOUND")
-        _apply_engagement_event(current_meta, event_type, event_data)
-        db.execute(text("""
-            UPDATE participants
-            SET extra_metadata = :meta, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {
-            "meta": json.dumps(current_meta),
-            "pid": participant_id
-        })
-        
-        db.commit()
-        tracking = current_meta.get("engagement_tracking", {})
-        return success_response({
-            "status": "tracked",
-            "event_type": event_type,
-            "total_events": tracking.get("total_events", 0)
-        })
-        
-    except Exception as e:
-        try:
-            if db is not None:
-                db.rollback()
-        except:
-            pass
-        logger.error("track engagement failed request_id=%s public_id=%s event_type=%s error=%s", getattr(g, "request_id", None), public_id, event_type, e)
-        return create_error_response("INTERNAL_ERROR", custom_message="Tracking failed. Please try again.")
-
-
-@submission_bp.route("/engagement/track", methods=["OPTIONS"])
-@limiter.exempt
-def track_engagement_options():
-    return make_response("", 204)

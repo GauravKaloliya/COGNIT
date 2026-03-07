@@ -3,9 +3,14 @@ Security utilities module for C.O.G.N.I.T. backend.
 Provides payment signature generation, UPI link generation, and security helpers.
 """
 
+import base64
 import hashlib
 import hmac
+import json
+import time
 import urllib.parse
+from datetime import datetime, timezone
+from typing import Optional
 
 from app.config import PAYMENT_SECRET, UPI_VPA, UPI_NAME
 
@@ -54,3 +59,71 @@ def generate_upi_link(amount: float) -> str:
         "cu": "INR",
     }
     return "upi://pay?" + urllib.parse.urlencode(params)
+
+
+def _b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(value: str) -> bytes:
+    pad = "=" * ((4 - len(value) % 4) % 4)
+    return base64.urlsafe_b64decode((value + pad).encode("ascii"))
+
+
+def generate_payment_write_token(
+    payment_public_id: str,
+    participant_id: int,
+    expires_at,
+    payment_signature: str,
+    *,
+    device_fingerprint: Optional[str] = None,
+    session_id: Optional[str] = None,
+    nonce: Optional[str] = None,
+) -> str:
+    """
+    Generate signed token authorizing writes for a specific payment session.
+    """
+    if isinstance(expires_at, datetime):
+        exp_ts = int(expires_at.astimezone(timezone.utc).timestamp())
+    else:
+        exp_ts = int(datetime.fromisoformat(str(expires_at)).astimezone(timezone.utc).timestamp())
+
+    header = {"alg": "HS256", "typ": "JWT", "kid": "pay-write-v1"}
+    payload = {
+        "sub": str(payment_public_id),
+        "pid": int(participant_id),
+        "exp": int(exp_ts),
+        "iat": int(time.time()),
+        "sig": str(payment_signature or ""),
+        "dfp": str(device_fingerprint or ""),
+        "sid": str(session_id or ""),
+        "nonce": str(nonce or ""),
+    }
+    header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signing_input = f"{header_b64}.{payload_b64}"
+    signature = hmac.new(PAYMENT_SECRET.encode(), signing_input.encode("utf-8"), hashlib.sha256).digest()
+    return f"{signing_input}.{_b64url_encode(signature)}"
+
+
+def verify_payment_write_token(token: str):
+    """
+    Verify signed payment write token and return payload if valid.
+    """
+    if not token or token.count(".") != 2:
+        return None
+    try:
+        header_b64, payload_b64, sig_b64 = token.split(".")
+        signing_input = f"{header_b64}.{payload_b64}"
+        expected_sig = hmac.new(PAYMENT_SECRET.encode(), signing_input.encode("utf-8"), hashlib.sha256).digest()
+        provided_sig = _b64url_decode(sig_b64)
+        if not hmac.compare_digest(expected_sig, provided_sig):
+            return None
+        payload_raw = _b64url_decode(payload_b64)
+        payload = json.loads(payload_raw.decode("utf-8"))
+        exp_ts = int(payload.get("exp", 0))
+        if exp_ts <= int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None

@@ -109,7 +109,7 @@ export default function ConsentPage({
 
   return (
     <div className="panel">
-      <h2>C.O.G.N.I.T. Consent Form for Research Participation</h2>
+      <h2 className="consent-title">C.O.G.N.I.T. Consent Form for Research Participation</h2>
       <p className="page-subtitle left no-bottom-margin">
         We sincerely appreciate you considering being part of this work.
       </p>
@@ -140,7 +140,7 @@ export default function ConsentPage({
         <h3>Data Quality and Participation Integrity</h3>
         <p>To maintain scientific validity:</p>
         <ul>
-          <li>The platform uses automated systems to evaluate response completeness, instruction compliance, timing consistency, and engagement patterns.</li>
+          <li>The platform uses automated systems to evaluate response completeness, instruction compliance, timing consistency, and response-behavior patterns.</li>
           <li>Some surveys are designed to verify that instructions are being carefully followed.</li>
           <li>Repeated failure to follow instructions or patterns indicating inattentive participation may result in temporary or permanent restriction from continuing the task.</li>
           <li>These quality assessments are conducted algorithmically and are applied uniformly to all participants.</li>
@@ -165,7 +165,7 @@ export default function ConsentPage({
           <li><strong>Reward draw:</strong> Randomly selected participants receive ₹10 via UPI (typically within 24–48 hours)</li>
         </ul>
         <p>
-          Participants demonstrating consistent, attentive, and high-quality engagement may receive priority in reward allocation. Quality is assessed using objective behavioral metrics such as response completeness, instruction compliance, and engagement consistency. Receipt of any reward is not guaranteed.
+          Participants demonstrating consistent, attentive, and high-quality responses may receive priority in reward allocation. Quality is assessed using objective behavioral metrics such as response completeness, instruction compliance, and response consistency. Receipt of any reward is not guaranteed.
         </p>
 
         <h3>Data Protection and Confidentiality</h3>

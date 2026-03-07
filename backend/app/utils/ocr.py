@@ -5,6 +5,7 @@ Uses Amazon Textract for OCR processing (no local Tesseract dependency).
 """
 
 import re
+import hashlib
 from datetime import datetime
 from io import BytesIO
 from typing import List, Optional, Tuple
@@ -400,12 +401,14 @@ def verify_payment_screenshot(
         failures.append("unrecognized_app")
         return False, "unknown", failures
 
-    # Enforce OCR confidence floor.
-    if confidence < MIN_OCR_CONFIDENCE:
-        failures.append("ocr_unavailable")
+    if detected_app == "unknown":
+        failures.append("unrecognized_app")
         return False, detected_app, failures
 
-    if detected_app == "unknown":
+    # Enforce OCR confidence floor after app detection.
+    # Return unrecognized_app for low-confidence reads to keep user-facing messaging
+    # focused on unsupported/unreadable payment app evidence.
+    if confidence < MIN_OCR_CONFIDENCE:
         failures.append("unrecognized_app")
         return False, detected_app, failures
 
@@ -541,3 +544,16 @@ def sanitize_extracted_text_for_storage(
 
     # Deterministic compact output
     return " | ".join(kept_parts)
+
+
+def compute_ocr_signature(text: str, detected_app: Optional[str]) -> Optional[str]:
+    """
+    Build a deterministic hash of verification-relevant OCR evidence.
+    Used to detect edited/replayed screenshots with different pixels but
+    effectively identical transaction text.
+    """
+    sanitized = sanitize_extracted_text_for_storage(text or "", detected_app or "unknown")
+    normalized = re.sub(r"\s+", " ", (sanitized or "").strip().lower())
+    if not normalized:
+        return None
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
