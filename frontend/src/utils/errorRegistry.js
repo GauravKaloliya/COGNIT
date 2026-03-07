@@ -1,4 +1,4 @@
-import sharedErrorContract from "@contracts/error_contract.json";
+import sharedErrorContract from "./error_contract.json";
 
 /**
  * Centralized Error Registry
