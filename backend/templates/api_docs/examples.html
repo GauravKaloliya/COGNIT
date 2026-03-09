@@ -2,18 +2,26 @@
 {% block docs_content %}
 <section class="doc-section">
   <h2>Examples</h2>
-  <p class="section-note">Production-oriented request and response samples.</p>
+  <p class="section-note">Examples aligned with current backend request contracts.</p>
 
   <div class="examples-grid">
     <article class="example-card">
       <h3>Create Participant</h3>
       <div class="code-block"><pre>curl -X POST "{{ base_url }}/participants" \
   -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: 4e30a6e4-1d57-4e95-a9ce-0fd6f6f6f13a" \
+  -H "X-Idempotency-Key: 70a9349a-7466-44b8-b6f0-31fb52868b26" \
   -d '{
-    "username": "demo_user",
+    "public_id": "8dff4977-a180-4ef5-9a4c-47b98f5e47dd",
+    "session_id": "sess_abc123",
+    "username": "demo_user_91",
     "email": "demo@example.com",
-    "phone": "9876543210"
+    "phone": "9876543210",
+    "gender_code": "male",
+    "age": 24,
+    "location": "Ahmedabad",
+    "language_code": "en",
+    "prior_experience": "medium",
+    "turnstile_token": "token_from_frontend"
   }'</pre></div>
     </article>
 
@@ -21,38 +29,65 @@
       <h3>Create Payment Session</h3>
       <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/create" \
   -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: 1b667f94-8c42-4a45-b0f9-f7fcb677ff90" \
+  -H "X-Idempotency-Key: 8ecfef66-1ed4-4be0-a3a7-a5631cb1a8ab" \
   -d '{
-    "public_id": "ptcp_123",
-    "amount": 1
+    "public_id": "8dff4977-a180-4ef5-9a4c-47b98f5e47dd",
+    "amount": 1,
+    "turnstile_token": "token_from_frontend"
   }'</pre></div>
     </article>
 
     <article class="example-card">
-      <h3>Fetch Survey Image</h3>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/images/random?public_id=ptcp_123"</pre></div>
+      <h3>Generate Screenshot Upload URL</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/{payment_public_id}/upload-url" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer {payment_token}" \
+  -d '{
+    "sha256": "f8f4b41d11e8f13b6d6e0ff8fd2d6d9c06fc7d03b30ef935398f4f6f9f5a6f57",
+    "file_extension": "png",
+    "mime_type": "image/png",
+    "file_size": 302188
+  }'</pre></div>
     </article>
 
     <article class="example-card">
-      <h3>Submit Survey Response</h3>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/submit" \
+      <h3>Verify Payment Screenshot</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/{payment_public_id}/verify-upload" \
   -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: f0fd6a0f-c2f9-4318-b9f6-77e75c7e5f0f" \
+  -H "Authorization: Bearer {payment_token}" \
+  -H "X-Idempotency-Key: 4ce6f1f2-f2ef-413c-ae1e-f6d2dc97dc84" \
   -d '{
-    "public_id": "ptcp_123",
-    "image_id": "img_239",
-    "description": "A busy urban scene with layered activity and movement...",
-    "complexity": 4
+    "upload_object_key": "payments/staging/{payment_public_id}/up_abc123.png",
+    "sha256": "f8f4b41d11e8f13b6d6e0ff8fd2d6d9c06fc7d03b30ef935398f4f6f9f5a6f57",
+    "file_extension": "png",
+    "turnstile_token": "token_from_frontend"
   }'</pre></div>
     </article>
 
     <article class="example-card wide">
-      <h3>Success Envelope</h3>
+      <h3>Submit Survey Response</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/submit" \
+  -H "Content-Type: application/json" \
+  -H "X-Idempotency-Key: 4d7482a4-64a8-40fd-8aca-8d6165468b8e" \
+  -d '{
+    "public_id": "8dff4977-a180-4ef5-9a4c-47b98f5e47dd",
+    "image_id": "21.svg",
+    "description": "A market lane with small stores and people moving across the foreground.",
+    "feedback": "Clear image and easy to describe.",
+    "rating": 4,
+    "time_spent_seconds": 34,
+    "turnstile_token": "token_from_frontend"
+  }'</pre></div>
+    </article>
+
+    <article class="example-card wide">
+      <h3>Success Envelope (Current)</h3>
       <div class="code-block compact"><pre>{
   "success": true,
   "data": {
-    "public_id": "ptcp_123",
-    "state": "payment_pending"
+    "payment_id": "36a3a6d5-86ef-4f8e-8dff-64692ebefee0",
+    "status": "pending",
+    "time_remaining_seconds": 420
   }
 }</pre></div>
     </article>
@@ -62,12 +97,12 @@
       <div class="code-block compact"><pre>{
   "success": false,
   "error": {
-    "code": "VAL_INVALID_EMAIL",
-    "message": "Email format is invalid",
-    "category": "VAL",
+    "code": "PAY_INVALID_SHA256",
+    "message": "SHA256 hash is invalid or mismatched.",
+    "category": "PAY",
     "http_status": 400,
-    "retryable": false,
-    "request_id": "0e7bde95-f5f4-4f1d-a20f-3563f3f2d327"
+    "retryable": true,
+    "request_id": "87b2f945-87aa-43f8-b4d9-b1c91e5d6621"
   }
 }</pre></div>
     </article>
