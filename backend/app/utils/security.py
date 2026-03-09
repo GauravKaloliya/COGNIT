@@ -9,6 +9,7 @@ import hmac
 import json
 import time
 import urllib.parse
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -52,13 +53,32 @@ def generate_upi_link(amount: float) -> str:
     Returns:
         UPI payment URI string
     """
+    upi_vpa = str(UPI_VPA or "").strip()
+    upi_name = str(UPI_NAME or "").strip()
+
+    if not upi_vpa:
+        raise ValueError("UPI_VPA is missing")
+    if not re.match(r"^[A-Za-z0-9.\-_]{2,256}@[A-Za-z0-9.\-_]{2,256}$", upi_vpa):
+        raise ValueError("UPI_VPA format is invalid")
+    if not upi_name:
+        raise ValueError("UPI_NAME is missing")
+
+    try:
+        amount_num = float(amount)
+    except (TypeError, ValueError):
+        raise ValueError("Amount is invalid") from None
+    if amount_num <= 0:
+        raise ValueError("Amount must be positive")
+
     params = {
-        "pa": UPI_VPA,
-        "pn": UPI_NAME,
-        "am": f"{amount:.2f}",
+        "pa": upi_vpa,
+        "pn": upi_name,
+        "am": f"{amount_num:.2f}",
         "cu": "INR",
+        # Keep a stable note so payment intent is explicit for user and audit.
+        "tn": "COGNIT",
     }
-    return "upi://pay?" + urllib.parse.urlencode(params)
+    return "upi://pay?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
 
 
 def _b64url_encode(raw: bytes) -> str:
