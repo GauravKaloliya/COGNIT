@@ -22,17 +22,8 @@ from app.utils.helpers import create_error_response, success_response
 from app.utils.observability import log_event
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
 from app.config import (
-    DOCS_BASE_URL,
     ROOT_RATE_LIMIT,
     DOCS_RATE_LIMIT,
-    PARTICIPANT_CREATE_RATE_LIMIT,
-    PARTICIPANT_CHECK_RATE_LIMIT,
-    CONSENT_RATE_LIMIT,
-    PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
-    SUBMIT_RATE_LIMIT,
-    PAYMENT_CREATE_RATE_LIMIT,
-    PAYMENT_STATUS_RATE_LIMIT,
-    PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
     FLASK_DEBUG,
     FLASK_HOST,
     FLASK_PORT,
@@ -278,7 +269,8 @@ def root():
 
 
 def _render_api_docs_page(template_name: str, active_page: str):
-    base_url = DOCS_BASE_URL
+    # Keep docs focused on production API host while backend can still run locally.
+    base_url = "https://api.cognit.online"
     return render_template(
         template_name,
         base_url=base_url,
