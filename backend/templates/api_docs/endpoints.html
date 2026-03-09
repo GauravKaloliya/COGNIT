@@ -7,64 +7,94 @@
   </div>
 
   <div class="endpoint-list">
-    <article class="endpoint-card" data-method="get" data-path="/health" data-search="health status liveness database">
+    <article class="endpoint-card" data-method="get" data-path="/health" data-search="health liveness database readiness">
       <header><span class="method get">GET</span><code>/health</code></header>
-      <p>Service liveness and database connectivity.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
+      <p>Service health probe with database connectivity status.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
     </article>
 
-    <article class="endpoint-card" data-method="post" data-path="/participants" data-search="participants registration onboarding profile">
+    <article class="endpoint-card" data-method="post" data-path="/participants" data-search="participants register onboarding username email phone age location">
       <header><span class="method post">POST</span><code>/participants</code></header>
-      <p>Create participant profile and issue flow identifiers.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required</span></div>
+      <p>Create participant profile. Required body fields: <code>username,email,phone,gender_code,age,location,language_code,prior_experience,turnstile_token</code>.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required header <code>X-Idempotency-Key</code></span><span>Rate limit: yes</span></div>
     </article>
 
-    <article class="endpoint-card" data-method="post" data-path="/consent" data-search="consent acknowledgement">
+    <article class="endpoint-card" data-method="get" data-path="/check-username" data-search="username availability validation">
+      <header><span class="method get">GET</span><code>/check-username?username=...</code></header>
+      <p>Check username availability. Returns <code>data.available</code>.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="get" data-path="/check-email" data-search="email availability validation">
+      <header><span class="method get">GET</span><code>/check-email?email=...</code></header>
+      <p>Check email availability. Returns <code>data.available</code>.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="get" data-path="/check-phone" data-search="phone availability validation">
+      <header><span class="method get">GET</span><code>/check-phone?phone=...</code></header>
+      <p>Check phone availability. Returns <code>data.available</code>.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/consent" data-search="consent participant acceptance">
       <header><span class="method post">POST</span><code>/consent</code></header>
-      <p>Persist participant consent acknowledgment.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: recommended</span></div>
+      <p>Record participant consent. Required body: <code>public_id</code>.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: optional</span><span>Rate limit: yes</span></div>
     </article>
 
-    <article class="endpoint-card" data-method="post" data-path="/payments/create" data-search="payments create upi qr token session">
-      <header><span class="method post">POST</span><code>/payments/create</code></header>
-      <p>Create payment session and return payment write token.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required</span></div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/status" data-search="payments status refresh pending processing">
-      <header><span class="method get">GET</span><code>/payments/{payment_public_id}/status</code></header>
-      <p>Check payment status and refresh token while pending/processing.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/upload-url" data-search="upload screenshot presigned url verify">
-      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/upload-url</code></header>
-      <p>Issue presigned URL for screenshot upload verification.</p>
-      <div class="endpoint-meta"><span>Auth: Bearer payment token</span><span>Idempotency: optional</span></div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/verify-upload" data-search="verify fraud ocr upload payment checks">
-      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/verify-upload</code></header>
-      <p>Run OCR + anti-fraud checks and finalize payment state.</p>
-      <div class="endpoint-meta"><span>Auth: Bearer payment token</span><span>Idempotency: required</span></div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/participants/{public_id}/payment-status" data-search="participant payment status progression">
+    <article class="endpoint-card" data-method="get" data-path="/participants/{public_id}/payment-status" data-search="participants payment status verified stage">
       <header><span class="method get">GET</span><code>/participants/{public_id}/payment-status</code></header>
-      <p>Read participant-level payment progression state.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
+      <p>Get participant payment progression (<code>is_verified</code>, <code>payment_status</code>, <code>current_stage</code>).</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/payments/create" data-search="payments create session upi link qr token">
+      <header><span class="method post">POST</span><code>/payments/create</code></header>
+      <p>Create payment session. Required body: <code>public_id,amount,turnstile_token</code>. Returns <code>payment_token</code>.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required header <code>X-Idempotency-Key</code></span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/status" data-search="payments status expires token pending processing success">
+      <header><span class="method get">GET</span><code>/payments/{payment_public_id}/status</code></header>
+      <p>Fetch payment status and remaining time. Returns refreshed <code>payment_token</code> while pending/processing.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/qr" data-search="payments qr base64 upi">
+      <header><span class="method get">GET</span><code>/payments/{payment_public_id}/qr</code></header>
+      <p>Get QR image as base64 for an active payment session.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/upload-url" data-search="payments screenshot upload presigned s3 sha256 file">
+      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/upload-url</code></header>
+      <p>Get S3 presigned upload URL for payment screenshot. Required body: <code>sha256,file_extension</code>.</p>
+      <div class="endpoint-meta"><span>Auth: <code>Authorization: Bearer &lt;payment_token&gt;</code></span><span>Idempotency: optional</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/verify-upload" data-search="payments verify upload ocr fraud turnstile">
+      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/verify-upload</code></header>
+      <p>Verify uploaded screenshot with OCR + fraud checks. Requires turnstile token and idempotency key.</p>
+      <div class="endpoint-meta"><span>Auth: <code>Authorization: Bearer &lt;payment_token&gt;</code></span><span>Idempotency: required header <code>X-Idempotency-Key</code></span><span>Rate limit: yes</span></div>
     </article>
 
     <article class="endpoint-card" data-method="get" data-path="/images/random" data-search="image random survey attention eligible">
       <header><span class="method get">GET</span><code>/images/random</code></header>
-      <p>Fetch a single eligible survey image.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
+      <p>Fetch one survey image. Supports <code>public_id</code> and optional <code>exclude</code> query params.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: inherited global</span></div>
     </article>
 
-    <article class="endpoint-card" data-method="post" data-path="/submit" data-search="submit survey feedback complexity telemetry">
+    <article class="endpoint-card" data-method="post" data-path="/submit" data-search="submit survey description feedback rating telemetry">
       <header><span class="method post">POST</span><code>/submit</code></header>
-      <p>Submit image description, complexity rating, and telemetry.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required</span></div>
+      <p>Submit survey answer. Required body includes <code>public_id,image_id,description,feedback,rating,turnstile_token</code>.</p>
+      <div class="endpoint-meta"><span>Auth: requires completed payment flow</span><span>Idempotency: required header <code>X-Idempotency-Key</code></span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/internal/payments/{payment_public_id}/verify" data-search="internal payment verify backoffice">
+      <header><span class="method post">POST</span><code>/internal/payments/{payment_public_id}/verify</code></header>
+      <p>Internal verification endpoint. Exempt from rate limiting. Use only from trusted backend jobs/services.</p>
+      <div class="endpoint-meta"><span>Auth: internal-only (network/policy)</span><span>Idempotency: n/a</span><span>Rate limit: exempt</span></div>
     </article>
   </div>
   <p id="endpointNoResults" class="section-note" hidden>No endpoints match your search.</p>
