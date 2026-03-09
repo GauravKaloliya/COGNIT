@@ -66,29 +66,48 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
     Returns:
         True if screenshot was previously rejected
     """
+    # Fast path: denormalized indexed hash on payments.
     try:
-        result = db.execute(text("""
+        hit = db.execute(text("""
             SELECT 1
-            FROM payments p
-            LEFT JOIN payment_files pf ON pf.payment_id = p.id
-            WHERE p.status = 'rejected_fraud'
-              AND (
-                    pf.sha256 = :hash
-                    OR EXISTS (
-                        SELECT 1
-                        FROM payment_upload_attempts pua
-                        WHERE pua.payment_id = p.id
-                          AND pua.sha256 = :hash
-                    )
-                    OR p.metadata->>'uploaded_sha256' = :hash
-                    OR p.verification_details->>'uploaded_sha256' = :hash
-              )
+            FROM payments
+            WHERE status = 'rejected_fraud'
+              AND uploaded_sha256 = :hash
             LIMIT 1
         """), {"hash": sha256_hash}).scalar()
-        
-        return bool(result)
+        if hit:
+            return True
     except Exception as e:
-        print(f"[WARN] Rejected screenshot check failed: {e}", flush=True)
+        print(f"[WARN] Rejected screenshot fast-path check failed: {e}", flush=True)
+
+    # Fallback path 1: historical file hashes linked to rejected payments.
+    try:
+        hit = db.execute(text("""
+            SELECT 1
+            FROM payment_files pf
+            JOIN payments p ON p.id = pf.payment_id
+            WHERE p.status = 'rejected_fraud'
+              AND pf.sha256 = :hash
+            LIMIT 1
+        """), {"hash": sha256_hash}).scalar()
+        if hit:
+            return True
+    except Exception as e:
+        print(f"[WARN] Rejected screenshot file-hash check failed: {e}", flush=True)
+
+    # Fallback path 2: upload attempts on rejected payments.
+    try:
+        hit = db.execute(text("""
+            SELECT 1
+            FROM payment_upload_attempts pua
+            JOIN payments p ON p.id = pua.payment_id
+            WHERE p.status = 'rejected_fraud'
+              AND pua.sha256 = :hash
+            LIMIT 1
+        """), {"hash": sha256_hash}).scalar()
+        return bool(hit)
+    except Exception as e:
+        print(f"[WARN] Rejected screenshot attempts check failed: {e}", flush=True)
         return False
 
 
@@ -108,6 +127,24 @@ def compute_dhash(image: Image.Image, hash_size: int = 8) -> str:
             bits.append(1 if row[i] > row[i + 1] else 0)
     bit_string = "".join("1" if b else "0" for b in bits)
     return f"{int(bit_string, 2):0{hash_size * hash_size // 4}x}"
+
+
+def phash_hex_to_bits_and_bucket(image_hash: str) -> Tuple[Optional[str], Optional[int]]:
+    """
+    Convert 64-bit perceptual hash hex into bit-string and a coarse prefix bucket.
+    """
+    if not image_hash:
+        return None, None
+    normalized = str(image_hash).strip().lower()
+    if len(normalized) != 16:
+        return None, None
+    try:
+        value = int(normalized, 16)
+    except Exception:
+        return None, None
+    bits = f"{value:064b}"
+    bucket = int(bits[:16], 2)
+    return bits, bucket
 
 
 def _hamming_distance_hex(hash_a: str, hash_b: str) -> int:
@@ -132,6 +169,64 @@ def check_near_duplicate_screenshot(
     Returns:
         Tuple of (is_near_duplicate, existing_payment_id, min_distance, is_same_participant)
     """
+    bits, bucket = phash_hex_to_bits_and_bucket(image_hash)
+    if not bits:
+        return False, None, None, False
+
+    # Primary path: indexed coarse-bucket search, distance filter in SQL.
+    try:
+        candidate = db.execute(text("""
+            SELECT
+                pf.payment_id,
+                p.participant_id,
+                bit_count((pf.image_phash_bits # CAST(:bits AS bit(64)))) AS hamming_distance
+            FROM payment_files pf
+            JOIN payments p ON p.id = pf.payment_id
+            WHERE pf.image_phash_bits IS NOT NULL
+              AND pf.image_phash_bucket = :bucket
+            ORDER BY hamming_distance ASC, p.created_at DESC
+            LIMIT 128
+        """), {"bits": bits, "bucket": bucket}).fetchone()
+
+        if candidate:
+            payment_id, owner_participant_id, distance = candidate
+            distance = int(distance)
+            if distance <= threshold:
+                is_same_participant = (
+                    participant_id is not None and owner_participant_id == participant_id
+                )
+                return True, int(payment_id), distance, is_same_participant
+    except Exception as e:
+        print(f"[WARN] Near-duplicate primary SQL check failed: {e}", flush=True)
+
+    # Secondary path: SQL distance scan (kept in DB), constrained candidate count.
+    try:
+        candidate = db.execute(text("""
+            SELECT
+                pf.payment_id,
+                p.participant_id,
+                bit_count((pf.image_phash_bits # CAST(:bits AS bit(64)))) AS hamming_distance
+            FROM payment_files pf
+            JOIN payments p ON p.id = pf.payment_id
+            WHERE pf.image_phash_bits IS NOT NULL
+            ORDER BY hamming_distance ASC, p.created_at DESC
+            LIMIT 256
+        """), {"bits": bits}).fetchone()
+
+        if candidate:
+            payment_id, owner_participant_id, distance = candidate
+            distance = int(distance)
+            if distance <= threshold:
+                is_same_participant = (
+                    participant_id is not None and owner_participant_id == participant_id
+                )
+                return True, int(payment_id), distance, is_same_participant
+            return False, None, distance, False
+        return False, None, None, False
+    except Exception as e:
+        print(f"[WARN] Near-duplicate SQL fallback failed: {e}", flush=True)
+
+    # Final safety fallback: tiny Python scan from recent rows only.
     try:
         rows = db.execute(text("""
             SELECT pf.payment_id, pf.image_phash, p.participant_id
@@ -139,6 +234,7 @@ def check_near_duplicate_screenshot(
             JOIN payments p ON p.id = pf.payment_id
             WHERE pf.image_phash IS NOT NULL
             ORDER BY p.created_at DESC, p.id DESC
+            LIMIT 1024
         """)).fetchall()
         best_payment = None
         best_distance = None
@@ -156,7 +252,7 @@ def check_near_duplicate_screenshot(
             return True, best_payment, best_distance, is_same_participant
         return False, None, best_distance, False
     except Exception as e:
-        print(f"[WARN] Near-duplicate screenshot check failed: {e}", flush=True)
+        print(f"[WARN] Near-duplicate final fallback failed: {e}", flush=True)
         return False, None, None, False
 
 

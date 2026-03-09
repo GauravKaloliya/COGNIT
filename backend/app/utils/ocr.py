@@ -348,7 +348,8 @@ def verify_payment_screenshot(
     Validate UPI payment screenshot with app-specific and global rules.
 
     App-specific rules:
-    - Google Pay: app label not required, must include "paid to cognit",
+    - Google Pay: app label not required, must include a supported recipient phrase
+      such as "paid to cognit", "paid gaurav", or "paid to gaurav",
       full-month-name + 4-digit-year date, and HH:MM AM/PM
     - Paytm: "paytm" label required, short-month-name date, and HH:MM AM/PM
     - BHIM: "bhim" label + "paid" required, ordinal day date (st/nd/rd/th)
@@ -377,12 +378,21 @@ def verify_payment_screenshot(
     has_paytm = re.search(r"\bpaytm\b", lower, re.IGNORECASE) is not None
     has_bhim = re.search(r"\bbhim\b", lower, re.IGNORECASE) is not None
     has_paid_to_cognit = re.search(r"paid\s+to\s+cognit", lower, re.IGNORECASE) is not None
+    has_paid_to_gaurav = re.search(r"paid\s+to\s+gaurav\b", lower, re.IGNORECASE) is not None
+    has_paid_gaurav = re.search(r"\bpaid\s+gaurav\b", lower, re.IGNORECASE) is not None
+    has_paid_to_gaurav = re.search(r"\bpaid\s+to\s+gaurav\b", lower, re.IGNORECASE) is not None
+    has_gpay_recipient_phrase = (
+        has_paid_to_cognit
+        or has_paid_to_gaurav
+        or has_paid_gaurav
+        or has_paid_to_gaurav
+    )
 
     if has_paytm:
         detected_app = "paytm"
     elif has_bhim:
         detected_app = "bhim"
-    elif has_paid_to_cognit:
+    elif has_gpay_recipient_phrase:
         detected_app = "gpay"
     else:
         detected_app = "unknown"
@@ -410,7 +420,7 @@ def verify_payment_screenshot(
 
     # App-specific rules
     if detected_app == "gpay":
-        if not has_paid_to_cognit:
+        if not has_gpay_recipient_phrase:
             failures.append("missing_paid_to_cognit")
     elif detected_app == "paytm":
         if not has_paytm:
@@ -504,6 +514,9 @@ def sanitize_extracted_text_for_storage(
 
     # Core payment semantics
     add_match(r"paid\s+to\s+cognit")
+    add_match(r"paid\s+to\s+gaurav")
+    add_match(r"\bpaid\s+gaurav\b")
+    add_match(r"\bpaid\s+to\s+gaurav\b")
     add_match(r"\bpaid\b")
     add_match(r"\bcognit\b")
     add_match(r"\bgaurav\b")

@@ -10,8 +10,19 @@ from datetime import datetime, timezone
 from flask import request, g
 from sqlalchemy import text
 
+_FINGERPRINT_HISTORY_CACHE = {}
+_FINGERPRINT_HISTORY_CACHE_TTL_SECONDS = 300
+
+
+def _should_run_fingerprinting() -> bool:
+    path = (request.path or "").lower()
+    # Restrict expensive fingerprint DB work to fraud-sensitive write flows.
+    return path.startswith("/payments/") or path == "/submit"
+
 def _resolve_participant_id(db):
     """Best-effort participant resolution across route styles."""
+    if hasattr(g, "participant_id") and g.participant_id:
+        return g.participant_id
     public_id = None
     payment_public_id = None
 
@@ -40,6 +51,7 @@ def _resolve_participant_id(db):
             WHERE public_id = :pub
         """), {"pub": public_id}).fetchone()
         if row:
+            g.participant_id = row[0]
             return row[0]
 
     if payment_public_id:
@@ -49,6 +61,7 @@ def _resolve_participant_id(db):
             WHERE public_id = :pid
         """), {"pid": payment_public_id}).fetchone()
         if row:
+            g.participant_id = row[0]
             return row[0]
 
     return None
@@ -112,13 +125,22 @@ def calculate_risk_score(fingerprint_data, db, participant_id=None):
     
     # Check for rapid changes in fingerprint (device switching)
     if participant_id:
-        previous_fingerprints = db.execute(text("""
-            SELECT fingerprint_hash, created_at
-            FROM device_fingerprints
-            WHERE participant_id = :pid
-            ORDER BY created_at DESC
-            LIMIT 5
-        """), {"pid": participant_id}).fetchall()
+        now_ts = int(time.time())
+        cache_entry = _FINGERPRINT_HISTORY_CACHE.get(int(participant_id))
+        if cache_entry and (now_ts - int(cache_entry.get("fetched_at", 0))) <= _FINGERPRINT_HISTORY_CACHE_TTL_SECONDS:
+            previous_fingerprints = cache_entry.get("rows", [])
+        else:
+            previous_fingerprints = db.execute(text("""
+                SELECT fingerprint_hash, created_at
+                FROM device_fingerprints
+                WHERE participant_id = :pid
+                ORDER BY created_at DESC
+                LIMIT 5
+            """), {"pid": participant_id}).fetchall()
+            _FINGERPRINT_HISTORY_CACHE[int(participant_id)] = {
+                "fetched_at": now_ts,
+                "rows": previous_fingerprints,
+            }
         
         current_fingerprint = generate_device_fingerprint(fingerprint_data)
         
@@ -182,6 +204,13 @@ def get_or_create_device_fingerprint(db, participant_id=None):
 def device_fingerprint_middleware():
     """Middleware to extract and store device fingerprint for each request"""
     try:
+        if not _should_run_fingerprinting():
+            g.device_fingerprint = None
+            g.device_risk_score = 0
+            g.device_characteristics = {}
+            g.device_fingerprint_written = False
+            return
+
         # Get database connection from Flask g
         if hasattr(g, 'db'):
             db = g.db
