@@ -151,12 +151,8 @@ export default function ConsentPage({
         <p>Participation is entirely voluntary.</p>
         <p>You may:</p>
         <ul>
-          <li>Decline to answer any question</li>
           <li>Withdraw at any time without penalty</li>
-          <li>Request deletion of your data after participation</li>
         </ul>
-        <p>To withdraw or request deletion, contact: <a href="mailto:research@cognit.online"><strong>research@cognit.online</strong></a></p>
-        <p>We aim to respond within 48 hours.</p>
         <p>Early withdrawal before task completion means you will not be entered into the reward draw.</p>
 
         <h3>Compensation Structure</h3>
@@ -189,14 +185,6 @@ export default function ConsentPage({
           Your data will be used exclusively for scientific research and ethical AI development. No commercial marketing, profiling, or resale will occur.
         </p>
 
-        <h3>Foreseeable Risks and Burdens</h3>
-        <p>The anticipated burdens are minimal:</p>
-        <ul>
-          <li>5–10 minutes of focused attention</li>
-          <li>Possible mild cognitive fatigue from descriptive writing</li>
-        </ul>
-        <p>No physical, emotional, legal, or financial risks beyond ordinary internet usage are expected.</p>
-
         <h3>Eligibility Requirements</h3>
         <p>By proceeding, you confirm that you:</p>
         <ul>
@@ -208,7 +196,7 @@ export default function ConsentPage({
         </ul>
 
         <h3>Contact Information</h3>
-        <p>For questions, concerns, complaints, or data deletion requests:</p>
+        <p>For questions, concerns, or complaints:</p>
         <p><strong>Email:</strong> <a href="mailto:research@cognit.online">research@cognit.online</a></p>
 
         <h3>Statement of Consent</h3>
@@ -219,7 +207,7 @@ export default function ConsentPage({
           <li>Understand that automated systems evaluate participation quality</li>
           <li>Acknowledge that participation may be limited if instruction-verification checks are repeatedly failed</li>
           <li>Understand that anonymized contributions may appear in scientific publications or conference presentations in aggregated or de-identified form</li>
-          <li>Know you may stop at any time and later request deletion of your records</li>
+          <li>Know you may stop at any time</li>
         </ul>
         <p>
           Your thoughtful participation advances scientific understanding of human vision-language interaction and supports the development of more interpretable, equitable AI systems.

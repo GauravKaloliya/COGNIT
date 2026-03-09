@@ -1,0 +1,75 @@
+{% extends "api_docs/base.html" %}
+{% block docs_content %}
+<section class="doc-section">
+  <div class="endpoint-head">
+    <h2>Endpoints</h2>
+    <input id="endpointSearch" type="search" placeholder="Filter by method, path, or keyword" aria-label="Filter endpoints">
+  </div>
+
+  <div class="endpoint-list">
+    <article class="endpoint-card" data-method="get" data-path="/health" data-search="health status liveness database">
+      <header><span class="method get">GET</span><code>/health</code></header>
+      <p>Service liveness and database connectivity.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/participants" data-search="participants registration onboarding profile">
+      <header><span class="method post">POST</span><code>/participants</code></header>
+      <p>Create participant profile and issue flow identifiers.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/consent" data-search="consent acknowledgement">
+      <header><span class="method post">POST</span><code>/consent</code></header>
+      <p>Persist participant consent acknowledgment.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: recommended</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/payments/create" data-search="payments create upi qr token session">
+      <header><span class="method post">POST</span><code>/payments/create</code></header>
+      <p>Create payment session and return payment write token.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/status" data-search="payments status refresh pending processing">
+      <header><span class="method get">GET</span><code>/payments/{payment_public_id}/status</code></header>
+      <p>Check payment status and refresh token while pending/processing.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/upload-url" data-search="upload screenshot presigned url verify">
+      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/upload-url</code></header>
+      <p>Issue presigned URL for screenshot upload verification.</p>
+      <div class="endpoint-meta"><span>Auth: Bearer payment token</span><span>Idempotency: optional</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/verify-upload" data-search="verify fraud ocr upload payment checks">
+      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/verify-upload</code></header>
+      <p>Run OCR + anti-fraud checks and finalize payment state.</p>
+      <div class="endpoint-meta"><span>Auth: Bearer payment token</span><span>Idempotency: required</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="get" data-path="/participants/{public_id}/payment-status" data-search="participant payment status progression">
+      <header><span class="method get">GET</span><code>/participants/{public_id}/payment-status</code></header>
+      <p>Read participant-level payment progression state.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="get" data-path="/images/random" data-search="image random survey attention eligible">
+      <header><span class="method get">GET</span><code>/images/random</code></header>
+      <p>Fetch a single eligible survey image.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/submit" data-search="submit survey feedback complexity telemetry">
+      <header><span class="method post">POST</span><code>/submit</code></header>
+      <p>Submit image description, complexity rating, and telemetry.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required</span></div>
+    </article>
+  </div>
+  <p id="endpointNoResults" class="section-note" hidden>No endpoints match your search.</p>
+</section>
+{% endblock %}
+{% block docs_scripts %}
+<script src="{{ url_for('static', filename='api_docs_endpoints.js') }}"></script>
+{% endblock %}

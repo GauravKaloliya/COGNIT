@@ -163,7 +163,6 @@ Primary routes used by the app:
 
 Docs:
 - `GET /` interactive docs page
-- `GET /docs` JSON docs payload
 
 ---
 
