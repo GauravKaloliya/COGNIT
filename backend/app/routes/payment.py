@@ -290,8 +290,11 @@ def create_payment():
             "detected_app": "unknown",
         }).fetchone()
 
-        # Generate UPI link and QR code
-        upi_link = generate_upi_link(amount)
+        # Generate UPI link
+        try:
+            upi_link = generate_upi_link(amount)
+        except ValueError as link_error:
+            raise RuntimeError(f"invalid_upi_link_config: {link_error}") from link_error
         
         logger.info(
             "payment created request_id=%s payment_id=%s participant_public_id=%s",
@@ -361,7 +364,13 @@ def create_payment():
                 """), {"pid": participant_id}).fetchone()
                 if existing:
                     existing_payment_row_id, existing_payment_id, existing_amount, existing_expires_at, existing_signature = existing
-                    upi_link = generate_upi_link(float(existing_amount))
+                    try:
+                        upi_link = generate_upi_link(float(existing_amount))
+                    except ValueError:
+                        return create_error_response(
+                            "SYS_CONFIG_ERROR",
+                            custom_message="Payment link configuration is invalid. Please contact support.",
+                        )
                     remaining_seconds = max(
                         0,
                         int((existing_expires_at - datetime.now(timezone.utc)).total_seconds())
@@ -411,6 +420,12 @@ def create_payment():
                     return success_response(response_payload)
             except Exception:
                 pass
+        if "invalid_upi_link_config:" in str(e):
+            logger.error("payment creation failed due to UPI link config request_id=%s error=%s", getattr(g, "request_id", None), e)
+            return create_error_response(
+                "SYS_CONFIG_ERROR",
+                custom_message="Payment link configuration is invalid. Please contact support.",
+            )
         logger.error("payment creation failed request_id=%s error=%s", getattr(g, "request_id", None), e)
         _log_payment_audit(
             db,
@@ -441,7 +456,13 @@ def get_payment_qr(payment_public_id):
         if status in ("expired", "failed", "rejected_fraud", "refunded"):
             return create_error_response("PAYMENT_INVALID_STATE")
 
-        upi_link = generate_upi_link(float(amount))
+        try:
+            upi_link = generate_upi_link(float(amount))
+        except ValueError:
+            return create_error_response(
+                "SYS_CONFIG_ERROR",
+                custom_message="Payment link configuration is invalid. Please contact support.",
+            )
         return success_response({
             "payment_id": payment_public_id,
             "qr_base64": _build_qr_base64(upi_link),
