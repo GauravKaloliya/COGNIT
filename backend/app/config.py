@@ -507,7 +507,7 @@ SECURITY_FRAME_OPTIONS = _str_env("SECURITY_FRAME_OPTIONS", "DENY", choices={"DE
 SECURITY_REFERRER_POLICY = _str_env("SECURITY_REFERRER_POLICY", "strict-origin-when-cross-origin")
 SECURITY_PERMISSIONS_POLICY = _str_env(
     "SECURITY_PERMISSIONS_POLICY",
-    "geolocation=(), microphone=(), camera=()"
+    "geolocation=(self), microphone=(), camera=()"
 )
 SECURITY_CONTENT_TYPE_OPTIONS = _str_env("SECURITY_CONTENT_TYPE_OPTIONS", "nosniff")
 SECURITY_XSS_PROTECTION = _str_env("SECURITY_XSS_PROTECTION", "0", choices={"0", "1", "1; mode=block"})
