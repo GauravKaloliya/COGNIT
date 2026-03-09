@@ -2,54 +2,55 @@
 {% block docs_content %}
 <section class="doc-section">
   <h2>Errors</h2>
-  <p class="section-note">Drive client behavior by <code>error.code</code>. Retry only when <code>error.retryable=true</code>.</p>
+  <p class="section-note">Use <code>error.code</code> for client behavior. Respect <code>error.retryable</code> and log <code>error.request_id</code> on every failure.</p>
 
   <div class="error-grid">
     <article>
       <h3>Validation</h3>
       <ul>
-        <li><code>VAL_*</code> invalid payload, missing fields, or wrong format.</li>
-        <li>Fix payload, then retry with a new request.</li>
+        <li><code>MISSING_FIELDS</code>, <code>INVALID_UUID</code>, <code>INVALID_AMOUNT</code>, <code>DESCRIPTION_LENGTH</code>, <code>RATING_INVALID</code>, <code>WORD_COUNT</code>.</li>
+        <li>Send corrected payload and retry with new idempotency key when required.</li>
       </ul>
     </article>
 
     <article>
-      <h3>Rate Limit</h3>
+      <h3>Bot/Rate</h3>
       <ul>
+        <li><code>BOT_CHALLENGE_FAILED</code> when Turnstile token validation fails.</li>
         <li><code>RATE_LIMIT_EXCEEDED</code> temporary throttle.</li>
-        <li>Retry with exponential backoff and jitter.</li>
+        <li>Retry with fresh token (if bot check) and exponential backoff.</li>
       </ul>
     </article>
 
     <article>
       <h3>System</h3>
       <ul>
-        <li><code>SYS_*</code> backend transient/operational failure.</li>
-        <li>Safe to retry if request is idempotent.</li>
+        <li><code>DATABASE_ERROR</code>, <code>INTERNAL_ERROR</code>, <code>SYS_INTERNAL_ERROR</code>, <code>SYS_SERVICE_UNAVAILABLE</code>.</li>
+        <li>Retry only for idempotent operations; include <code>request_id</code> in support logs.</li>
       </ul>
     </article>
 
     <article>
       <h3>Payment</h3>
       <ul>
-        <li><code>PAY_*</code> payment flow/session consistency issues.</li>
-        <li>Re-check payment status before retrying.</li>
+        <li><code>PAY_INVALID_SHA256</code>, <code>PAY_INVALID_IMAGE_TYPE</code>, <code>PAYMENT_NOT_FOUND</code>, <code>PAYMENT_INVALID_STATE</code>, <code>PAYMENT_EXPIRED</code>.</li>
+        <li>Call <code>GET /payments/{payment_public_id}/status</code> before retrying verify/upload actions.</li>
       </ul>
     </article>
 
     <article>
       <h3>Fraud</h3>
       <ul>
-        <li><code>FRAUD_*</code> verification mismatch or suspicious upload.</li>
-        <li>Require a fresh compliant screenshot.</li>
+        <li><code>DUPLICATE_IMAGE</code>, <code>DUPLICATE_IMAGE_SELF</code>, <code>REJECTED_REUSE</code>.</li>
+        <li>Require new payment screenshot and do not reuse previously rejected files.</li>
       </ul>
     </article>
 
     <article>
-      <h3>Tracing</h3>
+      <h3>State/Access</h3>
       <ul>
-        <li>Capture and store <code>X-Request-ID</code> from every failure.</li>
-        <li>Use error contract as source of truth.</li>
+        <li><code>PARTICIPANT_NOT_FOUND</code>, <code>CONSENT_REQUIRED</code>, <code>FLAGGED_ACCOUNT</code>, <code>PAYMENT_INVALID_STATE</code>.</li>
+        <li>Drive UI flow transitions from backend status instead of local-only state.</li>
       </ul>
     </article>
   </div>
@@ -58,12 +59,12 @@
 <pre>{
   "success": false,
   "error": {
-    "code": "RATE_LIMIT_EXCEEDED",
-    "message": "Too many requests. Please try again later.",
-    "category": "RATE",
-    "http_status": 429,
+    "code": "PAYMENT_INVALID_STATE",
+    "message": "Payment is not in a valid state for this action.",
+    "category": "PAY",
+    "http_status": 400,
     "retryable": true,
-    "request_id": "d4cd66a4-47cc-4c2c-a4f9-a1cb1f66da0b"
+    "request_id": "6d1902a2-9f91-41da-b3df-128565f4bdb3"
   }
 }</pre>
   </div>
