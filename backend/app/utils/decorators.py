@@ -27,6 +27,9 @@ def _persist_performance_metric(
 ) -> None:
     """Write performance metric in its own transaction."""
     with engine.begin() as conn:
+        # Non-critical write: enforce a tight statement timeout so metrics never
+        # become a latency amplifier under DB pressure.
+        conn.execute(text("SET LOCAL statement_timeout = 200"))
         conn.execute(text("""
             INSERT INTO performance_metrics (
                 endpoint, response_time_ms, status_code,
