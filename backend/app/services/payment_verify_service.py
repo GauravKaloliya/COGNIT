@@ -203,7 +203,11 @@ def process_verify_upload(
     if not row:
         return create_error_response("PAYMENT_NOT_FOUND")
 
-    payment_id, participant_id, status, expires_at, timer_activated_at, verification_attempts, amount = row
+    if len(row) >= 7:
+        payment_id, participant_id, status, expires_at, timer_activated_at, verification_attempts, amount = row
+    else:
+        payment_id, participant_id, status, expires_at, timer_activated_at, verification_attempts = row
+        amount = None
 
     try:
         if upload_object_key:
