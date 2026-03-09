@@ -14,7 +14,6 @@
     <header class="header">
       <div class="brand">
         <h1>C.O.G.N.I.T. API Docs</h1>
-        <p class="subtitle">Base URL <code>{{ base_url }}</code></p>
       </div>
 
       <div class="header-actions">
@@ -29,11 +28,20 @@
       </div>
     </header>
 
-    <nav class="top-nav" aria-label="Section navigation">
-      <a href="/api-docs/endpoints" {% if active_page == "endpoints" %}class="is-active"{% endif %}>Endpoints</a>
-      <a href="/api-docs/errors" {% if active_page == "errors" %}class="is-active"{% endif %}>Errors</a>
-      <a href="/api-docs/examples" {% if active_page == "examples" %}class="is-active"{% endif %}>Examples</a>
-    </nav>
+    <section class="docs-toolbar" aria-label="API docs toolbar">
+      <div class="docs-base-url-box" aria-label="Base URL">
+        <p class="base-url-line">
+          <span>Base URL</span>
+          <code class="base-url-pill">{{ base_url }}</code>
+        </p>
+      </div>
+
+      <nav class="top-nav" aria-label="Section navigation">
+        <a href="/api-docs/endpoints" {% if active_page == "endpoints" %}class="is-active"{% endif %}>Endpoints</a>
+        <a href="/api-docs/errors" {% if active_page == "errors" %}class="is-active"{% endif %}>Errors</a>
+        <a href="/api-docs/examples" {% if active_page == "examples" %}class="is-active"{% endif %}>Examples</a>
+      </nav>
+    </section>
 
     <main class="docs-main">
         {% block docs_content %}{% endblock %}
