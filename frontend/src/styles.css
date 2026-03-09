@@ -2255,11 +2255,10 @@ body.dark .toast.warning {
 @media (min-width: 768px) {
   .payment-qr-instructions-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: stretch;
+    align-items: start;
   }
 
-  .payment-card-qr,
-  .payment-card-instructions {
+  .payment-card-qr {
     height: 100%;
   }
 }

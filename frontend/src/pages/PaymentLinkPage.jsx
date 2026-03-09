@@ -1207,7 +1207,11 @@ export default function PaymentLinkPage({
                 <li><strong>Use only: Google Pay, Paytm, or BHIM</strong></li>
                 <li>Take a screenshot immediately after payment</li>
                 <li>Upload the screenshot below to verify</li>
-                <li>Payment session expires in {formatTime(timeRemaining)}</li>
+                <li>
+                  {timeRemaining > 0
+                    ? `Payment session expires in ${formatTime(timeRemaining)}`
+                    : "Payment session has expired. Tap Retry to create a new payment session."}
+                </li>
               </ul>
             </section>
           </div>
