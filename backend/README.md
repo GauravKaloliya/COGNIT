@@ -78,7 +78,6 @@ Service layer highlights:
 
 Docs endpoints:
 - `GET /` (interactive API docs page)
-- `GET /docs` (JSON docs)
 
 ---
 
