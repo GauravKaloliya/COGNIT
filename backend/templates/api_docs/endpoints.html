@@ -3,16 +3,10 @@
 <section class="doc-section">
   <div class="endpoint-head">
     <h2>Endpoints</h2>
-    <input id="endpointSearch" type="search" placeholder="Filter by method, path, or keyword" aria-label="Filter endpoints">
+    <input id="endpointSearch" type="search" placeholder="Filter endpoints" aria-label="Filter endpoints">
   </div>
 
   <div class="endpoint-list">
-    <article class="endpoint-card" data-method="get" data-path="/health" data-search="health liveness database readiness">
-      <header><span class="method get">GET</span><code>/health</code></header>
-      <p>Service health probe with database connectivity status.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
-    </article>
-
     <article class="endpoint-card" data-method="post" data-path="/participants" data-search="participants register onboarding username email phone age location">
       <header><span class="method post">POST</span><code>/participants</code></header>
       <p>Create participant profile. Required body fields: <code>username,email,phone,gender_code,age,location,language_code,prior_experience,turnstile_token</code>.</p>
@@ -67,12 +61,6 @@
       <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
     </article>
 
-    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/upload-url" data-search="payments screenshot upload presigned s3 sha256 file">
-      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/upload-url</code></header>
-      <p>Get S3 presigned upload URL for payment screenshot. Required body: <code>sha256,file_extension</code>.</p>
-      <div class="endpoint-meta"><span>Auth: <code>Authorization: Bearer &lt;payment_token&gt;</code></span><span>Idempotency: optional</span><span>Rate limit: yes</span></div>
-    </article>
-
     <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/verify-upload" data-search="payments verify upload ocr fraud turnstile">
       <header><span class="method post">POST</span><code>/payments/{payment_public_id}/verify-upload</code></header>
       <p>Verify uploaded screenshot with OCR + fraud checks. Requires turnstile token and idempotency key.</p>
@@ -89,12 +77,6 @@
       <header><span class="method post">POST</span><code>/submit</code></header>
       <p>Submit survey answer. Required body includes <code>public_id,image_id,description,feedback,rating,turnstile_token</code>.</p>
       <div class="endpoint-meta"><span>Auth: requires completed payment flow</span><span>Idempotency: required header <code>X-Idempotency-Key</code></span><span>Rate limit: yes</span></div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/internal/payments/{payment_public_id}/verify" data-search="internal payment verify backoffice">
-      <header><span class="method post">POST</span><code>/internal/payments/{payment_public_id}/verify</code></header>
-      <p>Internal verification endpoint. Exempt from rate limiting. Use only from trusted backend jobs/services.</p>
-      <div class="endpoint-meta"><span>Auth: internal-only (network/policy)</span><span>Idempotency: n/a</span><span>Rate limit: exempt</span></div>
     </article>
   </div>
   <p id="endpointNoResults" class="section-note" hidden>No endpoints match your search.</p>
