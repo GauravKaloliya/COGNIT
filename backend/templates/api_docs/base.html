@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COGNIT API Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="docs-root">
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <h1>C.O.G.N.I.T. API Docs</h1>
+        <p class="subtitle">Base URL <code>http://localhost:5000</code></p>
+      </div>
+
+      <div class="header-actions">
+        <button
+          id="docsThemeToggle"
+          class="ghost dark-mode-toggle"
+          type="button"
+          aria-label="Toggle dark mode"
+          title="Switch theme"
+        >🌙</button>
+        <div id="docsOnlineStatus" class="status-dot online" aria-live="polite">Online</div>
+      </div>
+    </header>
+
+    <nav class="top-nav" aria-label="Section navigation">
+      <a href="/api-docs/endpoints" {% if active_page == "endpoints" %}class="is-active"{% endif %}>Endpoints</a>
+      <a href="/api-docs/errors" {% if active_page == "errors" %}class="is-active"{% endif %}>Errors</a>
+      <a href="/api-docs/examples" {% if active_page == "examples" %}class="is-active"{% endif %}>Examples</a>
+    </nav>
+
+    <main class="docs-main">
+        {% block docs_content %}{% endblock %}
+        <footer class="docs-footer">
+          <p>Created by Gaurav Kaloliya</p>
+        </footer>
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='api_docs_header.js') }}"></script>
+  {% block docs_scripts %}{% endblock %}
+</body>
+</html>
