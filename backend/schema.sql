@@ -575,6 +575,7 @@ CREATE TABLE IF NOT EXISTS payments (
     amount               NUMERIC(12,2) NOT NULL CHECK (amount > 0),
     currency             VARCHAR(10) NOT NULL DEFAULT 'INR',
     extracted_text       TEXT,
+    uploaded_sha256      CHAR(64),
     fraud_score          NUMERIC(5,2) DEFAULT 0 CHECK (fraud_score >= 0),
     auto_rejected        BOOLEAN DEFAULT FALSE,
     verification_attempts SMALLINT DEFAULT 0 CHECK (verification_attempts >= 0),
@@ -620,6 +621,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_per_participant
 CREATE INDEX IF NOT EXISTS idx_payments_expired_pending ON payments (expires_at) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_payments_participant ON payments (participant_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status     ON payments (status);
+CREATE INDEX IF NOT EXISTS idx_payments_status_uploaded_sha256 ON payments (status, uploaded_sha256);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_write_nonce_unique
     ON payments ((metadata->>'payment_write_nonce'))
     WHERE (metadata ? 'payment_write_nonce');
@@ -635,6 +637,8 @@ CREATE TABLE IF NOT EXISTS payment_files (
     content_type      VARCHAR(120),
     uploaded_by_ip_hash CHAR(64),
     image_phash       VARCHAR(64),
+    image_phash_bits  BIT(64),
+    image_phash_bucket INTEGER,
     image_quality_score NUMERIC(5,2),
     created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -647,7 +651,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_sha256_unique     ON payment
 
 CREATE INDEX IF NOT EXISTS idx_payment_files_payment  ON payment_files (payment_id);
 CREATE INDEX IF NOT EXISTS idx_payment_files_sha256   ON payment_files (sha256);
+CREATE INDEX IF NOT EXISTS idx_payment_files_sha256_payment ON payment_files (sha256, payment_id);
 CREATE INDEX IF NOT EXISTS idx_payment_files_phash    ON payment_files (image_phash) WHERE image_phash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_payment_files_phash_bucket ON payment_files (image_phash_bucket) WHERE image_phash_bucket IS NOT NULL;
 
 CREATE TRIGGER trg_payment_files_status_guard
     BEFORE INSERT OR UPDATE OF payment_id ON payment_files
@@ -676,6 +682,7 @@ CREATE TABLE IF NOT EXISTS payment_upload_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment ON payment_upload_attempts (payment_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_sha256 ON payment_upload_attempts (sha256);
+CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment_sha256 ON payment_upload_attempts (payment_id, sha256);
 CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_status ON payment_upload_attempts (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_idempotency ON payment_upload_attempts (idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment_idempotency_unique

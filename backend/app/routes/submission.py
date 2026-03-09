@@ -7,6 +7,7 @@ import json
 import hashlib
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from flask import request, g
@@ -30,12 +31,11 @@ from app.config import (
     SUBMIT_RATE_LIMIT,
 )
 from app.extensions import limiter
-from app.database import get_db
+from app.database import get_db, engine
 from app.utils.helpers import (
     get_ip_hash,
     count_words,
     calculate_quality_score,
-    log_audit,
     create_error_response,
     success_response,
 )
@@ -118,6 +118,65 @@ def _extract_survey_metrics(payload):
 from flask import Blueprint
 submission_bp = Blueprint('submission', __name__)
 logger = logging.getLogger(__name__)
+_SUBMIT_POST_COMMIT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="submit-post-commit")
+
+
+def _enqueue_submit_post_commit_tasks(
+    *,
+    participant_id: int,
+    submission_id: int,
+    image_id_str: str,
+    is_survey: bool,
+    is_attention: bool,
+    survey_index,
+    quality: float,
+    word_count: int,
+):
+    """Run non-critical side effects outside the request transaction."""
+    def _run():
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO audit_log (
+                        event_type, participant_id, endpoint, http_method, status_code,
+                        ip_hash, user_agent, details, request_id
+                    ) VALUES (
+                        :ev, :pid, :ep, :meth, :st, :iph, :ua, :det, :rid
+                    )
+                """), {
+                    "ev": "submission",
+                    "pid": participant_id,
+                    "ep": "/submit",
+                    "meth": "POST",
+                    "st": 200,
+                    "iph": "0" * 64,
+                    "ua": "",
+                    "det": f"wc={word_count} q={quality:.3f} survey={is_survey}",
+                    "rid": None,
+                })
+                emit_domain_event(
+                    conn,
+                    event_type="submission_saved",
+                    correlation_id="",
+                    participant_id=participant_id,
+                    payload={
+                        "submission_id": int(submission_id),
+                        "image_id": image_id_str,
+                        "is_survey": bool(is_survey),
+                        "is_attention_check": bool(is_attention),
+                        "survey_index": survey_index,
+                        "quality_score": float(quality),
+                    },
+                )
+                evaluate_priority_and_rewards(conn, participant_id, correlation_id="")
+        except Exception:
+            # Never fail request flow on post-commit side-effect issues.
+            pass
+
+    try:
+        _SUBMIT_POST_COMMIT_EXECUTOR.submit(_run)
+    except Exception:
+        pass
 
 
 # ────────────────────────────────────────────────
@@ -214,10 +273,17 @@ def submit():
             return success_response(payload), status_code
 
         p_row = db.execute(text("""
-            SELECT id, consent_given, is_deleted, extra_metadata, payment_status, current_stage
-            FROM participants
-            WHERE public_id = :pub
-            FOR UPDATE
+            SELECT
+                p.id,
+                p.consent_given,
+                p.is_deleted,
+                p.extra_metadata,
+                p.payment_status,
+                p.current_stage,
+                COALESCE(pas.is_flagged, false) AS is_flagged
+            FROM participants p
+            LEFT JOIN participant_attention_stats pas ON pas.participant_id = p.id
+            WHERE p.public_id = :pub
         """), {"pub": public_id}).fetchone()
 
         if not p_row or p_row[2]:
@@ -243,11 +309,7 @@ def submit():
             except Exception:
                 participant_meta = {}
 
-        flagged = db.execute(text("""
-            SELECT is_flagged FROM participant_attention_stats
-            WHERE participant_id = :pid
-        """), {"pid": participant_id}).scalar()
-        if flagged:
+        if p_row[6]:
             return create_error_response("FLAGGED_ACCOUNT")
 
         img_row = db.execute(text("""
@@ -534,30 +596,17 @@ def submit():
                 "submission_id": submission_id
             })
 
-        log_audit(db, "submission", participant_id=participant_id,
-                  details=f"wc={word_count} q={quality:.3f} survey={is_survey}")
-        emit_domain_event(
-            db,
-            event_type="submission_saved",
-            correlation_id=str(getattr(g, "request_id", None) or ""),
-            participant_id=participant_id,
-            payload={
-                "submission_id": int(submission_id),
-                "image_id": image_id_str,
-                "is_survey": bool(is_survey),
-                "is_attention_check": bool(is_attention),
-                "survey_index": survey_index,
-                "quality_score": float(quality),
-            },
-        )
-
-        evaluate_priority_and_rewards(
-            db,
-            participant_id,
-            correlation_id=str(getattr(g, "request_id", None) or ""),
-        )
-
         db.commit()
+        _enqueue_submit_post_commit_tasks(
+            participant_id=int(participant_id),
+            submission_id=int(submission_id),
+            image_id_str=str(image_id_str),
+            is_survey=bool(is_survey),
+            is_attention=bool(is_attention),
+            survey_index=survey_index,
+            quality=float(quality),
+            word_count=int(word_count),
+        )
         logger.info(
             "submission accepted request_id=%s participant_id=%s submission_id=%s image_id=%s attention=%s passed=%s",
             getattr(g, "request_id", None),

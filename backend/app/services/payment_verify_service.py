@@ -38,6 +38,7 @@ from app.utils.fraud import (
     check_near_duplicate_screenshot,
     check_ocr_signature_replay,
     compute_dhash,
+    phash_hex_to_bits_and_bucket,
     is_same_person_by_fingerprint,
 )
 from app.services import (
@@ -104,6 +105,7 @@ def _reject_for_ocr_unavailable(db, payment_id: int, participant_id: int, sha256
     db.execute(text("""
         UPDATE payments
         SET extracted_text = '',
+            uploaded_sha256 = :uploaded_sha256,
             fraud_score = :fs,
             verified_at = CURRENT_TIMESTAMP,
             status = 'rejected_fraud',
@@ -114,6 +116,7 @@ def _reject_for_ocr_unavailable(db, payment_id: int, participant_id: int, sha256
     """), {
         "fs": _calculate_fraud_score(failures, confidence=0),
         "details": json.dumps(verification_details),
+        "uploaded_sha256": sha256_hash,
         "pid": payment_id,
     })
 
@@ -172,8 +175,27 @@ def process_verify_upload(
     if not is_valid_ext:
         return create_error_response("INVALID_IMAGE_TYPE", {"allowed": ["jpg", "jpeg", "png", "webp"]})
 
+    request_hash = build_request_hash({
+        "payment_public_id": payment_public_id,
+        "sha256": sha256_hash,
+        "file_extension": ext,
+        "mime_type": mime_type,
+        "file_size": client_file_size,
+        "upload_object_key": upload_object_key or None,
+    })
+    _idem, replay = load_idempotent_response(
+        db,
+        endpoint=f"/payments/{payment_public_id}/verify-upload",
+        idempotency_key=idempotency_key,
+        participant_public_id=payment_public_id,
+        request_hash=request_hash,
+    )
+    if replay:
+        payload, status_code = replay
+        return jsonify(payload), status_code
+
     row = db.execute(text("""
-        SELECT id, participant_id, status, expires_at, timer_activated_at, verification_attempts
+        SELECT id, participant_id, status, expires_at, timer_activated_at, verification_attempts, amount
         FROM payments
         WHERE public_id = :pid
         FOR UPDATE
@@ -181,7 +203,7 @@ def process_verify_upload(
     if not row:
         return create_error_response("PAYMENT_NOT_FOUND")
 
-    payment_id, participant_id, status, expires_at, timer_activated_at, verification_attempts = row
+    payment_id, participant_id, status, expires_at, timer_activated_at, verification_attempts, amount = row
 
     try:
         if upload_object_key:
@@ -215,25 +237,7 @@ def process_verify_upload(
         image_hash = compute_dhash(image) or sha256_hash
     except Exception:
         image_hash = sha256_hash
-
-    request_hash = build_request_hash({
-        "payment_public_id": payment_public_id,
-        "sha256": sha256_hash,
-        "file_extension": ext,
-        "mime_type": mime_type,
-        "file_size": client_file_size,
-        "upload_object_key": upload_object_key or None,
-    })
-    _idem, replay = load_idempotent_response(
-        db,
-        endpoint=f"/payments/{payment_public_id}/verify-upload",
-        idempotency_key=idempotency_key,
-        participant_public_id=payment_public_id,
-        request_hash=request_hash,
-    )
-    if replay:
-        payload, status_code = replay
-        return jsonify(payload), status_code
+    image_hash_bits, image_hash_bucket = phash_hex_to_bits_and_bucket(image_hash)
 
     upload_attempt_id = create_payment_upload_attempt(
         db,
@@ -279,28 +283,34 @@ def process_verify_upload(
                 detected_app = 'unknown',
                 auto_rejected = true,
                 verified_at = CURRENT_TIMESTAMP,
+                uploaded_sha256 = :uploaded_sha256,
                 verification_details = :verification_details,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :pid
         """), {
             "pid": payment_id,
             "score": score,
+            "uploaded_sha256": sha256_hash,
             "verification_details": json.dumps(verification_details),
         })
 
-        for failure in (failures or []):
+        rows = [
+            {
+                "pid": payment_id,
+                "type": failure,
+                "score": score,
+                "details": json.dumps({"reason": failure}),
+            }
+            for failure in (failures or [])
+        ]
+        if rows:
             db.execute(text("""
                 INSERT INTO payment_fraud_signals (
                     payment_id, signal_type, signal_score, details
                 ) VALUES (
                     :pid, :type, :score, :details
                 ) ON CONFLICT DO NOTHING
-            """), {
-                "pid": payment_id,
-                "type": failure,
-                "score": score,
-                "details": json.dumps({"reason": failure}),
-            })
+            """), rows)
         return score
 
     if payment_audit_logger:
@@ -671,8 +681,7 @@ def process_verify_upload(
         """), {"pid": payment_id})
 
         extracted_text, confidence = extract_text_with_confidence(image)
-        payment_row = db.execute(text("SELECT amount FROM payments WHERE id = :pid"), {"pid": payment_id}).fetchone()
-        amount = payment_row[0] if payment_row else 1
+        amount = amount if amount is not None else 1
         is_valid, detected_app, failures = verify_payment_screenshot(
             image,
             extracted_text,
@@ -751,10 +760,10 @@ def process_verify_upload(
             db.execute(text("""
                 INSERT INTO payment_files (
                     payment_id, bucket_name, object_key, sha256, etag, file_size,
-                    content_type, uploaded_by_ip_hash, image_phash, image_quality_score
+                    content_type, uploaded_by_ip_hash, image_phash, image_phash_bits, image_phash_bucket, image_quality_score
                 ) VALUES (
                     :pid, :bucket_name, :key, :hash, :etag, :file_size,
-                    :content_type, :uploaded_by_ip_hash, :phash, :image_quality_score
+                    :content_type, :uploaded_by_ip_hash, :phash, CAST(:phash_bits AS bit(64)), :phash_bucket, :image_quality_score
                 )
             """), {
                 "pid": payment_id,
@@ -770,12 +779,15 @@ def process_verify_upload(
                 "content_type": content_type or mime_type or None,
                 "uploaded_by_ip_hash": ip_hash or get_ip_hash(),
                 "phash": image_hash,
+                "phash_bits": image_hash_bits,
+                "phash_bucket": image_hash_bucket,
                 "image_quality_score": round(float(confidence), 2) if confidence is not None else None,
             })
 
             db.execute(text("""
                 UPDATE payments
                 SET extracted_text = :txt,
+                    uploaded_sha256 = :uploaded_sha256,
                     fraud_score = :fs,
                     verified_at = CURRENT_TIMESTAMP,
                     status = :status,
@@ -784,6 +796,7 @@ def process_verify_upload(
                 WHERE id = :pid
             """), {
                 "txt": filtered_text,
+                "uploaded_sha256": sha256_hash,
                 "fs": min(float(FRAUD_SUCCESS_MAX_SCORE), risk_score),
                 "status": "success",
                 "app": detected_app,
@@ -820,6 +833,7 @@ def process_verify_upload(
             db.execute(text("""
                 UPDATE payments
                 SET extracted_text = :txt,
+                    uploaded_sha256 = :uploaded_sha256,
                     fraud_score = :fs,
                     verified_at = CURRENT_TIMESTAMP,
                     status = :status,
@@ -829,6 +843,7 @@ def process_verify_upload(
                 WHERE id = :pid
             """), {
                 "txt": filtered_text,
+                "uploaded_sha256": sha256_hash,
                 "fs": risk_score,
                 "status": "rejected_fraud",
                 "app": detected_app,
@@ -836,19 +851,23 @@ def process_verify_upload(
                 "pid": payment_id,
             })
 
-            for failure in failures:
+            rows = [
+                {
+                    "pid": payment_id,
+                    "type": failure,
+                    "score": 100,
+                    "details": json.dumps({"reason": failure, "confidence": confidence}),
+                }
+                for failure in (failures or [])
+            ]
+            if rows:
                 db.execute(text("""
                     INSERT INTO payment_fraud_signals (
                         payment_id, signal_type, signal_score, details
                     ) VALUES (
                         :pid, :type, :score, :details
                     ) ON CONFLICT DO NOTHING
-                """), {
-                    "pid": payment_id,
-                    "type": failure,
-                    "score": 100,
-                    "details": json.dumps({"reason": failure, "confidence": confidence}),
-                })
+                """), rows)
 
             verification_result = {
                 "status": "rejected_fraud",
@@ -968,6 +987,7 @@ def process_internal_verify(
     db.execute(text("""
         UPDATE payments
         SET extracted_text = :txt,
+            uploaded_sha256 = :uploaded_sha256,
             fraud_score = :fs,
             verified_at = CURRENT_TIMESTAMP,
             status = :status,
@@ -976,6 +996,7 @@ def process_internal_verify(
         WHERE id = :pid
     """), {
         "txt": filtered_text,
+        "uploaded_sha256": existing_sha256,
         "fs": _calculate_fraud_score(failures, confidence=confidence),
         "status": target_status,
         "app": detected_app,
