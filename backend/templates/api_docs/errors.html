@@ -1,0 +1,71 @@
+{% extends "api_docs/base.html" %}
+{% block docs_content %}
+<section class="doc-section">
+  <h2>Errors</h2>
+  <p class="section-note">Drive client behavior by <code>error.code</code>. Retry only when <code>error.retryable=true</code>.</p>
+
+  <div class="error-grid">
+    <article>
+      <h3>Validation</h3>
+      <ul>
+        <li><code>VAL_*</code> invalid payload, missing fields, or wrong format.</li>
+        <li>Fix payload, then retry with a new request.</li>
+      </ul>
+    </article>
+
+    <article>
+      <h3>Rate Limit</h3>
+      <ul>
+        <li><code>RATE_LIMIT_EXCEEDED</code> temporary throttle.</li>
+        <li>Retry with exponential backoff and jitter.</li>
+      </ul>
+    </article>
+
+    <article>
+      <h3>System</h3>
+      <ul>
+        <li><code>SYS_*</code> backend transient/operational failure.</li>
+        <li>Safe to retry if request is idempotent.</li>
+      </ul>
+    </article>
+
+    <article>
+      <h3>Payment</h3>
+      <ul>
+        <li><code>PAY_*</code> payment flow/session consistency issues.</li>
+        <li>Re-check payment status before retrying.</li>
+      </ul>
+    </article>
+
+    <article>
+      <h3>Fraud</h3>
+      <ul>
+        <li><code>FRAUD_*</code> verification mismatch or suspicious upload.</li>
+        <li>Require a fresh compliant screenshot.</li>
+      </ul>
+    </article>
+
+    <article>
+      <h3>Tracing</h3>
+      <ul>
+        <li>Capture and store <code>X-Request-ID</code> from every failure.</li>
+        <li>Use error contract as source of truth.</li>
+      </ul>
+    </article>
+  </div>
+
+  <div class="code-block compact">
+<pre>{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests. Please try again later.",
+    "category": "RATE",
+    "http_status": 429,
+    "retryable": true,
+    "request_id": "d4cd66a4-47cc-4c2c-a4f9-a1cb1f66da0b"
+  }
+}</pre>
+  </div>
+</section>
+{% endblock %}

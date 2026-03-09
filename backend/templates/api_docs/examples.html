@@ -1,0 +1,76 @@
+{% extends "api_docs/base.html" %}
+{% block docs_content %}
+<section class="doc-section">
+  <h2>Examples</h2>
+  <p class="section-note">Production-oriented request and response samples.</p>
+
+  <div class="examples-grid">
+    <article class="example-card">
+      <h3>Create Participant</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/participants" \
+  -H "Content-Type: application/json" \
+  -H "X-Idempotency-Key: 4e30a6e4-1d57-4e95-a9ce-0fd6f6f6f13a" \
+  -d '{
+    "username": "demo_user",
+    "email": "demo@example.com",
+    "phone": "9876543210"
+  }'</pre></div>
+    </article>
+
+    <article class="example-card">
+      <h3>Create Payment Session</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/create" \
+  -H "Content-Type: application/json" \
+  -H "X-Idempotency-Key: 1b667f94-8c42-4a45-b0f9-f7fcb677ff90" \
+  -d '{
+    "public_id": "ptcp_123",
+    "amount": 1
+  }'</pre></div>
+    </article>
+
+    <article class="example-card">
+      <h3>Fetch Survey Image</h3>
+      <div class="code-block"><pre>curl -X GET "{{ base_url }}/images/random?public_id=ptcp_123"</pre></div>
+    </article>
+
+    <article class="example-card">
+      <h3>Submit Survey Response</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/submit" \
+  -H "Content-Type: application/json" \
+  -H "X-Idempotency-Key: f0fd6a0f-c2f9-4318-b9f6-77e75c7e5f0f" \
+  -d '{
+    "public_id": "ptcp_123",
+    "image_id": "img_239",
+    "description": "A busy urban scene with layered activity and movement...",
+    "complexity": 4
+  }'</pre></div>
+    </article>
+
+    <article class="example-card wide">
+      <h3>Success Envelope</h3>
+      <div class="code-block compact"><pre>{
+  "success": true,
+  "data": {
+    "public_id": "ptcp_123",
+    "state": "payment_pending"
+  }
+}</pre></div>
+    </article>
+
+    <article class="example-card wide">
+      <h3>Error Envelope</h3>
+      <div class="code-block compact"><pre>{
+  "success": false,
+  "error": {
+    "code": "VAL_INVALID_EMAIL",
+    "message": "Email format is invalid",
+    "category": "VAL",
+    "http_status": 400,
+    "retryable": false,
+    "request_id": "0e7bde95-f5f4-4f1d-a20f-3563f3f2d327"
+  }
+}</pre></div>
+    </article>
+  </div>
+</section>
+{% endblock %}
