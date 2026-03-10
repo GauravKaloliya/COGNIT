@@ -205,6 +205,7 @@ export const endpoints = {
     return api.post(`/payments/${paymentId}/token`, payload, options);
   },
   getParticipantPaymentStatus: (publicId, options = {}) => api.get(`/participants/${publicId}/payment-status`, options),
+  getParticipantSession: (options = {}) => api.get("/participants/session", options),
   verifyUpload: async (paymentId, payloadOrImageBase64, fileExtension, sha256, extra = {}, options = {}) => {
     const turnstileToken = await getTurnstileToken("payment_verify");
     if (payloadOrImageBase64 && typeof payloadOrImageBase64 === "object" && !Array.isArray(payloadOrImageBase64)) {

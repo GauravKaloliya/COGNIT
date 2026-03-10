@@ -50,6 +50,10 @@ export default function PaymentLinkPage({
   const [retryInSeconds, setRetryInSeconds] = useState(0);
   const [failureReasons, setFailureReasons] = useState([]);
   const [refreshNotice, setRefreshNotice] = useState("");
+  const [refreshNoticeVariant, setRefreshNoticeVariant] = useState("info");
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
   const refreshNoticeShownRef = useRef(false);
   const fileInputRef = useRef(null);
   const opVersionRef = useRef(0);
@@ -86,8 +90,15 @@ export default function PaymentLinkPage({
     if (!refreshNoticeShownRef.current) {
       refreshNoticeShownRef.current = true;
       setRefreshNotice("Previous payment session expired. A new session has been created.");
+      setRefreshNoticeVariant("warning");
     }
   }, [addToast]);
+
+  const notifySessionRefreshing = useCallback(() => {
+    if (refreshNoticeShownRef.current) return;
+    setRefreshNotice("Restoring your previous payment session...");
+    setRefreshNoticeVariant("info");
+  }, []);
 
   const beginOperation = useCallback(() => {
     opVersionRef.current += 1;
@@ -543,6 +554,17 @@ export default function PaymentLinkPage({
   }, [detectMobileClient]);
 
   useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     document.title = "Payment - C.O.G.N.I.T.";
     let cancelled = false;
 
@@ -559,6 +581,7 @@ export default function PaymentLinkPage({
         const statusController = new AbortController();
         statusAbortRef.current = statusController;
         if (!restoredPaymentData?.payment_token && publicId) {
+          notifySessionRefreshing();
           try {
             const minted = await endpoints.mintPaymentToken(
               restoredPaymentData.payment_id,
@@ -567,6 +590,7 @@ export default function PaymentLinkPage({
               { signal: statusController.signal }
             );
             restoredPaymentData.payment_token = minted?.payment_token || "";
+            setRefreshNotice("");
           } catch {
             clearPaymentViewState();
             notifySessionExpired();
@@ -633,6 +657,9 @@ export default function PaymentLinkPage({
               startTimer(mergedPaymentData.expires_at);
               if (!isMobile && !mergedPaymentData?.qr_base64) {
                 fetchPaymentQr(mergedPaymentData.payment_id, opVersionRef.current);
+              }
+              if (refreshNoticeVariant === "info") {
+                setRefreshNotice("");
               }
               return;
             }
@@ -1186,8 +1213,13 @@ export default function PaymentLinkPage({
           </button>
         )}
       </div>
-      {refreshNotice && (
+      {!isOnline && (
         <div className="banner warning">
+          <span>You're offline. Payment status may not update until you reconnect.</span>
+        </div>
+      )}
+      {refreshNotice && (
+        <div className={`banner ${refreshNoticeVariant}`}>
           <span>{refreshNotice}</span>
         </div>
       )}

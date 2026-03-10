@@ -176,7 +176,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(getStoredValue("darkMode", false));
   const [stage, setStage] = useState(getStoredValue("stage", "consent"));
   const [paymentSubStage, setPaymentSubStage] = useState(getStoredValue("paymentSubStage", "content"));
-  const [publicId, setPublicId] = useState(() => getStoredValue("publicId", ""));
+  const [publicId, setPublicId] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue("paymentVerified", false));
@@ -281,6 +281,7 @@ export default function App() {
   useEffect(() => {
     try {
       sessionStorage.removeItem("sessionId");
+      sessionStorage.removeItem("publicId");
     } catch {
       // Ignore storage failures.
     }
@@ -383,7 +384,22 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (publicId) saveStoredValue("publicId", publicId);
+    let cancelled = false;
+    const hydrateFromCookies = async () => {
+      if (publicId) return;
+      try {
+        const session = await endpoints.getParticipantSession();
+        if (cancelled) return;
+        if (session?.public_id) setPublicId(session.public_id);
+        if (session?.session_id) setSessionId(session.session_id);
+      } catch {
+        // Ignore; user can still continue fresh.
+      }
+    };
+    hydrateFromCookies();
+    return () => {
+      cancelled = true;
+    };
   }, [publicId]);
   useEffect(() => saveStoredValue("consentGiven", consentGiven), [consentGiven]);
   useEffect(() => saveStoredValue("paymentVerified", paymentVerified), [paymentVerified]);
