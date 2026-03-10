@@ -33,6 +33,7 @@ from app.config import (
     CONSENT_RATE_LIMIT,
     PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
     PARTICIPANT_SESSION_COOKIE_NAME,
+    PARTICIPANT_PUBLIC_COOKIE_NAME,
     SESSION_COOKIE_SECURE,
     SESSION_COOKIE_SAMESITE,
 )
@@ -47,10 +48,18 @@ participant_bp = Blueprint('participant', __name__)
 logger = logging.getLogger(__name__)
 
 
-def _set_participant_session_cookie(response, session_id: str):
+def _set_participant_cookies(response, public_id: str, session_id: str):
     response.set_cookie(
         PARTICIPANT_SESSION_COOKIE_NAME,
         session_id,
+        httponly=True,
+        secure=bool(SESSION_COOKIE_SECURE),
+        samesite=SESSION_COOKIE_SAMESITE,
+        path="/",
+    )
+    response.set_cookie(
+        PARTICIPANT_PUBLIC_COOKIE_NAME,
+        public_id,
         httponly=True,
         secure=bool(SESSION_COOKIE_SECURE),
         samesite=SESSION_COOKIE_SAMESITE,
@@ -152,7 +161,7 @@ def create_participant():
         db.commit()
         logger.info("participant created public_id_prefix=%s request_id=%s", public_id[:8], getattr(g, "request_id", None))
         response = success_response({"status": "created", "public_id": public_id, "session_id": session_id})
-        response = _set_participant_session_cookie(response, session_id)
+        response = _set_participant_cookies(response, public_id, session_id)
         return response, 201
     except IntegrityError as e:
         try:
@@ -186,7 +195,7 @@ def create_participant():
                     "public_id": public_id,
                     "session_id": existing[0]
                 })
-                response = _set_participant_session_cookie(response, existing[0])
+                response = _set_participant_cookies(response, public_id, existing[0])
                 return response, 200
             return create_error_response("DUP_PUBLIC_ID")
         return create_error_response("PARTICIPANT_EXISTS")
@@ -221,7 +230,7 @@ def create_participant():
                         "public_id": public_id,
                         "session_id": existing[0]
                     })
-                    response = _set_participant_session_cookie(response, existing[0])
+                    response = _set_participant_cookies(response, public_id, existing[0])
                     return response, 200
                 return create_error_response("DUP_PUBLIC_ID")
             return create_error_response("PARTICIPANT_EXISTS")
@@ -430,3 +439,16 @@ def get_participant_payment_status(public_id):
     except Exception as e:
         logger.error("get_participant_payment_status failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
+
+
+@participant_bp.route("/participants/session", methods=["GET"])
+@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
+@track_performance
+def get_participant_session():
+    """Return participant identifiers from httpOnly cookies (if present)."""
+    public_id = (request.cookies.get(PARTICIPANT_PUBLIC_COOKIE_NAME) or "").strip()
+    session_id = (request.cookies.get(PARTICIPANT_SESSION_COOKIE_NAME) or "").strip()
+    return success_response({
+        "public_id": public_id or None,
+        "session_id": session_id or None,
+    })
