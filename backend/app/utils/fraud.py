@@ -3,10 +3,13 @@ Fraud detection utilities module for C.O.G.N.I.T. backend.
 Provides duplicate detection, screenshot validation, and fraud scoring.
 """
 
+import logging
 from typing import Optional, Tuple
 
 from sqlalchemy import text
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────
@@ -45,7 +48,7 @@ def check_duplicate_screenshot(
             return True, existing_payment_id, is_same_participant
         return False, None, False
     except Exception as e:
-        print(f"[WARN] Duplicate screenshot check failed: {e}", flush=True)
+        logger.warning("duplicate screenshot check failed error=%s", e)
         return False, None, False
 
 
@@ -78,7 +81,7 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
         if hit:
             return True
     except Exception as e:
-        print(f"[WARN] Rejected screenshot fast-path check failed: {e}", flush=True)
+        logger.warning("rejected screenshot fast-path check failed error=%s", e)
 
     # Fallback path 1: historical file hashes linked to rejected payments.
     try:
@@ -93,7 +96,7 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
         if hit:
             return True
     except Exception as e:
-        print(f"[WARN] Rejected screenshot file-hash check failed: {e}", flush=True)
+        logger.warning("rejected screenshot file-hash check failed error=%s", e)
 
     # Fallback path 2: upload attempts on rejected payments.
     try:
@@ -107,7 +110,7 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
         """), {"hash": sha256_hash}).scalar()
         return bool(hit)
     except Exception as e:
-        print(f"[WARN] Rejected screenshot attempts check failed: {e}", flush=True)
+        logger.warning("rejected screenshot attempts check failed error=%s", e)
         return False
 
 
@@ -197,7 +200,7 @@ def check_near_duplicate_screenshot(
                 )
                 return True, int(payment_id), distance, is_same_participant
     except Exception as e:
-        print(f"[WARN] Near-duplicate primary SQL check failed: {e}", flush=True)
+        logger.warning("near-duplicate primary SQL check failed error=%s", e)
 
     # Secondary path: SQL distance scan (kept in DB), constrained candidate count.
     try:
@@ -224,7 +227,7 @@ def check_near_duplicate_screenshot(
             return False, None, distance, False
         return False, None, None, False
     except Exception as e:
-        print(f"[WARN] Near-duplicate SQL fallback failed: {e}", flush=True)
+        logger.warning("near-duplicate SQL fallback failed error=%s", e)
 
     # Final safety fallback: tiny Python scan from recent rows only.
     try:
@@ -252,7 +255,7 @@ def check_near_duplicate_screenshot(
             return True, best_payment, best_distance, is_same_participant
         return False, None, best_distance, False
     except Exception as e:
-        print(f"[WARN] Near-duplicate final fallback failed: {e}", flush=True)
+        logger.warning("near-duplicate final fallback failed error=%s", e)
         return False, None, None, False
 
 
@@ -260,7 +263,8 @@ def is_same_person_by_fingerprint(
     db,
     participant_id: Optional[int],
     other_participant_id: Optional[int],
-    current_fingerprint: Optional[str] = None
+    current_fingerprint: Optional[str] = None,
+    current_fingerprint_variants: Optional[list[str]] = None,
 ) -> bool:
     """
     Best-effort same-person check using device fingerprint overlap.
@@ -273,16 +277,23 @@ def is_same_person_by_fingerprint(
     if participant_id == other_participant_id:
         return True
     try:
+        candidate_hashes = []
         if current_fingerprint:
+            candidate_hashes.append(current_fingerprint)
+        if current_fingerprint_variants:
+            candidate_hashes.extend([h for h in current_fingerprint_variants if h])
+        candidate_hashes = list(dict.fromkeys([h for h in candidate_hashes if h]))
+
+        if candidate_hashes:
             hit = db.execute(text("""
                 SELECT 1
                 FROM device_fingerprints
                 WHERE participant_id = :other_pid
-                  AND fingerprint_hash = :fph
+                  AND fingerprint_hash = ANY(:fph_list)
                 LIMIT 1
             """), {
                 "other_pid": other_participant_id,
-                "fph": current_fingerprint,
+                "fph_list": candidate_hashes,
             }).scalar()
             if hit:
                 return True
@@ -301,7 +312,7 @@ def is_same_person_by_fingerprint(
         }).scalar()
         return bool(overlap)
     except Exception as e:
-        print(f"[WARN] Fingerprint same-person check failed: {e}", flush=True)
+        logger.warning("fingerprint same-person check failed error=%s", e)
         return False
 
 
@@ -339,5 +350,5 @@ def check_ocr_signature_replay(
         )
         return True, int(existing_payment_id), is_same_participant
     except Exception as e:
-        print(f"[WARN] OCR signature replay check failed: {e}", flush=True)
+        logger.warning("ocr signature replay check failed error=%s", e)
         return False, None, False

@@ -7,7 +7,7 @@ import random
 import time
 from urllib.parse import unquote, urlparse
 
-from flask import request
+from flask import request, g
 from sqlalchemy import text
 
 from app.database import get_db
@@ -22,6 +22,7 @@ from app.config import (
     IMAGE_PICK_ATTEMPTS_FALLBACK,
     IMAGE_VALIDATE_URL_AVAILABILITY,
     IMAGE_POOL_CACHE_TTL_SECONDS,
+    IMAGE_RESERVATION_TTL_SECONDS,
 )
 from app.extensions import s3
 
@@ -38,6 +39,7 @@ _IMAGE_POOL_CACHE = {
     "non_attention": [],
     "all": [],
 }
+_IMAGE_URL_AVAIL_CACHE = {}
 
 
 # ────────────────────────────────────────────────
@@ -63,14 +65,26 @@ def _is_image_url_available(image_url: str) -> bool:
     """Best-effort availability check to avoid returning broken image URLs."""
     if not IMAGE_VALIDATE_URL_AVAILABILITY:
         return bool(image_url)
+    if not image_url:
+        return False
+    now = time.time()
+    cached = _IMAGE_URL_AVAIL_CACHE.get(image_url)
+    if cached and now < cached.get("expires_at", 0):
+        return bool(cached.get("ok"))
     key = _extract_s3_key_if_cognit_url(image_url)
     if key:
         try:
             s3.head_object(Bucket=S3_BUCKET_NAME, Key=key)
-            return True
+            ok = True
         except Exception:
-            return False
-    return bool(image_url)
+            ok = False
+    else:
+        ok = True
+    _IMAGE_URL_AVAIL_CACHE[image_url] = {
+        "ok": bool(ok),
+        "expires_at": now + max(60.0, float(IMAGE_POOL_CACHE_TTL_SECONDS)),
+    }
+    return bool(ok)
 
 
 def _ensure_image_pool_cache(db):
@@ -122,6 +136,40 @@ def _pick_from_pool(rows, excluded_set, attempts):
     return None
 
 
+def _reserve_image(db, image_id: str, participant_id: int | None, now_ts):
+    try:
+        row = db.execute(text("""
+            INSERT INTO image_reservations (
+                image_id, participant_id, reserved_at, expires_at, released_at
+            ) VALUES (
+                :iid, :pid, :now, :now, NULL
+            )
+            ON CONFLICT (image_id) DO UPDATE SET
+                participant_id = EXCLUDED.participant_id,
+                reserved_at = EXCLUDED.reserved_at,
+                expires_at = EXCLUDED.expires_at,
+                released_at = NULL
+            WHERE image_reservations.released_at IS NOT NULL
+            RETURNING image_id
+        """), {"iid": image_id, "pid": participant_id, "now": now_ts}).fetchone()
+        return bool(row)
+    except Exception:
+        return True
+
+
+def _cleanup_stale_reservations(db, ttl_seconds: int | None = None):
+    ttl_value = ttl_seconds if ttl_seconds is not None else IMAGE_RESERVATION_TTL_SECONDS
+    try:
+        db.execute(text("""
+            UPDATE image_reservations
+            SET released_at = CURRENT_TIMESTAMP
+            WHERE released_at IS NULL
+              AND reserved_at <= (CURRENT_TIMESTAMP - (:ttl || ' seconds')::interval)
+        """), {"ttl": int(max(60, ttl_value))})
+    except Exception:
+        pass
+
+
 @image_bp.route("/images/random")
 @track_performance
 def random_image():
@@ -133,10 +181,12 @@ def random_image():
 
     try:
         db = get_db()
+        now_ts = int(time.time())
         if ATTENTION_INTERVAL <= 0:
             raise ValueError("ATTENTION_INTERVAL must be > 0")
 
         should_prioritize_attention = False
+        participant_id = None
         if public_id:
             participant_id = resolve_participant_id(db, public_id)
             if participant_id:
@@ -147,28 +197,43 @@ def random_image():
                 should_prioritize_attention = ((total_submissions + 1) % ATTENTION_INTERVAL) == 0
 
         _ensure_image_pool_cache(db)
-
+        _cleanup_stale_reservations(db)
         row = None
-        if should_prioritize_attention:
-            row = _pick_from_pool(
-                _IMAGE_POOL_CACHE["attention"],
-                excluded_set,
-                IMAGE_PICK_ATTEMPTS_ATTENTION,
-            )
+        attempt_limit = max(3, min(10, len(_IMAGE_POOL_CACHE["all"]) or 3))
+        for _ in range(attempt_limit):
+            if should_prioritize_attention:
+                row = _pick_from_pool(
+                    _IMAGE_POOL_CACHE["attention"],
+                    excluded_set,
+                    IMAGE_PICK_ATTEMPTS_ATTENTION,
+                )
 
-        if not row:
-            row = _pick_from_pool(
-                _IMAGE_POOL_CACHE["non_attention"],
-                excluded_set,
-                IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
-            )
+            if not row:
+                row = _pick_from_pool(
+                    _IMAGE_POOL_CACHE["non_attention"],
+                    excluded_set,
+                    IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
+                )
 
-        if not row and should_prioritize_attention:
-            row = _pick_from_pool(
-                _IMAGE_POOL_CACHE["all"],
-                excluded_set,
-                IMAGE_PICK_ATTEMPTS_FALLBACK,
-            )
+            if not row and should_prioritize_attention:
+                row = _pick_from_pool(
+                    _IMAGE_POOL_CACHE["all"],
+                    excluded_set,
+                    IMAGE_PICK_ATTEMPTS_FALLBACK,
+                )
+
+            if not row:
+                break
+
+            if _reserve_image(db, row[0], participant_id, now_ts):
+                try:
+                    db.commit()
+                except Exception:
+                    pass
+                break
+
+            excluded_set.add(row[0])
+            row = None
 
         if not row:
             return create_error_response("INTERNAL_ERROR")
@@ -180,5 +245,7 @@ def random_image():
             "is_attention_check": bool(row[3]) if len(row) > 3 else False,
         })
     except Exception as e:
-        print(f"[ERROR] random_image failed: {e}", flush=True)
+        # Keep errors logged but avoid noisy prints in production.
+        import logging
+        logging.getLogger(__name__).error("random_image failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")

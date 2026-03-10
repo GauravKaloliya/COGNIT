@@ -4,45 +4,14 @@ import App from "./App.jsx";
 import NotFound from "./components/NotFound.jsx";
 import ErrorPage from "./components/ErrorPage.jsx";
 import { runtimeConfig } from "./config/runtime";
-
-const UI_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
-const UI_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
+import { getStoredValue, saveStoredValue } from "./utils/storage";
 
 function readDarkMode() {
-  try {
-    const raw = sessionStorage.getItem("darkMode");
-    if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      parsed.__schema_version === UI_STATE_SCHEMA_VERSION &&
-      typeof parsed.expires_at === "number" &&
-      Date.now() <= parsed.expires_at
-    ) {
-      return parsed.data === true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
+  return getStoredValue("darkMode", false) === true;
 }
 
 function writeDarkMode(value) {
-  try {
-    const now = Date.now();
-    sessionStorage.setItem(
-      "darkMode",
-      JSON.stringify({
-        __schema_version: UI_STATE_SCHEMA_VERSION,
-        saved_at: now,
-        expires_at: now + UI_STATE_TTL_MS,
-        data: value === true
-      })
-    );
-  } catch {
-    // Ignore storage failures
-  }
+  saveStoredValue("darkMode", value === true);
 }
 
 function MainApp() {

@@ -3,10 +3,24 @@ import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { runtimeConfig } from "../config/runtime";
 
+const normalizeSurveyPayload = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const imageId = value.image_id || value.imageId || null;
+  const imageUrl = value.url || value.image_url || value.imageUrl || "";
+  return {
+    ...value,
+    image_id: imageId,
+    url: imageUrl,
+  };
+};
+
 export function useSurveyFlow({ publicId, addToast, initial }) {
-  const [survey, setSurvey] = useState(initial?.survey || null);
+  const [survey, setSurvey] = useState(normalizeSurveyPayload(initial?.survey));
   const [surveyCompleted, setSurveyCompleted] = useState(initial?.surveyCompleted || 0);
   const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(initial?.surveyFeedbackReady || false);
+  const [lastSubmissionSucceeded, setLastSubmissionSucceeded] = useState(
+    initial?.lastSubmissionSucceeded || false
+  );
   const [shownImages, setShownImages] = useState(initial?.shownImages || []);
   const [imageError, setImageError] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -18,7 +32,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
   const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
     // Keep refresh/session-resumed survey stable: do not request a new image
     // unless caller explicitly asks to clear current survey.
-    if (!clearCurrent && survey?.image_id) {
+    if (!clearCurrent && survey?.image_id && typeof survey?.url === "string" && survey.url.trim()) {
       return survey;
     }
 
@@ -33,6 +47,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
     inFlightRef.current = true;
     setIsFetchingImage(true);
     setSurveyFeedbackReady(false);
+    setLastSubmissionSucceeded(false);
     setImageError(null);
     if (clearCurrent) {
       setSurvey(null);
@@ -40,9 +55,13 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
 
     try {
       const data = await endpoints.getRandomImage(shownImages, publicId, { signal: controller.signal });
-      setShownImages((prev) => [...prev, data.image_id]);
-      setSurvey(data);
-      return data;
+      const normalizedData = normalizeSurveyPayload(data);
+      if (!normalizedData?.image_id) {
+        throw new Error(getErrorMessage("SYS_002_0016"));
+      }
+      setShownImages((prev) => [...prev, normalizedData.image_id]);
+      setSurvey(normalizedData);
+      return normalizedData;
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
         return null;
@@ -108,11 +127,13 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
 
       const nextCompleted = surveyCompleted + 1;
       setSurveyCompleted(nextCompleted);
+      setLastSubmissionSucceeded(true);
       setSurveyFeedbackReady(true);
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
         return;
       }
+      setLastSubmissionSucceeded(false);
       const errorMessage = error.message || getErrorMessage("SYS_002_0006");
       throw new Error(errorMessage);
     } finally {
@@ -140,6 +161,8 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
     setSurveyCompleted,
     surveyFeedbackReady,
     setSurveyFeedbackReady,
+    lastSubmissionSucceeded,
+    setLastSubmissionSucceeded,
     shownImages,
     setShownImages,
     imageError,

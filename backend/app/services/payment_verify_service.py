@@ -14,6 +14,7 @@ from app.config import (
     S3_BUCKET_NAME,
     UPI_NAME,
     PAYMENT_MAX_IMAGE_MB,
+    PAYMENT_AMOUNT,
     FRAUD_SCORE_WEIGHTS,
     FRAUD_UNKNOWN_REASON_WEIGHT,
     FRAUD_REJECT_THRESHOLD,
@@ -150,6 +151,7 @@ def process_verify_upload(
     data: dict,
     request_id: Optional[str],
     device_fingerprint: Optional[str],
+    device_fingerprint_variants: Optional[list[str]] = None,
     idempotency_key_header: Optional[str],
     user_agent: str,
     ip_hash: Optional[str],
@@ -403,65 +405,6 @@ def process_verify_upload(
         WHERE id = :pid
     """), {"pid": payment_id})
 
-    def _reuse_existing_success(existing_pid: int, reason: str):
-        existing = db.execute(text("""
-            SELECT status, extracted_text, fraud_score, detected_app, verification_details
-            FROM payments
-            WHERE id = :pid
-        """), {"pid": existing_pid}).fetchone()
-        if not existing:
-            return False
-        existing_status, existing_text, existing_fraud, existing_app, existing_details = existing
-        if existing_status != "success":
-            return False
-
-        existing_app = existing_app or "unknown"
-        reuse_details = existing_details or {}
-        if isinstance(reuse_details, str):
-            try:
-                reuse_details = json.loads(reuse_details)
-            except Exception:
-                reuse_details = {}
-        reuse_details["reused_from_payment_id"] = int(existing_pid)
-        reuse_details["reuse_reason"] = reason
-
-        try:
-            ensure_payment_status_transition(status, "processing")
-            ensure_payment_status_transition("processing", "success")
-        except StateTransitionError:
-            return False
-
-        db.execute(text("""
-            UPDATE payments
-            SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid AND status = 'pending'
-        """), {"pid": payment_id})
-
-        db.execute(text("""
-            UPDATE payments
-            SET extracted_text = :txt,
-                fraud_score = :fs,
-                verified_at = CURRENT_TIMESTAMP,
-                status = 'success',
-                detected_app = :app,
-                verification_details = :details
-            WHERE id = :pid
-        """), {
-            "txt": existing_text or "",
-            "fs": min(float(FRAUD_SUCCESS_MAX_SCORE), float(existing_fraud if existing_fraud is not None else 0)),
-            "app": existing_app,
-            "details": json.dumps(reuse_details),
-            "pid": payment_id,
-        })
-        log_audit(
-            db,
-            "payment_reused_same_person",
-            participant_id=participant_id,
-            details=f"Reused verified payment {existing_pid} via {reason}",
-        )
-        db.commit()
-        return True
-
     is_duplicate, existing_payment_id, is_same_participant = check_duplicate_screenshot(
         db, sha256_hash, participant_id=participant_id
     )
@@ -476,50 +419,9 @@ def process_verify_upload(
             participant_id=participant_id,
             other_participant_id=existing_owner_participant_id,
             current_fingerprint=device_fingerprint,
+            current_fingerprint_variants=device_fingerprint_variants,
         )
         if is_same_participant or same_person_fingerprint:
-            if _reuse_existing_success(existing_payment_id, "exact_hash"):
-                if payment_audit_logger:
-                    payment_audit_logger(
-                        db,
-                        "payment_verify_reused_existing_success",
-                        payment_id=payment_id,
-                        participant_id=participant_id,
-                        details=f"reused existing successful payment {existing_payment_id} (exact hash)",
-                        response_data={"reused_from_payment_id": int(existing_payment_id)},
-                    )
-                _finalize_attempt("success", details={"reused_existing_verification": True})
-                payload = {
-                    "status": "processed",
-                    "verification": {
-                        "status": "success",
-                        "verified": True,
-                        "failure_reasons": [],
-                        "reused_existing_verification": True,
-                    },
-                }
-                save_idempotent_response(
-                    db,
-                    endpoint=f"/payments/{payment_public_id}/verify-upload",
-                    idempotency_key=idempotency_key,
-                    participant_public_id=payment_public_id,
-                    request_hash=request_hash,
-                    response_body=payload,
-                    status_code=200,
-                )
-                emit_domain_event(
-                    db,
-                    event_type="payment_verified",
-                    correlation_id=request_id,
-                    participant_id=participant_id,
-                    payment_id=payment_id,
-                    payload={"reused": True},
-                )
-                try:
-                    db.commit()
-                except Exception:
-                    pass
-                return jsonify(payload)
             fraud_score = _reject_payment_for_fraud(["duplicate_hash_self"])
             _finalize_attempt(
                 "duplicate",
@@ -587,50 +489,9 @@ def process_verify_upload(
                 participant_id=participant_id,
                 other_participant_id=near_owner_participant_id,
                 current_fingerprint=device_fingerprint,
+                current_fingerprint_variants=device_fingerprint_variants,
             )
             if near_same_participant or near_same_person_fingerprint:
-                if _reuse_existing_success(near_payment_id, f"near_hash_distance_{near_distance}"):
-                    if payment_audit_logger:
-                        payment_audit_logger(
-                            db,
-                            "payment_verify_reused_existing_success_near_hash",
-                            payment_id=payment_id,
-                            participant_id=participant_id,
-                            details=f"reused existing successful payment {near_payment_id} (near hash distance={near_distance})",
-                            response_data={"reused_from_payment_id": int(near_payment_id), "distance": near_distance},
-                        )
-                    _finalize_attempt("success", details={"reused_existing_verification": True, "distance": near_distance})
-                    payload = {
-                        "status": "processed",
-                        "verification": {
-                            "status": "success",
-                            "verified": True,
-                            "failure_reasons": [],
-                            "reused_existing_verification": True,
-                        },
-                    }
-                    save_idempotent_response(
-                        db,
-                        endpoint=f"/payments/{payment_public_id}/verify-upload",
-                        idempotency_key=idempotency_key,
-                        participant_public_id=payment_public_id,
-                        request_hash=request_hash,
-                        response_body=payload,
-                        status_code=200,
-                    )
-                    emit_domain_event(
-                        db,
-                        event_type="payment_verified",
-                        correlation_id=request_id,
-                        participant_id=participant_id,
-                        payment_id=payment_id,
-                        payload={"reused": True, "distance": near_distance},
-                    )
-                    try:
-                        db.commit()
-                    except Exception:
-                        pass
-                    return jsonify(payload)
                 fraud_score = _reject_payment_for_fraud(
                     ["near_duplicate_self"],
                     details={"distance": near_distance},
@@ -685,7 +546,7 @@ def process_verify_upload(
         """), {"pid": payment_id})
 
         extracted_text, confidence = extract_text_with_confidence(image)
-        amount = amount if amount is not None else 1
+        amount = amount if amount is not None else PAYMENT_AMOUNT
         is_valid, detected_app, failures = verify_payment_screenshot(
             image,
             extracted_text,

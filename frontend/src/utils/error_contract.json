@@ -327,8 +327,8 @@
     "category": "DUP"
   },
   "PARTICIPANT_EXISTS": {
-    "code": "DUP_001_0004",
-    "message": "You have already registered",
+    "code": "ERR_PARTICIPANT_EXISTS",
+    "message": "Username, email, or phone is already registered.",
     "status": 409,
     "category": "DUP"
   },

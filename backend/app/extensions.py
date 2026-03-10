@@ -11,7 +11,15 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from app.config import SECRET_KEY, CORS_ORIGINS, CORS_SUPPORTS_CREDENTIALS, RATELIMIT_STORAGE_URI, MAX_CONTENT_LENGTH_MB
+from app.config import (
+    SECRET_KEY,
+    CORS_ORIGINS,
+    CORS_SUPPORTS_CREDENTIALS,
+    RATELIMIT_STORAGE_URI,
+    MAX_CONTENT_LENGTH_MB,
+    SESSION_COOKIE_SECURE,
+    SESSION_COOKIE_SAMESITE,
+)
 from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 from app.config import TRUST_PROXY_HEADERS
 
@@ -28,9 +36,9 @@ if TRUST_PROXY_HEADERS:
     # Required on Vercel/edge proxies so client IP/scheme are interpreted correctly.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 app.config["SECRET_KEY"] = SECRET_KEY
-app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SECURE"] = bool(SESSION_COOKIE_SECURE)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SAMESITE"] = SESSION_COOKIE_SAMESITE
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
 
 

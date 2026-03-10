@@ -36,7 +36,9 @@ const MIN_LAPLACIAN_VARIANCE = runtimeConfig.minLaplacianVariance;
 export default function PaymentLinkPage({ 
   onNext, 
   onBack,
-  publicId
+  publicId,
+  sessionId,
+  addToast
 }) {
   const [paymentData, setPaymentData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,6 +49,8 @@ export default function PaymentLinkPage({
   const [error, setError] = useState(null);
   const [retryInSeconds, setRetryInSeconds] = useState(0);
   const [failureReasons, setFailureReasons] = useState([]);
+  const [refreshNotice, setRefreshNotice] = useState("");
+  const refreshNoticeShownRef = useRef(false);
   const fileInputRef = useRef(null);
   const opVersionRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -75,6 +79,15 @@ export default function PaymentLinkPage({
   const retryButtonLabel = retryBlocked
     ? uiText("payment.tryAgainIn", { seconds: retryInSeconds })
     : "Retry";
+  const notifySessionExpired = useCallback(() => {
+    if (typeof addToast === "function") {
+      addToast("Payment session expired. Creating a new one.", "warning");
+    }
+    if (!refreshNoticeShownRef.current) {
+      refreshNoticeShownRef.current = true;
+      setRefreshNotice("Previous payment session expired. A new session has been created.");
+    }
+  }, [addToast]);
 
   const beginOperation = useCallback(() => {
     opVersionRef.current += 1;
@@ -206,11 +219,16 @@ export default function PaymentLinkPage({
   const savePaymentViewState = useCallback((state) => {
     try {
       const now = Date.now();
+      const safeState = { ...(state || {}) };
+      if (safeState.paymentData && typeof safeState.paymentData === "object") {
+        const { payment_token: _token, ...rest } = safeState.paymentData;
+        safeState.paymentData = rest;
+      }
       sessionStorage.setItem(PAYMENT_STATE_KEY, JSON.stringify({
         __schema_version: PAYMENT_STATE_SCHEMA_VERSION,
         saved_at: now,
         expires_at: now + PAYMENT_STATE_TTL_MS,
-        data: state
+        data: safeState
       }));
     } catch {
       // Ignore storage failures
@@ -448,7 +466,7 @@ export default function PaymentLinkPage({
       if (createAbortRef.current) createAbortRef.current.abort();
       const controller = new AbortController();
       createAbortRef.current = controller;
-      const data = await endpoints.createPayment(publicId, 1, { signal: controller.signal });
+      const data = await endpoints.createPayment(publicId, { signal: controller.signal });
       if (!isOperationCurrent(operationId)) return;
       sessionStorage.setItem("payment_id", data.payment_id);
 
@@ -534,11 +552,40 @@ export default function PaymentLinkPage({
       const restoredStatus = restored?.paymentStatus || "pending";
 
       if (restoredPaymentData?.payment_id && restoredPaymentData?.expires_at) {
+        if (!publicId) {
+          return;
+        }
+        if (statusAbortRef.current) statusAbortRef.current.abort();
+        const statusController = new AbortController();
+        statusAbortRef.current = statusController;
+        if (!restoredPaymentData?.payment_token && publicId) {
+          try {
+            const minted = await endpoints.mintPaymentToken(
+              restoredPaymentData.payment_id,
+              publicId,
+              sessionId,
+              { signal: statusController.signal }
+            );
+            restoredPaymentData.payment_token = minted?.payment_token || "";
+          } catch {
+            clearPaymentViewState();
+            notifySessionExpired();
+            await createPayment();
+            return;
+          }
+        }
+        if (!restoredPaymentData?.payment_token) {
+          clearPaymentViewState();
+          notifySessionExpired();
+          await createPayment();
+          return;
+        }
         try {
-          if (statusAbortRef.current) statusAbortRef.current.abort();
-          const statusController = new AbortController();
-          statusAbortRef.current = statusController;
-          const statusData = await endpoints.getPaymentStatus(restoredPaymentData.payment_id, { signal: statusController.signal });
+          const statusData = await endpoints.getPaymentStatus(
+            restoredPaymentData.payment_id,
+            { signal: statusController.signal },
+            restoredPaymentData?.payment_token
+          );
           const serverStatus = statusData?.status;
 
           if (serverStatus === "success") {
@@ -547,10 +594,12 @@ export default function PaymentLinkPage({
             return;
           }
 
-          if (serverStatus === "expired") {
-            if (!cancelled) handleExpiry();
-            return;
-          }
+        if (serverStatus === "expired") {
+          clearPaymentViewState();
+          notifySessionExpired();
+          if (!cancelled) await createPayment();
+          return;
+        }
 
           if (serverStatus === "rejected_fraud") {
             if (!cancelled) {
@@ -569,7 +618,6 @@ export default function PaymentLinkPage({
               ...restoredPaymentData,
               expires_at: statusData?.expires_at || restoredPaymentData.expires_at,
               time_remaining_seconds: statusData?.time_remaining_seconds ?? restoredPaymentData?.time_remaining_seconds,
-              payment_token: statusData?.payment_token || restoredPaymentData?.payment_token || "",
             };
             const serverRemainingMs = getServerRemainingMs(statusData || mergedPaymentData);
             timerTotalMsRef.current = Math.max(1000, serverRemainingMs || timerTotalMsRef.current);
@@ -606,7 +654,7 @@ export default function PaymentLinkPage({
       cancelled = true;
       stopTimer();
     };
-  }, [calculateTimerValues, clearPaymentViewState, createPayment, fetchPaymentQr, getServerRemainingMs, getVerificationErrorMessage, handleExpiry, isMobile, loadPaymentViewState, onNext, startTimer, stopTimer]);
+  }, [calculateTimerValues, clearPaymentViewState, createPayment, fetchPaymentQr, getServerRemainingMs, getVerificationErrorMessage, handleExpiry, isMobile, loadPaymentViewState, notifySessionExpired, onNext, startTimer, stopTimer, publicId, sessionId]);
 
   // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
@@ -724,7 +772,11 @@ export default function PaymentLinkPage({
       if (statusAbortRef.current) statusAbortRef.current.abort();
       const precheckController = new AbortController();
       statusAbortRef.current = precheckController;
-      const precheckStatus = await endpoints.getPaymentStatus(paymentData.payment_id, { signal: precheckController.signal });
+      const precheckStatus = await endpoints.getPaymentStatus(
+        paymentData.payment_id,
+        { signal: precheckController.signal },
+        paymentData?.payment_token
+      );
       if (!isOperationCurrent(operationId)) return;
 
       if (precheckStatus.status === "expired" || precheckStatus.is_expired) {
@@ -769,7 +821,6 @@ export default function PaymentLinkPage({
               ...prev,
               expires_at: precheckStatus.expires_at,
               time_remaining_seconds: precheckStatus.time_remaining_seconds ?? prev.time_remaining_seconds,
-              payment_token: precheckStatus.payment_token || prev.payment_token || "",
             }
           : prev);
       }
@@ -788,7 +839,7 @@ export default function PaymentLinkPage({
       const sha256 = await calculateSha256(uploadFile);
       if (!isOperationCurrent(operationId)) return;
 
-      const paymentWriteToken = precheckStatus.payment_token || paymentData.payment_token || "";
+      const paymentWriteToken = paymentData.payment_token || "";
       if (!paymentWriteToken) {
         showRetryHintError(getErrorMessage('AUTH_002_0002'));
         resumeTimerFromCurrentPayment();
@@ -855,7 +906,11 @@ export default function PaymentLinkPage({
       if (statusAbortRef.current) statusAbortRef.current.abort();
       const statusController = new AbortController();
       statusAbortRef.current = statusController;
-      const statusData = await endpoints.getPaymentStatus(paymentData.payment_id, { signal: statusController.signal });
+      const statusData = await endpoints.getPaymentStatus(
+        paymentData.payment_id,
+        { signal: statusController.signal },
+        paymentData?.payment_token
+      );
       if (!isOperationCurrent(operationId)) return;
 
       if (statusData.status === "rejected_fraud") {
@@ -1131,6 +1186,11 @@ export default function PaymentLinkPage({
           </button>
         )}
       </div>
+      {refreshNotice && (
+        <div className="banner warning">
+          <span>{refreshNotice}</span>
+        </div>
+      )}
 
       <div className="payment-header">
         <div className="payment-header-emoji" aria-hidden="true">📱</div>
