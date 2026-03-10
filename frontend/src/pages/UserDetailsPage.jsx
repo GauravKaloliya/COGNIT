@@ -19,6 +19,10 @@ const LOCATION_PERMISSION_REQUIRED_MESSAGE = "Enable location permission to subm
 const LOCATION_FALLBACK_MESSAGE = "Location auto-detect failed. Enter your location manually.";
 const AUTO_LOCATION_PROMPT_KEY = "location_auto_prompt_v1";
 const AUTO_LOCATION_PROMPT_DEDUPE_MS = 2000;
+const REVERSE_GEOCODE_STATE_KEY = "reverse_geocode_state_v1";
+const REVERSE_GEOCODE_MIN_INTERVAL_MS = 10000;
+const REVERSE_GEOCODE_MAX_BACKOFF_MS = 60000;
+const REVERSE_GEOCODE_TTL_MS = runtimeConfig.reverseGeocodeTtlMs;
 
 const DUPLICATE_ERROR_CODES = {
   username: 'DUP_001_0001',
@@ -206,6 +210,32 @@ export default function UserDetailsPage({
         let detectedLocation = fallback;
 
         try {
+          const now = Date.now();
+          let reverseState = { next_allowed_at: 0, fail_count: 0 };
+          try {
+            const raw = sessionStorage.getItem(REVERSE_GEOCODE_STATE_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === "object") {
+                if (parsed.expires_at && now > Number(parsed.expires_at)) {
+                  reverseState = { next_allowed_at: 0, fail_count: 0 };
+                } else {
+                reverseState = {
+                  next_allowed_at: Number(parsed.next_allowed_at || 0),
+                  fail_count: Number(parsed.fail_count || 0),
+                };
+                }
+              }
+            }
+          } catch {
+            // Ignore malformed cache
+          }
+          if (now < reverseState.next_allowed_at) {
+            setLocationStatus("Location detected.");
+            setDemographics((prev) => ({ ...prev, location: "" }));
+            setDetectedLocation(detectedLocation);
+            return;
+          }
           if (reverseGeocodeAbortRef.current) {
             reverseGeocodeAbortRef.current.abort();
           }
@@ -225,8 +255,31 @@ export default function UserDetailsPage({
             if (composed.length >= LOCATION_MIN_LENGTH) {
               detectedLocation = composed;
             }
+            sessionStorage.setItem(REVERSE_GEOCODE_STATE_KEY, JSON.stringify({
+              next_allowed_at: now + REVERSE_GEOCODE_MIN_INTERVAL_MS,
+              fail_count: 0,
+              expires_at: now + REVERSE_GEOCODE_TTL_MS,
+            }));
           }
         } catch (_err) {
+          const now = Date.now();
+          let failCount = 0;
+          try {
+            const raw = sessionStorage.getItem(REVERSE_GEOCODE_STATE_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              failCount = Number(parsed?.fail_count || 0);
+            }
+          } catch {
+            failCount = 0;
+          }
+          const nextFailCount = Math.min(5, failCount + 1);
+          const backoffMs = Math.min(REVERSE_GEOCODE_MAX_BACKOFF_MS, REVERSE_GEOCODE_MIN_INTERVAL_MS * (2 ** nextFailCount));
+          sessionStorage.setItem(REVERSE_GEOCODE_STATE_KEY, JSON.stringify({
+            next_allowed_at: now + backoffMs,
+            fail_count: nextFailCount,
+            expires_at: now + REVERSE_GEOCODE_TTL_MS,
+          }));
           // Keep coordinate fallback when reverse geocoding fails.
         } finally {
           reverseGeocodeAbortRef.current = null;

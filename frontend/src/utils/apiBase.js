@@ -93,17 +93,4 @@ export const getApiUrl = (endpoint) => {
   return normalizedEndpoint;
 };
 
-// Health check helper
-export const checkApiHealth = async () => {
-  try {
-    const response = await fetch(getApiUrl('/health'));
-    if (response.ok) {
-      const payload = await response.json();
-      const data = payload?.success === true ? (payload.data || {}) : (payload || {});
-      return { ok: true, data };
-    }
-    return { ok: false, error: `HTTP ${response.status}` };
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-};
+// Health checks are handled in useSystemHealth.

@@ -517,26 +517,36 @@ export default function SurveyPage({
     onBlocked: setSubmitError,
   });
 
-  const imageSrc = survey?.url
-    ? (survey.url.startsWith('http') ? survey.url : getApiUrl(survey.url))
+  const resolvedImageUrl = (
+    survey?.url ||
+    survey?.image_url ||
+    survey?.imageUrl ||
+    ""
+  );
+  const imageSrc = resolvedImageUrl
+    ? (resolvedImageUrl.startsWith('http') ? resolvedImageUrl : getApiUrl(resolvedImageUrl))
     : "";
+  const cacheBustedSrc = imageSrc
+    ? `${imageSrc}${imageSrc.includes("?") ? "&" : "?"}v=${encodeURIComponent(survey?.image_id || "")}`
+    : "";
+  const hasUsableSurveyImage = Boolean(survey?.image_id && imageSrc);
 
   // Show loading state if we're waiting for survey data
-  if (!survey || !survey.image_id) {
+  if (!survey || !survey.image_id || !hasUsableSurveyImage) {
     return (
       <div className="panel status-panel">
-        {isFetchingImage ? (
+        {isFetchingImage || (!survey || !survey.image_id) ? (
           <PageSkeleton
             title={uiText("survey.loadingImage")}
             subtitle="Preparing your survey canvas"
             variant="survey"
           />
-        ) : fetchError ? (
+        ) : fetchError || (survey?.image_id && !imageSrc) ? (
           <PanelState
             variant="error"
             icon="!"
             title="Image load failed"
-            message={fetchError}
+            message={fetchError || "Unable to restore survey image. Please retry to continue."}
             actionLabel={isFetchingImage ? uiText("survey.retrying") : uiText("survey.retry")}
             onAction={onRetry ? handleRetryImage : null}
             disabled={retryDisabled || isFetchingImage}
@@ -560,8 +570,8 @@ export default function SurveyPage({
       <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
         {!imageError ? (
           <img
-            key={imageSrc}
-            src={imageSrc}
+            key={cacheBustedSrc}
+            src={cacheBustedSrc}
             alt="Prompt"
             onClick={() => setIsZoomed(!isZoomed)}
             onLoad={handleImageLoad}

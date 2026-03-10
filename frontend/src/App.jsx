@@ -15,9 +15,8 @@ import { useSystemHealth } from "./hooks/useSystemHealth";
 import { usePaymentFlow } from "./hooks/usePaymentFlow";
 import { useSurveyFlow } from "./hooks/useSurveyFlow";
 import { runtimeConfig } from "./config/runtime";
+import { getStoredValue, saveStoredValue } from "./utils/storage";
 
-const UI_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
-const UI_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
 const ACTIVE_TAB_LOCK_KEY = "cognit_active_tab_lock_v1";
 const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
 const ACTIVE_TAB_HEARTBEAT_MS = runtimeConfig.activeTabHeartbeatMs;
@@ -38,52 +37,8 @@ function normalizePhoneForApi(rawPhone) {
   return digits;
 }
 
-function getStoredValue(key, fallback) {
-  // Client storage is UX-only and user-controllable.
-  // Backend must remain source of truth for security-critical decisions.
-  try {
-    const stored = sessionStorage.getItem(key);
-    if (!stored) return fallback;
-    const parsed = JSON.parse(stored);
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      parsed.__schema_version !== UI_STATE_SCHEMA_VERSION ||
-      typeof parsed.saved_at !== "number" ||
-      typeof parsed.expires_at !== "number"
-    ) {
-      return fallback;
-    }
-    if (Date.now() > parsed.expires_at) {
-      sessionStorage.removeItem(key);
-      return fallback;
-    }
-    return parsed.data ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveStoredValue(key, value) {
-  // Client storage is UX-only and user-controllable.
-  // Backend must remain source of truth for security-critical decisions.
-  try {
-    const now = Date.now();
-    sessionStorage.setItem(
-      key,
-      JSON.stringify({
-        __schema_version: UI_STATE_SCHEMA_VERSION,
-        saved_at: now,
-        expires_at: now + UI_STATE_TTL_MS,
-        data: value
-      })
-    );
-  } catch {
-    // Ignore storage failures; app should remain usable.
-  }
-}
-
 const STAGE_ORDER = ["consent", "user-details", "payment", "survey", "finished"];
+const MIN_SURVEYS_BEFORE_FINISH = Math.max(1, runtimeConfig.surveyUiTotalSteps || 1);
 
 const validateStageTransition = (currentStage, targetStage, paymentVerified = false) => {
   const currentIndex = STAGE_ORDER.indexOf(currentStage);
@@ -102,6 +57,53 @@ const validateStageTransition = (currentStage, targetStage, paymentVerified = fa
     default:
       return false;
   }
+};
+
+const isDemographicsComplete = (demographics) => {
+  const username = String(demographics?.username || "").trim();
+  const email = String(demographics?.email || "").trim().toLowerCase();
+  const phoneDigits = String(demographics?.phone || "").replace(/\D/g, "");
+  const gender = String(demographics?.gender_code || "").trim();
+  const ageRaw = String(demographics?.age || "").trim();
+  const location = String(demographics?.location || "").trim();
+  const language = String(demographics?.language_code || "").trim();
+  const prior = String(demographics?.prior_experience || "").trim();
+
+  const usernameOk = username.length >= runtimeConfig.usernameMinLength;
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const phoneOk = /^[6-9]\d{9}$/.test(phoneDigits) || (
+    phoneDigits.length === 12 &&
+    phoneDigits.startsWith("91") &&
+    /^[6-9]/.test(phoneDigits.slice(2))
+  );
+  const ageNum = Number(ageRaw);
+  const ageOk = Number.isFinite(ageNum) && ageNum >= runtimeConfig.ageMin && ageNum <= runtimeConfig.ageMax;
+  const locationOk = location.length >= runtimeConfig.locationMinLength;
+
+  return usernameOk && emailOk && phoneOk && gender && ageOk && locationOk && language && prior;
+};
+
+const deriveGuardedStage = ({
+  consentGiven,
+  hasParticipant,
+  demographicsComplete,
+  paymentVerified,
+  surveyCompleted,
+  surveyFeedbackReady,
+  lastSubmissionSucceeded,
+  currentStage,
+}) => {
+  if (!consentGiven) return "consent";
+  if (!hasParticipant || !demographicsComplete) return "user-details";
+  if (!paymentVerified) return "payment";
+  if (surveyFeedbackReady && !lastSubmissionSucceeded) return "survey";
+  if (currentStage === "finished" && surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) {
+    return "survey";
+  }
+  if (currentStage === "finished" && !surveyFeedbackReady && !(surveyCompleted > 0)) {
+    return "survey";
+  }
+  return currentStage;
 };
 
 class ErrorBoundary extends React.Component {
@@ -174,8 +176,8 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(getStoredValue("darkMode", false));
   const [stage, setStage] = useState(getStoredValue("stage", "consent"));
   const [paymentSubStage, setPaymentSubStage] = useState(getStoredValue("paymentSubStage", "content"));
-  const [publicId, setPublicId] = useState(() => getStoredValue("publicId", createId()));
-  const [sessionId, setSessionId] = useState(() => getStoredValue("sessionId", createId()));
+  const [publicId, setPublicId] = useState(() => getStoredValue("publicId", ""));
+  const [sessionId, setSessionId] = useState("");
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue("paymentVerified", false));
   const [demographics, setDemographics] = useState(
@@ -276,6 +278,14 @@ export default function App() {
     };
   }, [claimActiveTabLock]);
 
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem("sessionId");
+    } catch {
+      // Ignore storage failures.
+    }
+  }, []);
+
   const addToast = useCallback((message, type = "info", action) => {
     const dedupeKey = `${type}:${message}`;
     const now = Date.now();
@@ -297,6 +307,7 @@ export default function App() {
     surveyCompleted,
     surveyFeedbackReady,
     setSurveyFeedbackReady,
+    lastSubmissionSucceeded,
     shownImages,
     imageError,
     isFetchingImage,
@@ -311,6 +322,7 @@ export default function App() {
       survey: getStoredValue("survey", null),
       surveyCompleted: getStoredValue("surveyCompleted", 0),
       surveyFeedbackReady: getStoredValue("surveyFeedbackReady", false),
+      lastSubmissionSucceeded: getStoredValue("lastSubmissionSucceeded", false),
       shownImages: getStoredValue("shownImages", []),
     },
   });
@@ -325,6 +337,7 @@ export default function App() {
     publicId,
     stage,
     paymentVerified,
+    isActiveTabOwner,
     pauseSurveyPaymentGuard: surveyTransitionInFlight,
     setPaymentVerified,
     setStage,
@@ -369,8 +382,9 @@ export default function App() {
     transitionToSurvey,
   });
 
-  useEffect(() => saveStoredValue("publicId", publicId), [publicId]);
-  useEffect(() => saveStoredValue("sessionId", sessionId), [sessionId]);
+  useEffect(() => {
+    if (publicId) saveStoredValue("publicId", publicId);
+  }, [publicId]);
   useEffect(() => saveStoredValue("consentGiven", consentGiven), [consentGiven]);
   useEffect(() => saveStoredValue("paymentVerified", paymentVerified), [paymentVerified]);
   useEffect(() => saveStoredValue("demographics", demographics), [demographics]);
@@ -379,11 +393,49 @@ export default function App() {
   useEffect(() => saveStoredValue("survey", survey), [survey]);
   useEffect(() => saveStoredValue("surveyCompleted", surveyCompleted), [surveyCompleted]);
   useEffect(() => saveStoredValue("surveyFeedbackReady", surveyFeedbackReady), [surveyFeedbackReady]);
+  useEffect(() => saveStoredValue("lastSubmissionSucceeded", lastSubmissionSucceeded), [lastSubmissionSucceeded]);
   useEffect(() => saveStoredValue("shownImages", shownImages), [shownImages]);
   useEffect(() => {
     saveStoredValue("darkMode", darkMode);
     document.body.classList.toggle("dark", darkMode);
   }, [darkMode]);
+
+  // Client-side guard to prevent loading stages without prerequisite completion.
+  useEffect(() => {
+    const hasParticipant = Boolean(publicId);
+    const demographicsComplete = isDemographicsComplete(demographics);
+    const guardedStage = deriveGuardedStage({
+      consentGiven,
+      hasParticipant,
+      demographicsComplete,
+      paymentVerified,
+      surveyCompleted,
+      surveyFeedbackReady,
+      lastSubmissionSucceeded,
+      currentStage: stage,
+    });
+    if (guardedStage !== stage) {
+      setStage(guardedStage);
+      if (guardedStage === "payment") {
+        setPaymentSubStage("content");
+      }
+    }
+    if (surveyFeedbackReady && !lastSubmissionSucceeded) {
+      setSurveyFeedbackReady(false);
+    }
+  }, [
+    consentGiven,
+    publicId,
+    paymentVerified,
+    surveyCompleted,
+    surveyFeedbackReady,
+    lastSubmissionSucceeded,
+    demographics,
+    stage,
+    setStage,
+    setPaymentSubStage,
+    setSurveyFeedbackReady,
+  ]);
 
   // Server-backed guard for direct navigation to late stages.
   useEffect(() => {
@@ -458,7 +510,15 @@ export default function App() {
 
   useEffect(() => {
     if (stage !== "survey" || !systemReady || !paymentVerified || surveyFeedbackReady) return;
-    if (!survey || !survey.image_id) fetchImage({ clearCurrent: false });
+    const restoredImageUrl = (
+      survey?.url ||
+      survey?.image_url ||
+      survey?.imageUrl ||
+      ""
+    );
+    if (!survey || !survey.image_id || !String(restoredImageUrl).trim()) {
+      fetchImage({ clearCurrent: false });
+    }
   }, [stage, systemReady, paymentVerified, surveyFeedbackReady, survey, fetchImage]);
 
   const createParticipant = async () => {
@@ -565,7 +625,13 @@ export default function App() {
         return paymentSubStage === "content" ? (
           <PaymentContentPage onNext={handlePaymentContentToLink} onBack={handlePaymentBack} />
         ) : (
-          <PaymentLinkPage onNext={handlePaymentComplete} onBack={handlePaymentBack} publicId={publicId} />
+          <PaymentLinkPage
+            onNext={handlePaymentComplete}
+            onBack={handlePaymentBack}
+            publicId={publicId}
+            sessionId={sessionId}
+            addToast={addToast}
+          />
         );
       case "survey":
         if (surveyFeedbackReady) {
