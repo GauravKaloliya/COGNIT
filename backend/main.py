@@ -24,6 +24,7 @@ from app.routes import participant_bp, image_bp, submission_bp, payment_bp
 from app.config import (
     ROOT_RATE_LIMIT,
     DOCS_RATE_LIMIT,
+    HEALTH_RATE_LIMIT,
     FLASK_DEBUG,
     FLASK_HOST,
     FLASK_PORT,
@@ -38,6 +39,7 @@ from app.config import (
     SECURITY_XSS_PROTECTION,
     HEALTH_CACHE_TTL_SECONDS,
     API_LATENCY_SLO_MS,
+    VERCEL_ENV,
 )
 
 # Get logger for this module
@@ -213,7 +215,7 @@ def handle_unexpected_error(error):
 # ────────────────────────────────────────────────
 
 @app.route("/health")
-@limiter.exempt
+@limiter.limit(HEALTH_RATE_LIMIT)
 @track_performance
 def health():
     """Server and database health check endpoint."""
@@ -247,11 +249,11 @@ def health():
             "checked_at": now_ts,
             "ok": False,
             "message": "Service degraded",
-            "details": {"status": "degraded", "error": str(e)},
+            "details": {"status": "degraded"},
         }
         return create_error_response(
             "SYS_INTERNAL_ERROR",
-            details={"status": "degraded", "error": str(e)},
+            details={"status": "degraded"},
             custom_message="Service degraded"
         )
 

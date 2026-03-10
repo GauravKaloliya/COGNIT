@@ -62,6 +62,7 @@ export const runtimeConfig = {
   geolocationTimeoutMs: toInt(import.meta.env.VITE_GEOLOCATION_TIMEOUT_MS, 10000),
   geolocationMaxAgeMs: toInt(import.meta.env.VITE_GEOLOCATION_MAX_AGE_MS, 300000),
   reverseGeocodeUrl: import.meta.env.VITE_REVERSE_GEOCODE_URL || "https://nominatim.openstreetmap.org/reverse",
+  reverseGeocodeTtlMs: toInt(import.meta.env.VITE_REVERSE_GEOCODE_TTL_MS, 300000),
   availabilityDebounceMs: toInt(import.meta.env.VITE_AVAILABILITY_DEBOUNCE_MS, 500),
   usernameMinLength: toInt(import.meta.env.VITE_USERNAME_MIN_LENGTH, 2),
   ageMin: toInt(import.meta.env.VITE_AGE_MIN, 13),

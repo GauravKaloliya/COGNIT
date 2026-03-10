@@ -45,14 +45,20 @@
 
     <article class="endpoint-card" data-method="post" data-path="/payments/create" data-search="payments create session upi link qr token">
       <header><span class="method post">POST</span><code>/payments/create</code></header>
-      <p>Create payment session. Required body: <code>public_id,amount,turnstile_token</code>. Returns <code>payment_token</code>.</p>
+      <p>Create payment session. Required body: <code>public_id,turnstile_token</code>. Returns <code>payment_token</code>.</p>
       <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: required header <code>X-Idempotency-Key</code></span><span>Rate limit: yes</span></div>
     </article>
 
     <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/status" data-search="payments status expires token pending processing success">
       <header><span class="method get">GET</span><code>/payments/{payment_public_id}/status</code></header>
-      <p>Fetch payment status and remaining time. Returns refreshed <code>payment_token</code> while pending/processing.</p>
-      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+      <p>Fetch payment status and remaining time.</p>
+      <div class="endpoint-meta"><span>Auth: <code>Authorization: Bearer &lt;payment_token&gt;</code></span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/token" data-search="payments token mint session">
+      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/token</code></header>
+      <p>Mint a new <code>payment_token</code> for an active payment session. Required body: <code>public_id,session_id</code>.</p>
+      <div class="endpoint-meta"><span>Auth: session</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
     </article>
 
     <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/qr" data-search="payments qr base64 upi">

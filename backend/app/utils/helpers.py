@@ -4,6 +4,7 @@ Provides common helper functions for validation, responses, and audit logging.
 """
 
 import hashlib
+import logging
 import re
 from typing import Any, Dict, Optional, Tuple
 
@@ -16,7 +17,11 @@ from app.config import (
     ALLOWED_IMAGE_EXTENSIONS,
     CONTENT_TYPE_MAP,
     IP_HASH_SALT,
+    TRUST_PROXY_HEADERS,
 )
+
+logger = logging.getLogger(__name__)
+_IP_HASH_SALT_WARNED = False
 
 
 # ────────────────────────────────────────────────
@@ -25,14 +30,21 @@ from app.config import (
 
 def get_ip_hash() -> str:
     """Generate SHA256 hash of client IP address for privacy-preserving logging."""
-    ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
-          .split(",")[0].strip())
+    global _IP_HASH_SALT_WARNED
+    raw_ip = request.remote_addr or "unknown"
+    if TRUST_PROXY_HEADERS:
+        raw_ip = request.headers.get("X-Forwarded-For", raw_ip)
+    ip = str(raw_ip).split(",")[0].strip()
     if ip in ("", "unknown"):
         return "0" * 64
     try:
         import ipaddress
-        return hashlib.sha256(f"{ipaddress.ip_address(ip)}{IP_HASH_SALT}".encode()).hexdigest()
-    except:
+        salt = str(IP_HASH_SALT or "")
+        if not salt and not _IP_HASH_SALT_WARNED:
+            logger.warning("IP_HASH_SALT is not set; IP hash will be unsalted.")
+            _IP_HASH_SALT_WARNED = True
+        return hashlib.sha256(f"{ipaddress.ip_address(ip)}{salt}".encode()).hexdigest()
+    except Exception:
         return "0" * 64
 
 
@@ -140,7 +152,7 @@ def log_audit(
             "rid": getattr(g, "request_id", None),
         })
     except Exception as exc:
-        print(f"[WARN] audit log insert failed: {exc}", flush=True)
+        logger.warning("audit log insert failed error=%s", exc)
 
 
 # ────────────────────────────────────────────────

@@ -6,7 +6,8 @@ Handles participant registration, validation, and consent.
 import re
 import uuid
 
-from flask import request
+import logging
+from flask import request, g
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -31,6 +32,9 @@ from app.config import (
     PARTICIPANT_CHECK_RATE_LIMIT,
     CONSENT_RATE_LIMIT,
     PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+    PARTICIPANT_SESSION_COOKIE_NAME,
+    SESSION_COOKIE_SECURE,
+    SESSION_COOKIE_SAMESITE,
 )
 
 
@@ -40,6 +44,19 @@ from app.config import (
 
 from flask import Blueprint
 participant_bp = Blueprint('participant', __name__)
+logger = logging.getLogger(__name__)
+
+
+def _set_participant_session_cookie(response, session_id: str):
+    response.set_cookie(
+        PARTICIPANT_SESSION_COOKIE_NAME,
+        session_id,
+        httponly=True,
+        secure=bool(SESSION_COOKIE_SECURE),
+        samesite=SESSION_COOKIE_SAMESITE,
+        path="/",
+    )
+    return response
 
 
 # ────────────────────────────────────────────────
@@ -133,8 +150,10 @@ def create_participant():
         
         log_audit(db, "participant_created", participant_id=participant_id, details=f"public_id={public_id}")
         db.commit()
-        print(f"[INFO] Participant created: {public_id[:8]}...", flush=True)
-        return success_response({"status": "created", "public_id": public_id, "session_id": session_id}), 201
+        logger.info("participant created public_id_prefix=%s request_id=%s", public_id[:8], getattr(g, "request_id", None))
+        response = success_response({"status": "created", "public_id": public_id, "session_id": session_id})
+        response = _set_participant_session_cookie(response, session_id)
+        return response, 201
     except IntegrityError as e:
         try:
             db.rollback()
@@ -162,11 +181,13 @@ def create_participant():
                 LIMIT 1
             """), {"pub": public_id}).fetchone()
             if existing:
-                return success_response({
+                response = success_response({
                     "status": "exists",
                     "public_id": public_id,
                     "session_id": existing[0]
-                }), 200
+                })
+                response = _set_participant_session_cookie(response, existing[0])
+                return response, 200
             return create_error_response("DUP_PUBLIC_ID")
         return create_error_response("PARTICIPANT_EXISTS")
     except Exception as e:
@@ -195,11 +216,13 @@ def create_participant():
                     LIMIT 1
                 """), {"pub": public_id}).fetchone()
                 if existing:
-                    return success_response({
+                    response = success_response({
                         "status": "exists",
                         "public_id": public_id,
                         "session_id": existing[0]
-                    }), 200
+                    })
+                    response = _set_participant_session_cookie(response, existing[0])
+                    return response, 200
                 return create_error_response("DUP_PUBLIC_ID")
             return create_error_response("PARTICIPANT_EXISTS")
         
@@ -209,7 +232,7 @@ def create_participant():
                 return create_error_response("VAL_GENDER_REQUIRED")
             elif "language_code" in error_str:
                 return create_error_response("VAL_LANGUAGE_REQUIRED")
-            print(f"[ERROR] Foreign key violation in create_participant: {e}", flush=True)
+            logger.error("create_participant foreign key violation error=%s request_id=%s", e, getattr(g, "request_id", None))
             return create_error_response("DATABASE_ERROR")
         
         # Handle check constraint violations
@@ -220,10 +243,10 @@ def create_participant():
                 return create_error_response("VAL_PHONE_INVALID")
             elif "chk_age" in error_str or "age" in error_str:
                 return create_error_response("VAL_AGE_INVALID")
-            print(f"[ERROR] Check constraint violation in create_participant: {e}", flush=True)
+            logger.error("create_participant check constraint violation error=%s request_id=%s", e, getattr(g, "request_id", None))
             return create_error_response("DATABASE_ERROR")
         
-        print(f"[ERROR] create_participant failed: {e}", flush=True)
+        logger.error("create_participant failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
 
 
@@ -246,7 +269,7 @@ def check_username():
         """), {"un": username}).scalar()
         return success_response({"available": not bool(exists)})
     except Exception as e:
-        print(f"[ERROR] check_username failed: {e}", flush=True)
+        logger.error("check_username failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
 
 
@@ -267,7 +290,7 @@ def check_email():
         """), {"em": email}).scalar()
         return success_response({"available": not bool(exists)})
     except Exception as e:
-        print(f"[ERROR] check_email failed: {e}", flush=True)
+        logger.error("check_email failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
 
 
@@ -288,7 +311,7 @@ def check_phone():
         """), {"ph": phone}).scalar()
         return success_response({"available": not bool(exists)})
     except Exception as e:
-        print(f"[ERROR] check_phone failed: {e}", flush=True)
+        logger.error("check_phone failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
 
 
@@ -347,14 +370,14 @@ def record_consent():
                 status_code=200,
             )
         db.commit()
-        print(f"[INFO] Consent recorded for participant: {public_id[:8]}...", flush=True)
+        logger.info("consent recorded public_id_prefix=%s request_id=%s", public_id[:8], getattr(g, "request_id", None))
         return success_response(response_payload)
     except Exception as e:
         try:
             db.rollback()
         except:
             pass
-        print(f"[ERROR] consent failed: {e}", flush=True)
+        logger.error("consent failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("INTERNAL_ERROR")
 
 
@@ -405,5 +428,5 @@ def get_participant_payment_status(public_id):
             "reason": None if is_paid else "payment_not_verified",
         })
     except Exception as e:
-        print(f"[ERROR] get_participant_payment_status failed: {e}", flush=True)
+        logger.error("get_participant_payment_status failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
