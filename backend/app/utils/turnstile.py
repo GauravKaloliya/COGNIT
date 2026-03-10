@@ -11,6 +11,7 @@ from app.config import (
     TURNSTILE_SECRET_KEY,
     TURNSTILE_VERIFY_URL,
     TURNSTILE_TIMEOUT_SECONDS,
+    TURNSTILE_BYPASS_LOCAL,
 )
 
 
@@ -38,8 +39,8 @@ def verify_turnstile_token(token: str, remote_ip: Optional[str] = None) -> Tuple
     """
     if not TURNSTILE_ENABLED:
         return True, {"success": True, "skipped": True}
-    # Always bypass Turnstile for localhost traffic to keep local development unblocked.
-    if _is_loopback_ip(remote_ip):
+    # Bypass only when explicitly allowed for local development.
+    if TURNSTILE_BYPASS_LOCAL and _is_loopback_ip(remote_ip):
         return True, {"success": True, "skipped": True, "reason": "localhost"}
     if not TURNSTILE_SECRET_KEY:
         return False, {"success": False, "error-codes": ["missing-secret"]}

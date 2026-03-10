@@ -329,6 +329,12 @@ def submit():
         is_survey = bool(img_row[1])
 
         if is_survey:
+            db.execute(text("""
+                SELECT id
+                FROM participants
+                WHERE id = :pid
+                FOR UPDATE
+            """), {"pid": participant_id})
             next_survey_index = db.execute(text("""
                 SELECT COALESCE(MAX(survey_index), 0) + 1
                 FROM submissions
@@ -595,6 +601,18 @@ def submit():
                 "payment_id": latest_success_payment_id,
                 "submission_id": submission_id
             })
+
+        # Release image reservation on successful submission (soft release).
+        try:
+            db.execute(text("""
+                UPDATE image_reservations
+                SET released_at = CURRENT_TIMESTAMP
+                WHERE image_id = :img
+                  AND participant_id = :pid
+                  AND released_at IS NULL
+            """), {"img": image_id_str, "pid": participant_id})
+        except Exception:
+            pass
 
         db.commit()
         _enqueue_submit_post_commit_tasks(

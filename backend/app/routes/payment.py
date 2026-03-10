@@ -20,10 +20,17 @@ from app.config import (
     PAYMENT_EXPIRY_SECONDS,
     PAYMENT_UPLOAD_URL_EXPIRY_SECONDS,
     PAYMENT_MAX_IMAGE_MB,
+    PAYMENT_AMOUNT,
     S3_BUCKET_NAME,
     PAYMENT_CREATE_RATE_LIMIT,
     PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
     PAYMENT_STATUS_RATE_LIMIT,
+    PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT,
+    PAYMENT_TOKEN_RATE_LIMIT,
+    PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT,
+    INTERNAL_VERIFY_TOKEN,
+    INTERNAL_VERIFY_RATE_LIMIT,
+    PARTICIPANT_SESSION_COOKIE_NAME,
 )
 from app.extensions import limiter, s3
 from app.database import get_db, engine
@@ -40,6 +47,7 @@ from app.utils.security import (
     generate_payment_write_token,
 )
 from app.utils.decorators import track_performance, require_idempotency_key
+from flask_limiter.util import get_remote_address
 from app.utils.turnstile import verify_turnstile_token
 from app.services.payment_verify_service import process_verify_upload, process_internal_verify
 from app.services import (
@@ -59,6 +67,11 @@ payment_bp = Blueprint('payment', __name__)
 logger = logging.getLogger(__name__)
 _QR_BASE64_CACHE = {}
 _PAYMENT_AUDIT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="payment-audit")
+
+
+def _payment_rate_key():
+    payment_id = (getattr(request, "view_args", {}) or {}).get("payment_public_id") or ""
+    return f"{get_remote_address()}:{payment_id}"
 
 
 def _issue_payment_write_token(
@@ -211,14 +224,15 @@ def create_payment():
     ).strip()[:128]
     turnstile_token = (data.get("turnstile_token") or "").strip()
 
-    if not public_id or not amount:
-        return create_error_response("MISSING_FIELDS", {"fields": ["public_id", "amount"]})
+    if not public_id:
+        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
     try:
-        amount = round(float(amount), 2)
-        if amount <= 0:
-            raise ValueError
-    except:
+        amount = round(float(amount if amount is not None else PAYMENT_AMOUNT), 2)
+    except Exception:
+        amount = PAYMENT_AMOUNT
+
+    if round(float(PAYMENT_AMOUNT), 2) != amount:
         return create_error_response("INVALID_AMOUNT")
 
     try:
@@ -456,7 +470,7 @@ def get_payment_qr(payment_public_id):
 
 
 @payment_bp.route("/payments/<payment_public_id>/upload-url", methods=["POST"])
-@require_valid_payment_session
+@require_valid_payment_session(require_write_token=True)
 @limiter.limit(PAYMENT_VERIFY_UPLOAD_RATE_LIMIT)
 @track_performance
 def get_payment_upload_url(payment_public_id):
@@ -519,7 +533,7 @@ def get_payment_upload_url(payment_public_id):
 
 
 @payment_bp.route("/payments/<payment_public_id>/verify-upload", methods=["POST"])
-@require_valid_payment_session
+@require_valid_payment_session(require_write_token=True)
 @limiter.limit(PAYMENT_VERIFY_UPLOAD_RATE_LIMIT)
 @track_performance
 @require_idempotency_key
@@ -543,6 +557,7 @@ def verify_and_upload_payment(payment_public_id):
         data=data,
         request_id=str(getattr(g, "request_id", None) or ""),
         device_fingerprint=getattr(g, "device_fingerprint", None),
+        device_fingerprint_variants=getattr(g, "device_fingerprint_variants", None),
         idempotency_key_header=request.headers.get("X-Idempotency-Key"),
         user_agent=request.headers.get("User-Agent", "")[:512],
         ip_hash=get_ip_hash(),
@@ -551,7 +566,13 @@ def verify_and_upload_payment(payment_public_id):
 
 
 @payment_bp.route("/payments/<payment_public_id>/status", methods=["GET"])
+@require_valid_payment_session(
+    require_write_token=True,
+    allowed_states=["pending", "processing", "success", "expired", "rejected_fraud", "failed"],
+    skip_expiry_check=True,
+)
 @limiter.limit(PAYMENT_STATUS_RATE_LIMIT)
+@limiter.limit(PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT, key_func=_payment_rate_key)
 @track_performance
 def get_payment_status(payment_public_id):
     """Get current payment status including expiry check."""
@@ -595,18 +616,6 @@ def get_payment_status(payment_public_id):
             "verification_attempts": int(verification_attempts or 0)
         }
 
-        if status in ("pending", "processing") and expires_at:
-            response["payment_token"] = _issue_payment_write_token(
-                db,
-                payment_id=int(payment_id),
-                payment_public_id=payment_public_id,
-                participant_id=int(participant_id),
-                expires_at=expires_at,
-                payment_signature=signature,
-                device_fingerprint=getattr(g, "device_fingerprint", None) or "",
-                session_id=participant_session_id or "",
-            )
-
         if verification_details:
             response["verification_details"] = verification_details
         if detected_app:
@@ -620,11 +629,74 @@ def get_payment_status(payment_public_id):
         return create_error_response("DATABASE_ERROR")
 
 
+@payment_bp.route("/payments/<payment_public_id>/token", methods=["POST"])
+@limiter.limit(PAYMENT_TOKEN_RATE_LIMIT)
+@limiter.limit(PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT, key_func=_payment_rate_key)
+@track_performance
+def mint_payment_token(payment_public_id):
+    """Mint a new payment write token for an active session."""
+    data = request.json or {}
+    public_id = (data.get("public_id") or "").strip()
+    session_id = (data.get("session_id") or "").strip()
+    if not session_id:
+        session_id = (request.cookies.get(PARTICIPANT_SESSION_COOKIE_NAME) or "").strip()
+    missing = []
+    if not public_id:
+        missing.append("public_id")
+    if not session_id:
+        missing.append("session_id")
+    if missing:
+        return create_error_response("MISSING_FIELDS", {"fields": missing})
+    try:
+        db = get_db()
+        row = db.execute(text("""
+            SELECT p.id, p.participant_id, p.status, p.expires_at, p.signature, pr.session_id
+            FROM payments p
+            JOIN participants pr ON pr.id = p.participant_id
+            WHERE p.public_id = :pid
+              AND pr.public_id = :pub
+              AND pr.session_id = :sid
+            LIMIT 1
+        """), {"pid": payment_public_id, "pub": public_id, "sid": session_id}).fetchone()
+        if not row:
+            return create_error_response("AUTH_ACCESS_DENIED")
+
+        payment_id, participant_id, status, expires_at, signature, participant_session_id = row
+        now = datetime.now(timezone.utc)
+        if expires_at and now > expires_at:
+            return create_error_response("PAYMENT_EXPIRED")
+        if status not in ("pending", "processing"):
+            return create_error_response("PAYMENT_INVALID_STATE")
+
+        token = _issue_payment_write_token(
+            db,
+            payment_id=int(payment_id),
+            payment_public_id=str(payment_public_id),
+            participant_id=int(participant_id),
+            expires_at=expires_at,
+            payment_signature=signature,
+            device_fingerprint=getattr(g, "device_fingerprint", None) or "",
+            session_id=participant_session_id or "",
+        )
+        db.commit()
+        return success_response({
+            "payment_id": payment_public_id,
+            "payment_token": token,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+        })
+    except Exception as e:
+        logger.error("mint payment token failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
+        return create_error_response("DATABASE_ERROR")
+
+
 @payment_bp.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])
-@limiter.exempt
+@limiter.limit(INTERNAL_VERIFY_RATE_LIMIT)
 def verify_payment(payment_public_id):
-    """Internal endpoint for payment verification (no rate limit)."""
+    """Internal endpoint for payment verification (auth + rate limited)."""
     logger.info("internal_verify request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
+    internal_token = (request.headers.get("X-Internal-Token") or "").strip()
+    if not INTERNAL_VERIFY_TOKEN or internal_token != INTERNAL_VERIFY_TOKEN:
+        return create_error_response("AUTH_ACCESS_DENIED")
     try:
         db = get_db()
     except Exception as e:

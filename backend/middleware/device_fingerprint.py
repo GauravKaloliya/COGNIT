@@ -4,19 +4,25 @@ Comprehensive device tracking and risk scoring for fraud prevention
 """
 
 import hashlib
+import logging
 import json
 import time
 from datetime import datetime, timezone
 from flask import request, g
 from sqlalchemy import text
 
+from app.config import DEVICE_FINGERPRINT_SALTS
+
 _FINGERPRINT_HISTORY_CACHE = {}
 _FINGERPRINT_HISTORY_CACHE_TTL_SECONDS = 300
+logger = logging.getLogger(__name__)
 
 
 def _should_run_fingerprinting() -> bool:
     path = (request.path or "").lower()
     # Restrict expensive fingerprint DB work to fraud-sensitive write flows.
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
     return path.startswith("/payments/") or path == "/submit"
 
 def _resolve_participant_id(db):
@@ -90,6 +96,13 @@ def collect_device_characteristics():
     
     return characteristics
 
+def _get_fingerprint_salts():
+    raw = str(DEVICE_FINGERPRINT_SALTS or "").strip()
+    if not raw:
+        return ["cognit_fingerprint_salt_2024"]
+    return [s.strip() for s in raw.split(",") if s.strip()] or ["cognit_fingerprint_salt_2024"]
+
+
 def generate_device_fingerprint(characteristics):
     """Generate a stable device fingerprint hash"""
     # Create a normalized string of key characteristics
@@ -101,11 +114,27 @@ def generate_device_fingerprint(characteristics):
         'lang': characteristics.get('accept_language', '')
     }, sort_keys=True)
     
-    # Add salt for security
-    salt = "cognit_fingerprint_salt_2024"
-    salted_data = f"{fingerprint_string}{salt}"
-    
+    # Add salt for security (first salt is primary).
+    salts = _get_fingerprint_salts()
+    primary = salts[0]
+    salted_data = f"{fingerprint_string}{primary}"
     return hashlib.sha256(salted_data.encode()).hexdigest()
+
+
+def generate_device_fingerprint_variants(characteristics):
+    """Generate hashes for current and previous salts to allow rotation windows."""
+    fingerprint_string = json.dumps({
+        'ua': characteristics.get('user_agent', ''),
+        'platform': characteristics.get('platform', ''),
+        'browser': characteristics.get('browser', ''),
+        'os': characteristics.get('os', ''),
+        'lang': characteristics.get('accept_language', '')
+    }, sort_keys=True)
+    variants = []
+    for salt in _get_fingerprint_salts():
+        salted_data = f"{fingerprint_string}{salt}"
+        variants.append(hashlib.sha256(salted_data.encode()).hexdigest())
+    return list(dict.fromkeys([v for v in variants if v]))
 
 def calculate_risk_score(fingerprint_data, db, participant_id=None):
     """Calculate device risk score based on fingerprint characteristics"""
@@ -174,6 +203,7 @@ def get_or_create_device_fingerprint(db, participant_id=None):
     """Get existing or create new device fingerprint"""
     characteristics = collect_device_characteristics()
     fingerprint_hash = generate_device_fingerprint(characteristics)
+    fingerprint_variants = generate_device_fingerprint_variants(characteristics)
     risk_score, risk_signals = calculate_risk_score(characteristics, db, participant_id)
     
     # Store or update fingerprint
@@ -199,7 +229,7 @@ def get_or_create_device_fingerprint(db, participant_id=None):
             "now": datetime.now(timezone.utc)
         })
     
-    return fingerprint_hash, risk_score, characteristics
+    return fingerprint_hash, fingerprint_variants, risk_score, characteristics
 
 def device_fingerprint_middleware():
     """Middleware to extract and store device fingerprint for each request"""
@@ -218,18 +248,19 @@ def device_fingerprint_middleware():
             participant_id = _resolve_participant_id(db)
             
             # Get or create device fingerprint
-            fingerprint_hash, risk_score, characteristics = get_or_create_device_fingerprint(db, participant_id)
+            fingerprint_hash, fingerprint_variants, risk_score, characteristics = get_or_create_device_fingerprint(db, participant_id)
             
             # Store in Flask g for access in route handlers
             g.device_fingerprint = fingerprint_hash
+            g.device_fingerprint_variants = fingerprint_variants
             g.device_risk_score = risk_score
             g.device_characteristics = characteristics
             g.device_fingerprint_written = bool(participant_id)
             
     except Exception as e:
         # Don't fail the request if fingerprinting fails
-        # Log the error for debugging
-        print(f"Device fingerprinting error: {e}")
+        logger.warning("device_fingerprint_error %s", e)
         g.device_fingerprint = None
+        g.device_fingerprint_variants = []
         g.device_risk_score = 0
         g.device_characteristics = {}

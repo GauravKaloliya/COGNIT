@@ -1,5 +1,6 @@
 import React from 'react';
 import { getErrorMessage } from '../utils/errorRegistry.js';
+import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
 
@@ -7,10 +8,22 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
   const [reloading, setReloading] = React.useState(false);
 
   const redirectToConsent = () => {
-    sessionStorage.setItem("stage", JSON.stringify("consent"));
-    sessionStorage.setItem("paymentSubStage", JSON.stringify("content"));
-    sessionStorage.setItem("consentGiven", JSON.stringify(false));
-    sessionStorage.setItem("paymentVerified", JSON.stringify(false));
+    const write = (key, value) => {
+      const now = Date.now();
+      sessionStorage.setItem(
+        key,
+        JSON.stringify({
+          __schema_version: runtimeConfig.uiStateSchemaVersion,
+          saved_at: now,
+          expires_at: now + runtimeConfig.uiStateTtlMs,
+          data: value
+        })
+      );
+    };
+    write("stage", "consent");
+    write("paymentSubStage", "content");
+    write("consentGiven", false);
+    write("paymentVerified", false);
     window.location.assign("/");
   };
 

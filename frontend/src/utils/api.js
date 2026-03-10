@@ -27,6 +27,7 @@ export async function apiFetch(endpoint, options = {}) {
   try {
     const response = await fetch(url, {
       ...options,
+      credentials: options.credentials || "include",
       headers: baseHeaders,
       body: requestBody,
     });
@@ -145,9 +146,6 @@ export const api = {
  * API endpoints for COGNIT
  */
 export const endpoints = {
-  // Health and info
-  health: (options = {}) => api.get('/health', options),
-  
   // Participant management
   createParticipant: async (data, options = {}) => {
     const turnstileToken = await getTurnstileToken("register_submit");
@@ -186,18 +184,27 @@ export const endpoints = {
   },
   
   // Payment
-  createPayment: async (publicId, amount, options = {}) => {
+  createPayment: async (publicId, options = {}) => {
     const turnstileToken = await getTurnstileToken("payment_create");
     return api.post('/payments/create', {
       public_id: publicId,
-      amount,
       turnstile_token: turnstileToken || undefined,
     }, options);
   },
   getPaymentQr: (paymentId, options = {}) => api.get(`/payments/${paymentId}/qr`, options),
-  getPaymentStatus: (paymentId, options = {}) => api.get(`/payments/${paymentId}/status`, options),
+  getPaymentStatus: (paymentId, options = {}, paymentToken = null) => {
+    const headers = { ...(options.headers || {}) };
+    if (paymentToken && !headers.Authorization) {
+      headers.Authorization = `Bearer ${paymentToken}`;
+    }
+    return api.get(`/payments/${paymentId}/status`, { ...options, headers });
+  },
+  mintPaymentToken: (paymentId, publicId, sessionId, options = {}) => {
+    const payload = { public_id: publicId };
+    if (sessionId) payload.session_id = sessionId;
+    return api.post(`/payments/${paymentId}/token`, payload, options);
+  },
   getParticipantPaymentStatus: (publicId, options = {}) => api.get(`/participants/${publicId}/payment-status`, options),
-  getPaymentUploadUrl: (paymentId, payload, options = {}) => api.post(`/payments/${paymentId}/upload-url`, payload, options),
   verifyUpload: async (paymentId, payloadOrImageBase64, fileExtension, sha256, extra = {}, options = {}) => {
     const turnstileToken = await getTurnstileToken("payment_verify");
     if (payloadOrImageBase64 && typeof payloadOrImageBase64 === "object" && !Array.isArray(payloadOrImageBase64)) {

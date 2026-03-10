@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { getApiUrl } from "../utils/apiBase";
-import { endpoints } from "../utils/api";
+import { apiFetch, endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { runtimeConfig } from "../config/runtime";
 
@@ -9,6 +8,7 @@ export function useSystemHealth({
   stage,
   paymentVerified,
   pauseSurveyPaymentGuard = false,
+  isActiveTabOwner = true,
   setPaymentVerified,
   setStage,
   setPaymentSubStage,
@@ -23,6 +23,7 @@ export function useSystemHealth({
   const probeFailCountRef = useRef(0);
   const healthAbortRef = useRef(null);
   const paymentStatusAbortRef = useRef(null);
+  const healthBackoffRef = useRef(1);
 
   const markApiReachable = useCallback(() => {
     probeFailCountRef.current = 0;
@@ -37,6 +38,9 @@ export function useSystemHealth({
   }, []);
 
   const probeApiReachability = useCallback(async () => {
+    if (!isActiveTabOwner) {
+      return false;
+    }
     if (!navigator.onLine) {
       setBrowserOnline(false);
       setApiReachable(false);
@@ -46,7 +50,7 @@ export function useSystemHealth({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), runtimeConfig.networkProbeTimeoutMs);
       try {
-        await fetch(getApiUrl("/health"), {
+        await apiFetch("/health", {
           method: "GET",
           cache: "no-store",
           signal: controller.signal,
@@ -60,7 +64,7 @@ export function useSystemHealth({
       markProbeFailure();
       return false;
     }
-  }, [markApiReachable, markProbeFailure]);
+  }, [markApiReachable, markProbeFailure, isActiveTabOwner]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -80,14 +84,23 @@ export function useSystemHealth({
   }, [probeApiReachability]);
 
   useEffect(() => {
+    if (!isActiveTabOwner) return undefined;
     if (!browserOnline || apiReachable) return undefined;
     probeApiReachability();
     const interval = setInterval(probeApiReachability, runtimeConfig.networkProbeIntervalMs);
     return () => clearInterval(interval);
-  }, [browserOnline, apiReachable, probeApiReachability]);
+  }, [browserOnline, apiReachable, probeApiReachability, isActiveTabOwner]);
 
   useEffect(() => {
+    if (!isActiveTabOwner) return undefined;
     let cancelled = false;
+    let timeoutId = null;
+
+    const scheduleNext = (baseMs) => {
+      const jitter = Math.floor(Math.random() * 1000);
+      const delay = Math.max(2000, baseMs + jitter);
+      timeoutId = setTimeout(checkHealth, delay);
+    };
 
     const checkHealth = async () => {
       setSystemChecking(true);
@@ -97,47 +110,27 @@ export function useSystemHealth({
         }
         const controller = new AbortController();
         healthAbortRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), runtimeConfig.healthCheckTimeoutMs);
-        let response;
+        const timeoutGuard = setTimeout(() => controller.abort(), runtimeConfig.healthCheckTimeoutMs);
         try {
-          response = await fetch(getApiUrl("/health"), { signal: controller.signal });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-        if (cancelled) return;
-        markApiReachable();
+          const data = await apiFetch("/health", { signal: controller.signal });
+          if (cancelled) return;
+          markApiReachable();
 
-        if (response.ok) {
-          const payload = await response.json();
-          const data = payload?.success === true ? (payload.data || {}) : (payload || {});
-          if (data.status === "healthy" && data.database === "connected") {
+          if (data?.status === "healthy" && data?.database === "connected") {
             setSystemReady(true);
             setSystemError(null);
+            healthBackoffRef.current = 1;
           } else {
             setSystemReady(false);
             setSystemError(
-              data.error
+              data?.error
                 ? getErrorMessage("SYS_002_0020", "en", { error: data.error })
                 : getErrorMessage("SYS_002_0021")
             );
+            healthBackoffRef.current = Math.min(4, healthBackoffRef.current * 2);
           }
-        } else {
-          let data = null;
-          try {
-            data = await response.json();
-          } catch {
-            data = null;
-          }
-          const serverError =
-            typeof data?.error === "string"
-              ? data.error
-              : data?.error?.message || data?.message || null;
-          setSystemReady(false);
-          setSystemError(
-            serverError
-              ? getErrorMessage("SYS_002_0020", "en", { error: serverError })
-              : getErrorMessage("SYS_002_0019", "en", { status: response.status })
-          );
+        } finally {
+          clearTimeout(timeoutGuard);
         }
       } catch (err) {
         if (err?.name === "AbortError") {
@@ -147,23 +140,26 @@ export function useSystemHealth({
         markProbeFailure();
         setSystemReady(false);
         setSystemError(err.name === "AbortError" ? getErrorMessage("SYS_002_0008") : getErrorMessage("SYS_002_0001"));
+        healthBackoffRef.current = Math.min(4, healthBackoffRef.current * 2);
       } finally {
         healthAbortRef.current = null;
         if (!cancelled) setSystemChecking(false);
+        if (!cancelled) {
+          scheduleNext(runtimeConfig.healthCheckIntervalMs * healthBackoffRef.current);
+        }
       }
     };
 
     checkHealth();
-    const interval = setInterval(checkHealth, runtimeConfig.healthCheckIntervalMs);
     return () => {
       cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
       if (healthAbortRef.current) {
         healthAbortRef.current.abort();
         healthAbortRef.current = null;
       }
-      clearInterval(interval);
     };
-  }, [retryTrigger, markApiReachable, markProbeFailure]);
+  }, [retryTrigger, markApiReachable, markProbeFailure, isActiveTabOwner]);
 
   useEffect(() => {
     const verifyPaymentForSurvey = async () => {

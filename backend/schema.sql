@@ -645,6 +645,17 @@ CREATE TABLE IF NOT EXISTS payment_files (
     CONSTRAINT chk_payment_files_key_prefix CHECK (object_key LIKE 'payments/%')
 );
 
+CREATE TABLE IF NOT EXISTS image_reservations (
+    image_id      VARCHAR(128) PRIMARY KEY,
+    participant_id BIGINT REFERENCES participants(id) ON DELETE SET NULL,
+    reserved_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    released_at   TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_reservations_expires ON image_reservations (expires_at);
+CREATE INDEX IF NOT EXISTS idx_image_reservations_released ON image_reservations (released_at);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_object_key_unique ON payment_files (object_key);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_file_per_payment            ON payment_files (payment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_sha256_unique     ON payment_files (sha256);

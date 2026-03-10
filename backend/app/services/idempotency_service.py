@@ -2,7 +2,10 @@ import hashlib
 import json
 from typing import Any, Dict, Optional, Tuple
 
+import logging
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 
 def build_request_hash(payload: Dict[str, Any]) -> str:
@@ -43,6 +46,12 @@ def load_idempotent_response(
 
     existing_hash, status_code, response_body = row
     if existing_hash and existing_hash != request_hash:
+        logger.warning(
+            "idempotency_conflict endpoint=%s key=%s participant=%s",
+            endpoint,
+            (idempotency_key or "")[:16],
+            participant_public_id,
+        )
         return {
             "error": {
                 "code": "ERR_IDEMPOTENCY_CONFLICT",

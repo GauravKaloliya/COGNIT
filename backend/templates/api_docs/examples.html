@@ -32,7 +32,6 @@
   -H "X-Idempotency-Key: 8ecfef66-1ed4-4be0-a3a7-a5631cb1a8ab" \
   -d '{
     "public_id": "8dff4977-a180-4ef5-9a4c-47b98f5e47dd",
-    "amount": 1,
     "turnstile_token": "token_from_frontend"
   }'</pre></div>
     </article>
@@ -47,6 +46,16 @@
     "file_extension": "png",
     "mime_type": "image/png",
     "file_size": 302188
+  }'</pre></div>
+    </article>
+
+    <article class="example-card">
+      <h3>Mint Payment Token (Session Restore)</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/{payment_public_id}/token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "public_id": "8dff4977-a180-4ef5-9a4c-47b98f5e47dd",
+    "session_id": "sess_abc123"
   }'</pre></div>
     </article>
 
