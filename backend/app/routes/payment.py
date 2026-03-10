@@ -31,6 +31,7 @@ from app.config import (
     INTERNAL_VERIFY_TOKEN,
     INTERNAL_VERIFY_RATE_LIMIT,
     PARTICIPANT_SESSION_COOKIE_NAME,
+    PARTICIPANT_PUBLIC_COOKIE_NAME,
 )
 from app.extensions import limiter, s3
 from app.database import get_db, engine
@@ -640,6 +641,8 @@ def mint_payment_token(payment_public_id):
     session_id = (data.get("session_id") or "").strip()
     if not session_id:
         session_id = (request.cookies.get(PARTICIPANT_SESSION_COOKIE_NAME) or "").strip()
+    if not public_id:
+        public_id = (request.cookies.get(PARTICIPANT_PUBLIC_COOKIE_NAME) or "").strip()
     missing = []
     if not public_id:
         missing.append("public_id")

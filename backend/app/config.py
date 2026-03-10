@@ -166,6 +166,7 @@ WEBSITE_URL = _required_env("WEBSITE_URL")
 SESSION_COOKIE_SECURE = _bool_env("SESSION_COOKIE_SECURE", False)
 SESSION_COOKIE_SAMESITE = _str_env("SESSION_COOKIE_SAMESITE", "Lax", choices={"Lax", "None", "Strict"})
 PARTICIPANT_SESSION_COOKIE_NAME = _str_env("PARTICIPANT_SESSION_COOKIE_NAME", "cognit_session")
+PARTICIPANT_PUBLIC_COOKIE_NAME = _str_env("PARTICIPANT_PUBLIC_COOKIE_NAME", "cognit_public_id")
 
 
 # ────────────────────────────────────────────────
