@@ -24,6 +24,7 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
     write("stage", "consent");
     write("paymentSubStage", "content");
     write("consentGiven", false);
+    write("userDetailsSubmitted", false);
     write("paymentVerified", false);
     window.location.assign("/");
   };

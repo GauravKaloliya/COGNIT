@@ -87,6 +87,7 @@ const isDemographicsComplete = (demographics) => {
 const deriveGuardedStage = ({
   consentGiven,
   hasParticipant,
+  userDetailsSubmitted,
   demographicsComplete,
   paymentVerified,
   surveyCompleted,
@@ -95,7 +96,7 @@ const deriveGuardedStage = ({
   currentStage,
 }) => {
   if (!consentGiven) return "consent";
-  if (!hasParticipant || !demographicsComplete) return "user-details";
+  if (!hasParticipant || !userDetailsSubmitted || !demographicsComplete) return "user-details";
   if (!paymentVerified) return "payment";
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return "survey";
   if (currentStage === "finished" && surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) {
@@ -180,6 +181,7 @@ export default function App() {
   const [publicId, setPublicId] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
+  const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => getStoredValue("userDetailsSubmitted", false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue("paymentVerified", false));
   const [demographics, setDemographics] = useState(
     getStoredValue("demographics", {
@@ -403,6 +405,7 @@ export default function App() {
     };
   }, [publicId]);
   useEffect(() => saveStoredValue("consentGiven", consentGiven), [consentGiven]);
+  useEffect(() => saveStoredValue("userDetailsSubmitted", userDetailsSubmitted), [userDetailsSubmitted]);
   useEffect(() => saveStoredValue("paymentVerified", paymentVerified), [paymentVerified]);
   useEffect(() => saveStoredValue("demographics", demographics), [demographics]);
   useEffect(() => saveStoredValue("stage", stage), [stage]);
@@ -424,6 +427,7 @@ export default function App() {
     const guardedStage = deriveGuardedStage({
       consentGiven,
       hasParticipant,
+      userDetailsSubmitted,
       demographicsComplete,
       paymentVerified,
       surveyCompleted,
@@ -444,6 +448,7 @@ export default function App() {
     consentGiven,
     publicId,
     paymentVerified,
+    userDetailsSubmitted,
     surveyCompleted,
     surveyFeedbackReady,
     lastSubmissionSucceeded,
@@ -557,6 +562,7 @@ export default function App() {
       }, { signal: controller.signal });
       if (participant?.public_id) setPublicId(participant.public_id);
       if (participant?.session_id) setSessionId(participant.session_id);
+      setUserDetailsSubmitted(true);
       return participant;
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
