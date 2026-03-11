@@ -39,11 +39,12 @@ const ensureTurnstileScript = () => {
   return scriptPromise;
 };
 
+const TURNSTILE_TIMEOUT_MS = 8000;
+
 export const getTurnstileToken = async (action = "submit") => {
   if (!runtimeConfig.turnstileEnabled) return "";
-  if (isLocalhost()) {
-    // Local dev runs on http://localhost by default and often fails Turnstile execution.
-    // Keep UX unblocked for local development.
+  if (import.meta.env.DEV || isLocalhost()) {
+    // Dev (including Codespaces) should not block on Turnstile.
     return "";
   }
   const siteKey = (runtimeConfig.turnstileSiteKey || "").trim();
@@ -51,7 +52,12 @@ export const getTurnstileToken = async (action = "submit") => {
     throw new Error("Turnstile site key is missing");
   }
   try {
-    await ensureTurnstileScript();
+    await Promise.race([
+      ensureTurnstileScript(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Turnstile load timed out")), TURNSTILE_TIMEOUT_MS)
+      ),
+    ]);
     if (!window.turnstile) {
       throw new Error("Turnstile not initialized");
     }
@@ -65,7 +71,8 @@ export const getTurnstileToken = async (action = "submit") => {
     container.style.opacity = "0";
     document.body.appendChild(container);
 
-    return await new Promise((resolve, reject) => {
+    return await Promise.race([
+      new Promise((resolve, reject) => {
       let widgetId = null;
       const cleanup = () => {
         try {
@@ -106,7 +113,11 @@ export const getTurnstileToken = async (action = "submit") => {
         cleanup();
         reject(error instanceof Error ? error : new Error("Turnstile render failed"));
       }
-    });
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Turnstile execution timed out")), TURNSTILE_TIMEOUT_MS)
+      ),
+    ]);
   } catch (error) {
     // Avoid hard-blocking UX on runtime Turnstile failures.
     // Backend remains source of truth and can enforce challenge in non-local environments.

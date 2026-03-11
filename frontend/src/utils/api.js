@@ -69,30 +69,34 @@ export async function apiFetch(endpoint, options = {}) {
     }
     return data;
   } catch (error) {
+    const wrapError = (base, fields) => {
+      const wrapped = new Error(fields.message || base?.message || "Request failed");
+      Object.assign(wrapped, fields);
+      return wrapped;
+    };
+
     if (error?.name === "AbortError") {
-      error.code = "REQ_ABORTED";
-      error.category = "SYS";
-      error.severity = "info";
-      error.action = "ignore";
-      error.message = "Request cancelled";
-      if (!error.requestId) {
-        error.requestId = requestId;
-      }
-      throw error;
+      throw wrapError(error, {
+        code: "REQ_ABORTED",
+        category: "SYS",
+        severity: "info",
+        action: "ignore",
+        message: "Request cancelled",
+        requestId: error?.requestId || requestId,
+      });
     }
 
     // Network errors or other fetch failures
-    if (!error.code) {
-      error.code = 'SYS_002_0007';
-      error.category = 'SYS';
-      error.severity = 'error';
-      error.action = 'retry';
-      error.message = getErrorMessage('SYS_002_0007');
-    }
-    if (!error.requestId) {
-      error.requestId = requestId;
-    }
-    throw error;
+    const code = error?.code || "SYS_002_0007";
+    const message = error?.message || getErrorMessage("SYS_002_0007");
+    throw wrapError(error, {
+      code,
+      category: error?.category || "SYS",
+      severity: error?.severity || "error",
+      action: error?.action || "retry",
+      message,
+      requestId: error?.requestId || requestId,
+    });
   }
 }
 
