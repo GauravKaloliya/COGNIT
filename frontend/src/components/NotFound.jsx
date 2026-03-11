@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import PanelState from './PanelState.jsx';
+import ThemeToggleIcon from './ThemeToggleIcon.jsx';
 
 export default function NotFound({ darkMode = false, onToggleDarkMode }) {
   const navigate = useNavigate();
@@ -17,7 +18,7 @@ export default function NotFound({ darkMode = false, onToggleDarkMode }) {
             onClick={onToggleDarkMode}
             title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
           >
-            {darkMode ? "☀️" : "🌙"}
+            <ThemeToggleIcon darkMode={darkMode} />
           </button>
         </div>
       </header>
