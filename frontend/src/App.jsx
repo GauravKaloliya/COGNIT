@@ -8,6 +8,7 @@ import SurveyFeedPage from "./pages/SurveyFeedPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import PageSkeleton from "./components/PageSkeleton.jsx";
+import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
 import { endpoints } from "./utils/api.js";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { uiText } from "./utils/uiText.js";
@@ -693,7 +694,7 @@ export default function App() {
                 onClick={() => setDarkMode((prev) => !prev)}
                 title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
               >
-                {darkMode ? "☀️" : "🌙"}
+                <ThemeToggleIcon darkMode={darkMode} />
               </button>
             </div>
           </header>
