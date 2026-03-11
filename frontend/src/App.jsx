@@ -183,6 +183,7 @@ export default function App() {
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue("consentGiven", false));
   const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => getStoredValue("userDetailsSubmitted", false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue("paymentVerified", false));
+  const [sessionHydrated, setSessionHydrated] = useState(false);
   const [demographics, setDemographics] = useState(
     getStoredValue("demographics", {
       username: "",
@@ -397,6 +398,8 @@ export default function App() {
         if (session?.session_id) setSessionId(session.session_id);
       } catch {
         // Ignore; user can still continue fresh.
+      } finally {
+        if (!cancelled) setSessionHydrated(true);
       }
     };
     hydrateFromCookies();
@@ -422,6 +425,7 @@ export default function App() {
 
   // Client-side guard to prevent loading stages without prerequisite completion.
   useEffect(() => {
+    if (!sessionHydrated) return;
     const hasParticipant = Boolean(publicId);
     const demographicsComplete = isDemographicsComplete(demographics);
     const guardedStage = deriveGuardedStage({
@@ -457,6 +461,7 @@ export default function App() {
     setStage,
     setPaymentSubStage,
     setSurveyFeedbackReady,
+    sessionHydrated,
   ]);
 
   // Server-backed guard for direct navigation to late stages.

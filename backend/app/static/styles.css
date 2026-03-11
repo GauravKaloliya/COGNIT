@@ -138,8 +138,7 @@ body.docs-root::after {
   border-bottom: 1px solid var(--border-light);
   box-shadow: 0 10px 26px rgba(20, 33, 61, 0.08);
   width: 100%;
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 100;
   border-radius: 0;
   animation: liftIn 420ms ease both;
@@ -440,8 +439,7 @@ body.dark .status-dot.offline {
   gap: 12px;
   margin: -6px -6px 18px;
   padding: 10px 6px 14px;
-  position: sticky;
-  top: 6px;
+  position: relative;
   z-index: 20;
   background: linear-gradient(
     180deg,
@@ -606,8 +604,7 @@ body.dark .code-block {
 
 .code-block::before {
   content: "";
-  position: sticky;
-  top: 0;
+  position: relative;
   left: 0;
   display: block;
   height: 1px;

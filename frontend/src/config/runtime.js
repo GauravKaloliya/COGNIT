@@ -30,6 +30,7 @@ export const runtimeConfig = {
   turnstileSiteKey: import.meta.env.VITE_TURNSTILE_SITE_KEY || "",
   paymentStateSchemaVersion: toInt(import.meta.env.VITE_PAYMENT_STATE_SCHEMA_VERSION, 1),
   paymentStateTtlMs: toInt(import.meta.env.VITE_PAYMENT_STATE_TTL_MS, 15 * 60 * 1000),
+  paymentCreateTimeoutMs: toInt(import.meta.env.VITE_PAYMENT_CREATE_TIMEOUT_MS, 15000),
   paymentTimerDurationMs: toInt(import.meta.env.VITE_PAYMENT_TIMER_DURATION_MS, 5 * 60 * 1000),
   paymentTimerTickMs: toInt(import.meta.env.VITE_PAYMENT_TIMER_TICK_MS, 1000),
   maxUploadMb: toFloat(import.meta.env.VITE_MAX_UPLOAD_MB, 8),
