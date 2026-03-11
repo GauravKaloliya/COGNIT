@@ -60,6 +60,7 @@ export default function PaymentLinkPage({
   const isMountedRef = useRef(true);
   const statusAbortRef = useRef(null);
   const createAbortRef = useRef(null);
+  const createOnceRef = useRef(false);
   const verifyAbortRef = useRef(null);
   const qrAbortRef = useRef(null);
 
@@ -469,7 +470,15 @@ export default function PaymentLinkPage({
       return;
     }
 
+    const timeoutMs = Math.max(0, runtimeConfig.paymentCreateTimeoutMs || 0);
+    let timedOut = false;
+    let timeoutId = null;
+
     setIsLoading(true);
+    if (typeof window !== "undefined") {
+      // Debugging: surface latency source on localhost/Codespaces.
+      console.info("[payment] createPayment start", { publicId, sessionId });
+    }
     setError(null);
     setRetryInSeconds(0);
 
@@ -477,7 +486,19 @@ export default function PaymentLinkPage({
       if (createAbortRef.current) createAbortRef.current.abort();
       const controller = new AbortController();
       createAbortRef.current = controller;
+      if (timeoutMs > 0) {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
+      }
       const data = await endpoints.createPayment(publicId, { signal: controller.signal });
+      if (typeof window !== "undefined") {
+        console.info("[payment] createPayment success", {
+          payment_id: data?.payment_id,
+          expires_at: data?.expires_at,
+        });
+      }
       if (!isOperationCurrent(operationId)) return;
       sessionStorage.setItem("payment_id", data.payment_id);
 
@@ -501,17 +522,25 @@ export default function PaymentLinkPage({
         failureReasons: [],
         error: null
       });
+      if (typeof window !== "undefined") {
+        console.info("[payment] createPayment state applied");
+      }
       if (!isMobile && !data?.qr_base64) {
         fetchPaymentQr(data.payment_id, operationId);
       }
     } catch (err) {
-      if (err?.code === "REQ_ABORTED") {
+      if (err?.code === "REQ_ABORTED" && !timedOut) {
         return;
       }
+      if (typeof window !== "undefined") {
+        console.error("[payment] createPayment error", err);
+      }
       if (!isOperationCurrent(operationId)) return;
-      const errorMessage = err.code
-        ? (err.message || getErrorMessage(err.code))
-        : err.message || getErrorMessage('SYS_002_0009');
+      const errorMessage = timedOut
+        ? "Payment creation timed out. Please retry."
+        : err.code
+          ? (err.message || getErrorMessage(err.code))
+          : err.message || getErrorMessage('SYS_002_0009');
       showRetryHintError(errorMessage);
       sessionStorage.removeItem("payment_id");
       savePaymentViewState({
@@ -523,6 +552,9 @@ export default function PaymentLinkPage({
       });
     } finally {
       createAbortRef.current = null;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       if (isOperationCurrent(operationId)) {
         setIsLoading(false);
       }
@@ -569,6 +601,8 @@ export default function PaymentLinkPage({
     let cancelled = false;
 
     const initialize = async () => {
+      if (createOnceRef.current) return;
+      createOnceRef.current = true;
       const restored = loadPaymentViewState();
       const restoredPaymentData = restored?.paymentData;
       const restoredStatus = restored?.paymentStatus || "pending";

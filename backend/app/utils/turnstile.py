@@ -32,7 +32,23 @@ def _is_loopback_ip(value: Optional[str]) -> bool:
         return False
 
 
-def verify_turnstile_token(token: str, remote_ip: Optional[str] = None) -> Tuple[bool, dict]:
+def _is_local_host(host: Optional[str]) -> bool:
+    if not host:
+        return False
+    raw = str(host).strip().lower()
+    if not raw:
+        return False
+    # Strip port if present.
+    if ":" in raw:
+        raw = raw.split(":", 1)[0]
+    return raw in {"localhost", "127.0.0.1", "::1"}
+
+
+def verify_turnstile_token(
+    token: str,
+    remote_ip: Optional[str] = None,
+    host: Optional[str] = None,
+) -> Tuple[bool, dict]:
     """
     Verify a Turnstile token against Cloudflare siteverify API.
     Returns (is_valid, response_json).
@@ -40,7 +56,7 @@ def verify_turnstile_token(token: str, remote_ip: Optional[str] = None) -> Tuple
     if not TURNSTILE_ENABLED:
         return True, {"success": True, "skipped": True}
     # Bypass only when explicitly allowed for local development.
-    if TURNSTILE_BYPASS_LOCAL and _is_loopback_ip(remote_ip):
+    if TURNSTILE_BYPASS_LOCAL and (_is_loopback_ip(remote_ip) or _is_local_host(host)):
         return True, {"success": True, "skipped": True, "reason": "localhost"}
     if not TURNSTILE_SECRET_KEY:
         return False, {"success": False, "error-codes": ["missing-secret"]}

@@ -95,7 +95,7 @@ def create_participant():
 
     try:
         db = get_db()
-        ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr)
+        ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
         if not ok:
             return create_error_response("BOT_CHALLENGE_FAILED")
 

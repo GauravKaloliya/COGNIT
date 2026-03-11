@@ -202,7 +202,7 @@ def submit():
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
-    turnstile_ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr)
+    turnstile_ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
     if not turnstile_ok:
         return create_error_response("BOT_CHALLENGE_FAILED")
 

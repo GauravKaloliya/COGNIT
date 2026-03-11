@@ -246,7 +246,7 @@ def create_payment():
     if not participant_id:
         return create_error_response("PARTICIPANT_NOT_FOUND")
 
-    ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr)
+    ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
     if not ok:
         return create_error_response("BOT_CHALLENGE_FAILED")
 
@@ -548,7 +548,7 @@ def verify_and_upload_payment(payment_public_id):
         logger.error("verify_and_upload_payment db connection failed request_id=%s error=%s", getattr(g, "request_id", None), e)
         return create_error_response("INTERNAL_ERROR", custom_message="Payment verification failed. Please try again.")
 
-    ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr)
+    ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
     if not ok:
         return create_error_response("BOT_CHALLENGE_FAILED")
 

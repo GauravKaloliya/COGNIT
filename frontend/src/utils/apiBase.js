@@ -30,6 +30,10 @@ const isLocalHostName = (hostname) =>
   hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 
 const resolveConfiguredBase = () => {
+  // In dev, always use the Vite proxy to avoid localhost/host mismatch.
+  if (import.meta.env.DEV) {
+    return "/api";
+  }
   const rawBase = import.meta.env.VITE_API_BASE || resolveDefaultApiBase();
   const normalized = normalizeApiBase(rawBase);
   if (!normalized || typeof window === "undefined") {
@@ -66,11 +70,6 @@ const resolveConfiguredBase = () => {
 const resolveDefaultApiBase = () => {
   if (typeof window === "undefined") {
     return "";
-  }
-  // In dev, route API calls through Vite proxy to avoid host/CORS mismatch.
-  // Keep production behavior unchanged (same-origin when not in dev).
-  if (import.meta.env.DEV) {
-    return "/api";
   }
   return "";
 };
