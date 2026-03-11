@@ -3,6 +3,7 @@ import { getErrorMessage } from '../utils/errorRegistry.js';
 import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
+import ThemeToggleIcon from './ThemeToggleIcon.jsx';
 
 export default function ErrorPage({ error, resetError, darkMode = false, onToggleDarkMode }) {
   const [reloading, setReloading] = React.useState(false);
@@ -63,7 +64,7 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
             onClick={onToggleDarkMode}
             title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
           >
-            {darkMode ? "☀️" : "🌙"}
+            <ThemeToggleIcon darkMode={darkMode} />
           </button>
         </div>
       </header>

@@ -4,6 +4,7 @@ import { uiText } from '../utils/uiText.js';
 import { runtimeConfig } from '../config/runtime';
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
+import ThemeToggleIcon from './ThemeToggleIcon.jsx';
 
 export default function ServiceUnavailablePage({ error, darkMode = false, onToggleDarkMode, onRetry, isRetrying = false }) {
   const [retryInSeconds, setRetryInSeconds] = React.useState(runtimeConfig.serviceRetrySeconds);
@@ -31,7 +32,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
               onClick={onToggleDarkMode}
               title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {darkMode ? "☀️" : "🌙"}
+              <ThemeToggleIcon darkMode={darkMode} />
             </button>
           </div>
         </header>
@@ -69,7 +70,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
             onClick={onToggleDarkMode}
             title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
           >
-            {darkMode ? "☀️" : "🌙"}
+            <ThemeToggleIcon darkMode={darkMode} />
           </button>
         </div>
       </header>

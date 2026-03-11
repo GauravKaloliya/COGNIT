@@ -1419,12 +1419,23 @@ textarea {
   width: auto;
 }
 
+.dark-mode-toggle svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
 @media (min-width: 480px) {
   .dark-mode-toggle {
     font-size: 18px;
     min-width: 44px;
     min-height: 44px;
     padding: var(--space-2) var(--space-3) !important;
+  }
+
+  .dark-mode-toggle svg {
+    width: 18px;
+    height: 18px;
   }
 }
 
