@@ -35,8 +35,6 @@ export default function UserDetailsPage({
     handleFieldBlur,
     updateField,
     draftRestored,
-    lastSavedAt,
-    isSaving,
     saveError,
     retryCountdown,
   } = useUserDetailsPage({
