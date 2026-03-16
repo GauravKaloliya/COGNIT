@@ -142,7 +142,9 @@ export default function ConsentPage({
           <p className="consent-note">
             {CONSENT_CONTENT.checkboxNote}
           </p>
-          <span className="helper-text warning">{uiText("consent.requiredHint")}</span>
+          {!consentChecked && (
+            <span className="helper-text warning">{uiText("consent.requiredHint")}</span>
+          )}
         </label>
       </div>
       

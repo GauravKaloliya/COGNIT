@@ -267,30 +267,23 @@ export default function App() {
             >
               {darkMode ? "☀️" : "🌙"}
             </DSButton>
-            <div className={`status-dot ${online ? "online" : "offline"}`}>{online ? uiText("status.online") : uiText("status.offline")}</div>
+            <div className="header-status">
+              <div className={`status-dot ${online ? "online" : "offline"}`}>
+                {online ? uiText("status.online") : uiText("status.offline")}
+              </div>
+              <div className="header-status-text">
+                <span className="header-status-line">
+                  {online ? uiText("status.onlineReady") : uiText("status.offlineSubmissions")}
+                </span>
+                <span className="header-status-line">
+                  {lastSyncAt
+                    ? uiText("status.lastSync", { time: new Date(lastSyncAt).toLocaleTimeString() })
+                    : uiText("status.neverSynced")}
+                </span>
+              </div>
+            </div>
           </div>
         </header>
-
-        {systemReady && (
-          <div className={`status-banner ${online ? "online" : "offline"}`}>
-            <div className="status-banner-main">
-              <span className={`status-pill ${online ? "online" : "offline"}`}>
-                {online ? uiText("status.online") : uiText("status.offline")}
-              </span>
-              <span className="status-message">
-                {online ? uiText("status.onlineReady") : uiText("status.offlineSubmissions")}
-              </span>
-            </div>
-            <div className="status-meta">
-              {!online && <span>{uiText("status.offlineRetry")}</span>}
-              <span>
-                {lastSyncAt
-                  ? uiText("status.lastSync", { time: new Date(lastSyncAt).toLocaleTimeString() })
-                  : uiText("status.neverSynced")}
-              </span>
-            </div>
-          </div>
-        )}
 
         <FlowStepper stage={stage} />
 
