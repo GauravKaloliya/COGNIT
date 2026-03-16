@@ -1,3 +1,5 @@
+import { APP_ROUTES } from "../constants/routes";
+
 const normalizeApiBase = (baseValue) => {
   let trimmed = (baseValue || "").trim();
   if (!trimmed) return ""; // Empty string means use relative URLs (same origin)
@@ -13,7 +15,7 @@ const normalizeApiBase = (baseValue) => {
     try {
       const u = new URL(trimmed);
       // Backend routes are rooted at "/"; guard against accidental "/api" suffix in env.
-      if (u.pathname === "/api" || u.pathname === "/api/") {
+      if (u.pathname === APP_ROUTES.apiProxy || u.pathname === `${APP_ROUTES.apiProxy}/`) {
         u.pathname = "";
         return u.toString().replace(/\/+$/, "");
       }
@@ -32,7 +34,7 @@ const isLocalHostName = (hostname) =>
 const resolveConfiguredBase = () => {
   // In dev, always use the Vite proxy path for local API calls.
   if (import.meta.env.DEV) {
-    return "/api";
+    return APP_ROUTES.apiProxy;
   }
   const rawBase = import.meta.env.VITE_API_BASE || resolveDefaultApiBase();
   const normalized = normalizeApiBase(rawBase);

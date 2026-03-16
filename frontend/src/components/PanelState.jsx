@@ -1,7 +1,8 @@
 import React from "react";
+import { BUTTON_VARIANTS, CLASS_NAMES, PANEL_STATE_ICONS, PANEL_STATE_VARIANTS } from "../constants/componentUi";
 
 export default function PanelState({
-  variant = "info",
+  variant = PANEL_STATE_VARIANTS.info,
   icon = null,
   title = "",
   message = "",
@@ -14,18 +15,13 @@ export default function PanelState({
 }) {
   const defaultIcon =
     icon ??
-    (variant === "success"
-      ? "✓"
-      : variant === "warning"
-        ? "!"
-        : variant === "error"
-          ? "×"
-          : "i");
+    PANEL_STATE_ICONS[variant] ??
+    PANEL_STATE_ICONS[PANEL_STATE_VARIANTS.info];
 
   return (
-    <div className={`panel-state panel-state-${variant}`}>
+    <div className={`${CLASS_NAMES.panelState} ${CLASS_NAMES.panelState}-${variant}`}>
       <div
-        className={`panel-state-icon ${String(defaultIcon).length > 2 ? "wide" : ""}`}
+        className={`${CLASS_NAMES.panelStateIcon} ${String(defaultIcon).length > 2 ? CLASS_NAMES.wide : ""}`.trim()}
         aria-hidden="true"
       >
         {defaultIcon}
@@ -34,14 +30,14 @@ export default function PanelState({
       {message ? <p>{message}</p> : null}
       {children}
       {(actionLabel && onAction) || (secondaryActionLabel && onSecondaryAction) ? (
-        <div className="panel-state-actions">
+        <div className={CLASS_NAMES.panelStateActions}>
           {actionLabel && onAction ? (
-            <button className="primary" onClick={onAction} disabled={disabled}>
+            <button className={BUTTON_VARIANTS.primary} onClick={onAction} disabled={disabled}>
               {actionLabel}
             </button>
           ) : null}
           {secondaryActionLabel && onSecondaryAction ? (
-            <button className="ghost" onClick={onSecondaryAction} disabled={disabled}>
+            <button className={BUTTON_VARIANTS.ghost} onClick={onSecondaryAction} disabled={disabled}>
               {secondaryActionLabel}
             </button>
           ) : null}

@@ -1,8 +1,8 @@
 import React from "react";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
-
-const MIN_WORDS = parseInt(import.meta.env.VITE_MIN_WORDS || "60", 10);
+import { useSurveyFeedPage } from "../hooks/useSurveyFeedPage";
+import { uiText } from "../utils/uiText";
 
 export default function SurveyFeedPage({
   surveyCompleted = 0,
@@ -10,32 +10,24 @@ export default function SurveyFeedPage({
   setStage,
   fetchNextSurvey,
 }) {
-  const [loadingNext, setLoadingNext] = React.useState(false);
-  const [continueError, setContinueError] = React.useState("");
-
-  const handleSurveyContinue = async () => {
-    if (loadingNext) return;
-    setLoadingNext(true);
-    setContinueError("");
-    setSurveyFeedbackReady(false);
-    const data = await fetchNextSurvey({ clearCurrent: true });
-    if (!data?.image_id) {
-      setSurveyFeedbackReady(true);
-      setContinueError("Failed to load the next survey image. Please retry.");
-    }
-    setLoadingNext(false);
-  };
-
-  const handleSurveyFinish = () => {
-    setSurveyFeedbackReady(false);
-    setStage("finished");
-  };
+  const {
+    minWords: MIN_WORDS,
+    loadingNext,
+    continueError,
+    isOnline,
+    handleSurveyContinue,
+    handleSurveyFinish,
+  } = useSurveyFeedPage({
+    setSurveyFeedbackReady,
+    setStage,
+    fetchNextSurvey,
+  });
 
   if (loadingNext) {
     return (
       <PageSkeleton
-        title="Loading next survey"
-        subtitle="Selecting the next image and preparing your form"
+        title={uiText("survey.loadingNext")}
+        subtitle={uiText("survey.loadingNextSubtitle")}
         variant="survey"
       />
     );
@@ -43,12 +35,17 @@ export default function SurveyFeedPage({
 
   return (
     <div className="panel survey-feed-panel">
+      {!isOnline && (
+        <div className="banner warning">
+          <span>{uiText("survey.feedOffline")}</span>
+        </div>
+      )}
       <div className="guidance">
         <PanelState
           variant="success"
           icon="✓"
-          title="Survey Complete"
-          message={`You have completed ${surveyCompleted} survey${surveyCompleted === 1 ? "" : "s"}. Continue for more or finish now.`}
+          title={uiText("survey.feedComplete")}
+          message={uiText("survey.feedCompleteMessage", { count: surveyCompleted, suffix: surveyCompleted === 1 ? "" : "s" })}
         />
         <div className="survey-feedback-tip">
           <p>
@@ -60,14 +57,14 @@ export default function SurveyFeedPage({
           <button
             className="primary"
             onClick={handleSurveyContinue}
-            disabled={loadingNext}
+            disabled={loadingNext || !isOnline}
           >
-            {loadingNext ? "Loading..." : "Continue Survey"}
+            {loadingNext ? uiText("survey.loading") : uiText("survey.continue")}
           </button>
           <button
             className="ghost survey-feedback-finish"
             onClick={handleSurveyFinish}
-            disabled={loadingNext}
+            disabled={loadingNext || !isOnline}
           >
             Finish
           </button>
@@ -75,9 +72,9 @@ export default function SurveyFeedPage({
         {continueError && (
           <PanelState
             variant="warning"
-            title="Unable to load next survey"
-            message={`${continueError} Check connection and tap retry.`}
-            actionLabel="Retry"
+            title={uiText("survey.unableLoadNext")}
+            message={uiText("survey.feedLoadFailedWithHint", { error: continueError })}
+            actionLabel={uiText("survey.retryShort")}
             onAction={handleSurveyContinue}
             disabled={loadingNext}
           />

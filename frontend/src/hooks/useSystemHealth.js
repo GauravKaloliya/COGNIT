@@ -2,6 +2,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch, endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { runtimeConfig } from "../config/runtime";
+import { BROWSER_EVENTS } from "../constants/browser";
+import { REQUEST_CACHE, REQUEST_CODES, REQUEST_METHODS, ERROR_NAMES } from "../constants/request";
+import { APP_FLOW } from "../config/appFlow";
+import { TOAST_VARIANTS } from "../constants/ui";
+import { API_ROUTES } from "../constants/routes";
 
 export function useSystemHealth({
   publicId,
@@ -50,9 +55,9 @@ export function useSystemHealth({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), runtimeConfig.networkProbeTimeoutMs);
       try {
-        await apiFetch("/health", {
-          method: "GET",
-          cache: "no-store",
+        await apiFetch(API_ROUTES.health, {
+          method: REQUEST_METHODS.get,
+          cache: REQUEST_CACHE.noStore,
           signal: controller.signal,
         });
       } finally {
@@ -75,11 +80,11 @@ export function useSystemHealth({
       setBrowserOnline(false);
       setApiReachable(false);
     };
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
+    window.addEventListener(BROWSER_EVENTS.online, handleOnline);
+    window.addEventListener(BROWSER_EVENTS.offline, handleOffline);
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener(BROWSER_EVENTS.online, handleOnline);
+      window.removeEventListener(BROWSER_EVENTS.offline, handleOffline);
     };
   }, [probeApiReachability]);
 
@@ -112,7 +117,7 @@ export function useSystemHealth({
         healthAbortRef.current = controller;
         const timeoutGuard = setTimeout(() => controller.abort(), runtimeConfig.healthCheckTimeoutMs);
         try {
-          const data = await apiFetch("/health", { signal: controller.signal });
+          const data = await apiFetch(API_ROUTES.health, { signal: controller.signal, method: REQUEST_METHODS.get });
           if (cancelled) return;
           markApiReachable();
 
@@ -133,13 +138,13 @@ export function useSystemHealth({
           clearTimeout(timeoutGuard);
         }
       } catch (err) {
-        if (err?.name === "AbortError") {
+        if (err?.name === ERROR_NAMES.abort) {
           return;
         }
         if (cancelled) return;
         markProbeFailure();
         setSystemReady(false);
-        setSystemError(err.name === "AbortError" ? getErrorMessage("SYS_002_0008") : getErrorMessage("SYS_002_0001"));
+        setSystemError(err.name === ERROR_NAMES.abort ? getErrorMessage("SYS_002_0008") : getErrorMessage("SYS_002_0001"));
         healthBackoffRef.current = Math.min(4, healthBackoffRef.current * 2);
       } finally {
         healthAbortRef.current = null;
@@ -163,7 +168,7 @@ export function useSystemHealth({
 
   useEffect(() => {
     const verifyPaymentForSurvey = async () => {
-      if (stage === "survey" && !paymentVerified && systemReady && !pauseSurveyPaymentGuard) {
+      if (stage === APP_FLOW.stages.survey && !paymentVerified && systemReady && !pauseSurveyPaymentGuard) {
         try {
           if (paymentStatusAbortRef.current) {
             paymentStatusAbortRef.current.abort();
@@ -175,18 +180,18 @@ export function useSystemHealth({
           if (paymentStatus.is_verified) {
             setPaymentVerified(true);
           } else {
-            addToast(getErrorMessage("PAY_001_0005"), "error");
-            setStage("payment");
-            setPaymentSubStage("content");
+            addToast(getErrorMessage("PAY_001_0005"), TOAST_VARIANTS.error);
+            setStage(APP_FLOW.stages.payment);
+            setPaymentSubStage(APP_FLOW.paymentSubStages.content);
           }
         } catch (err) {
-          if (err?.code === "REQ_ABORTED") {
+          if (err?.code === REQUEST_CODES.aborted) {
             return;
           }
           if (pauseSurveyPaymentGuard) return;
-          addToast(getErrorMessage("PAY_001_0005"), "error");
-          setStage("payment");
-          setPaymentSubStage("content");
+          addToast(getErrorMessage("PAY_001_0005"), TOAST_VARIANTS.error);
+          setStage(APP_FLOW.stages.payment);
+          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
         } finally {
           paymentStatusAbortRef.current = null;
         }

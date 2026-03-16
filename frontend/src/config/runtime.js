@@ -13,6 +13,11 @@ const toBool = (value, fallback = false) => {
   return String(value).toLowerCase() === "true";
 };
 
+const toStr = (value, fallback) => {
+  const raw = String(value ?? "").trim();
+  return raw ? raw : fallback;
+};
+
 export const runtimeConfig = {
   msPerSecond: toInt(import.meta.env.VITE_MS_PER_SECOND, 1000),
   countdownTickMs: toInt(import.meta.env.VITE_COUNTDOWN_TICK_MS, 1000),
@@ -34,6 +39,42 @@ export const runtimeConfig = {
   paymentTimerDurationMs: toInt(import.meta.env.VITE_PAYMENT_TIMER_DURATION_MS, 5 * 60 * 1000),
   paymentTimerTickMs: toInt(import.meta.env.VITE_PAYMENT_TIMER_TICK_MS, 1000),
   paymentAmount: toFloat(import.meta.env.VITE_PAYMENT_AMOUNT, 1),
+  rewardAmount: toFloat(import.meta.env.VITE_REWARD_AMOUNT, 10),
+  storageKeys: {
+    activeTabLock: toStr(import.meta.env.VITE_KEY_ACTIVE_TAB_LOCK, "cognit_active_tab_lock_v1"),
+    darkMode: toStr(import.meta.env.VITE_KEY_DARK_MODE, "darkMode"),
+    stage: toStr(import.meta.env.VITE_KEY_STAGE, "stage"),
+    paymentSubStage: toStr(import.meta.env.VITE_KEY_PAYMENT_SUB_STAGE, "paymentSubStage"),
+    consentGiven: toStr(import.meta.env.VITE_KEY_CONSENT_GIVEN, "consentGiven"),
+    userDetailsSubmitted: toStr(import.meta.env.VITE_KEY_USER_DETAILS_SUBMITTED, "userDetailsSubmitted"),
+    paymentVerified: toStr(import.meta.env.VITE_KEY_PAYMENT_VERIFIED, "paymentVerified"),
+    demographics: toStr(import.meta.env.VITE_KEY_DEMOGRAPHICS, "demographics"),
+    survey: toStr(import.meta.env.VITE_KEY_SURVEY, "survey"),
+    surveyCompleted: toStr(import.meta.env.VITE_KEY_SURVEY_COMPLETED, "surveyCompleted"),
+    surveyFeedbackReady: toStr(import.meta.env.VITE_KEY_SURVEY_FEEDBACK_READY, "surveyFeedbackReady"),
+    lastSubmissionSucceeded: toStr(import.meta.env.VITE_KEY_LAST_SUBMISSION_SUCCEEDED, "lastSubmissionSucceeded"),
+    shownImages: toStr(import.meta.env.VITE_KEY_SHOWN_IMAGES, "shownImages"),
+    sessionId: toStr(import.meta.env.VITE_KEY_SESSION_ID, "sessionId"),
+    publicId: toStr(import.meta.env.VITE_KEY_PUBLIC_ID, "publicId"),
+    consentDraft: toStr(import.meta.env.VITE_KEY_CONSENT_DRAFT, "consent_checked_draft"),
+    consentPending: toStr(import.meta.env.VITE_KEY_CONSENT_PENDING, "consent_pending_submit_v1"),
+    userDetailsPending: toStr(import.meta.env.VITE_KEY_USER_DETAILS_PENDING, "user_details_pending_submit_v1"),
+    participantOptions: toStr(import.meta.env.VITE_KEY_PARTICIPANT_OPTIONS, "participant_options_v1"),
+    autoLocationPrompt: toStr(import.meta.env.VITE_KEY_AUTO_LOCATION_PROMPT, "location_auto_prompt_v1"),
+    reverseGeocodeState: toStr(import.meta.env.VITE_KEY_REVERSE_GEOCODE_STATE, "reverse_geocode_state_v1"),
+    paymentContentPending: toStr(import.meta.env.VITE_KEY_PAYMENT_CONTENT_PENDING, "payment_content_pending_continue_v1"),
+    paymentState: toStr(import.meta.env.VITE_KEY_PAYMENT_STATE, "payment_link_state_v1"),
+    paymentTimerExpires: toStr(import.meta.env.VITE_KEY_PAYMENT_TIMER_EXPIRES, "payment_timer_expires_at"),
+    paymentId: toStr(import.meta.env.VITE_KEY_PAYMENT_ID, "payment_id"),
+    paymentPendingCreate: toStr(import.meta.env.VITE_KEY_PAYMENT_PENDING_CREATE, "payment_pending_create_v1"),
+    paymentPendingVerify: toStr(import.meta.env.VITE_KEY_PAYMENT_PENDING_VERIFY, "payment_pending_verify_v1"),
+    surveyDraftPrefix: toStr(import.meta.env.VITE_KEY_SURVEY_DRAFT_PREFIX, "survey_draft"),
+    surveyDraftActivePrefix: toStr(import.meta.env.VITE_KEY_SURVEY_DRAFT_ACTIVE_PREFIX, "survey_draft_active"),
+    surveyPendingSubmit: toStr(import.meta.env.VITE_KEY_SURVEY_PENDING_SUBMIT, "survey_pending_submit_v1"),
+    surveyFeedPendingContinue: toStr(import.meta.env.VITE_KEY_SURVEY_FEED_PENDING_CONTINUE, "survey_feed_pending_continue_v1"),
+    surveyFeedPendingFinish: toStr(import.meta.env.VITE_KEY_SURVEY_FEED_PENDING_FINISH, "survey_feed_pending_finish_v1"),
+    telemetry: toStr(import.meta.env.VITE_KEY_TELEMETRY, "client_telemetry_v1"),
+  },
   maxUploadMb: toFloat(import.meta.env.VITE_MAX_UPLOAD_MB, 8),
   paymentUploadMaxMb: toFloat(import.meta.env.VITE_PAYMENT_UPLOAD_MAX_MB, toFloat(import.meta.env.VITE_MAX_UPLOAD_MB, 8)),
   minScreenshotWidth: toInt(import.meta.env.VITE_MIN_SCREENSHOT_WIDTH, 360),

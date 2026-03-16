@@ -452,3 +452,50 @@ def get_participant_session():
         "public_id": public_id or None,
         "session_id": session_id or None,
     })
+
+
+@participant_bp.route("/participant-options", methods=["GET"])
+@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
+@track_performance
+def get_participant_options():
+    """Return participant form options sourced from the database."""
+    try:
+        db = get_db()
+
+        genders = db.execute(text("""
+            SELECT code, display_name
+            FROM genders
+            WHERE active = true
+            ORDER BY sort_order ASC, display_name ASC
+        """)).fetchall()
+
+        languages = db.execute(text("""
+            SELECT code, name, native_name
+            FROM languages
+            WHERE active = true
+            ORDER BY name ASC
+        """)).fetchall()
+
+        return success_response({
+            "genders": [
+                {
+                    "value": str(row[0]),
+                    "label": str(row[1]),
+                }
+                for row in genders
+            ],
+            "languages": [
+                {
+                    "value": str(row[0]),
+                    "label": (
+                        f"{row[1]} ({row[2]})"
+                        if row[2] and str(row[2]).strip() and str(row[2]) != str(row[1])
+                        else str(row[1])
+                    ),
+                }
+                for row in languages
+            ],
+        })
+    except Exception as e:
+        logger.error("get_participant_options failed error=%s request_id=%s", e, getattr(g, "request_id", None))
+        return create_error_response("DATABASE_ERROR")
