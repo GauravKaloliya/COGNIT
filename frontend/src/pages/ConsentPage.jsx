@@ -39,7 +39,17 @@ export default function ConsentPage({
   }
 
   return (
-    <div className="panel">
+    <div className="panel panel-with-corner-status">
+      <div className="page-top-actions">
+        <div className="page-top-banners">
+          {isSaving && (
+            <span className="autosave-inline panel-corner-status">{uiText("autosave.saving")}</span>
+          )}
+          {!isSaving && lastSavedAt && (
+            <span className="autosave-inline panel-corner-status">{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
+          )}
+        </div>
+      </div>
       {!isOnline && (
         <div className="banner warning">
           <span>{uiText("consent.offlineBanner")}</span>
@@ -50,21 +60,9 @@ export default function ConsentPage({
           <span>{uiText("draft.restored")}</span>
         </div>
       )}
-      {isSaving && (
-        <div className="banner info">
-          <span className="status-icon saving" aria-hidden="true" />
-          <span>{uiText("autosave.saving")}</span>
-        </div>
-      )}
       {saveError && (
         <div className="banner warning">
           <span>{saveError}</span>
-        </div>
-      )}
-      {!isSaving && lastSavedAt && (
-        <div className="banner info">
-          <span className="status-icon saved" aria-hidden="true" />
-          <span>{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
         </div>
       )}
       <h2 className="consent-title">{CONSENT_CONTENT.title}</h2>
@@ -106,15 +104,15 @@ export default function ConsentPage({
           </React.Fragment>
         ))}
         {!showFullConsent && <div className="consent-fade" aria-hidden="true" />}
-      </div>
-      <div className="consent-toggle">
-        <DSButton
-          variant="ghost"
-          type="button"
-          onClick={() => setShowFullConsent((prev) => !prev)}
-        >
-          {showFullConsent ? uiText("consent.readLess") : uiText("consent.readMore")}
-        </DSButton>
+        <div className="consent-toggle">
+          <button
+            type="button"
+            className="consent-toggle-text"
+            onClick={() => setShowFullConsent((prev) => !prev)}
+          >
+            {showFullConsent ? uiText("consent.readLess") : uiText("consent.readMore")}
+          </button>
+        </div>
       </div>
       
       {error && (
