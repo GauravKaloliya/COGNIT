@@ -84,7 +84,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
           contribute to improving image-text understanding and generation systems.
         </p>
 
-        <div className="page-actions sticky-mobile-actions">
+        <div className="page-actions sticky-mobile-actions inline-actions">
           <DSButton variant="primary" onClick={handleFinish}>
             {uiText("finish.finishButton")}
           </DSButton>
