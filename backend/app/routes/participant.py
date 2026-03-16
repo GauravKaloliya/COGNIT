@@ -2,6 +2,7 @@
 
 import logging
 from flask import request, g
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.constants.event_constants import (

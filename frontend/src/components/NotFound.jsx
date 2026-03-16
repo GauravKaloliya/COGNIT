@@ -17,6 +17,7 @@ export default function NotFound({ darkMode = false, onToggleDarkMode }) {
       <header className="header">
         <div className="brand">
           <h1>C.O.G.N.I.T.</h1>
+          <p className="subtitle">{uiText("app.subtitle")}</p>
         </div>
         <div className="header-actions">
           <DSButton

@@ -73,7 +73,7 @@ const isDemographicsComplete = (demographics) => {
   return usernameOk && emailOk && phoneOk && gender && ageOk && locationOk && language && prior;
 };
 
-const deriveGuardedStage = ({
+const deriveMaxAllowedStage = ({
   consentGiven,
   hasParticipant,
   userDetailsSubmitted,
@@ -82,18 +82,18 @@ const deriveGuardedStage = ({
   surveyCompleted,
   surveyFeedbackReady,
   lastSubmissionSucceeded,
-  currentStage,
 }) => {
   if (!consentGiven) return APP_FLOW.stages.consent;
   if (!hasParticipant || !userDetailsSubmitted || !demographicsComplete) return APP_FLOW.stages.userDetails;
   if (!paymentVerified) return APP_FLOW.stages.payment;
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;
-  if (currentStage === APP_FLOW.stages.finished && surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
-  if (currentStage === APP_FLOW.stages.finished && !surveyFeedbackReady && !(surveyCompleted > 0)) return APP_FLOW.stages.survey;
-  return currentStage;
+  if (surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
+  if (!surveyFeedbackReady && !(surveyCompleted > 0)) return APP_FLOW.stages.survey;
+  return APP_FLOW.stages.finished;
 };
 
 export function useAppController() {
+  const manualStageRef = useRef(null);
   const tabIdRef = useRef(createId());
   const isOnline = useOnlineStatus();
   const [isActiveTabOwner, setIsActiveTabOwner] = useState(true);
@@ -279,11 +279,17 @@ export function useAppController() {
     }
   }, [fetchImage]);
 
+  const setStageManual = useCallback((nextStage) => {
+    manualStageRef.current = nextStage;
+    setStage(nextStage);
+  }, [setStage]);
+
   const paymentFlow = usePaymentFlow({
     publicId,
     stage,
     paymentSubStage,
     setStage,
+    setStageManual,
     setPaymentSubStage,
     setPaymentVerified,
     addToast,
@@ -334,7 +340,11 @@ export function useAppController() {
 
   useEffect(() => {
     if (!sessionHydrated) return;
-    const guardedStage = deriveGuardedStage({
+    if (manualStageRef.current && stage === manualStageRef.current) {
+      manualStageRef.current = null;
+      return;
+    }
+    const maxAllowedStage = deriveMaxAllowedStage({
       consentGiven,
       hasParticipant: Boolean(publicId),
       userDetailsSubmitted,
@@ -343,11 +353,12 @@ export function useAppController() {
       surveyCompleted,
       surveyFeedbackReady,
       lastSubmissionSucceeded,
-      currentStage: stage,
     });
-    if (guardedStage !== stage) {
-      setStage(guardedStage);
-      if (guardedStage === APP_FLOW.stages.payment) {
+    const currentIndex = APP_STAGE_ORDER.indexOf(stage);
+    const maxAllowedIndex = APP_STAGE_ORDER.indexOf(maxAllowedStage);
+    if (currentIndex > maxAllowedIndex && maxAllowedIndex >= 0) {
+      setStage(maxAllowedStage);
+      if (maxAllowedStage === APP_FLOW.stages.payment) {
         setPaymentSubStage(APP_FLOW.paymentSubStages.content);
       }
     }
@@ -492,7 +503,7 @@ export function useAppController() {
     addToast(uiText("consent.saved"), "success");
   }, [addToast]);
 
-  const handleUserDetailsBack = useCallback(() => setStage(APP_FLOW.stages.consent), []);
+  const handleUserDetailsBack = useCallback(() => setStageManual(APP_FLOW.stages.consent), [setStageManual]);
   const toggleDarkMode = useCallback(() => setDarkMode((prev) => !prev), []);
   const handleAppError = useCallback(() => addToast(getErrorMessage("SYS_002_0017"), "error"), [addToast]);
 
