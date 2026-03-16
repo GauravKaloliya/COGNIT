@@ -31,7 +31,6 @@ export default function PaymentLinkPage({
     isOnline,
     fileInputRef,
     timeRemaining,
-    timerProgress,
     isMobile,
     backDisabled,
     offlineDisabled,
@@ -120,7 +119,7 @@ export default function PaymentLinkPage({
           )}
         </div>
         <div className="payment-header">
-          <div className="icon-badge" aria-hidden="true">T</div>
+          <div className="icon-badge" aria-hidden="true">⏳</div>
           <h2 className="payment-title">{uiText("payment.expiredTitle")}</h2>
           <p className="payment-subtitle">{uiText("payment.expiredSubtitle")}</p>
         </div>
@@ -153,7 +152,7 @@ export default function PaymentLinkPage({
           )}
         </div>
         <div className="payment-header">
-          <div className="icon-badge" aria-hidden="true">X</div>
+          <div className="icon-badge" aria-hidden="true">❌</div>
           <h2 className="payment-title">{uiText("payment.verifyTitle")}</h2>
           <p className="payment-subtitle">{uiText("payment.verifySubtitle")}</p>
         </div>
@@ -238,18 +237,13 @@ export default function PaymentLinkPage({
       )}
 
       <div className="payment-header">
-        <div className="icon-badge" aria-hidden="true">P</div>
+        <div className="icon-badge" aria-hidden="true">💳</div>
         <h2 className="payment-title">{isMobile ? uiText("payment.payWithUpi") : uiText("payment.scanVerify")}</h2>
         <p className="payment-subtitle">
           {timeRemaining > 0
             ? uiText("payment.timeRemaining", { time: formatTime(timeRemaining) })
             : uiText("payment.completeAndUpload")}
         </p>
-        {timeRemaining > 0 && (
-          <div className="timer-progress" aria-hidden="true">
-            <div className="timer-progress-bar" style={{ width: `${timerProgress}%` }} />
-          </div>
-        )}
       </div>
 
       <div className="payment-content">
@@ -259,7 +253,7 @@ export default function PaymentLinkPage({
               <section className="payment-card payment-card-qr card">
                 <div className="card-header">
                   <h3>
-                    <span className="icon-badge" aria-hidden="true">Q</span>
+                    <span className="icon-badge" aria-hidden="true">🔳</span>
                     {isMobile ? uiText("payment.payWithUpi") : uiText("payment.scanQr")}
                   </h3>
                 </div>
@@ -275,7 +269,7 @@ export default function PaymentLinkPage({
                       }}
                       style={getButtonStyle()}
                     >
-                      <span className="icon-badge" aria-hidden="true">U</span>
+                      <span className="icon-badge" aria-hidden="true">📲</span>
                       <span>{uiText("payment.payWithApp", { amount: PAYMENT_AMOUNT_LABEL })}</span>
                       <span className="payment-upi-timer">
                         {paymentStatus === "expired" ? uiText("payment.expiredShort") : formatTime(timeRemaining)}
@@ -316,7 +310,7 @@ export default function PaymentLinkPage({
             <section className="payment-card highlight payment-card-instructions card">
               <div className="card-header">
                 <h3>
-                  <span className="icon-badge" aria-hidden="true">!</span>
+                  <span className="icon-badge" aria-hidden="true">ℹ️</span>
                   {uiText("payment.instructionsTitle")}
                 </h3>
               </div>
@@ -357,7 +351,7 @@ export default function PaymentLinkPage({
           <section className="payment-card card">
             <div className="card-header">
               <h3>
-                <span className="icon-badge" aria-hidden="true">U</span>
+                <span className="icon-badge" aria-hidden="true">📤</span>
                 {uiText("payment.uploadTitle")}
               </h3>
             </div>
