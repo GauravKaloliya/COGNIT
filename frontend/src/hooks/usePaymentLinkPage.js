@@ -9,6 +9,7 @@ import { useOnlineStatus } from "./useOnlineStatus";
 import { BROWSER_EVENTS } from "../constants/browser";
 import { NETWORK_ERROR_HINTS, REQUEST_CODES, REQUEST_HEADERS } from "../constants/request";
 import { TOAST_VARIANTS } from "../constants/ui";
+import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 import {
   PAYMENT_ERROR_CODES,
   PAYMENT_NOTICE_VARIANT,
@@ -78,7 +79,7 @@ export function usePaymentLinkPage({
     const byViewport = window.matchMedia("(max-width: 768px)").matches;
     const byTouch = window.matchMedia("(pointer: coarse)").matches;
     return byUa || (byViewport && byTouch);
-  }, [isOnline]);
+  }, []);
   const [isMobile, setIsMobile] = useState(detectMobileClient);
   const isCriticalAction = verifying || isLoading;
   const backDisabled = isCriticalAction || paymentStatus === PAYMENT_STATUS.expired;
@@ -178,7 +179,7 @@ export function usePaymentLinkPage({
     return Math.abs(parsed - EXPECTED_PAYMENT_AMOUNT) > 0.001;
   }, []);
 
-  const calculateBlurVariance = (image) => {
+  const calculateBlurVariance = useCallback((image) => {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return 999;
@@ -213,50 +214,52 @@ export function usePaymentLinkPage({
     const mean = lap.reduce((a, b) => a + b, 0) / lap.length;
     const variance = lap.reduce((a, b) => a + (b - mean) ** 2, 0) / lap.length;
     return variance;
-  };
+  }, []);
 
-  const validateScreenshotQuality = (file) =>
-    new Promise((resolve) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        const blurVariance = calculateBlurVariance(img);
-        URL.revokeObjectURL(url);
+  const validateScreenshotQuality = useCallback(
+    (file) =>
+      new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const width = img.naturalWidth || img.width;
+          const height = img.naturalHeight || img.height;
+          const blurVariance = calculateBlurVariance(img);
+          URL.revokeObjectURL(url);
 
-        if (width < MIN_SCREENSHOT_WIDTH || height < MIN_SCREENSHOT_HEIGHT) {
-          resolve({
-            ok: false,
-            message: uiText("payment.resolutionLow", {
-              width,
-              height,
-              minWidth: MIN_SCREENSHOT_WIDTH,
-              minHeight: MIN_SCREENSHOT_HEIGHT,
-            })
-          });
-          return;
-        }
-        if (blurVariance < MIN_LAPLACIAN_VARIANCE) {
-          resolve({
-            ok: false,
-            message: uiText("payment.blurry")
-          });
-          return;
-        }
-        resolve({ ok: true, width, height, blurVariance });
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        resolve({ ok: false, message: uiText("payment.invalidImage") });
-      };
-      img.src = url;
-    });
+          if (width < MIN_SCREENSHOT_WIDTH || height < MIN_SCREENSHOT_HEIGHT) {
+            resolve({
+              ok: false,
+              message: uiText("payment.resolutionLow", {
+                width,
+                height,
+                minWidth: MIN_SCREENSHOT_WIDTH,
+                minHeight: MIN_SCREENSHOT_HEIGHT,
+              })
+            });
+            return;
+          }
+          if (blurVariance < MIN_LAPLACIAN_VARIANCE) {
+            resolve({
+              ok: false,
+              message: uiText("payment.blurry")
+            });
+            return;
+          }
+          resolve({ ok: true, width, height, blurVariance });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve({ ok: false, message: uiText("payment.invalidImage") });
+        };
+        img.src = url;
+      }),
+    [calculateBlurVariance]
+  );
 
   const savePaymentViewState = useCallback((state) => {
     if (!isOnline) return;
     try {
-      const now = Date.now();
       const safeState = { ...(state || {}) };
       if (safeState.paymentData && typeof safeState.paymentData === "object") {
         const { [PAYMENT_API_FIELDS.token]: _token, ...rest } = safeState.paymentData;
@@ -407,13 +410,13 @@ export function usePaymentLinkPage({
       setTimerProgress(progress);
 
       if (remaining <= 0) {
-        clearInterval(timerIntervalRef.current);
+        clearScheduledInterval(timerIntervalRef.current);
         handleExpiry();
       }
     };
 
     updateTimer();
-    timerIntervalRef.current = setInterval(updateTimer, runtimeConfig.paymentTimerTickMs);
+    timerIntervalRef.current = scheduleInterval(updateTimer, runtimeConfig.paymentTimerTickMs);
   }, [calculateTimerValues, saveTimerState, handleExpiry, stopTimer]);
 
   const resumeTimerFromCurrentPayment = useCallback(() => {
@@ -468,10 +471,6 @@ export function usePaymentLinkPage({
     let timeoutId = null;
 
     setIsLoading(true);
-    if (typeof window !== "undefined") {
-      // Debugging: surface latency source on localhost/Codespaces.
-      console.info("[payment] createPayment start", { publicId, sessionId });
-    }
     setError(null);
     setRetryInSeconds(0);
 
@@ -480,18 +479,12 @@ export function usePaymentLinkPage({
       const controller = new AbortController();
       createAbortRef.current = controller;
       if (timeoutMs > 0) {
-        timeoutId = setTimeout(() => {
+        timeoutId = scheduleTimeout(() => {
           timedOut = true;
           controller.abort();
         }, timeoutMs);
       }
       const data = await endpoints.createPayment(publicId, { signal: controller.signal });
-      if (typeof window !== "undefined") {
-        console.info("[payment] createPayment success", {
-          [PAYMENT_API_FIELDS.id]: getPaymentField(data, PAYMENT_API_FIELDS.id),
-          [PAYMENT_API_FIELDS.expiresAt]: getPaymentField(data, PAYMENT_API_FIELDS.expiresAt),
-        });
-      }
       if (!isOperationCurrent(operationId)) return;
       writeExpiringValue(PAYMENT_ID_KEY, getPaymentField(data, PAYMENT_API_FIELDS.id), {
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
@@ -518,18 +511,12 @@ export function usePaymentLinkPage({
         [PAYMENT_STATE_FIELDS.failureReasons]: [],
         [PAYMENT_STATE_FIELDS.error]: null,
       });
-      if (typeof window !== "undefined") {
-        console.info("[payment] createPayment state applied");
-      }
       if (!isMobile && !getPaymentField(data, PAYMENT_API_FIELDS.qrBase64)) {
         fetchPaymentQr(getPaymentField(data, PAYMENT_API_FIELDS.id), operationId);
       }
     } catch (err) {
       if (err?.code === REQUEST_CODES.aborted && !timedOut) {
         return;
-      }
-      if (typeof window !== "undefined") {
-        console.error("[payment] createPayment error", err);
       }
       if (!isOperationCurrent(operationId)) return;
       const errorMessage = timedOut
@@ -778,7 +765,26 @@ export function usePaymentLinkPage({
       cancelled = true;
       stopTimer();
     };
-  }, [calculateTimerValues, clearPaymentViewState, createPayment, fetchPaymentQr, getServerRemainingMs, getVerificationErrorMessage, handleExpiry, isMobile, loadPaymentViewState, notifySessionExpired, onNext, startTimer, stopTimer, publicId, sessionId]);
+  }, [
+    calculateTimerValues,
+    clearPaymentViewState,
+    createPayment,
+    fetchPaymentQr,
+    getServerRemainingMs,
+    getVerificationErrorMessage,
+    handleExpiry,
+    isMobile,
+    isPaymentAmountMismatch,
+    loadPaymentViewState,
+    notifySessionExpired,
+    notifySessionRefreshing,
+    onNext,
+    refreshNoticeVariant,
+    startTimer,
+    stopTimer,
+    publicId,
+    sessionId,
+  ]);
 
   // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
@@ -877,7 +883,7 @@ export function usePaymentLinkPage({
     await createPayment();
   };
 
-  async function handleUploadAndFinalize() {
+  const handleUploadAndFinalize = useCallback(async () => {
     if (!isOnline) {
       showRetryHintError(uiText("payment.offlineVerify"));
       setPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
@@ -1126,7 +1132,31 @@ export function usePaymentLinkPage({
         setVerifying(false);
       }
     }
-  }
+  }, [
+    isOnline,
+    showRetryHintError,
+    uploadFile,
+    paymentData,
+    stopTimer,
+    beginOperation,
+    isOperationCurrent,
+    onNext,
+    getVerificationErrorMessage,
+    getServerRemainingMs,
+    handleExpiry,
+    resumeTimerFromCurrentPayment,
+    validateScreenshotQuality,
+    savePaymentViewState,
+    setPaymentStatus,
+    setFailureReasons,
+    setError,
+    setRetryInSeconds,
+    setVerifying,
+    clearTimerState,
+    clearPaymentViewState,
+    setPaymentData,
+    publicId,
+  ]);
 
   const handleBackClick = useCallback(() => {
     if (backDisabled) return;
@@ -1157,11 +1187,11 @@ export function usePaymentLinkPage({
 
   useEffect(() => {
     if (retryInSeconds <= 0) return;
-    const t = setTimeout(
+    const t = scheduleTimeout(
       () => setRetryInSeconds((prev) => Math.max(0, prev - 1)),
       runtimeConfig.countdownTickMs
     );
-    return () => clearTimeout(t);
+    return () => clearScheduledTimeout(t);
   }, [retryInSeconds]);
 
   useEffect(() => {

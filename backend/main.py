@@ -8,46 +8,59 @@ from app.logging_config import configure_logging
 configure_logging()
 
 import logging
-import uuid
-from datetime import datetime, timezone
-import time
 
-from flask import jsonify, render_template, request, g, redirect, url_for
-from sqlalchemy import text
+from flask import request, g
 
 from app.extensions import app, limiter
-from app.database import engine, get_db
+from app.constants.event_constants import (
+    HTTP_METHOD_GET,
+    HTTP_METHOD_POST,
+    HTTP_REASON_METHOD_NOT_ALLOWED,
+    HTTP_REASON_ROUTE_NOT_FOUND,
+)
+from app.constants.log_messages import LOG_UNHANDLED_EXCEPTION
+from app.constants.route_constants import (
+    API_DOCS_ENDPOINTS_ROUTE,
+    API_DOCS_ERRORS_ROUTE,
+    API_DOCS_EXAMPLES_ROUTE,
+    API_DOCS_ROUTE,
+    CLIENT_ERROR_ROUTE,
+    HEALTH_ROUTE,
+    ROOT_ROUTE,
+)
+from app.constants.request_keys import (
+    REQUEST_KEY_ERROR_CONTEXT,
+    REQUEST_KEY_ERROR_MESSAGE,
+    REQUEST_KEY_ERROR_META,
+    REQUEST_KEY_ERROR_ROUTE,
+    REQUEST_KEY_ERROR_STACK,
+    REQUEST_KEY_ERROR_TAG,
+)
+from app.constants.observability_constants import OBS_EVENT_CLIENT_ERROR
 from app.utils.decorators import track_performance
 from app.utils.helpers import create_error_response, success_response
-from app.utils.observability import log_event
+from app.utils.app_runtime import (
+    finalize_response,
+    get_cached_health_response,
+    handle_payload_too_large,
+    initialize_request_context,
+    redirect_to_api_docs_endpoints,
+    render_api_docs_page,
+)
 from app.routes import participant_bp, image_bp, submission_bp, payment_bp
+from app.utils.observability import log_event
 from app.config import (
     ROOT_RATE_LIMIT,
     DOCS_RATE_LIMIT,
     HEALTH_RATE_LIMIT,
     FLASK_DEBUG,
-    FLASK_HOST,
-    FLASK_PORT,
-    SECURITY_HSTS_ENABLED,
-    SECURITY_HSTS_MAX_AGE,
-    SECURITY_HSTS_INCLUDE_SUBDOMAINS,
-    SECURITY_HSTS_PRELOAD,
-    SECURITY_FRAME_OPTIONS,
-    SECURITY_REFERRER_POLICY,
-    SECURITY_PERMISSIONS_POLICY,
-    SECURITY_CONTENT_TYPE_OPTIONS,
-    SECURITY_XSS_PROTECTION,
-    HEALTH_CACHE_TTL_SECONDS,
-    API_LATENCY_SLO_MS,
-    VERCEL_ENV,
+    PORT,
+    IDEMPOTENCY_TTL_SECONDS,
 )
+from app.services import cleanup_idempotency_keys
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
-
-from middleware.device_fingerprint import device_fingerprint_middleware
-
-
 # ────────────────────────────────────────────────
 # Register Blueprints
 # ────────────────────────────────────────────────
@@ -65,137 +78,33 @@ app.register_blueprint(payment_bp)
 @app.before_request
 def log_request():
     """Log incoming requests and attach security context."""
-    g.request_start_time = datetime.now(timezone.utc)
-    g.device_fingerprint_written = False
-    g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-
-    # Ensure DB session exists for middleware utilities that rely on g.db.
-    try:
-        get_db()
-    except Exception as e:
-        logger.warning(f"DB session init failed in before_request: {e}")
-
-    # Attach fingerprint/risk context globally (best effort, non-blocking).
-    try:
-        device_fingerprint_middleware()
-    except Exception as e:
-        logger.warning(f"Device fingerprint middleware failed: {e}")
-
-    logger.info(f"REQUEST {request.method} {request.path} request_id={g.request_id}")
-    log_event(
-        logger,
-        "request_received",
-        method=request.method,
-        path=request.path,
-        request_id=g.request_id,
-        participant_id=getattr(g, "participant_id", None),
-    )
+    initialize_request_context(logger)
+    db = getattr(g, "db", None)
+    if db is not None:
+        cleanup_idempotency_keys(db, IDEMPOTENCY_TTL_SECONDS)
 
 @app.after_request
 def log_response(response):
     """Log outgoing responses for debugging."""
-    request_id = getattr(g, "request_id", None)
-    if request_id:
-        response.headers["X-Request-ID"] = request_id
-
-    if getattr(g, "device_fingerprint_written", False) and request.method in {"GET", "HEAD"}:
-        try:
-            db = getattr(g, "db", None)
-            if db is not None and response.status_code < 400:
-                db.commit()
-        except Exception as e:
-            logger.warning(f"Device fingerprint commit failed: {e}")
-            try:
-                if db is not None:
-                    db.rollback()
-            except Exception:
-                pass
-
-    # Normalize successful JSON responses to strict envelope:
-    # { "success": true, "data": ... }
-    try:
-        if response.is_json and 200 <= int(response.status_code) < 400:
-            payload = response.get_json(silent=True)
-            if isinstance(payload, dict) and "success" not in payload:
-                wrapped = jsonify({"success": True, "data": payload})
-                wrapped.status_code = response.status_code
-                response = wrapped
-    except Exception:
-        # Never block response on envelope normalization failure.
-        pass
-
-    if hasattr(g, 'request_start_time'):
-        duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
-        logger.info(
-            f"RESPONSE {request.method} {request.path} - {response.status_code} - {duration_ms}ms request_id={request_id}"
-        )
-        log_event(
-            logger,
-            "request_completed",
-            method=request.method,
-            path=request.path,
-            request_id=request_id,
-            status_code=int(response.status_code),
-            latency_ms=duration_ms,
-        )
-        if duration_ms > API_LATENCY_SLO_MS:
-            log_event(
-                logger,
-                "latency_slo_breach",
-                level=logging.WARNING,
-                method=request.method,
-                path=request.path,
-                request_id=request_id,
-                latency_ms=duration_ms,
-                slo_ms=API_LATENCY_SLO_MS,
-            )
-
-    # Security headers (production-safe defaults; env overridable).
-    try:
-        if SECURITY_CONTENT_TYPE_OPTIONS:
-            response.headers.setdefault("X-Content-Type-Options", SECURITY_CONTENT_TYPE_OPTIONS)
-        if SECURITY_FRAME_OPTIONS:
-            response.headers.setdefault("X-Frame-Options", SECURITY_FRAME_OPTIONS)
-        if SECURITY_REFERRER_POLICY:
-            response.headers.setdefault("Referrer-Policy", SECURITY_REFERRER_POLICY)
-        if SECURITY_PERMISSIONS_POLICY:
-            response.headers.setdefault("Permissions-Policy", SECURITY_PERMISSIONS_POLICY)
-        if SECURITY_XSS_PROTECTION:
-            response.headers.setdefault("X-XSS-Protection", SECURITY_XSS_PROTECTION)
-        if SECURITY_HSTS_ENABLED and request.is_secure:
-            hsts_value = f"max-age={SECURITY_HSTS_MAX_AGE}"
-            if SECURITY_HSTS_INCLUDE_SUBDOMAINS:
-                hsts_value += "; includeSubDomains"
-            if SECURITY_HSTS_PRELOAD:
-                hsts_value += "; preload"
-            response.headers.setdefault("Strict-Transport-Security", hsts_value)
-    except Exception:
-        pass
-    return response
+    return finalize_response(response, logger)
 
 
 @app.errorhandler(413)
 def handle_request_too_large(_error):
     """Return JSON response for oversized uploads."""
-    max_bytes = int(app.config.get("MAX_CONTENT_LENGTH", 5 * 1024 * 1024))
-    max_mb = max(1, round(max_bytes / (1024 * 1024)))
-    return create_error_response(
-        "VAL_FILE_TOO_LARGE",
-        details={"max_mb": max_mb, "reason": "payload_too_large"},
-        custom_message=f"The file is too large. Please upload an image smaller than {max_mb}MB."
-    )
+    return handle_payload_too_large(app)
 
 
 @app.errorhandler(404)
 def handle_not_found(_error):
-    return create_error_response("NF_ROUTE_NOT_FOUND", details={"path": request.path, "reason": "route_not_found"})
+    return create_error_response("NF_ROUTE_NOT_FOUND", details={"path": request.path, "reason": HTTP_REASON_ROUTE_NOT_FOUND})
 
 
 @app.errorhandler(405)
 def handle_method_not_allowed(_error):
     return create_error_response(
         "VAL_METHOD_NOT_ALLOWED",
-        details={"path": request.path, "method": request.method, "reason": "method_not_allowed"}
+        details={"path": request.path, "method": request.method, "reason": HTTP_REASON_METHOD_NOT_ALLOWED}
     )
 
 
@@ -206,106 +115,92 @@ def handle_rate_limit(_error):
 
 @app.errorhandler(Exception)
 def handle_unexpected_error(error):
-    logger.exception("Unhandled exception request_id=%s path=%s", getattr(g, "request_id", None), request.path)
+    logger.exception(LOG_UNHANDLED_EXCEPTION, getattr(g, "request_id", None), request.path)
     return create_error_response("SYS_INTERNAL_ERROR")
+
+
+@app.after_request
+def add_rate_limit_headers(response):
+    try:
+        limit = getattr(g, "view_rate_limit", None)
+        if limit is not None:
+            response.headers.setdefault("X-RateLimit-Limit", str(limit.limit))
+            response.headers.setdefault("X-RateLimit-Remaining", str(limit.remaining))
+            response.headers.setdefault("X-RateLimit-Reset", str(limit.reset_at))
+    except Exception:
+        pass
+    return response
 
 
 # ────────────────────────────────────────────────
 # Health Check Route
 # ────────────────────────────────────────────────
 
-@app.route("/health")
+@app.route(HEALTH_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(HEALTH_RATE_LIMIT)
 @track_performance
 def health():
     """Server and database health check endpoint."""
-    logger.info("Health check initiated")
-    now_ts = time.time()
-    cache = getattr(app, "_health_cache", None)
-    if cache and (now_ts - cache.get("checked_at", 0.0)) <= max(0.5, HEALTH_CACHE_TTL_SECONDS):
-        cached_ok = bool(cache.get("ok"))
-        if cached_ok:
-            return success_response(cache.get("data", {"status": "healthy", "database": "connected"}))
-        return create_error_response(
-            "SYS_INTERNAL_ERROR",
-            details=cache.get("details", {}),
-            custom_message=cache.get("message", "Service degraded")
-        )
-
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.info("Health check passed")
-        data = {"status": "healthy", "database": "connected"}
-        app._health_cache = {
-            "checked_at": now_ts,
-            "ok": True,
-            "data": data,
-        }
-        return success_response(data)
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        app._health_cache = {
-            "checked_at": now_ts,
-            "ok": False,
-            "message": "Service degraded",
-            "details": {"status": "degraded"},
-        }
-        return create_error_response(
-            "SYS_INTERNAL_ERROR",
-            details={"status": "degraded"},
-            custom_message="Service degraded"
-        )
+    return get_cached_health_response(app, logger)
 
 
 # ────────────────────────────────────────────────
 # API Documentation Routes
 # ────────────────────────────────────────────────
 
-@app.route("/")
+@app.route(ROOT_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(ROOT_RATE_LIMIT)
 @track_performance
 def root():
     """Root endpoint redirects to API docs."""
-    return redirect(url_for("api_docs_endpoints"))
+    return redirect_to_api_docs_endpoints()
 
 
-def _render_api_docs_page(template_name: str, active_page: str):
-    # Keep docs focused on production API host while backend can still run locally.
-    base_url = "https://api.cognit.online"
-    return render_template(
-        template_name,
-        base_url=base_url,
-        active_page=active_page,
-    )
-
-
-@app.route("/api-docs")
+@app.route(API_DOCS_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(DOCS_RATE_LIMIT)
 @track_performance
 def api_docs_ui():
-    return redirect(url_for("api_docs_endpoints"))
+    return redirect_to_api_docs_endpoints()
 
 
-@app.route("/api-docs/endpoints")
+@app.route(API_DOCS_ENDPOINTS_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(DOCS_RATE_LIMIT)
 @track_performance
 def api_docs_endpoints():
-    return _render_api_docs_page("api_docs/endpoints.html", "endpoints")
+    return render_api_docs_page("api_docs/endpoints.html", "endpoints")
 
 
-@app.route("/api-docs/errors")
+@app.route(API_DOCS_ERRORS_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(DOCS_RATE_LIMIT)
 @track_performance
 def api_docs_errors():
-    return _render_api_docs_page("api_docs/errors.html", "errors")
+    return render_api_docs_page("api_docs/errors.html", "errors")
 
 
-@app.route("/api-docs/examples")
+@app.route(API_DOCS_EXAMPLES_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(DOCS_RATE_LIMIT)
 @track_performance
 def api_docs_examples():
-    return _render_api_docs_page("api_docs/examples.html", "examples")
+    return render_api_docs_page("api_docs/examples.html", "examples")
+
+
+@app.route(CLIENT_ERROR_ROUTE, methods=[HTTP_METHOD_POST])
+@limiter.limit(ROOT_RATE_LIMIT)
+def client_error():
+    payload = request.json or {}
+    log_event(
+        logger,
+        OBS_EVENT_CLIENT_ERROR,
+        level=logging.ERROR,
+        message=payload.get(REQUEST_KEY_ERROR_MESSAGE),
+        stack=payload.get(REQUEST_KEY_ERROR_STACK),
+        context=payload.get(REQUEST_KEY_ERROR_CONTEXT),
+        route=payload.get(REQUEST_KEY_ERROR_ROUTE),
+        tag=payload.get(REQUEST_KEY_ERROR_TAG),
+        meta=payload.get(REQUEST_KEY_ERROR_META),
+        request_id=getattr(g, "request_id", None),
+    )
+    return success_response({"received": True})
 
 
 # ────────────────────────────────────────────────
@@ -313,4 +208,4 @@ def api_docs_examples():
 # ────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    app.run(debug=FLASK_DEBUG, host=FLASK_HOST, port=FLASK_PORT)
+    app.run(debug=FLASK_DEBUG, port=PORT)

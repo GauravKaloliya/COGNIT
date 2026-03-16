@@ -1,4 +1,5 @@
 import base64
+import logging
 import hashlib
 import json
 import re
@@ -21,6 +22,75 @@ from app.config import (
     FRAUD_SUCCESS_MAX_SCORE,
     PAYMENT_VERIFY_MAX_ATTEMPTS,
 )
+from app.constants.event_constants import (
+    AUDIT_EVENT_PAYMENT_OCR_UNAVAILABLE,
+    AUDIT_EVENT_PAYMENT_VERIFY_DUPLICATE_OTHER_USER,
+    AUDIT_EVENT_PAYMENT_VERIFY_NEAR_DUPLICATE_OTHER_USER,
+    AUDIT_EVENT_PAYMENT_VERIFY_REJECTED_REUSE,
+    AUDIT_EVENT_PAYMENT_VERIFY_UPLOAD_INVALID_STATE,
+    AUDIT_EVENT_PAYMENT_VERIFY_UPLOAD_STARTED,
+    DOMAIN_EVENT_PAYMENT_VERIFIED,
+)
+from app.constants.audit_details import (
+    AUDIT_DETAIL_DUPLICATE_HASH_MATCH,
+    AUDIT_DETAIL_INVALID_STATUS,
+    AUDIT_DETAIL_NEAR_DUPLICATE_MATCH,
+    AUDIT_DETAIL_PAYMENT_AUTO_REJECTED_MISSING_OCR,
+    AUDIT_DETAIL_REUSE_REJECTED_SCREENSHOT,
+    AUDIT_DETAIL_VERIFY_UPLOAD_CALLED,
+)
+from app.constants.error_codes import DETAIL_REASONS, ERROR_MESSAGE_TEMPLATES
+from app.constants.payment_constants import (
+    FRAUD_REASON_DUPLICATE_HASH_OTHER,
+    FRAUD_REASON_DUPLICATE_HASH_SELF,
+    FRAUD_REASON_MAX_ATTEMPTS_EXCEEDED,
+    FRAUD_REASON_NEAR_DUPLICATE_OTHER,
+    FRAUD_REASON_NEAR_DUPLICATE_SELF,
+    FRAUD_REASON_OCR_SIGNATURE_REPLAY_OTHER,
+    FRAUD_REASON_OCR_SIGNATURE_REPLAY_SELF,
+    FRAUD_REASON_OCR_UNAVAILABLE,
+    FRAUD_REASON_POLICY_RISK_THRESHOLD,
+    FRAUD_REASON_REJECTED_REUSE,
+    FRAUD_REASON_VERIFICATION_FAILED,
+    PAYMENT_DETECTED_APP_UNKNOWN,
+    PAYMENT_FILE_FINAL_PREFIX,
+    PAYMENT_FILE_STAGE_PREFIX,
+    PAYMENT_STATUS_EXPIRED,
+    PAYMENT_STATUS_FAILED,
+    PAYMENT_STATUS_PENDING,
+    PAYMENT_STATUS_PROCESSING,
+    PAYMENT_STATUS_REJECTED_FRAUD,
+    PAYMENT_STATUS_SUCCESS,
+    UPLOAD_SOURCE_FIELD_IMAGE_BASE64,
+    UPLOAD_SOURCE_FIELD_OBJECT_KEY,
+    VERIFY_ATTEMPT_STATUS_DUPLICATE,
+    VERIFY_ATTEMPT_STATUS_ERROR,
+    VERIFY_ATTEMPT_STATUS_EXPIRED,
+    VERIFY_ATTEMPT_STATUS_INVALID_STATE,
+    VERIFY_ATTEMPT_STATUS_REJECTED,
+    VERIFY_ATTEMPT_STATUS_STARTED,
+    VERIFY_ATTEMPT_STATUS_SUCCESS,
+    VERIFY_DETAIL_KEY_DECISION_THRESHOLD,
+    VERIFY_DETAIL_KEY_DISTANCE,
+    VERIFY_DETAIL_KEY_EXTRACTED_TEXT_LENGTH,
+    VERIFY_DETAIL_KEY_FAILURE_REASONS,
+    VERIFY_DETAIL_KEY_MAX_ATTEMPTS,
+    VERIFY_DETAIL_KEY_OCR_CONFIDENCE,
+    VERIFY_DETAIL_KEY_OCR_SIGNATURE,
+    VERIFY_DETAIL_KEY_RISK_SCORE,
+    VERIFY_DETAIL_KEY_UPLOADED_SHA256,
+    PAYMENT_VERIFICATION_ERROR,
+)
+from app.constants.response_keys import (
+    RESPONSE_KEY_DETECTED_APP,
+    RESPONSE_KEY_ERROR,
+    RESPONSE_KEY_PAYMENT_ID,
+    RESPONSE_KEY_STATUS,
+    RESPONSE_KEY_VERIFICATION,
+    RESPONSE_KEY_VERIFIED,
+)
+from app.constants.route_constants import PAYMENT_VERIFY_UPLOAD_ENDPOINT_TEMPLATE
+from app.constants.observability_constants import OBS_EVENT_FRAUD_SCORE_CONFIDENCE_PARSE_FAILED, OBS_EVENT_PAYMENT_DHASH_FAILED, OBS_EVENT_PAYMENT_NEAR_DUPLICATE_CHECK_FAILED, OBS_EVENT_PAYMENT_UPLOAD_CLEANUP_FAILED, OBS_EVENT_PAYMENT_VERIFY_COMMIT_FAILED, OBS_EVENT_PAYMENT_VERIFY_ROLLBACK_FAILED
 from app.extensions import s3
 from app.utils.helpers import create_error_response, validate_image_extension, log_audit, get_ip_hash
 from app.utils.ocr import (
@@ -53,6 +123,21 @@ from app.services import (
     StateTransitionError,
     emit_domain_event,
 )
+from app.services.payment_query_service import (
+    append_payment_verification_details,
+    fetch_payment_for_internal_verify,
+    fetch_payment_for_verify,
+    fetch_payment_owner_participant_id,
+    increment_verification_attempts,
+    insert_payment_file_record,
+    insert_payment_fraud_signals,
+    set_payment_ocr_unavailable,
+    set_payment_status,
+    set_payment_verification_outcome,
+)
+from app.utils.observability import log_event
+
+logger = logging.getLogger(__name__)
 
 
 def _calculate_fraud_score(failures, confidence=None) -> float:
@@ -73,7 +158,7 @@ def _calculate_fraud_score(failures, confidence=None) -> float:
             elif conf < 70:
                 score += 5.0
         except Exception:
-            pass
+            log_event(logger, OBS_EVENT_FRAUD_SCORE_CONFIDENCE_PARSE_FAILED, level=logging.WARNING)
 
     return min(100.0, max(0.0, score))
 
@@ -94,51 +179,30 @@ def _is_ocr_unavailable(error: Exception) -> bool:
 
 
 def _reject_for_ocr_unavailable(db, payment_id: int, participant_id: int, sha256_hash: str = None):
-    failures = ["ocr_unavailable"]
+    failures = [FRAUD_REASON_OCR_UNAVAILABLE]
     verification_details = {
-        "ocr_confidence": 0,
-        "failure_reasons": failures,
-        "extracted_text_length": 0,
+        VERIFY_DETAIL_KEY_OCR_CONFIDENCE: 0,
+        VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
+        VERIFY_DETAIL_KEY_EXTRACTED_TEXT_LENGTH: 0,
     }
     if sha256_hash:
-        verification_details["uploaded_sha256"] = sha256_hash
+        verification_details[VERIFY_DETAIL_KEY_UPLOADED_SHA256] = sha256_hash
 
-    db.execute(text("""
-        UPDATE payments
-        SET extracted_text = '',
-            uploaded_sha256 = :uploaded_sha256,
-            fraud_score = :fs,
-            verified_at = CURRENT_TIMESTAMP,
-            status = 'rejected_fraud',
-            detected_app = 'unknown',
-            auto_rejected = true,
-            verification_details = :details
-        WHERE id = :pid
-    """), {
-        "fs": _calculate_fraud_score(failures, confidence=0),
-        "details": json.dumps(verification_details),
-        "uploaded_sha256": sha256_hash,
-        "pid": payment_id,
-    })
-
-    db.execute(text("""
-        INSERT INTO payment_fraud_signals (
-            payment_id, signal_type, signal_score, details
-        ) VALUES (
-            :pid, :type, :score, :details
-        ) ON CONFLICT DO NOTHING
-    """), {
-        "pid": payment_id,
-        "type": "ocr_unavailable",
-        "score": 100,
-        "details": json.dumps({"reason": "ocr_unavailable"}),
-    })
+    fraud_score = _calculate_fraud_score(failures, confidence=0)
+    set_payment_ocr_unavailable(
+        db,
+        payment_id=payment_id,
+        sha256_hash=sha256_hash,
+        fraud_score=fraud_score,
+        verification_details=verification_details,
+    )
+    insert_payment_fraud_signals(db, payment_id=payment_id, failures=failures, score=100)
 
     log_audit(
         db,
-        "payment_ocr_unavailable",
+        AUDIT_EVENT_PAYMENT_OCR_UNAVAILABLE,
         participant_id=participant_id,
-        details=f"Payment {payment_id} auto-rejected due to missing OCR",
+        details=AUDIT_DETAIL_PAYMENT_AUTO_REJECTED_MISSING_OCR.format(payment_id=payment_id),
     )
     db.commit()
     return verification_details, failures
@@ -187,7 +251,7 @@ def process_verify_upload(
     })
     _idem, replay = load_idempotent_response(
         db,
-        endpoint=f"/payments/{payment_public_id}/verify-upload",
+        endpoint=PAYMENT_VERIFY_UPLOAD_ENDPOINT_TEMPLATE.format(payment_public_id=payment_public_id),
         idempotency_key=idempotency_key,
         participant_public_id=payment_public_id,
         request_hash=request_hash,
@@ -196,12 +260,7 @@ def process_verify_upload(
         payload, status_code = replay
         return jsonify(payload), status_code
 
-    row = db.execute(text("""
-        SELECT id, participant_id, status, expires_at, timer_activated_at, verification_attempts, amount
-        FROM payments
-        WHERE public_id = :pid
-        FOR UPDATE
-    """), {"pid": payment_public_id}).fetchone()
+    row = fetch_payment_for_verify(db, payment_public_id)
     if not row:
         return create_error_response("PAYMENT_NOT_FOUND")
 
@@ -213,9 +272,9 @@ def process_verify_upload(
 
     try:
         if upload_object_key:
-            expected_prefix = f"payments/staging/{payment_public_id}/"
+            expected_prefix = f"{PAYMENT_FILE_STAGE_PREFIX}/{payment_public_id}/"
             if not upload_object_key.startswith(expected_prefix):
-                return create_error_response("VAL_INVALID_FORMAT", {"field": "upload_object_key"})
+                return create_error_response("VAL_INVALID_FORMAT", {"field": UPLOAD_SOURCE_FIELD_OBJECT_KEY})
             obj = s3.get_object(Bucket=S3_BUCKET_NAME, Key=upload_object_key)
             image_bytes = obj["Body"].read()
         else:
@@ -227,8 +286,8 @@ def process_verify_upload(
         if len(image_bytes) > max_bytes:
             return create_error_response(
                 "VAL_FILE_TOO_LARGE",
-                details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": "payment_image_too_large"},
-                custom_message=f"The file is too large. Please upload an image smaller than {int(PAYMENT_MAX_IMAGE_MB)}MB."
+                details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": DETAIL_REASONS["PAYMENT_IMAGE_TOO_LARGE"]},
+                custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_IMAGE_TOO_LARGE"].format(max_mb=int(PAYMENT_MAX_IMAGE_MB))
             )
         actual_sha = hashlib.sha256(image_bytes).hexdigest()
         if actual_sha != sha256_hash:
@@ -236,12 +295,16 @@ def process_verify_upload(
 
         image = Image.open(BytesIO(image_bytes))
     except Exception:
-        source_field = "upload_object_key" if upload_object_key else "image_base64"
-        return create_error_response("INVALID_FORMAT", {"field": source_field, "message": "Invalid image data"})
+        source_field = UPLOAD_SOURCE_FIELD_OBJECT_KEY if upload_object_key else UPLOAD_SOURCE_FIELD_IMAGE_BASE64
+        return create_error_response(
+            "INVALID_FORMAT",
+            {"field": source_field, "message": ERROR_MESSAGE_TEMPLATES["INVALID_IMAGE_DATA"]},
+        )
 
     try:
         image_hash = compute_dhash(image) or sha256_hash
     except Exception:
+        log_event(logger, OBS_EVENT_PAYMENT_DHASH_FAILED, level=logging.WARNING)
         image_hash = sha256_hash
     image_hash_bits, image_hash_bucket = phash_hex_to_bits_and_bucket(image_hash)
 
@@ -255,10 +318,10 @@ def process_verify_upload(
         mime_type=mime_type or content_type,
         file_size=int(client_file_size) if isinstance(client_file_size, int) or (isinstance(client_file_size, str) and str(client_file_size).isdigit()) else None,
         image_phash=image_hash,
-        status="started",
+        status=VERIFY_ATTEMPT_STATUS_STARTED,
         details={
             "original_filename": original_filename or None,
-            "upload_object_key": upload_object_key or None,
+            UPLOAD_SOURCE_FIELD_OBJECT_KEY: upload_object_key or None,
         },
     )
 
@@ -276,56 +339,33 @@ def process_verify_upload(
     def _reject_payment_for_fraud(failures, confidence=None, details=None):
         score = _calculate_fraud_score(failures or [], confidence=confidence)
         verification_details = {
-            "failure_reasons": failures or [],
-            "uploaded_sha256": sha256_hash,
+            VERIFY_DETAIL_KEY_FAILURE_REASONS: failures or [],
+            VERIFY_DETAIL_KEY_UPLOADED_SHA256: sha256_hash,
         }
         if details:
             verification_details.update(details)
 
-        db.execute(text("""
-            UPDATE payments
-            SET fraud_score = :score,
-                status = 'rejected_fraud',
-                detected_app = 'unknown',
-                auto_rejected = true,
-                verified_at = CURRENT_TIMESTAMP,
-                uploaded_sha256 = :uploaded_sha256,
-                verification_details = :verification_details,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {
-            "pid": payment_id,
-            "score": score,
-            "uploaded_sha256": sha256_hash,
-            "verification_details": json.dumps(verification_details),
-        })
-
-        rows = [
-            {
-                "pid": payment_id,
-                "type": failure,
-                "score": score,
-                "details": json.dumps({"reason": failure}),
-            }
-            for failure in (failures or [])
-        ]
-        if rows:
-            db.execute(text("""
-                INSERT INTO payment_fraud_signals (
-                    payment_id, signal_type, signal_score, details
-                ) VALUES (
-                    :pid, :type, :score, :details
-                ) ON CONFLICT DO NOTHING
-            """), rows)
+        set_payment_verification_outcome(
+            db,
+            payment_id=payment_id,
+            filtered_text="",
+            sha256_hash=sha256_hash,
+            fraud_score=score,
+            target_status=PAYMENT_STATUS_REJECTED_FRAUD,
+            detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+            verification_details=verification_details,
+            auto_rejected=True,
+        )
+        insert_payment_fraud_signals(db, payment_id=payment_id, failures=failures or [], score=score)
         return score
 
     if payment_audit_logger:
         payment_audit_logger(
             db,
-            "payment_verify_upload_started",
+            AUDIT_EVENT_PAYMENT_VERIFY_UPLOAD_STARTED,
             payment_id=payment_id,
             participant_id=participant_id,
-            details="verify-upload called",
+            details=AUDIT_DETAIL_VERIFY_UPLOAD_CALLED,
             request_data={
                 "payment_public_id": payment_public_id,
                 "file_extension": ext,
@@ -343,27 +383,27 @@ def process_verify_upload(
                 db,
                 payment_id=int(payment_id),
                 from_status=str(status),
-                to_status="expired",
+                to_status=PAYMENT_STATUS_EXPIRED,
                 request_id=request_id,
-                details={"reason": "session_expired_before_verify"},
+                details={"reason": DETAIL_REASONS["SESSION_EXPIRED_BEFORE_VERIFY"]},
             )
         except StateTransitionError:
             return create_error_response("PAYMENT_INVALID_STATE")
-        _finalize_attempt("expired")
+        _finalize_attempt(VERIFY_ATTEMPT_STATUS_EXPIRED)
         db.commit()
         return create_error_response("PAYMENT_EXPIRED")
 
-    if status != "pending":
+    if status != PAYMENT_STATUS_PENDING:
         if payment_audit_logger:
             payment_audit_logger(
                 db,
-                "payment_verify_upload_invalid_state",
+                AUDIT_EVENT_PAYMENT_VERIFY_UPLOAD_INVALID_STATE,
                 payment_id=payment_id,
                 participant_id=participant_id,
-                details=f"invalid status {status}",
+                details=AUDIT_DETAIL_INVALID_STATUS.format(status=status),
                 response_data={"status": status},
             )
-        _finalize_attempt("invalid_state", details={"current_payment_status": status})
+        _finalize_attempt(VERIFY_ATTEMPT_STATUS_INVALID_STATE, details={"current_payment_status": status})
         return create_error_response("PAYMENT_INVALID_STATE")
 
     if int(verification_attempts or 0) >= int(PAYMENT_VERIFY_MAX_ATTEMPTS):
@@ -372,48 +412,35 @@ def process_verify_upload(
                 db,
                 payment_id=int(payment_id),
                 from_status=str(status),
-                to_status="failed",
+                to_status=PAYMENT_STATUS_FAILED,
                 request_id=request_id,
-                details={"reason": "max_verify_attempts_exceeded"},
+                details={"reason": DETAIL_REASONS["MAX_VERIFY_ATTEMPTS_EXCEEDED"]},
             )
         except StateTransitionError:
             return create_error_response("PAYMENT_INVALID_STATE")
-        db.execute(text("""
-            UPDATE payments
-            SET verification_details = COALESCE(verification_details, '{}'::jsonb) || CAST(:details AS jsonb),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {
-            "pid": payment_id,
-            "details": json.dumps({
-                "failure_reasons": ["max_attempts_exceeded"],
-                "max_attempts": int(PAYMENT_VERIFY_MAX_ATTEMPTS),
-            }),
-        })
+        append_payment_verification_details(
+            db,
+            payment_id=payment_id,
+            details={
+                VERIFY_DETAIL_KEY_FAILURE_REASONS: [FRAUD_REASON_MAX_ATTEMPTS_EXCEEDED],
+                VERIFY_DETAIL_KEY_MAX_ATTEMPTS: int(PAYMENT_VERIFY_MAX_ATTEMPTS),
+            },
+        )
         _finalize_attempt(
-            "invalid_state",
-            failures=["max_attempts_exceeded"],
-            details={"max_attempts": int(PAYMENT_VERIFY_MAX_ATTEMPTS)},
+            VERIFY_ATTEMPT_STATUS_INVALID_STATE,
+            failures=[FRAUD_REASON_MAX_ATTEMPTS_EXCEEDED],
+            details={VERIFY_DETAIL_KEY_MAX_ATTEMPTS: int(PAYMENT_VERIFY_MAX_ATTEMPTS)},
         )
         db.commit()
         return create_error_response("PAY_VERIFY_ATTEMPTS_EXCEEDED")
 
-    db.execute(text("""
-        UPDATE payments
-        SET verification_attempts = COALESCE(verification_attempts, 0) + 1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = :pid
-    """), {"pid": payment_id})
+    increment_verification_attempts(db, payment_id)
 
     is_duplicate, existing_payment_id, is_same_participant = check_duplicate_screenshot(
         db, sha256_hash, participant_id=participant_id
     )
     if is_duplicate:
-        existing_owner_participant_id = db.execute(text("""
-            SELECT participant_id
-            FROM payments
-            WHERE id = :pid
-        """), {"pid": existing_payment_id}).scalar()
+        existing_owner_participant_id = fetch_payment_owner_participant_id(db, existing_payment_id)
         same_person_fingerprint = is_same_person_by_fingerprint(
             db,
             participant_id=participant_id,
@@ -422,11 +449,11 @@ def process_verify_upload(
             current_fingerprint_variants=device_fingerprint_variants,
         )
         if is_same_participant or same_person_fingerprint:
-            fraud_score = _reject_payment_for_fraud(["duplicate_hash_self"])
+            fraud_score = _reject_payment_for_fraud([FRAUD_REASON_DUPLICATE_HASH_SELF])
             _finalize_attempt(
-                "duplicate",
-                detected_app="unknown",
-                failures=["duplicate_hash_self"],
+                VERIFY_ATTEMPT_STATUS_DUPLICATE,
+                detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+                failures=[FRAUD_REASON_DUPLICATE_HASH_SELF],
                 fraud_score=fraud_score,
             )
             db.commit()
@@ -435,17 +462,17 @@ def process_verify_upload(
         if payment_audit_logger:
             payment_audit_logger(
                 db,
-                "payment_verify_duplicate_other_user",
+                AUDIT_EVENT_PAYMENT_VERIFY_DUPLICATE_OTHER_USER,
                 payment_id=payment_id,
                 participant_id=participant_id,
-                details=f"duplicate hash matched payment {existing_payment_id}",
+                details=AUDIT_DETAIL_DUPLICATE_HASH_MATCH.format(payment_id=existing_payment_id),
                 fraud_signals={"duplicate_hash": True},
             )
-        fraud_score = _reject_payment_for_fraud(["duplicate_hash_other"])
+        fraud_score = _reject_payment_for_fraud([FRAUD_REASON_DUPLICATE_HASH_OTHER])
         _finalize_attempt(
-            "duplicate",
-            detected_app="unknown",
-            failures=["duplicate_hash_other"],
+            VERIFY_ATTEMPT_STATUS_DUPLICATE,
+            detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+            failures=[FRAUD_REASON_DUPLICATE_HASH_OTHER],
             fraud_score=fraud_score,
         )
         db.commit()
@@ -455,17 +482,17 @@ def process_verify_upload(
         if payment_audit_logger:
             payment_audit_logger(
                 db,
-                "payment_verify_rejected_reuse",
+                AUDIT_EVENT_PAYMENT_VERIFY_REJECTED_REUSE,
                 payment_id=payment_id,
                 participant_id=participant_id,
-                details="attempted reuse of previously rejected screenshot",
+                details=AUDIT_DETAIL_REUSE_REJECTED_SCREENSHOT,
                 fraud_signals={"rejected_reuse": True},
             )
-        fraud_score = _reject_payment_for_fraud(["rejected_reuse"])
+        fraud_score = _reject_payment_for_fraud([FRAUD_REASON_REJECTED_REUSE])
         _finalize_attempt(
-            "rejected",
-            detected_app="unknown",
-            failures=["rejected_reuse"],
+            VERIFY_ATTEMPT_STATUS_REJECTED,
+            detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+            failures=[FRAUD_REASON_REJECTED_REUSE],
             fraud_score=fraud_score,
         )
         db.commit()
@@ -479,11 +506,7 @@ def process_verify_upload(
             threshold=6,
         )
         if is_near_duplicate:
-            near_owner_participant_id = db.execute(text("""
-                SELECT participant_id
-                FROM payments
-                WHERE id = :pid
-            """), {"pid": near_payment_id}).scalar()
+            near_owner_participant_id = fetch_payment_owner_participant_id(db, near_payment_id)
             near_same_person_fingerprint = is_same_person_by_fingerprint(
                 db,
                 participant_id=participant_id,
@@ -493,15 +516,15 @@ def process_verify_upload(
             )
             if near_same_participant or near_same_person_fingerprint:
                 fraud_score = _reject_payment_for_fraud(
-                    ["near_duplicate_self"],
-                    details={"distance": near_distance},
+                    [FRAUD_REASON_NEAR_DUPLICATE_SELF],
+                    details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
                 )
                 _finalize_attempt(
-                    "duplicate",
-                    detected_app="unknown",
-                    failures=["near_duplicate_self"],
+                    VERIFY_ATTEMPT_STATUS_DUPLICATE,
+                    detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+                    failures=[FRAUD_REASON_NEAR_DUPLICATE_SELF],
                     fraud_score=fraud_score,
-                    details={"distance": near_distance},
+                    details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
                 )
                 db.commit()
                 return create_error_response("DUPLICATE_IMAGE_SELF")
@@ -509,41 +532,41 @@ def process_verify_upload(
             if payment_audit_logger:
                 payment_audit_logger(
                     db,
-                    "payment_verify_near_duplicate_other_user",
+                    AUDIT_EVENT_PAYMENT_VERIFY_NEAR_DUPLICATE_OTHER_USER,
                     payment_id=payment_id,
                     participant_id=participant_id,
-                    details=f"near duplicate matched payment {near_payment_id} with distance {near_distance}",
+                    details=AUDIT_DETAIL_NEAR_DUPLICATE_MATCH.format(
+                        payment_id=near_payment_id,
+                        distance=near_distance,
+                    ),
                     fraud_signals={"near_duplicate": True, "distance": near_distance},
-                )
+            )
             fraud_score = _reject_payment_for_fraud(
-                ["near_duplicate_other"],
-                details={"distance": near_distance},
+                [FRAUD_REASON_NEAR_DUPLICATE_OTHER],
+                details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
             )
             _finalize_attempt(
-                "duplicate",
-                detected_app="unknown",
-                failures=["near_duplicate_other"],
+                VERIFY_ATTEMPT_STATUS_DUPLICATE,
+                detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+                failures=[FRAUD_REASON_NEAR_DUPLICATE_OTHER],
                 fraud_score=fraud_score,
-                details={"distance": near_distance},
+                details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
             )
             db.commit()
             return create_error_response("DUPLICATE_IMAGE")
     except Exception:
+        log_event(logger, OBS_EVENT_PAYMENT_NEAR_DUPLICATE_CHECK_FAILED, level=logging.WARNING)
         image_hash = sha256_hash
 
-    verification_result = {"status": "processing", "verified": False}
+    verification_result = {RESPONSE_KEY_STATUS: PAYMENT_STATUS_PROCESSING, RESPONSE_KEY_VERIFIED: False}
 
     try:
         try:
-            ensure_payment_status_transition(status, "processing")
+            ensure_payment_status_transition(status, PAYMENT_STATUS_PROCESSING)
         except StateTransitionError:
             return create_error_response("PAYMENT_INVALID_STATE")
 
-        db.execute(text("""
-            UPDATE payments
-            SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {"pid": payment_id})
+        set_payment_status(db, payment_id=payment_id, status=PAYMENT_STATUS_PROCESSING)
 
         extracted_text, confidence = extract_text_with_confidence(image)
         amount = amount if amount is not None else PAYMENT_AMOUNT
@@ -556,7 +579,7 @@ def process_verify_upload(
             time_window_start_utc=timer_activated_at,
             time_window_end_utc=expires_at,
         )
-        detected_app = detected_app or "unknown"
+        detected_app = detected_app or PAYMENT_DETECTED_APP_UNKNOWN
         filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
         ocr_signature = compute_ocr_signature(extracted_text, detected_app)
         if ocr_signature:
@@ -567,35 +590,35 @@ def process_verify_upload(
                 participant_id=participant_id,
             )
             if is_replay:
-                replay_reason = "ocr_signature_replay_self" if replay_same_participant else "ocr_signature_replay_other"
+                replay_reason = FRAUD_REASON_OCR_SIGNATURE_REPLAY_SELF if replay_same_participant else FRAUD_REASON_OCR_SIGNATURE_REPLAY_OTHER
                 failures = list(set((failures or []) + [replay_reason]))
                 is_valid = False
 
         risk_score = _calculate_fraud_score(failures, confidence=confidence)
         force_policy_reject = bool(is_valid and risk_score >= float(FRAUD_REJECT_THRESHOLD))
         if force_policy_reject:
-            failures = list(set((failures or []) + ["policy_risk_threshold"]))
+            failures = list(set((failures or []) + [FRAUD_REASON_POLICY_RISK_THRESHOLD]))
             is_valid = False
             risk_score = _calculate_fraud_score(failures, confidence=confidence)
 
         verification_details = {
-            "ocr_confidence": confidence,
-            "failure_reasons": failures,
-            "extracted_text_length": len(extracted_text) if extracted_text else 0,
-            "uploaded_sha256": sha256_hash,
-            "risk_score": risk_score,
-            "decision_threshold": float(FRAUD_REJECT_THRESHOLD),
+            VERIFY_DETAIL_KEY_OCR_CONFIDENCE: confidence,
+            VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
+            VERIFY_DETAIL_KEY_EXTRACTED_TEXT_LENGTH: len(extracted_text) if extracted_text else 0,
+            VERIFY_DETAIL_KEY_UPLOADED_SHA256: sha256_hash,
+            VERIFY_DETAIL_KEY_RISK_SCORE: risk_score,
+            VERIFY_DETAIL_KEY_DECISION_THRESHOLD: float(FRAUD_REJECT_THRESHOLD),
         }
         if ocr_signature:
-            verification_details["ocr_signature"] = ocr_signature
+            verification_details[VERIFY_DETAIL_KEY_OCR_SIGNATURE] = ocr_signature
 
         if is_valid:
             try:
-                ensure_payment_status_transition("processing", "success")
+                ensure_payment_status_transition(PAYMENT_STATUS_PROCESSING, PAYMENT_STATUS_SUCCESS)
             except StateTransitionError:
                 return create_error_response("PAYMENT_INVALID_STATE")
 
-            object_key = f"payments/{payment_public_id}.{ext}"
+            object_key = f"{PAYMENT_FILE_FINAL_PREFIX}/{payment_public_id}.{ext}"
             try:
                 if upload_object_key:
                     s3_response = s3.copy_object(
@@ -609,7 +632,7 @@ def process_verify_upload(
                         if upload_object_key != object_key:
                             s3.delete_object(Bucket=S3_BUCKET_NAME, Key=upload_object_key)
                     except Exception:
-                        pass
+                        log_event(logger, OBS_EVENT_PAYMENT_UPLOAD_CLEANUP_FAILED, level=logging.WARNING)
                 else:
                     s3_response = s3.put_object(
                         Bucket=S3_BUCKET_NAME,
@@ -619,158 +642,123 @@ def process_verify_upload(
                     )
             except Exception:
                 db.rollback()
-                _finalize_attempt("error", details={"reason": "s3_upload_failed"})
-                return create_error_response("INTERNAL_ERROR", custom_message="Failed to save payment screenshot")
+                _finalize_attempt(VERIFY_ATTEMPT_STATUS_ERROR, details={"reason": DETAIL_REASONS["S3_UPLOAD_FAILED"]})
+                return create_error_response("INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_SCREENSHOT_SAVE_FAILED"])
 
-            db.execute(text("""
-                INSERT INTO payment_files (
-                    payment_id, bucket_name, object_key, sha256, etag, file_size,
-                    content_type, uploaded_by_ip_hash, image_phash, image_phash_bits, image_phash_bucket, image_quality_score
-                ) VALUES (
-                    :pid, :bucket_name, :key, :hash, :etag, :file_size,
-                    :content_type, :uploaded_by_ip_hash, :phash, CAST(:phash_bits AS bit(64)), :phash_bucket, :image_quality_score
-                )
-            """), {
-                "pid": payment_id,
-                "bucket_name": S3_BUCKET_NAME,
-                "key": object_key,
-                "hash": sha256_hash,
-                "etag": (
+            insert_payment_file_record(
+                db,
+                payment_id=payment_id,
+                bucket_name=S3_BUCKET_NAME,
+                object_key=object_key,
+                sha256_hash=sha256_hash,
+                etag=(
                     (s3_response.get("ETag") or "").strip('"')
                     or (s3_response.get("CopyObjectResult", {}).get("ETag") or "").strip('"')
                     or None
                 ),
-                "file_size": int(len(image_bytes)),
-                "content_type": content_type or mime_type or None,
-                "uploaded_by_ip_hash": ip_hash or get_ip_hash(),
-                "phash": image_hash,
-                "phash_bits": image_hash_bits,
-                "phash_bucket": image_hash_bucket,
-                "image_quality_score": round(float(confidence), 2) if confidence is not None else None,
-            })
+                file_size=int(len(image_bytes)),
+                content_type=content_type or mime_type or None,
+                uploaded_by_ip_hash=ip_hash or get_ip_hash(),
+                image_phash=image_hash,
+                image_phash_bits=image_hash_bits,
+                image_phash_bucket=image_hash_bucket,
+                image_quality_score=round(float(confidence), 2) if confidence is not None else None,
+            )
 
-            db.execute(text("""
-                UPDATE payments
-                SET extracted_text = :txt,
-                    uploaded_sha256 = :uploaded_sha256,
-                    fraud_score = :fs,
-                    verified_at = CURRENT_TIMESTAMP,
-                    status = :status,
-                    detected_app = :app,
-                    verification_details = :details
-                WHERE id = :pid
-            """), {
-                "txt": filtered_text,
-                "uploaded_sha256": sha256_hash,
-                "fs": min(float(FRAUD_SUCCESS_MAX_SCORE), risk_score),
-                "status": "success",
-                "app": detected_app,
-                "details": json.dumps(verification_details),
-                "pid": payment_id,
-            })
+            success_risk_score = set_payment_verification_outcome(
+                db,
+                payment_id=payment_id,
+                filtered_text=filtered_text,
+                sha256_hash=sha256_hash,
+                fraud_score=risk_score,
+                target_status=PAYMENT_STATUS_SUCCESS,
+                detected_app=detected_app,
+                verification_details=verification_details,
+                auto_rejected=False,
+            )
 
             verification_result = {
-                "status": "success",
-                "verified": True,
-                "failure_reasons": [],
+                RESPONSE_KEY_STATUS: PAYMENT_STATUS_SUCCESS,
+                RESPONSE_KEY_VERIFIED: True,
+                VERIFY_DETAIL_KEY_FAILURE_REASONS: [],
             }
             _finalize_attempt(
-                "success",
+                VERIFY_ATTEMPT_STATUS_SUCCESS,
                 detected_app=detected_app,
                 failures=[],
-                fraud_score=min(float(FRAUD_SUCCESS_MAX_SCORE), risk_score),
-                details={"ocr_signature": ocr_signature} if ocr_signature else None,
+                fraud_score=success_risk_score,
+                details={VERIFY_DETAIL_KEY_OCR_SIGNATURE: ocr_signature} if ocr_signature else None,
             )
             emit_domain_event(
                 db,
-                event_type="payment_verified",
+                event_type=DOMAIN_EVENT_PAYMENT_VERIFIED,
                 correlation_id=request_id,
                 participant_id=participant_id,
                 payment_id=payment_id,
-                payload={"detected_app": detected_app, "status": "success"},
+                payload={RESPONSE_KEY_DETECTED_APP: detected_app, RESPONSE_KEY_STATUS: PAYMENT_STATUS_SUCCESS},
             )
         else:
             try:
-                ensure_payment_status_transition("processing", "rejected_fraud")
+                ensure_payment_status_transition(PAYMENT_STATUS_PROCESSING, PAYMENT_STATUS_REJECTED_FRAUD)
             except StateTransitionError:
                 return create_error_response("PAYMENT_INVALID_STATE")
 
-            db.execute(text("""
-                UPDATE payments
-                SET extracted_text = :txt,
-                    uploaded_sha256 = :uploaded_sha256,
-                    fraud_score = :fs,
-                    verified_at = CURRENT_TIMESTAMP,
-                    status = :status,
-                    detected_app = :app,
-                    verification_details = :details,
-                    auto_rejected = true
-                WHERE id = :pid
-            """), {
-                "txt": filtered_text,
-                "uploaded_sha256": sha256_hash,
-                "fs": risk_score,
-                "status": "rejected_fraud",
-                "app": detected_app,
-                "details": json.dumps(verification_details),
-                "pid": payment_id,
-            })
-
-            rows = [
-                {
-                    "pid": payment_id,
-                    "type": failure,
-                    "score": 100,
-                    "details": json.dumps({"reason": failure, "confidence": confidence}),
-                }
-                for failure in (failures or [])
-            ]
-            if rows:
-                db.execute(text("""
-                    INSERT INTO payment_fraud_signals (
-                        payment_id, signal_type, signal_score, details
-                    ) VALUES (
-                        :pid, :type, :score, :details
-                    ) ON CONFLICT DO NOTHING
-                """), rows)
+            set_payment_verification_outcome(
+                db,
+                payment_id=payment_id,
+                filtered_text=filtered_text,
+                sha256_hash=sha256_hash,
+                fraud_score=risk_score,
+                target_status=PAYMENT_STATUS_REJECTED_FRAUD,
+                detected_app=detected_app,
+                verification_details=verification_details,
+                auto_rejected=True,
+            )
+            insert_payment_fraud_signals(
+                db,
+                payment_id=payment_id,
+                failures=failures or [],
+                score=100,
+                confidence=confidence,
+            )
 
             verification_result = {
-                "status": "rejected_fraud",
-                "verified": True,
-                "failure_reasons": failures,
+                RESPONSE_KEY_STATUS: PAYMENT_STATUS_REJECTED_FRAUD,
+                RESPONSE_KEY_VERIFIED: True,
+                VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
             }
-            reject_details = {"ocr_signature": ocr_signature} if ocr_signature else None
-            _finalize_attempt("rejected", detected_app=detected_app, failures=failures, fraud_score=risk_score, details=reject_details)
+            reject_details = {VERIFY_DETAIL_KEY_OCR_SIGNATURE: ocr_signature} if ocr_signature else None
+            _finalize_attempt(VERIFY_ATTEMPT_STATUS_REJECTED, detected_app=detected_app, failures=failures, fraud_score=risk_score, details=reject_details)
 
     except Exception as exc:
         try:
             db.rollback()
         except Exception:
-            pass
+            log_event(logger, OBS_EVENT_PAYMENT_VERIFY_ROLLBACK_FAILED, level=logging.WARNING)
         if _is_ocr_unavailable(exc):
             verification_details, failures = _reject_for_ocr_unavailable(db, payment_id, participant_id, sha256_hash=sha256_hash)
             verification_result = {
-                "status": "rejected_fraud",
-                "verified": True,
-                "failure_reasons": failures,
+                RESPONSE_KEY_STATUS: PAYMENT_STATUS_REJECTED_FRAUD,
+                RESPONSE_KEY_VERIFIED: True,
+                VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
             }
-            _finalize_attempt("rejected", detected_app="unknown", failures=failures, fraud_score=_calculate_fraud_score(failures, confidence=0))
+            _finalize_attempt(VERIFY_ATTEMPT_STATUS_REJECTED, detected_app=PAYMENT_DETECTED_APP_UNKNOWN, failures=failures, fraud_score=_calculate_fraud_score(failures, confidence=0))
         else:
             verification_result = {
-                "status": "error",
-                "verified": False,
-                "error": "verification_failed",
+                RESPONSE_KEY_STATUS: VERIFY_ATTEMPT_STATUS_ERROR,
+                RESPONSE_KEY_VERIFIED: False,
+                RESPONSE_KEY_ERROR: PAYMENT_VERIFICATION_ERROR,
             }
             _finalize_attempt(
-                "error",
-                failures=["verification_failed"],
-                fraud_score=_calculate_fraud_score(["verification_failed"]),
+                VERIFY_ATTEMPT_STATUS_ERROR,
+                failures=[FRAUD_REASON_VERIFICATION_FAILED],
+                fraud_score=_calculate_fraud_score([FRAUD_REASON_VERIFICATION_FAILED]),
             )
 
-    response_payload = {"status": "processed", "verification": verification_result}
+    response_payload = {RESPONSE_KEY_STATUS: "processed", RESPONSE_KEY_VERIFICATION: verification_result}
     save_idempotent_response(
         db,
-        endpoint=f"/payments/{payment_public_id}/verify-upload",
+        endpoint=PAYMENT_VERIFY_UPLOAD_ENDPOINT_TEMPLATE.format(payment_public_id=payment_public_id),
         idempotency_key=idempotency_key,
         participant_public_id=payment_public_id,
         request_hash=request_hash,
@@ -780,7 +768,7 @@ def process_verify_upload(
     try:
         db.commit()
     except Exception:
-        pass
+        log_event(logger, OBS_EVENT_PAYMENT_VERIFY_COMMIT_FAILED, level=logging.WARNING)
     return jsonify(response_payload)
 
 
@@ -789,13 +777,7 @@ def process_internal_verify(
     db,
     payment_public_id: str,
 ):
-    row = db.execute(text("""
-        SELECT p.id, p.participant_id, p.amount, p.status, f.object_key, f.sha256
-        FROM payments p
-        JOIN payment_files f ON f.payment_id = p.id
-        WHERE p.public_id = :pid
-        FOR UPDATE
-    """), {"pid": payment_public_id}).fetchone()
+    row = fetch_payment_for_internal_verify(db, payment_public_id)
 
     if not row:
         return create_error_response("PAYMENT_NOT_FOUND")
@@ -803,15 +785,16 @@ def process_internal_verify(
     payment_id, participant_id, amount, current_status, object_key, existing_sha256 = row
 
     try:
-        ensure_payment_status_transition(current_status, "processing")
+        ensure_payment_status_transition(current_status, PAYMENT_STATUS_PROCESSING)
     except StateTransitionError:
         return create_error_response("PAYMENT_INVALID_STATE")
 
-    db.execute(text("""
-        UPDATE payments
-        SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-        WHERE id = :pid AND status = :current_status
-    """), {"pid": payment_id, "current_status": current_status})
+    set_payment_status(
+        db,
+        payment_id=payment_id,
+        status=PAYMENT_STATUS_PROCESSING,
+        current_status=current_status,
+    )
 
     try:
         image = fetch_s3_image(object_key)
@@ -822,9 +805,9 @@ def process_internal_verify(
                 db, payment_id, participant_id, sha256_hash=existing_sha256
             )
             return jsonify({
-                "status": "rejected_fraud",
-                "detected_app": "unknown",
-                "failure_reasons": failures,
+                RESPONSE_KEY_STATUS: PAYMENT_STATUS_REJECTED_FRAUD,
+                RESPONSE_KEY_DETECTED_APP: PAYMENT_DETECTED_APP_UNKNOWN,
+                VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
                 "auto_rejected": True,
                 "verification_details": verification_details,
             })
@@ -833,70 +816,49 @@ def process_internal_verify(
     is_valid, detected_app, failures = verify_payment_screenshot(
         image, extracted_text, amount, confidence, UPI_NAME
     )
-    detected_app = detected_app or "unknown"
+    detected_app = detected_app or PAYMENT_DETECTED_APP_UNKNOWN
     filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
 
     verification_details = {
-        "ocr_confidence": confidence,
-        "failure_reasons": failures,
-        "extracted_text_length": len(extracted_text) if extracted_text else 0,
-        "uploaded_sha256": existing_sha256,
+        VERIFY_DETAIL_KEY_OCR_CONFIDENCE: confidence,
+        VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
+        VERIFY_DETAIL_KEY_EXTRACTED_TEXT_LENGTH: len(extracted_text) if extracted_text else 0,
+        VERIFY_DETAIL_KEY_UPLOADED_SHA256: existing_sha256,
     }
 
-    target_status = "success" if is_valid else "rejected_fraud"
+    target_status = PAYMENT_STATUS_SUCCESS if is_valid else PAYMENT_STATUS_REJECTED_FRAUD
     try:
-        ensure_payment_status_transition("processing", target_status)
+        ensure_payment_status_transition(PAYMENT_STATUS_PROCESSING, target_status)
     except StateTransitionError:
         return create_error_response("PAYMENT_INVALID_STATE")
 
-    db.execute(text("""
-        UPDATE payments
-        SET extracted_text = :txt,
-            uploaded_sha256 = :uploaded_sha256,
-            fraud_score = :fs,
-            verified_at = CURRENT_TIMESTAMP,
-            status = :status,
-            detected_app = :app,
-            verification_details = :details
-        WHERE id = :pid
-    """), {
-        "txt": filtered_text,
-        "uploaded_sha256": existing_sha256,
-        "fs": _calculate_fraud_score(failures, confidence=confidence),
-        "status": target_status,
-        "app": detected_app,
-        "details": json.dumps(verification_details),
-        "pid": payment_id,
-    })
-
-    for failure in failures:
-        db.execute(text("""
-            INSERT INTO payment_fraud_signals (
-                payment_id, signal_type, signal_score, details
-            ) VALUES (
-                :pid, :type, :score, :details
-            ) ON CONFLICT DO NOTHING
-        """), {
-            "pid": payment_id,
-            "type": failure,
-            "score": 100,
-            "details": json.dumps({"reason": failure, "confidence": confidence}),
-        })
+    set_payment_verification_outcome(
+        db,
+        payment_id=payment_id,
+        filtered_text=filtered_text,
+        sha256_hash=existing_sha256,
+        fraud_score=_calculate_fraud_score(failures, confidence=confidence),
+        target_status=target_status,
+        detected_app=detected_app,
+        verification_details=verification_details,
+        auto_rejected=(target_status == PAYMENT_STATUS_REJECTED_FRAUD),
+    )
+    insert_payment_fraud_signals(db, payment_id=payment_id, failures=failures, score=100, confidence=confidence)
 
     db.commit()
     if is_valid:
         emit_domain_event(
             db,
-            event_type="payment_verified",
+            event_type=DOMAIN_EVENT_PAYMENT_VERIFIED,
             correlation_id=None,
             participant_id=participant_id,
             payment_id=payment_id,
-            payload={"detected_app": detected_app, "status": "success", "source": "internal_verify"},
+            payload={RESPONSE_KEY_DETECTED_APP: detected_app, RESPONSE_KEY_STATUS: PAYMENT_STATUS_SUCCESS, "source": "internal_verify"},
         )
-        return jsonify({"status": "success", "detected_app": detected_app})
+        return jsonify({RESPONSE_KEY_STATUS: PAYMENT_STATUS_SUCCESS, RESPONSE_KEY_DETECTED_APP: detected_app})
 
     return jsonify({
-        "status": "rejected_fraud",
-        "detected_app": detected_app,
-        "failure_reasons": failures,
+        RESPONSE_KEY_STATUS: PAYMENT_STATUS_REJECTED_FRAUD,
+        RESPONSE_KEY_DETECTED_APP: detected_app,
+        VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
     })

@@ -1,7 +1,11 @@
 import json
 from typing import Any, Dict, Optional
 
-from sqlalchemy import text
+from app.constants.payment_constants import PAYMENT_DETECTED_APP_UNKNOWN, VERIFY_ATTEMPT_STATUS_STARTED
+from app.services.payment_attempt_query_service import (
+    QUERY_FINALIZE_PAYMENT_UPLOAD_ATTEMPT,
+    QUERY_INSERT_PAYMENT_UPLOAD_ATTEMPT,
+)
 
 
 def create_payment_upload_attempt(
@@ -15,41 +19,12 @@ def create_payment_upload_attempt(
     mime_type: Optional[str] = None,
     file_size: Optional[int] = None,
     image_phash: Optional[str] = None,
-    status: str = "started",
-    detected_app: Optional[str] = "unknown",
+    status: str = VERIFY_ATTEMPT_STATUS_STARTED,
+    detected_app: Optional[str] = PAYMENT_DETECTED_APP_UNKNOWN,
     details: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     try:
-        row = db.execute(text("""
-            INSERT INTO payment_upload_attempts (
-                payment_id,
-                participant_id,
-                idempotency_key,
-                sha256,
-                file_extension,
-                mime_type,
-                file_size,
-                image_phash,
-                detected_app,
-                fraud_score,
-                status,
-                details
-            ) VALUES (
-                :payment_id,
-                :participant_id,
-                :idempotency_key,
-                :sha256,
-                :file_extension,
-                :mime_type,
-                :file_size,
-                :image_phash,
-                :detected_app,
-                :fraud_score,
-                :status,
-                CAST(:details AS jsonb)
-            )
-            RETURNING id
-        """), {
+        row = db.execute(QUERY_INSERT_PAYMENT_UPLOAD_ATTEMPT, {
             "payment_id": payment_id,
             "participant_id": participant_id,
             "idempotency_key": idempotency_key,
@@ -58,7 +33,7 @@ def create_payment_upload_attempt(
             "mime_type": mime_type,
             "file_size": file_size,
             "image_phash": image_phash,
-            "detected_app": detected_app or "unknown",
+            "detected_app": detected_app or PAYMENT_DETECTED_APP_UNKNOWN,
             "fraud_score": 0.0,
             "status": status,
             "details": json.dumps(details or {}),
@@ -82,20 +57,10 @@ def finalize_payment_upload_attempt(
         return
 
     try:
-        db.execute(text("""
-            UPDATE payment_upload_attempts
-            SET status = :status,
-                detected_app = :detected_app,
-                failure_reasons = CAST(:failure_reasons AS jsonb),
-                fraud_score = COALESCE(:fraud_score, 0),
-                details = COALESCE(details, '{}'::jsonb) || CAST(:details AS jsonb),
-                completed_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :attempt_id
-        """), {
+        db.execute(QUERY_FINALIZE_PAYMENT_UPLOAD_ATTEMPT, {
             "attempt_id": attempt_id,
             "status": status,
-            "detected_app": detected_app or "unknown",
+            "detected_app": detected_app or PAYMENT_DETECTED_APP_UNKNOWN,
             "failure_reasons": json.dumps(failure_reasons or []),
             "fraud_score": fraud_score,
             "details": json.dumps(details or {}),

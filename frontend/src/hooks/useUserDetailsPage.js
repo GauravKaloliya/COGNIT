@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
+import { useRetryCountdown } from "./useRetryCountdown";
+import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { ALLOWED_EMAIL_DOMAINS } from "../content/userDetailsOptions";
-import { getPendingFlag, readJsonValue, removeStoredKey, setPendingFlag, writeJsonValue } from "../utils/storage";
+import { getPendingFlag, readJsonValue, readStoredMeta, removeStoredKey, setPendingFlag, writeJsonValue } from "../utils/storage";
 import {
   GEOLOCATION_ERROR_CODES,
   GEOLOCATION_MODES,
@@ -30,6 +32,7 @@ const REVERSE_GEOCODE_MAX_BACKOFF_MS = 60000;
 const REVERSE_GEOCODE_TTL_MS = runtimeConfig.reverseGeocodeTtlMs;
 const USER_DETAILS_PENDING_KEY = runtimeConfig.storageKeys.userDetailsPending;
 const PARTICIPANT_OPTIONS_KEY = runtimeConfig.storageKeys.participantOptions;
+const DEMOGRAPHICS_KEY = runtimeConfig.storageKeys.demographics;
 
 export const sanitizeUsername = (value) => value.replace(/[^a-zA-Z0-9_]/g, "");
 
@@ -57,6 +60,11 @@ export function useUserDetailsPage({
   ));
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [pendingSubmit, setPendingSubmit] = useState(false);
   const [checking, setChecking] = useState({ username: false, email: false, phone: false });
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
@@ -66,12 +74,22 @@ export function useUserDetailsPage({
   const autoDetectStartedRef = useRef(false);
   const participantOptionsLoadedRef = useRef(optionLists.genders.length > 0 && optionLists.languages.length > 0);
   const userEditedLocationRef = useRef(false);
+  const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
   const debounceTimerRef = useRef({ username: null, email: null, phone: null });
   const reverseGeocodeAbortRef = useRef(null);
   const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
+  const saveTimeoutRef = useRef(null);
+  const lastSavedAtRef = useRef(null);
 
   useEffect(() => {
     document.title = uiText("user.documentTitle");
+  }, []);
+
+  useEffect(() => {
+    const stored = readJsonValue(DEMOGRAPHICS_KEY, null);
+    if (stored && typeof stored === "object") {
+      setDraftRestored(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -426,6 +444,7 @@ export function useUserDetailsPage({
         [USER_DETAIL_FIELDS.general]: uiText("user.offlineSubmit"),
       }));
       setPendingFlag(USER_DETAILS_PENDING_KEY);
+      setPendingSubmit(true);
       return;
     }
     if (!validateForm()) return;
@@ -532,8 +551,43 @@ export function useUserDetailsPage({
     const pending = getPendingFlag(USER_DETAILS_PENDING_KEY) === true;
     if (!pending) return;
     removeStoredKey(USER_DETAILS_PENDING_KEY);
+    setPendingSubmit(false);
     handleSubmit();
   }, [handleSubmit, isOnline, submitting]);
+
+  useEffect(() => {
+    if (!isOnline) return;
+    setIsSaving(true);
+    setSaveError("");
+    if (saveTimeoutRef.current) {
+      clearScheduledTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
+    try {
+      const meta = readStoredMeta(DEMOGRAPHICS_KEY);
+      if (meta?.savedAt) {
+        lastSavedAtRef.current = meta.savedAt;
+        setLastSavedAt(meta.savedAt);
+      } else {
+        const now = Date.now();
+        lastSavedAtRef.current = now;
+        setLastSavedAt(now);
+      }
+    } catch {
+      setSaveError(uiText("autosave.failed"));
+      if (lastSavedAtRef.current) {
+        setLastSavedAt(lastSavedAtRef.current);
+      }
+    }
+  }, [demographics, isOnline]);
+
+  useEffect(() => {
+    if (!isOnline) setIsSaving(false);
+  }, [isOnline]);
+
+  useEffect(() => () => {
+    if (saveTimeoutRef.current) clearScheduledTimeout(saveTimeoutRef.current);
+  }, []);
 
   const updateField = useCallback((field, value) => {
     setDemographics((prev) => ({ ...prev, [field]: value }));
@@ -622,9 +676,9 @@ export function useUserDetailsPage({
 
   const debouncedCheck = useCallback((field, value) => {
     if (debounceTimerRef.current[field]) {
-      clearTimeout(debounceTimerRef.current[field]);
+      clearScheduledTimeout(debounceTimerRef.current[field]);
     }
-    debounceTimerRef.current[field] = setTimeout(() => {
+    debounceTimerRef.current[field] = scheduleTimeout(() => {
       checkAvailability(field, value);
     }, runtimeConfig.availabilityDebounceMs);
   }, [checkAvailability]);
@@ -664,11 +718,15 @@ export function useUserDetailsPage({
     return value !== null && value !== undefined && value !== "";
   });
 
+  const constants = useMemo(() => ({
+    ageMin: AGE_MIN,
+    ageMax: AGE_MAX,
+    usernameMin: USERNAME_MIN_LENGTH,
+    locationMin: LOCATION_MIN_LENGTH,
+  }), []);
+
   return {
-    constants: {
-      ageMin: AGE_MIN,
-      ageMax: AGE_MAX,
-    },
+    constants,
     isOnline,
     genderOptions: optionLists.genders,
     languageOptions: optionLists.languages,
@@ -686,5 +744,10 @@ export function useUserDetailsPage({
     handleSubmit,
     handleFieldBlur,
     updateField,
+    draftRestored,
+    lastSavedAt,
+    isSaving,
+    saveError,
+    retryCountdown,
   };
 }

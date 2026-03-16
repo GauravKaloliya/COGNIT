@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiUrl } from "../utils/apiBase";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { runtimeConfig } from "../config/runtime";
@@ -6,6 +6,7 @@ import { clearPendingFlag, getPendingFlag, readExpiringValue, removeStoredKey, s
 import { uiText } from "../utils/uiText";
 import { useNavigationBlocker } from "./useNavigationBlocker";
 import { useOnlineStatus } from "./useOnlineStatus";
+import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 
 const MIN_WORDS = runtimeConfig.minWords;
 const PRIORITY_WORD_TARGET = runtimeConfig.priorityDescWordTarget;
@@ -92,6 +93,11 @@ export function useSurveyPage({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [retryDisabled, setRetryDisabled] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState(0);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [timerActive, setTimerActive] = useState(false);
   const [submitLocked, setSubmitLocked] = useState(false);
   const [engagementData, setEngagementData] = useState({
@@ -103,6 +109,8 @@ export function useSurveyPage({
   const surveyStartTime = useRef(Date.now());
   const timerIntervalRef = useRef(null);
   const submitUnlockTimeoutRef = useRef(null);
+  const saveTimeoutRef = useRef(null);
+  const lastSavedAtRef = useRef(null);
   const descriptionRef = useRef(null);
   const commentsRef = useRef(null);
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
@@ -138,7 +146,7 @@ export function useSurveyPage({
     if (submitUnlockTimeoutRef.current) {
       clearTimeout(submitUnlockTimeoutRef.current);
     }
-    submitUnlockTimeoutRef.current = setTimeout(() => {
+    submitUnlockTimeoutRef.current = scheduleTimeout(() => {
       setSubmitLocked(false);
       submitUnlockTimeoutRef.current = null;
     }, delayMs);
@@ -220,13 +228,14 @@ export function useSurveyPage({
 
   useEffect(() => () => {
     if (submitUnlockTimeoutRef.current) {
-      clearTimeout(submitUnlockTimeoutRef.current);
+      clearScheduledTimeout(submitUnlockTimeoutRef.current);
     }
   }, []);
 
   const handleRetryImage = useCallback((onRetry, isFetchingImage) => {
     if (retryDisabled || isFetchingImage) return;
     setRetryDisabled(true);
+    setRetryCountdown(runtimeConfig.serviceRetrySeconds);
     setImageError(false);
     setImageLoaded(false);
     setTimerActive(false);
@@ -234,10 +243,27 @@ export function useSurveyPage({
   }, [retryDisabled]);
 
   useEffect(() => {
+    if (!retryDisabled || runtimeConfig.serviceRetrySeconds <= 0) {
+      setRetryCountdown(0);
+      return undefined;
+    }
+    const interval = scheduleInterval(() => {
+      setRetryCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, runtimeConfig.msPerSecond);
+    return () => clearScheduledInterval(interval);
+  }, [retryDisabled]);
+
+  useEffect(() => {
     if (imageError || fetchError) {
       setRetryDisabled(false);
     }
   }, [fetchError, imageError]);
+
+  useEffect(() => {
+    if (retryDisabled && retryCountdown === 0) {
+      setRetryDisabled(false);
+    }
+  }, [retryCountdown, retryDisabled]);
 
   useEffect(() => {
     setElapsed(0);
@@ -257,6 +283,7 @@ export function useSurveyPage({
       try {
         const saved = readSurveyDraft(getDraftKey(publicId, survey.image_id)) || readSurveyDraft(activeDraftKey);
         if (saved) {
+          setDraftRestored(true);
           setDescription(typeof saved.description === "string" ? saved.description : "");
           setRating(Number.isInteger(saved.rating) ? saved.rating : 0);
           setComments(typeof saved.comments === "string" ? saved.comments : "");
@@ -293,6 +320,8 @@ export function useSurveyPage({
   useEffect(() => {
     if (!isOnline) return;
     if (!draftKey || !survey?.image_id) return;
+    setIsSaving(true);
+    setSaveError("");
     const payload = {
       imageId: survey.image_id,
       description,
@@ -302,22 +331,44 @@ export function useSurveyPage({
       startedAt: surveyStartTime.current,
       engagementData,
     };
-    writeSurveyDraft(draftKey, payload);
-    writeSurveyDraft(activeDraftKey, payload);
+    try {
+      writeSurveyDraft(draftKey, payload);
+      writeSurveyDraft(activeDraftKey, payload);
+      const now = Date.now();
+      lastSavedAtRef.current = now;
+      setLastSavedAt(now);
+    } catch {
+      setSaveError(uiText("autosave.failed"));
+      if (lastSavedAtRef.current) {
+        setLastSavedAt(lastSavedAtRef.current);
+      }
+    }
+    if (saveTimeoutRef.current) {
+      clearScheduledTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
   }, [activeDraftKey, comments, description, draftKey, elapsed, engagementData, isOnline, rating, survey?.image_id]);
 
   useEffect(() => {
+    if (!isOnline) setIsSaving(false);
+  }, [isOnline]);
+
+  useEffect(() => () => {
+    if (saveTimeoutRef.current) clearScheduledTimeout(saveTimeoutRef.current);
+  }, []);
+
+  useEffect(() => {
     if (timerActive) {
-      timerIntervalRef.current = setInterval(() => {
+      timerIntervalRef.current = scheduleInterval(() => {
         setElapsed((prev) => prev + 1);
       }, runtimeConfig.surveyTimerTickMs);
     } else if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
+      clearScheduledInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
     return () => {
       if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
+        clearScheduledInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
     };
@@ -464,18 +515,20 @@ export function useSurveyPage({
     onBlocked: setSubmitError,
   });
 
+  const constants = useMemo(() => ({
+    minWords: MIN_WORDS,
+    priorityWordTarget: PRIORITY_WORD_TARGET,
+    minDescriptionLength: MIN_DESCRIPTION_LENGTH,
+    maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
+    minFeedbackLength: MIN_FEEDBACK_LENGTH,
+    maxFeedbackLength: MAX_FEEDBACK_LENGTH,
+    priorityFeedbackTarget: PRIORITY_FEEDBACK_TARGET,
+    uiTotalSteps: UI_TOTAL_STEPS,
+    copyPasteDisabled: COPY_PASTE_DISABLED,
+  }), []);
+
   return {
-    constants: {
-      minWords: MIN_WORDS,
-      priorityWordTarget: PRIORITY_WORD_TARGET,
-      minDescriptionLength: MIN_DESCRIPTION_LENGTH,
-      maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
-      minFeedbackLength: MIN_FEEDBACK_LENGTH,
-      maxFeedbackLength: MAX_FEEDBACK_LENGTH,
-      priorityFeedbackTarget: PRIORITY_FEEDBACK_TARGET,
-      uiTotalSteps: UI_TOTAL_STEPS,
-      copyPasteDisabled: COPY_PASTE_DISABLED,
-    },
+    constants,
     description,
     setDescription,
     rating,
@@ -490,7 +543,9 @@ export function useSurveyPage({
     elapsed,
     imageLoaded,
     imageError,
+    imageReady,
     retryDisabled,
+    retryCountdown,
     wordCount,
     charCount,
     feedbackCount,
@@ -507,6 +562,7 @@ export function useSurveyPage({
     minimumMet,
     priorityMet,
     isOnline,
+    submitLocked,
     descriptionRef,
     commentsRef,
     imageSrc,
@@ -519,5 +575,9 @@ export function useSurveyPage({
     getSubmitTooltip,
     preventCopyPaste,
     preventClipboardShortcuts,
+    draftRestored,
+    lastSavedAt,
+    isSaving,
+    saveError,
   };
 }

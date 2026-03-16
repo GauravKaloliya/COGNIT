@@ -4,7 +4,9 @@ import { PAYMENT_API_FIELDS } from "../constants/fields";
 import { uiText } from "../utils/uiText.js";
 import PanelState from "../components/PanelState.jsx";
 import PageSkeleton from "../components/PageSkeleton.jsx";
+import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import { usePaymentLinkPage } from "../hooks/usePaymentLinkPage";
+import DSButton from "../components/design/DSButton.jsx";
 
 export default function PaymentLinkPage({
   onNext,
@@ -29,10 +31,12 @@ export default function PaymentLinkPage({
     isOnline,
     fileInputRef,
     timeRemaining,
+    timerProgress,
     isMobile,
     backDisabled,
     offlineDisabled,
     retryBlocked,
+    retryInSeconds,
     retryButtonLabel,
     formatTime,
     getTimerColor,
@@ -69,9 +73,9 @@ export default function PaymentLinkPage({
       <div className="panel payment-panel">
         <div className="page-top-actions">
           {onBack && (
-            <button className="ghost back-button" onClick={handleBackClick} disabled={backDisabled}>
+            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
               ← Back
-            </button>
+            </DSButton>
           )}
         </div>
         <PanelState
@@ -90,10 +94,16 @@ export default function PaymentLinkPage({
             ))}
           </ul>
         </div>
-        <div className="page-actions">
-          <button className="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
+        <div className="page-actions sticky-mobile-actions">
+          <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
             {retryButtonLabel}
-          </button>
+            {retryBlocked && (
+              <span className="button-badge">
+                <span className="button-spinner small" />
+                {retryInSeconds}s
+              </span>
+            )}
+          </DSButton>
         </div>
       </div>
     );
@@ -104,23 +114,29 @@ export default function PaymentLinkPage({
       <div className="panel payment-panel">
         <div className="page-top-actions">
           {onBack && (
-            <button className="ghost back-button" onClick={handleBackClick} disabled={backDisabled}>
+            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
               ← Back
-            </button>
+            </DSButton>
           )}
         </div>
         <div className="payment-header">
-          <div className="payment-header-emoji" aria-hidden="true">⏰</div>
+          <div className="icon-badge" aria-hidden="true">T</div>
           <h2 className="payment-title">{uiText("payment.expiredTitle")}</h2>
           <p className="payment-subtitle">{uiText("payment.expiredSubtitle")}</p>
         </div>
         <div className="banner warning spaced">
           {error || getErrorMessage("PAY_001_0001")}
         </div>
-        <div className="page-actions">
-          <button className="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
+        <div className="page-actions sticky-mobile-actions">
+          <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
             {retryButtonLabel}
-          </button>
+            {retryBlocked && (
+              <span className="button-badge">
+                <span className="button-spinner small" />
+                {retryInSeconds}s
+              </span>
+            )}
+          </DSButton>
         </div>
       </div>
     );
@@ -131,13 +147,13 @@ export default function PaymentLinkPage({
       <div className="panel payment-panel">
         <div className="page-top-actions">
           {onBack && (
-            <button className="ghost back-button" onClick={handleBackClick} disabled={backDisabled}>
+            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
               ← Back
-            </button>
+            </DSButton>
           )}
         </div>
         <div className="payment-header">
-          <div className="payment-header-emoji" aria-hidden="true">❌</div>
+          <div className="icon-badge" aria-hidden="true">X</div>
           <h2 className="payment-title">{uiText("payment.verifyTitle")}</h2>
           <p className="payment-subtitle">{uiText("payment.verifySubtitle")}</p>
         </div>
@@ -162,10 +178,16 @@ export default function PaymentLinkPage({
             ))}
           </ul>
         </div>
-        <div className="page-actions">
-          <button className="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
+        <div className="page-actions sticky-mobile-actions">
+          <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
             {retryButtonLabel}
-          </button>
+            {retryBlocked && (
+              <span className="button-badge">
+                <span className="button-spinner small" />
+                {retryInSeconds}s
+              </span>
+            )}
+          </DSButton>
         </div>
       </div>
     );
@@ -176,9 +198,9 @@ export default function PaymentLinkPage({
       <div className="panel payment-panel">
         <div className="page-top-actions">
           {onBack && (
-            <button className="ghost back-button" onClick={handleBackClick} disabled={backDisabled}>
+            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
               ← Back
-            </button>
+            </DSButton>
           )}
         </div>
         <div className="status-panel">
@@ -199,9 +221,9 @@ export default function PaymentLinkPage({
     <div className="panel payment-panel">
       <div className="page-top-actions">
         {onBack && (
-          <button className="ghost back-button" onClick={handleBackClick} disabled={backDisabled}>
+          <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
             ← Back
-          </button>
+          </DSButton>
         )}
       </div>
       {!isOnline && (
@@ -216,26 +238,33 @@ export default function PaymentLinkPage({
       )}
 
       <div className="payment-header">
-        <div className="payment-header-emoji" aria-hidden="true">📱</div>
+        <div className="icon-badge" aria-hidden="true">P</div>
         <h2 className="payment-title">{isMobile ? uiText("payment.payWithUpi") : uiText("payment.scanVerify")}</h2>
         <p className="payment-subtitle">
           {timeRemaining > 0
             ? uiText("payment.timeRemaining", { time: formatTime(timeRemaining) })
             : uiText("payment.completeAndUpload")}
         </p>
+        {timeRemaining > 0 && (
+          <div className="timer-progress" aria-hidden="true">
+            <div className="timer-progress-bar" style={{ width: `${timerProgress}%` }} />
+          </div>
+        )}
       </div>
 
       <div className="payment-content">
         {paymentStatus === "pending" && (
           <div className="payment-qr-instructions-grid">
             {paymentData && (
-              <section className="payment-card payment-card-qr">
-                <h3>
-                  <span className="payment-card-emoji" aria-hidden="true">💳</span>
-                  {isMobile ? uiText("payment.payWithUpi") : uiText("payment.scanQr")}
-                </h3>
-
-                <div className="payment-qr-container" style={!isMobile ? getQrContainerStyle() : undefined}>
+              <section className="payment-card payment-card-qr card">
+                <div className="card-header">
+                  <h3>
+                    <span className="icon-badge" aria-hidden="true">Q</span>
+                    {isMobile ? uiText("payment.payWithUpi") : uiText("payment.scanQr")}
+                  </h3>
+                </div>
+                <div className="card-body">
+                  <div className="payment-qr-container" style={!isMobile ? getQrContainerStyle() : undefined}>
                   {isMobile ? (
                     <a
                       href={paymentData[PAYMENT_API_FIELDS.upiLink]}
@@ -246,7 +275,7 @@ export default function PaymentLinkPage({
                       }}
                       style={getButtonStyle()}
                     >
-                      <span>💳</span>
+                      <span className="icon-badge" aria-hidden="true">U</span>
                       <span>{uiText("payment.payWithApp", { amount: PAYMENT_AMOUNT_LABEL })}</span>
                       <span className="payment-upi-timer">
                         {paymentStatus === "expired" ? uiText("payment.expiredShort") : formatTime(timeRemaining)}
@@ -261,8 +290,11 @@ export default function PaymentLinkPage({
                           className="payment-qr-code"
                         />
                       ) : (
-                        <div className="payment-qr-code" style={{ display: "grid", placeItems: "center", color: "var(--muted)" }}>
-                          {uiText("payment.loadingQr")}
+                        <div className="payment-qr-code" style={{ display: "grid", placeItems: "center" }}>
+                          <SectionSkeleton
+                            title={uiText("payment.loadingQrTitle")}
+                            subtitle={uiText("payment.loadingQrSubtitle")}
+                          />
                         </div>
                       )}
                       <p className="payment-note">{uiText("payment.scanAnyApp", { amount: PAYMENT_AMOUNT_LABEL })}</p>
@@ -271,31 +303,36 @@ export default function PaymentLinkPage({
                       </p>
                     </>
                   )}
-                </div>
+                  </div>
 
-                <div className="payment-status-badge pending">
-                  <span>⏱️</span>
-                  {uiText("payment.pendingBadge")}
+                  <div className="payment-status-badge pending">
+                    <span>⏱️</span>
+                    {uiText("payment.pendingBadge")}
+                  </div>
                 </div>
               </section>
             )}
 
-            <section className="payment-card highlight payment-card-instructions">
-              <h3>
-                <span className="payment-card-emoji" aria-hidden="true">⚠️</span>
-                {uiText("payment.instructionsTitle")}
-              </h3>
-              <ul className="payment-steps">
-                <li>{uiText("payment.instructionsUseAmount", { amount: PAYMENT_AMOUNT_LABEL })}</li>
-                <li><strong>{uiText("payment.instructionsSupportedApps")}</strong></li>
-                <li>{uiText("payment.instructionsTakeScreenshot")}</li>
-                <li>{uiText("payment.instructionsUpload")}</li>
-                <li>
-                  {timeRemaining > 0
-                    ? uiText("payment.instructionsExpiresIn", { time: formatTime(timeRemaining) })
-                    : uiText("payment.previousExpired")}
-                </li>
-              </ul>
+            <section className="payment-card highlight payment-card-instructions card">
+              <div className="card-header">
+                <h3>
+                  <span className="icon-badge" aria-hidden="true">!</span>
+                  {uiText("payment.instructionsTitle")}
+                </h3>
+              </div>
+              <div className="card-body">
+                <ul className="payment-steps compact">
+                  <li>{uiText("payment.instructionsUseAmount", { amount: PAYMENT_AMOUNT_LABEL })}</li>
+                  <li><strong>{uiText("payment.instructionsSupportedApps")}</strong></li>
+                  <li>{uiText("payment.instructionsTakeScreenshot")}</li>
+                  <li>{uiText("payment.instructionsUpload")}</li>
+                  <li>
+                    {timeRemaining > 0
+                      ? uiText("payment.instructionsExpiresIn", { time: formatTime(timeRemaining) })
+                      : uiText("payment.previousExpired")}
+                  </li>
+                </ul>
+              </div>
             </section>
           </div>
         )}
@@ -317,12 +354,15 @@ export default function PaymentLinkPage({
         )}
 
         {paymentStatus === "pending" && (
-          <section className="payment-card">
-            <h3>
-              <span className="payment-card-emoji" aria-hidden="true">📤</span>
-              {uiText("payment.uploadTitle")}
-            </h3>
-            <p>{uiText("payment.uploadIntro")}</p>
+          <section className="payment-card card">
+            <div className="card-header">
+              <h3>
+                <span className="icon-badge" aria-hidden="true">U</span>
+                {uiText("payment.uploadTitle")}
+              </h3>
+            </div>
+            <div className="card-body">
+              <p>{uiText("payment.uploadIntro")}</p>
             {verifying && (
               <div className="payment-verifying-text">
                 {uiText("payment.verifyingText")}
@@ -390,30 +430,6 @@ export default function PaymentLinkPage({
                   {uiText("payment.keepTabOpen")}
                 </div>
 
-                <div className="payment-upload-actions">
-                  <button
-                    className={`ghost${uploadFile ? " danger" : ""}`}
-                    type="button"
-                    disabled={verifying || offlineDisabled}
-                    onClick={() => {
-                      if (offlineDisabled) return;
-                      if (uploadFile) {
-                        clearSelectedFile();
-                        return;
-                      }
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    {uploadFile ? uiText("payment.clearScreenshot") : uiText("payment.selectImage")}
-                  </button>
-                  <button
-                    className="primary"
-                    onClick={handleUploadAndFinalize}
-                    disabled={!uploadFile || verifying || offlineDisabled}
-                  >
-                    {verifying ? uiText("payment.verifyingAction") : uiText("payment.confirmPayment")}
-                  </button>
-                </div>
               </div>
 
               <input
@@ -424,7 +440,46 @@ export default function PaymentLinkPage({
                 style={{ display: "none" }}
               />
             </div>
+            </div>
           </section>
+        )}
+
+        {paymentStatus === "pending" && (
+          <div className="page-actions sticky-mobile-actions payment-upload-actions">
+            <DSButton
+              variant="ghost"
+              className={uploadFile ? "danger" : ""}
+              type="button"
+              disabled={verifying || offlineDisabled}
+              onClick={() => {
+                if (offlineDisabled) return;
+                if (uploadFile) {
+                  clearSelectedFile();
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
+            >
+              {uploadFile ? uiText("payment.clearScreenshot") : uiText("payment.selectImage")}
+            </DSButton>
+            <DSButton
+              variant="primary"
+              onClick={handleUploadAndFinalize}
+              disabled={!uploadFile || verifying || offlineDisabled || retryBlocked}
+            >
+              {verifying
+                ? uiText("payment.verifyingAction")
+                : retryBlocked
+                  ? retryButtonLabel
+                  : uiText("payment.confirmPayment")}
+              {retryBlocked && (
+                <span className="button-badge">
+                  <span className="button-spinner small" />
+                  {retryInSeconds}s
+                </span>
+              )}
+            </DSButton>
+          </div>
         )}
       </div>
     </div>
