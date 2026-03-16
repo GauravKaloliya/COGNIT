@@ -51,17 +51,17 @@ export default function ConsentPage({
         </div>
       </div>
       {!isOnline && (
-        <div className="banner warning">
+        <div className="banner warning compact">
           <span>{uiText("consent.offlineBanner")}</span>
         </div>
       )}
       {draftRestored && (
-        <div className="banner info">
+        <div className="banner info compact">
           <span>{uiText("draft.restored")}</span>
         </div>
       )}
       {saveError && (
-        <div className="banner warning">
+        <div className="banner warning compact">
           <span>{saveError}</span>
         </div>
       )}

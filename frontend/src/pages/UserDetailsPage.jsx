@@ -92,17 +92,17 @@ export default function UserDetailsPage({
           </DSButton>
         )}
         {draftRestored && (
-          <div className="banner info">
+          <div className="banner info compact">
             <span>{uiText("draft.restored")}</span>
           </div>
         )}
         {!isOnline && (
-          <div className="banner warning">
+          <div className="banner warning compact">
             <span>{uiText("user.offlineBanner")}</span>
           </div>
         )}
         {saveError && (
-          <div className="banner warning">
+          <div className="banner warning compact">
             <span>{saveError}</span>
           </div>
         )}
@@ -252,12 +252,6 @@ export default function UserDetailsPage({
               handleFieldBlur("location", e.target.value);
             }}
           />
-          {locating && !(demographics.location || "").trim() && (
-            <div className="location-skeleton-wrap">
-              <SectionSkeleton title={uiText("user.locationDetecting")} rows={2} dense />
-              
-            </div>
-          )}
           {locationPermissionDenied && !locating && (
             <DSButton
               type="button"

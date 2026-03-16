@@ -65,7 +65,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
 
         <div className="finish-reminder card">
           <div className="card-header">
-            <h4><span className="icon-badge" aria-hidden="true">R</span> {uiText("finish.rewardHeading")}</h4>
+            <h4><span className="icon-badge" aria-hidden="true">🏆</span> {uiText("finish.rewardHeading")}</h4>
           </div>
           <div className="card-body">
           <ul>
