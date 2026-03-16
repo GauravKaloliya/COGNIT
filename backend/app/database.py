@@ -79,3 +79,21 @@ def teardown_db(exception):
     if db is not None:
         db.close()
     SessionLocal.remove()
+
+
+@app.teardown_request
+def rollback_on_exception(exception):
+    """
+    Ensure failed requests don't leave the session in an aborted state.
+    This prevents 'current transaction is aborted' errors on subsequent requests.
+    """
+    if exception is None:
+        return
+    db = g.get("db")
+    if db is None:
+        return
+    try:
+        db.rollback()
+    except Exception:
+        # Never raise from teardown
+        pass

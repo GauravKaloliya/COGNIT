@@ -30,7 +30,7 @@ const isLocalHostName = (hostname) =>
   hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 
 const resolveConfiguredBase = () => {
-  // In dev, always use the Vite proxy to avoid localhost/host mismatch.
+  // In dev, always use the Vite proxy path for local API calls.
   if (import.meta.env.DEV) {
     return "/api";
   }
