@@ -253,7 +253,9 @@ export default function SurveyPage({
           <span className={showValidationErrors && wordCount < MIN_WORDS ? "warning" : "ok"}>
             {uiText("survey.minimumWords", { min: MIN_WORDS })}
           </span>
-          <span className={descriptionPriorityReady ? "ok" : "warning"}>{uiText("survey.priorityWords", { target: PRIORITY_WORD_TARGET })}</span>
+          <span className={descriptionPriorityReady ? "ok" : ""}>
+            {uiText("survey.priorityWords", { target: PRIORITY_WORD_TARGET })}
+          </span>
         </div>
         <div className={`helper-text ${wordCount >= MIN_WORDS ? "ok" : "warning"}`}>
           {wordCount >= MIN_WORDS
@@ -338,7 +340,7 @@ export default function SurveyPage({
           <span className="ok">
             {uiText("survey.feedbackMinimum")}
           </span>
-          <span className={feedbackCount >= PRIORITY_FEEDBACK_TARGET ? "ok" : "warning"}>
+          <span className={feedbackCount >= PRIORITY_FEEDBACK_TARGET ? "ok" : ""}>
             {uiText("survey.feedbackPriority", { target: PRIORITY_FEEDBACK_TARGET })}
           </span>
         </div>
