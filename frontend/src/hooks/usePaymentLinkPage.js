@@ -579,68 +579,6 @@ export function usePaymentLinkPage({
   }, [isOnline, paymentData, resumeTimerFromCurrentPayment, stopTimer]);
 
   useEffect(() => {
-    const autoRetryOnReconnect = async () => {
-      if (!isOnline || isCriticalAction) return;
-      const pendingCreate = getPendingFlag(PAYMENT_PENDING_CREATE_KEY);
-      const pendingVerify = getPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
-      if (pendingCreate) {
-        clearPendingFlag(PAYMENT_PENDING_CREATE_KEY);
-        await createPayment();
-        return;
-      }
-      if (pendingVerify && uploadFile) {
-        clearPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
-        await handleUploadAndFinalize();
-        return;
-      }
-      if (!paymentData && paymentStatus === PAYMENT_STATUS.pending) {
-        await createPayment();
-        return;
-      }
-      if (getPaymentField(paymentData, PAYMENT_API_FIELDS.id) && !isMobile && !getPaymentField(paymentData, PAYMENT_API_FIELDS.qrBase64)) {
-        fetchPaymentQr(getPaymentField(paymentData, PAYMENT_API_FIELDS.id), opVersionRef.current);
-      }
-      const paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
-      if (getPaymentField(paymentData, PAYMENT_API_FIELDS.id) && paymentWriteToken) {
-        try {
-          const statusData = await endpoints.getPaymentStatus(
-            getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
-            {},
-            paymentWriteToken
-          );
-          const serverStatus = getPaymentField(statusData, PAYMENT_API_FIELDS.status);
-          if (serverStatus === PAYMENT_STATUS.success) {
-            clearPaymentViewState();
-            onNext?.({ skipVerification: true });
-            return;
-          }
-          if (serverStatus === PAYMENT_STATUS.expired) {
-            clearPaymentViewState();
-            notifySessionExpired();
-            await createPayment();
-          }
-        } catch {
-          // Ignore reconnect status errors; user can retry manually.
-        }
-      }
-    };
-    autoRetryOnReconnect();
-  }, [
-    isOnline,
-    isCriticalAction,
-    paymentData,
-    paymentStatus,
-    isMobile,
-    uploadFile,
-    createPayment,
-    fetchPaymentQr,
-    handleUploadAndFinalize,
-    clearPaymentViewState,
-    notifySessionExpired,
-    onNext,
-  ]);
-
-  useEffect(() => {
     document.title = uiText("payment.documentTitle");
     let cancelled = false;
 
@@ -1156,6 +1094,68 @@ export function usePaymentLinkPage({
     clearPaymentViewState,
     setPaymentData,
     publicId,
+  ]);
+
+  useEffect(() => {
+    const autoRetryOnReconnect = async () => {
+      if (!isOnline || isCriticalAction) return;
+      const pendingCreate = getPendingFlag(PAYMENT_PENDING_CREATE_KEY);
+      const pendingVerify = getPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
+      if (pendingCreate) {
+        clearPendingFlag(PAYMENT_PENDING_CREATE_KEY);
+        await createPayment();
+        return;
+      }
+      if (pendingVerify && uploadFile) {
+        clearPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
+        await handleUploadAndFinalize();
+        return;
+      }
+      if (!paymentData && paymentStatus === PAYMENT_STATUS.pending) {
+        await createPayment();
+        return;
+      }
+      if (getPaymentField(paymentData, PAYMENT_API_FIELDS.id) && !isMobile && !getPaymentField(paymentData, PAYMENT_API_FIELDS.qrBase64)) {
+        fetchPaymentQr(getPaymentField(paymentData, PAYMENT_API_FIELDS.id), opVersionRef.current);
+      }
+      const paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
+      if (getPaymentField(paymentData, PAYMENT_API_FIELDS.id) && paymentWriteToken) {
+        try {
+          const statusData = await endpoints.getPaymentStatus(
+            getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
+            {},
+            paymentWriteToken
+          );
+          const serverStatus = getPaymentField(statusData, PAYMENT_API_FIELDS.status);
+          if (serverStatus === PAYMENT_STATUS.success) {
+            clearPaymentViewState();
+            onNext?.({ skipVerification: true });
+            return;
+          }
+          if (serverStatus === PAYMENT_STATUS.expired) {
+            clearPaymentViewState();
+            notifySessionExpired();
+            await createPayment();
+          }
+        } catch {
+          // Ignore reconnect status errors; user can retry manually.
+        }
+      }
+    };
+    autoRetryOnReconnect();
+  }, [
+    isOnline,
+    isCriticalAction,
+    paymentData,
+    paymentStatus,
+    isMobile,
+    uploadFile,
+    createPayment,
+    fetchPaymentQr,
+    handleUploadAndFinalize,
+    clearPaymentViewState,
+    notifySessionExpired,
+    onNext,
   ]);
 
   const handleBackClick = useCallback(() => {

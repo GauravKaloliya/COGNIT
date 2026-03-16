@@ -1,6 +1,5 @@
 import React from "react";
 import PageSkeleton from "../components/PageSkeleton.jsx";
-import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import { sanitizeUsername, useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
 import { PRIOR_EXPERIENCE_GROUPS, PRIOR_EXPERIENCE_NONE } from "../content/userDetailsOptions";
@@ -13,6 +12,9 @@ export default function UserDetailsPage({
   systemReady,
   onBack
 }) {
+  const [emailFocused, setEmailFocused] = React.useState(false);
+  const [emailPlaceholderIndex, setEmailPlaceholderIndex] = React.useState(0);
+  const [emailPlaceholderTick, setEmailPlaceholderTick] = React.useState(0);
   const {
     constants,
     isOnline,
@@ -52,6 +54,20 @@ export default function UserDetailsPage({
   const phoneOk = Boolean((demographics.phone || "").trim()) && !errors.phone;
   const ageOk = Boolean((demographics.age || "").trim()) && !errors.age;
   const locationOk = (demographics.location || "").trim().length >= LOCATION_MIN && !errors.location;
+  const rawEmailDomains = uiText("user.emailDomains").split("|").map((d) => d.trim()).filter(Boolean);
+  const emailDomains = Array.from(new Set(rawEmailDomains));
+  const emailPlaceholderDomain = emailDomains[emailPlaceholderIndex % emailDomains.length] || "gmail.com";
+  const showEmailGhost = !emailFocused && !(demographics.email || "").trim();
+
+  React.useEffect(() => {
+    if (!showEmailGhost) return undefined;
+    if (emailDomains.length <= 1) return undefined;
+    const id = window.setInterval(() => {
+      setEmailPlaceholderIndex((prev) => (prev + 1) % emailDomains.length);
+      setEmailPlaceholderTick((prev) => prev + 1);
+    }, 1800);
+    return () => window.clearInterval(id);
+  }, [emailDomains.length, showEmailGhost]);
 
   if (submitting) {
     return (
@@ -64,8 +80,8 @@ export default function UserDetailsPage({
   }
 
   return (
-    <div className="panel">
-      <div className="page-top-actions">
+    <div className="panel panel-with-corner-status">
+      <div className="page-top-actions inline">
         {onBack && (
           <DSButton
             variant="ghost"
@@ -75,53 +91,35 @@ export default function UserDetailsPage({
             ← Back
           </DSButton>
         )}
+        {draftRestored && (
+          <div className="banner info">
+            <span>{uiText("draft.restored")}</span>
+          </div>
+        )}
+        {!isOnline && (
+          <div className="banner warning">
+            <span>{uiText("user.offlineBanner")}</span>
+          </div>
+        )}
+        {saveError && (
+          <div className="banner warning">
+            <span>{saveError}</span>
+          </div>
+        )}
       </div>
-      {!isOnline && (
-        <div className="banner warning">
-          <span>{uiText("user.offlineBanner")}</span>
-        </div>
-      )}
-      {draftRestored && (
-        <div className="banner info">
-          <span>{uiText("draft.restored")}</span>
-        </div>
-      )}
       {isSaving && (
-        <div className="banner info">
-          <span className="status-icon saving" aria-hidden="true" />
-          <span>{uiText("autosave.saving")}</span>
-        </div>
-      )}
-      {saveError && (
-        <div className="banner warning">
-          <span>{saveError}</span>
-        </div>
+        <span className="autosave-inline panel-corner-status">{uiText("autosave.saving")}</span>
       )}
       {!isSaving && lastSavedAt && (
-        <div className="banner info">
-          <span className="status-icon saved" aria-hidden="true" />
-          <span>{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
-        </div>
+        <span className="autosave-inline panel-corner-status">{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
       )}
       <h2>{uiText("user.pageTitle")}</h2>
       <p className="page-subtitle left">
         {uiText("user.pageSubtitle")}
       </p>
       
-      {optionsLoading && (
-        <>
-          <SectionSkeleton
-            title={uiText("user.optionsLoadingTitle")}
-            subtitle={uiText("user.optionsLoadingSubtitle")}
-          />
-          <div className="inline-skeleton-row">
-            <div className="inline-skeleton" />
-            <div className="inline-skeleton" />
-          </div>
-        </>
-      )}
       <div className="form-grid">
-        <div className={`form-field ${errors.username ? 'error' : ''}`}>
+        <div className={`form-field ${errors.username ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.username")} <span className="required" aria-label="required">*</span></label>
           <input
             type="text"
@@ -133,27 +131,39 @@ export default function UserDetailsPage({
           />
           {checking.username && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.username && <span className="error-text">{errors.username}</span>}
-          <span className={`helper-text ${usernameOk ? "ok" : "warning"}`}>
-            {usernameOk ? uiText("user.usernameHintOk") : uiText("user.usernameHint", { min: USERNAME_MIN })}
-          </span>
+          {!usernameOk && (
+            <span className="helper-text warning">{uiText("user.usernameHint", { min: USERNAME_MIN })}</span>
+          )}
         </div>
 
-        <div className={`form-field ${errors.email ? 'error' : ''}`}>
+        <div className={`form-field ${errors.email ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.email")} <span className="required" aria-label="required">*</span></label>
-          <input
-            type="email"
-            className={errors.email ? 'error-input' : ''}
-            placeholder={uiText("user.emailPlaceholder")}
-            value={demographics.email || ''}
-            onChange={(e) => updateField('email', e.target.value)}
-            onBlur={(e) => handleFieldBlur('email', e.target.value, true)}
-          />
+          <div className="input-with-ghost">
+            <input
+              type="email"
+              className={errors.email ? 'error-input' : ''}
+              placeholder=""
+              value={demographics.email || ''}
+              onChange={(e) => updateField('email', e.target.value)}
+              onFocus={() => setEmailFocused(true)}
+              onBlur={(e) => {
+                setEmailFocused(false);
+                handleFieldBlur('email', e.target.value, true);
+              }}
+            />
+            {showEmailGhost && (
+              <span className="ghost-placeholder simple">
+                <span className="ghost-prefix">yourname@</span>
+                <span key={emailPlaceholderTick} className="ghost-domain simple-animate">{emailPlaceholderDomain}</span>
+              </span>
+            )}
+          </div>
           {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
-          <span className={`helper-text ${emailOk ? "ok" : "warning"}`}>{uiText("user.emailHint")}</span>
+          {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
         </div>
 
-        <div className={`form-field ${errors.phone ? 'error' : ''}`}>
+        <div className={`form-field ${errors.phone ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.phone")} <span className="required" aria-label="required">*</span></label>
           <input
             type="tel"
@@ -173,11 +183,11 @@ export default function UserDetailsPage({
           />
           {checking.phone && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.phone && <span className="error-text">{errors.phone}</span>}
-          <span className={`helper-text ${phoneOk ? "ok" : "warning"}`}>{uiText("user.phoneHint")}</span>
+          {!phoneOk && <span className="helper-text warning">{uiText("user.phoneHint")}</span>}
           <span className="helper-text">{uiText("user.phoneCount", { count: (demographics.phone || "").length })}</span>
         </div>
 
-        <div className={`form-field ${errors.gender_code ? 'error' : ''}`}>
+        <div className={`form-field ${errors.gender_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.gender")} <span className="required" aria-label="required">*</span></label>
           <select
             className={errors.gender_code ? 'error-input' : ''}
@@ -195,7 +205,7 @@ export default function UserDetailsPage({
           {errors.gender_code && <span className="error-text">{errors.gender_code}</span>}
         </div>
 
-        <div className={`form-field ${errors.age ? 'error' : ''}`}>
+        <div className={`form-field ${errors.age ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.age")} <span className="required" aria-label="required">*</span></label>
           <input
             type="number"
@@ -215,14 +225,13 @@ export default function UserDetailsPage({
             }}
           />
           {errors.age && <span className="error-text">{errors.age}</span>}
-          <span className={`helper-text ${ageOk ? "ok" : "warning"}`}>
-            {uiText("user.ageHint", { min: AGE_MIN, max: AGE_MAX })}
-          </span>
+          {!ageOk && (
+            <span className="helper-text warning">{uiText("user.ageHint", { min: AGE_MIN, max: AGE_MAX })}</span>
+          )}
           <span className="helper-text">{uiText("user.ageRange", { min: AGE_MIN, max: AGE_MAX })}</span>
-          <span className="helper-text">{uiText("user.ageValue", { value: demographics.age || "-" })}</span>
         </div>
 
-        <div className={`form-field ${errors.location ? 'error' : ''}`}>
+        <div className={`form-field ${errors.location ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.location")} <span className="required" aria-label="required">*</span></label>
           <input
             type="text"
@@ -261,10 +270,12 @@ export default function UserDetailsPage({
           )}
           {locationStatus && <span className="checking-text">{locationStatus}</span>}
           {errors.location && <span className="error-text">{errors.location}</span>}
-          <span className="helper-text warning">{uiText("user.locationHint", { min: LOCATION_MIN })}</span>
+          {!locationOk && (
+            <span className="helper-text warning">{uiText("user.locationHint", { min: LOCATION_MIN })}</span>
+          )}
         </div>
 
-        <div className={`form-field ${errors.language_code ? 'error' : ''}`}>
+        <div className={`form-field ${errors.language_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.language")} <span className="required" aria-label="required">*</span></label>
           <select
             className={errors.language_code ? 'error-input' : ''}
@@ -282,7 +293,7 @@ export default function UserDetailsPage({
           {errors.language_code && <span className="error-text">{errors.language_code}</span>}
         </div>
 
-        <div className={`form-field ${errors.prior_experience ? 'error' : ''}`}>
+        <div className={`form-field ${errors.prior_experience ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.priorExperience")} <span className="required" aria-label="required">*</span></label>
           <select
             className={errors.prior_experience ? 'error-input' : ''}
