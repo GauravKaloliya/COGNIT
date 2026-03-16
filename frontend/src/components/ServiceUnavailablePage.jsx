@@ -5,6 +5,7 @@ import { runtimeConfig } from '../config/runtime';
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
+import DSButton from './design/DSButton.jsx';
 
 export default function ServiceUnavailablePage({ error, darkMode = false, onToggleDarkMode, onRetry, isRetrying = false }) {
   const [retryInSeconds, setRetryInSeconds] = React.useState(runtimeConfig.serviceRetrySeconds);
@@ -27,13 +28,14 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
             <p className="subtitle">{uiText("app.subtitle")}</p>
           </div>
           <div className="header-actions">
-            <button
-              className="ghost dark-mode-toggle"
+            <DSButton
+              variant="ghost"
+              className="dark-mode-toggle"
               onClick={onToggleDarkMode}
               title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
             >
               <ThemeToggleIcon darkMode={darkMode} />
-            </button>
+            </DSButton>
           </div>
         </header>
         <div className="panel">
@@ -65,13 +67,14 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
           <p className="subtitle">{uiText("app.subtitle")}</p>
         </div>
         <div className="header-actions">
-          <button
-            className="ghost dark-mode-toggle"
+          <DSButton
+            variant="ghost"
+            className="dark-mode-toggle"
             onClick={onToggleDarkMode}
             title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
           >
             <ThemeToggleIcon darkMode={darkMode} />
-          </button>
+          </DSButton>
         </div>
       </header>
 

@@ -4,7 +4,6 @@ Centralized configuration management following 2025 best practices.
 """
 
 import os
-import json
 import re
 from typing import Dict, Any
 
@@ -115,6 +114,22 @@ def _rate_limit_env(name: str, default: str) -> str:
     return value
 
 
+def _validate_url(name: str, value: str) -> None:
+    if not value:
+        raise ValueError(f"{name} cannot be blank")
+    if not (value.startswith("http://") or value.startswith("https://")):
+        raise ValueError(f"{name} must start with http:// or https://")
+
+
+def validate_config() -> None:
+    """Fail fast on invalid configuration."""
+    _validate_url("WEBSITE_URL", WEBSITE_URL)
+    if PAYMENT_AMOUNT <= 0:
+        raise ValueError("PAYMENT_AMOUNT must be > 0")
+    if PAYMENT_MAX_IMAGE_MB > MAX_CONTENT_LENGTH_MB:
+        raise ValueError("PAYMENT_MAX_IMAGE_MB must be <= MAX_CONTENT_LENGTH_MB")
+
+
 # ────────────────────────────────────────────────
 # Application Constants
 # ────────────────────────────────────────────────
@@ -128,47 +143,48 @@ MIN_RATING = int(os.getenv("MIN_RATING", "1"))
 MAX_RATING = int(os.getenv("MAX_RATING", "10"))
 TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5.0"))
 
-ATTENTION_FLAG_THRESHOLD = float(os.getenv("ATTENTION_FLAG_THRESHOLD", "0.60"))
-ATTENTION_FLAG_MIN_CHECKS = int(os.getenv("ATTENTION_FLAG_MIN_CHECKS", "3"))
-ATTENTION_HARD_FLAG_CONSEC_FAILS = int(os.getenv("ATTENTION_HARD_FLAG_CONSEC_FAILS", "2"))
-ATTENTION_MIN_DISTINCT_WORDS = int(os.getenv("ATTENTION_MIN_DISTINCT_WORDS", "12"))
-ATTENTION_MIN_CHAR_LENGTH = int(os.getenv("ATTENTION_MIN_CHAR_LENGTH", "120"))
-ATTENTION_INTERVAL = int(os.getenv("ATTENTION_INTERVAL", "4"))
-PRIORITY_WORD_THRESHOLD = int(os.getenv("PRIORITY_WORD_THRESHOLD", "500"))
-PRIORITY_ROUNDS_THRESHOLD = int(os.getenv("PRIORITY_ROUNDS_THRESHOLD", "3"))
-PRIORITY_ATTENTION_THRESHOLD = float(os.getenv("PRIORITY_ATTENTION_THRESHOLD", "0.75"))
-PRIORITY_MIN_SUBMISSIONS = int(os.getenv("PRIORITY_MIN_SUBMISSIONS", "3"))
-PRIORITY_QUEUE_MIN_TOTAL_WORDS = int(os.getenv("PRIORITY_QUEUE_MIN_TOTAL_WORDS", "120"))
-PRIORITY_QUEUE_MIN_ROUNDS = int(os.getenv("PRIORITY_QUEUE_MIN_ROUNDS", "3"))
-REWARD_MAX_AVG_TIME_SECONDS = float(os.getenv("REWARD_MAX_AVG_TIME_SECONDS", "180"))
-REWARD_MIN_AVG_FEEDBACK_LENGTH = int(os.getenv("REWARD_MIN_AVG_FEEDBACK_LENGTH", "20"))
-REWARD_MIN_AVG_RATING = float(os.getenv("REWARD_MIN_AVG_RATING", "7"))
-REWARD_MIN_AVG_QUALITY_SCORE = float(os.getenv("REWARD_MIN_AVG_QUALITY_SCORE", "0.75"))
+ATTENTION_FLAG_THRESHOLD = 0.60
+ATTENTION_FLAG_MIN_CHECKS = 3
+ATTENTION_HARD_FLAG_CONSEC_FAILS = 2
+ATTENTION_MIN_DISTINCT_WORDS = 12
+ATTENTION_MIN_CHAR_LENGTH = 120
+ATTENTION_INTERVAL = 4
+PRIORITY_WORD_THRESHOLD = 500
+PRIORITY_ROUNDS_THRESHOLD = 3
+PRIORITY_ATTENTION_THRESHOLD = 0.75
+PRIORITY_MIN_SUBMISSIONS = 3
+PRIORITY_QUEUE_MIN_TOTAL_WORDS = 120
+PRIORITY_QUEUE_MIN_ROUNDS = 3
+REWARD_MAX_AVG_TIME_SECONDS = 180
+REWARD_MIN_AVG_FEEDBACK_LENGTH = 20
+REWARD_MIN_AVG_RATING = 7
+REWARD_MIN_AVG_QUALITY_SCORE = 0.75
 
-PERFORMANCE_LOG_SAMPLE_RATE = _float_env("PERFORMANCE_LOG_SAMPLE_RATE", 0.10, min_value=0.0, max_value=1.0)
-ENABLE_PERFORMANCE_METRICS = _bool_env("ENABLE_PERFORMANCE_METRICS", True)
-MAX_CONTENT_LENGTH_MB = _int_env("MAX_CONTENT_LENGTH_MB", 16, min_value=1, max_value=100)
+PERFORMANCE_LOG_SAMPLE_RATE = 0.10
+ENABLE_PERFORMANCE_METRICS = True
+MAX_CONTENT_LENGTH_MB = 16
 PAYMENT_MAX_IMAGE_MB = _int_env("PAYMENT_MAX_IMAGE_MB", 8, min_value=1, max_value=50)
 
-DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
-DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
-DB_POOL_TIMEOUT_SECONDS = int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "30"))
-DB_POOL_RECYCLE_SECONDS = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
-PARTICIPANT_CACHE_TTL_SECONDS = int(os.getenv("PARTICIPANT_CACHE_TTL_SECONDS", "600"))
-IMAGE_POOL_CACHE_TTL_SECONDS = int(os.getenv("IMAGE_POOL_CACHE_TTL_SECONDS", "60"))
-IMAGE_RESERVATION_TTL_SECONDS = _int_env("IMAGE_RESERVATION_TTL_SECONDS", 900, min_value=60, max_value=86400)
+DB_POOL_SIZE = 10
+DB_MAX_OVERFLOW = 20
+DB_POOL_TIMEOUT_SECONDS = 30
+DB_POOL_RECYCLE_SECONDS = 1800
+PARTICIPANT_CACHE_TTL_SECONDS = 600
+IMAGE_POOL_CACHE_TTL_SECONDS = 60
+IMAGE_RESERVATION_TTL_SECONDS = 900
 
-HEALTH_CACHE_TTL_SECONDS = float(os.getenv("HEALTH_CACHE_TTL_SECONDS", "5.0"))
-API_LATENCY_SLO_MS = _int_env("API_LATENCY_SLO_MS", 1200, min_value=50, max_value=60000)
+HEALTH_CACHE_TTL_SECONDS = 5.0
+API_LATENCY_SLO_MS = 1200
+IDEMPOTENCY_TTL_SECONDS = 86400
 
-LOG_LEVEL = _required_env("LOG_LEVEL")
-LOGGING_AUTO_CONFIG = _required_bool_env("LOGGING_AUTO_CONFIG")
-VERCEL_ENV = _required_env("VERCEL_ENV")
+LOG_LEVEL = "INFO"
+LOGGING_AUTO_CONFIG = True
+VERCEL_ENV = "development"
 WEBSITE_URL = _required_env("WEBSITE_URL")
-SESSION_COOKIE_SECURE = _bool_env("SESSION_COOKIE_SECURE", False)
-SESSION_COOKIE_SAMESITE = _str_env("SESSION_COOKIE_SAMESITE", "Lax", choices={"Lax", "None", "Strict"})
-PARTICIPANT_SESSION_COOKIE_NAME = _str_env("PARTICIPANT_SESSION_COOKIE_NAME", "cognit_session")
-PARTICIPANT_PUBLIC_COOKIE_NAME = _str_env("PARTICIPANT_PUBLIC_COOKIE_NAME", "cognit_public_id")
+SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_SAMESITE = "Lax"
+PARTICIPANT_SESSION_COOKIE_NAME = "cognit_session"
+PARTICIPANT_PUBLIC_COOKIE_NAME = "cognit_public_id"
 
 
 # ────────────────────────────────────────────────
@@ -181,10 +197,10 @@ PAYMENT_AMOUNT = _required_float_env("PAYMENT_AMOUNT")
 PAYMENT_SECRET = _required_env("PAYMENT_SECRET")
 PAYMENT_EXPIRY_SECONDS = _required_int_env("PAYMENT_EXPIRY_SECONDS")
 PAYMENT_SCREENSHOT_TIMEZONE = _str_env("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
-PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = _required_int_env("PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS")
-PAYMENT_VERIFICATION_TIME_GRACE_SECONDS = _required_int_env("PAYMENT_VERIFICATION_TIME_GRACE_SECONDS")
-PAYMENT_UPLOAD_URL_EXPIRY_SECONDS = _required_int_env("PAYMENT_UPLOAD_URL_EXPIRY_SECONDS")
-PAYMENT_VERIFY_MAX_ATTEMPTS = _required_int_env("PAYMENT_VERIFY_MAX_ATTEMPTS")
+PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = 300
+PAYMENT_VERIFICATION_TIME_GRACE_SECONDS = 180
+PAYMENT_UPLOAD_URL_EXPIRY_SECONDS = 300
+PAYMENT_VERIFY_MAX_ATTEMPTS = 3
 
 # Turnstile / bot-defense configuration
 TURNSTILE_ENABLED = _required_bool_env("TURNSTILE_ENABLED")
@@ -243,48 +259,35 @@ DEVICE_FINGERPRINT_SALTS = _str_env(
     allow_blank=False
 )
 
-INTERNAL_VERIFY_TOKEN = _str_env("INTERNAL_VERIFY_TOKEN", "", allow_blank=True)
-INTERNAL_VERIFY_RATE_LIMIT = _str_env("INTERNAL_VERIFY_RATE_LIMIT", "10 per minute", allow_blank=False)
-FRAUD_REJECT_THRESHOLD = float(os.getenv("FRAUD_REJECT_THRESHOLD", "70"))
-FRAUD_SUCCESS_MAX_SCORE = float(os.getenv("FRAUD_SUCCESS_MAX_SCORE", "20"))
-FRAUD_UNKNOWN_REASON_WEIGHT = float(os.getenv("FRAUD_UNKNOWN_REASON_WEIGHT", "25"))
+INTERNAL_VERIFY_TOKEN = "verify_it"
+INTERNAL_VERIFY_RATE_LIMIT = "10 per minute"
+FRAUD_REJECT_THRESHOLD = 70
+FRAUD_SUCCESS_MAX_SCORE = 15
+FRAUD_UNKNOWN_REASON_WEIGHT = 35
 
 FRAUD_SCORE_WEIGHTS: Dict[str, float] = {
-    "duplicate_hash": 95,
-    "duplicate_hash_self": 95,
-    "duplicate_hash_other": 95,
-    "rejected_reuse": 95,
-    "near_duplicate": 85,
-    "near_duplicate_self": 85,
-    "near_duplicate_other": 85,
-    "ocr_unavailable": 80,
-    "unrecognized_app": 75,
-    "time_out_of_range": 65,
-    "invalid_datetime_format_gpay": 55,
-    "invalid_datetime_format_paytm": 55,
-    "invalid_datetime_format_bhim": 55,
-    "invalid_banking_name": 50,
-    "invalid_amount": 50,
-    "missing_paid_to_cognit": 45,
-    "missing_paytm_label": 40,
-    "missing_bhim_label": 40,
-    "missing_paid_bhim": 35,
-    "verification_failed": 70,
-    "policy_risk_threshold": 90,
+    "duplicate_hash_self": 98,
+    "duplicate_hash_other": 100,
+    "duplicate_hash": 100,
+    "near_duplicate_self": 92,
+    "near_duplicate_other": 96,
+    "near_duplicate": 94,
+    "rejected_reuse": 100,
+    "ocr_unavailable": 88,
+    "unrecognized_app": 84,
+    "time_out_of_range": 72,
+    "invalid_datetime_format_gpay": 62,
+    "invalid_datetime_format_paytm": 62,
+    "invalid_datetime_format_bhim": 62,
+    "invalid_banking_name": 68,
+    "invalid_amount": 78,
+    "missing_paid_to_cognit": 66,
+    "missing_paytm_label": 58,
+    "missing_bhim_label": 58,
+    "missing_paid_bhim": 56,
+    "verification_failed": 90,
+    "policy_risk_threshold": 95,
 }
-
-_fraud_weights_json = (os.getenv("FRAUD_SCORE_WEIGHTS_JSON", "") or "").strip()
-if _fraud_weights_json:
-    try:
-        _overrides = json.loads(_fraud_weights_json)
-        if isinstance(_overrides, dict):
-            for _k, _v in _overrides.items():
-                try:
-                    FRAUD_SCORE_WEIGHTS[str(_k)] = float(_v)
-                except Exception:
-                    continue
-    except Exception:
-        pass
 
 
 # ────────────────────────────────────────────────
@@ -353,18 +356,15 @@ TRUST_PROXY_HEADERS = _bool_env("TRUST_PROXY_HEADERS", True)
 # HTTP Security Headers
 # ────────────────────────────────────────────────
 
-SECURITY_HSTS_ENABLED = _bool_env("SECURITY_HSTS_ENABLED", True)
-SECURITY_HSTS_MAX_AGE = _int_env("SECURITY_HSTS_MAX_AGE", 31536000, min_value=0)
-SECURITY_HSTS_INCLUDE_SUBDOMAINS = _bool_env("SECURITY_HSTS_INCLUDE_SUBDOMAINS", True)
-SECURITY_HSTS_PRELOAD = _bool_env("SECURITY_HSTS_PRELOAD", False)
-SECURITY_FRAME_OPTIONS = _str_env("SECURITY_FRAME_OPTIONS", "DENY", choices={"DENY", "SAMEORIGIN"})
-SECURITY_REFERRER_POLICY = _str_env("SECURITY_REFERRER_POLICY", "strict-origin-when-cross-origin")
-SECURITY_PERMISSIONS_POLICY = _str_env(
-    "SECURITY_PERMISSIONS_POLICY",
-    "geolocation=(self), microphone=(), camera=()"
-)
-SECURITY_CONTENT_TYPE_OPTIONS = _str_env("SECURITY_CONTENT_TYPE_OPTIONS", "nosniff")
-SECURITY_XSS_PROTECTION = _str_env("SECURITY_XSS_PROTECTION", "0", choices={"0", "1", "1; mode=block"})
+SECURITY_HSTS_ENABLED = True
+SECURITY_HSTS_MAX_AGE = 31536000
+SECURITY_HSTS_INCLUDE_SUBDOMAINS = True
+SECURITY_HSTS_PRELOAD = False
+SECURITY_FRAME_OPTIONS = "DENY"
+SECURITY_REFERRER_POLICY = "strict-origin-when-cross-origin"
+SECURITY_PERMISSIONS_POLICY = "geolocation=(self), microphone=(), camera=()"
+SECURITY_CONTENT_TYPE_OPTIONS = "nosniff"
+SECURITY_XSS_PROTECTION = "0"
 
 
 # ────────────────────────────────────────────────
@@ -379,25 +379,26 @@ RATELIMIT_STORAGE_URI = _required_env("RATELIMIT_STORAGE_URI")
 # ────────────────────────────────────────────────
 
 DOCS_BASE_URL = _str_env("DOCS_BASE_URL", WEBSITE_URL)
-FLASK_HOST = _str_env("FLASK_HOST", "0.0.0.0")
-FLASK_PORT = _int_env("FLASK_PORT", _int_env("PORT", 5000, min_value=1, max_value=65535), min_value=1, max_value=65535)
+PORT = _int_env("PORT", 5000, min_value=1, max_value=65535)
 FLASK_DEBUG = _bool_env("FLASK_DEBUG", True)
 
-ROOT_RATE_LIMIT = _rate_limit_env("ROOT_RATE_LIMIT", "30 per minute")
-DOCS_RATE_LIMIT = _rate_limit_env("DOCS_RATE_LIMIT", "30 per minute")
-HEALTH_RATE_LIMIT = _rate_limit_env("HEALTH_RATE_LIMIT", "10 per minute")
-PARTICIPANT_CREATE_RATE_LIMIT = _rate_limit_env("PARTICIPANT_CREATE_RATE_LIMIT", "30 per minute")
-PARTICIPANT_CHECK_RATE_LIMIT = _rate_limit_env("PARTICIPANT_CHECK_RATE_LIMIT", "30 per minute")
-CONSENT_RATE_LIMIT = _rate_limit_env("CONSENT_RATE_LIMIT", "20 per minute")
-PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT = _rate_limit_env("PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT", "30 per minute")
-SUBMIT_RATE_LIMIT = _rate_limit_env("SUBMIT_RATE_LIMIT", "60 per minute")
-PAYMENT_CREATE_RATE_LIMIT = _rate_limit_env("PAYMENT_CREATE_RATE_LIMIT", "20 per minute")
-PAYMENT_VERIFY_UPLOAD_RATE_LIMIT = _rate_limit_env("PAYMENT_VERIFY_UPLOAD_RATE_LIMIT", "20 per minute")
-PAYMENT_STATUS_RATE_LIMIT = _rate_limit_env("PAYMENT_STATUS_RATE_LIMIT", "20 per minute")
-PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT = _rate_limit_env("PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT", "12 per minute")
-PAYMENT_TOKEN_RATE_LIMIT = _rate_limit_env("PAYMENT_TOKEN_RATE_LIMIT", "10 per minute")
-PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT = _rate_limit_env("PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT", "6 per minute")
+ROOT_RATE_LIMIT = "30 per minute"
+DOCS_RATE_LIMIT = "30 per minute"
+HEALTH_RATE_LIMIT = "10 per minute"
+PARTICIPANT_CREATE_RATE_LIMIT = "30 per minute"
+PARTICIPANT_CHECK_RATE_LIMIT = "30 per minute"
+CONSENT_RATE_LIMIT = "20 per minute"
+PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT = "30 per minute"
+SUBMIT_RATE_LIMIT = "60 per minute"
+PAYMENT_CREATE_RATE_LIMIT = "20 per minute"
+PAYMENT_VERIFY_UPLOAD_RATE_LIMIT = "20 per minute"
+PAYMENT_STATUS_RATE_LIMIT = "20 per minute"
+PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT = "12 per minute"
+PAYMENT_TOKEN_RATE_LIMIT = "10 per minute"
+PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT = "6 per minute"
 
 IMAGE_PICK_ATTEMPTS_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_ATTENTION", "4"))
 IMAGE_PICK_ATTEMPTS_NON_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_NON_ATTENTION", "8"))
-IMAGE_PICK_ATTEMPTS_FALLBACK = int(os.getenv("IMAGE_PICK_ATTEMPTS_FALLBACK", "10"))
+
+
+validate_config()

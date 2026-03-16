@@ -1,14 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import { useConsentPage } from "../hooks/useConsentPage";
 import { uiText } from "../utils/uiText.js";
 import { CONSENT_CONTENT } from "../content/consentContent";
+import DSButton from "../components/design/DSButton.jsx";
 
 export default function ConsentPage({ 
   onConsentGiven, 
   systemReady 
 }) {
+  const [showFullConsent, setShowFullConsent] = useState(false);
   const {
     consentChecked,
     setConsentChecked,
@@ -19,6 +21,11 @@ export default function ConsentPage({
     paymentAmountLabel,
     rewardAmountLabel,
     handleSubmit,
+    draftRestored,
+    lastSavedAt,
+    isSaving,
+    saveError,
+    retryCountdown,
   } = useConsentPage({ onConsentGiven, systemReady });
 
   if (submitting) {
@@ -38,12 +45,34 @@ export default function ConsentPage({
           <span>{uiText("consent.offlineBanner")}</span>
         </div>
       )}
+      {draftRestored && (
+        <div className="banner info">
+          <span>{uiText("draft.restored")}</span>
+        </div>
+      )}
+      {isSaving && (
+        <div className="banner info">
+          <span className="status-icon saving" aria-hidden="true" />
+          <span>{uiText("autosave.saving")}</span>
+        </div>
+      )}
+      {saveError && (
+        <div className="banner warning">
+          <span>{saveError}</span>
+        </div>
+      )}
+      {!isSaving && lastSavedAt && (
+        <div className="banner info">
+          <span className="status-icon saved" aria-hidden="true" />
+          <span>{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
+        </div>
+      )}
       <h2 className="consent-title">{CONSENT_CONTENT.title}</h2>
       <p className="page-subtitle left no-bottom-margin">
         {CONSENT_CONTENT.subtitle}
       </p>
       
-      <div className="welcome-info">
+      <div className={`welcome-info consent-content ${showFullConsent ? "expanded" : "collapsed"}`}>
         {CONSENT_CONTENT.sections.map((section) => (
           <React.Fragment key={section.heading}>
             <h3>{section.heading}</h3>
@@ -76,6 +105,16 @@ export default function ConsentPage({
             {section.outro && <p>{section.outro}</p>}
           </React.Fragment>
         ))}
+        {!showFullConsent && <div className="consent-fade" aria-hidden="true" />}
+      </div>
+      <div className="consent-toggle">
+        <DSButton
+          variant="ghost"
+          type="button"
+          onClick={() => setShowFullConsent((prev) => !prev)}
+        >
+          {showFullConsent ? uiText("consent.readLess") : uiText("consent.readMore")}
+        </DSButton>
       </div>
       
       {error && (
@@ -103,17 +142,27 @@ export default function ConsentPage({
           <p className="consent-note">
             {CONSENT_CONTENT.checkboxNote}
           </p>
+          <span className="helper-text warning">{uiText("consent.requiredHint")}</span>
         </label>
       </div>
       
       <div className="page-actions sticky-mobile-actions">
-        <button
+        <DSButton
           className="primary"
           onClick={handleSubmit}
           disabled={!systemReady || submitting || !consentChecked || !isOnline}
         >
           {submitting ? uiText("common.processing") : uiText("common.continue")}
-        </button>
+          {!isOnline && retryCountdown > 0 && (
+            <span className="button-badge">
+              <span className="button-spinner small" />
+              {retryCountdown}s
+            </span>
+          )}
+        </DSButton>
+        {!isOnline && retryCountdown > 0 && (
+          <div className="helper-text">{uiText("survey.retryIn", { seconds: retryCountdown })}</div>
+        )}
       </div>
     </div>
   );

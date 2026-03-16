@@ -4,6 +4,7 @@ import { uiText } from "../utils/uiText.js";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
+import DSButton from "../components/design/DSButton.jsx";
 import {
   DESCRIPTION_NOTES,
   FEEDBACK_NOTES,
@@ -36,7 +37,9 @@ export default function SurveyPage({
     elapsed,
     imageLoaded,
     imageError,
+    imageReady,
     retryDisabled,
+    retryCountdown,
     wordCount,
     charCount,
     feedbackCount,
@@ -53,6 +56,7 @@ export default function SurveyPage({
     minimumMet,
     priorityMet,
     isOnline,
+    submitLocked,
     descriptionRef,
     commentsRef,
     imageSrc,
@@ -65,6 +69,10 @@ export default function SurveyPage({
     getSubmitTooltip,
     preventCopyPaste,
     preventClipboardShortcuts,
+    draftRestored,
+    lastSavedAt,
+    isSaving,
+    saveError,
   } = useSurveyPage({
     survey,
     publicId,
@@ -99,7 +107,13 @@ export default function SurveyPage({
             icon="!"
             title={uiText("survey.imageLoadFailed")}
             message={fetchError || uiText("survey.imageRestoreFailed")}
-            actionLabel={isFetchingImage ? uiText("survey.retrying") : uiText("survey.retry")}
+            actionLabel={
+              retryDisabled && retryCountdown > 0
+                ? uiText("survey.retryIn", { seconds: retryCountdown })
+                : isFetchingImage
+                  ? uiText("survey.retrying")
+                  : uiText("survey.retry")
+            }
             onAction={onRetry ? () => handleRetryImage(onRetry, isFetchingImage) : null}
             disabled={retryDisabled || isFetchingImage}
           />
@@ -121,6 +135,36 @@ export default function SurveyPage({
           <span>{uiText("survey.offlineBanner")}</span>
         </div>
       )}
+      {draftRestored && (
+        <div className="banner info">
+          <span>{uiText("draft.restored")}</span>
+        </div>
+      )}
+      {isSaving && (
+        <div className="banner info">
+          <span>{uiText("autosave.saving")}</span>
+        </div>
+      )}
+      {saveError && (
+        <div className="banner warning">
+          <span>{saveError}</span>
+        </div>
+      )}
+      {!isSaving && lastSavedAt && (
+        <div className="banner info">
+          <span>{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
+        </div>
+      )}
+      {draftRestored && (
+        <div className="banner info">
+          <span>{uiText("draft.restored")}</span>
+        </div>
+      )}
+      {lastSavedAt && (
+        <div className="banner info">
+          <span>{uiText("autosave.saved")}</span>
+        </div>
+      )}
       <div className="meta meta-step-top">
         <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: Math.min(UI_TOTAL_STEPS, currentStep) })}</span>
       </div>
@@ -138,13 +182,14 @@ export default function SurveyPage({
         ) : (
           <div className="image-error">
             <p>{getErrorMessage('SYS_002_0005')}</p>
-            <button
-              className="primary small button-top"
+            <DSButton
+              variant="primary"
+              className="small button-top"
               onClick={() => handleRetryImage(onRetry, isFetchingImage)}
               disabled={retryDisabled || isFetchingImage}
             >
               {isFetchingImage ? uiText("survey.retryingShort") : uiText("survey.retryShort")}
-            </button>
+            </DSButton>
           </div>
         )}
         {!imageLoaded && !imageError && (
@@ -152,13 +197,14 @@ export default function SurveyPage({
             <SectionSkeleton title={uiText("survey.loadingImage")} rows={4} dense />
           </div>
         )}
-        <button
+        <DSButton
+          variant="ghost"
           className="zoom-toggle"
           onClick={() => setIsZoomed(!isZoomed)}
           disabled={!imageLoaded || imageError}
         >
           {isZoomed ? uiText("survey.resetZoom") : uiText("survey.zoom")}
-        </button>
+        </DSButton>
       </div>
 
       <div className="meta">
@@ -208,6 +254,11 @@ export default function SurveyPage({
             {uiText("survey.minimumWords", { min: MIN_WORDS })}
           </span>
           <span className={descriptionPriorityReady ? "ok" : "warning"}>{uiText("survey.priorityWords", { target: PRIORITY_WORD_TARGET })}</span>
+        </div>
+        <div className={`helper-text ${wordCount >= MIN_WORDS ? "ok" : "warning"}`}>
+          {wordCount >= MIN_WORDS
+            ? uiText("survey.wordsGood")
+            : uiText("survey.wordsRemaining", { remaining: MIN_WORDS - wordCount })}
         </div>
         <div className={`priority-field-note ${descriptionPriorityReady ? "ready" : ""}`}>
           <div className="priority-field-head">
@@ -291,6 +342,11 @@ export default function SurveyPage({
             {uiText("survey.feedbackPriority", { target: PRIORITY_FEEDBACK_TARGET })}
           </span>
         </div>
+        <div className={`helper-text ${comments.length >= MIN_FEEDBACK_LENGTH ? "ok" : "warning"}`}>
+          {comments.length >= MIN_FEEDBACK_LENGTH
+            ? uiText("survey.feedbackGood")
+            : uiText("survey.feedbackRemainingMin", { remaining: MIN_FEEDBACK_LENGTH - comments.length })}
+        </div>
         <div className={`priority-field-note ${feedbackPriorityReady ? "ready" : ""}`}>
           <div className="priority-field-head">
             <span>{uiText("survey.feedbackTargetTitle", { target: PRIORITY_FEEDBACK_TARGET })}</span>
@@ -310,12 +366,12 @@ export default function SurveyPage({
 
       {submitError && <div className="banner warning">{submitError}</div>}
 
-      <div className="actions survey-submit-actions survey-sticky-footer">
+      <div className="actions page-actions survey-submit-actions survey-sticky-footer sticky-mobile-actions">
         <div className="submit-info-box">
           <p className="submit-trust-note">{uiText("survey.autosave")}</p>
           <p className="submit-shortcut-hint">{uiText("survey.submitShortcut")}</p>
         </div>
-        <button
+        <DSButton
           className={`primary ${submitting ? "wiggle" : ""}`}
           onClick={handleSubmit}
           disabled={!canSubmit || submitLocked || !isOnline}
@@ -327,7 +383,7 @@ export default function SurveyPage({
               {uiText("survey.submitBusy")}
             </>
           ) : submitLocked ? uiText("survey.submitLocked") : uiText("survey.submit")}
-        </button>
+        </DSButton>
       </div>
     </div>
   );

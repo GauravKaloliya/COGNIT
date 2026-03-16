@@ -3,6 +3,7 @@ import PageSkeleton from "../components/PageSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import { useSurveyFeedPage } from "../hooks/useSurveyFeedPage";
 import { uiText } from "../utils/uiText";
+import DSButton from "../components/design/DSButton.jsx";
 
 export default function SurveyFeedPage({
   surveyCompleted = 0,
@@ -15,6 +16,10 @@ export default function SurveyFeedPage({
     loadingNext,
     continueError,
     isOnline,
+    pendingContinue,
+    pendingFinish,
+    retryCountdownContinue,
+    retryCountdownFinish,
     handleSurveyContinue,
     handleSurveyFinish,
   } = useSurveyFeedPage({
@@ -53,31 +58,62 @@ export default function SurveyFeedPage({
             Remember to write at least {MIN_WORDS} words per description.</em>
           </p>
         </div>
-        <div className="survey-feedback-actions">
-          <button
+        <div className="page-actions sticky-mobile-actions survey-feedback-actions">
+          <DSButton
             className="primary"
             onClick={handleSurveyContinue}
             disabled={loadingNext || !isOnline}
           >
-            {loadingNext ? uiText("survey.loading") : uiText("survey.continue")}
-          </button>
-          <button
-            className="ghost survey-feedback-finish"
+            {loadingNext
+              ? uiText("survey.loading")
+              : !isOnline && pendingContinue && retryCountdownContinue > 0
+                ? uiText("survey.retryIn", { seconds: retryCountdownContinue })
+                : uiText("common.continue")}
+            {!isOnline && pendingContinue && retryCountdownContinue > 0 && (
+              <span className="button-badge">
+                <span className="button-spinner small" />
+                {retryCountdownContinue}s
+              </span>
+            )}
+          </DSButton>
+          <DSButton
+            variant="ghost"
+            className="survey-feedback-finish"
             onClick={handleSurveyFinish}
             disabled={loadingNext || !isOnline}
           >
-            Finish
-          </button>
+            {!isOnline && pendingFinish && retryCountdownFinish > 0
+              ? uiText("survey.retryIn", { seconds: retryCountdownFinish })
+              : uiText("common.finish")}
+            {!isOnline && pendingFinish && retryCountdownFinish > 0 && (
+              <span className="button-badge">
+                <span className="button-spinner small" />
+                {retryCountdownFinish}s
+              </span>
+            )}
+          </DSButton>
         </div>
         {continueError && (
-          <PanelState
-            variant="warning"
-            title={uiText("survey.unableLoadNext")}
-            message={uiText("survey.feedLoadFailedWithHint", { error: continueError })}
-            actionLabel={uiText("survey.retryShort")}
-            onAction={handleSurveyContinue}
-            disabled={loadingNext}
-          />
+          <div className="card">
+            <div className="card-header">
+              <PanelState
+                variant="warning"
+                title={uiText("survey.unableLoadNext")}
+                message={uiText("survey.feedLoadFailedWithHint", { error: continueError })}
+                actionLabel={uiText("survey.retryShort")}
+                onAction={handleSurveyContinue}
+                disabled={loadingNext}
+              />
+            </div>
+            <div className="card-body">
+              <p className="helper-text">{uiText("survey.guidanceTitle")}</p>
+              <ul className="payment-list">
+                <li>{uiText("survey.guidanceCheckConnection")}</li>
+                <li>{uiText("survey.guidanceContinueLater")}</li>
+                <li>{uiText("survey.guidanceSupport")}</li>
+              </ul>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -6,9 +6,8 @@ Best-effort only; database remains source of truth.
 import time
 from typing import Optional
 
-from sqlalchemy import text
-
 from app.config import PARTICIPANT_CACHE_TTL_SECONDS
+from app.utils.runtime_cache_queries import QUERY_RESOLVE_PARTICIPANT_ID
 
 _participant_cache = {}
 
@@ -37,11 +36,7 @@ def resolve_participant_id(db, public_id: str) -> Optional[int]:
     cached = get_cached_participant_id(public_id)
     if cached:
         return cached
-    pid = db.execute(text("""
-        SELECT id
-        FROM participants
-        WHERE public_id = :pub AND is_deleted = false
-    """), {"pub": public_id}).scalar()
+    pid = db.execute(QUERY_RESOLVE_PARTICIPANT_ID, {"pub": public_id}).scalar()
     if pid:
         set_cached_participant_id(public_id, int(pid))
     return int(pid) if pid else None

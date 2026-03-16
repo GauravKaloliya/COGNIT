@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -10,11 +11,53 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import qrcode
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.config import PAYMENT_AMOUNT, PAYMENT_EXPIRY_SECONDS
+from app.constants.payment_constants import (
+    PAYMENT_ACTIVE_STATUSES,
+    PAYMENT_DETECTED_APP_UNKNOWN,
+    PAYMENT_STATUS_EXPIRED,
+    PAYMENT_STATUS_PENDING,
+    PAYMENT_STATUS_PROCESSING,
+    PAYMENT_STATUS_FAILED,
+)
+from app.constants.response_keys import (
+    RESPONSE_KEY_AMOUNT,
+    RESPONSE_KEY_AUTO_REJECTED,
+    RESPONSE_KEY_DETECTED_APP,
+    RESPONSE_KEY_EXPIRES_AT,
+    RESPONSE_KEY_IS_EXPIRED,
+    RESPONSE_KEY_PAYMENT_ID,
+    RESPONSE_KEY_PAYMENT_TOKEN,
+    RESPONSE_KEY_QR_READY,
+    RESPONSE_KEY_SIGNATURE,
+    RESPONSE_KEY_STATUS,
+    RESPONSE_KEY_TIME_REMAINING_SECONDS,
+    RESPONSE_KEY_TIMER_ACTIVATED,
+    RESPONSE_KEY_UPI_LINK,
+    RESPONSE_KEY_VERIFICATION_ATTEMPTS,
+    RESPONSE_KEY_VERIFICATION_DETAILS,
+    RESPONSE_KEY_VERIFIED_AT,
+)
+from app.constants.observability_constants import (
+    OBS_EVENT_PAYMENT_AUDIT_ENQUEUE_FAILED,
+    OBS_EVENT_PAYMENT_AUDIT_INSERT_FAILED,
+    OBS_EVENT_PAYMENT_AUDIT_WRITE_FAILED,
+)
+from app.utils.observability import log_event
 from app.database import engine
+from app.services.payment_session_query_service import (
+    QUERY_EXPIRE_PAYMENT_IF_NEEDED,
+    QUERY_FETCH_ACTIVE_PAYMENT_FOR_REUSE,
+    QUERY_FETCH_PAYMENT_STATUS_ROW,
+    QUERY_FETCH_TOKEN_MINT_ROW,
+    QUERY_GET_PARTICIPANT_SESSION_ID,
+    QUERY_INSERT_PAYMENT_AUDIT_LOG,
+    QUERY_INSERT_PAYMENT_RECORD,
+    QUERY_MARK_EXISTING_ACTIVE_PAYMENTS_FAILED,
+    QUERY_UPDATE_PAYMENT_WRITE_TOKEN_METADATA,
+)
 from app.utils.helpers import get_ip_hash
 from app.utils.security import (
     generate_payment_signature,
@@ -24,6 +67,7 @@ from app.utils.security import (
 
 QR_BASE64_CACHE = {}
 PAYMENT_AUDIT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="payment-audit")
+logger = logging.getLogger(__name__)
 
 
 def issue_payment_write_token(
@@ -38,12 +82,7 @@ def issue_payment_write_token(
     session_id: str = "",
 ) -> str:
     nonce = uuid.uuid4().hex
-    db.execute(text("""
-        UPDATE payments
-        SET metadata = COALESCE(metadata, '{}'::jsonb) || CAST(:patch AS jsonb),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = :pid
-    """), {
+    db.execute(QUERY_UPDATE_PAYMENT_WRITE_TOKEN_METADATA, {
         "pid": int(payment_id),
         "patch": json.dumps({
             "payment_write_nonce": nonce,
@@ -76,15 +115,7 @@ def log_payment_audit(
 ):
     """Best-effort payment audit log writer; never breaks request flow."""
     try:
-        db.execute(text("""
-            INSERT INTO payment_audit_log (
-                event_type, payment_id, participant_id, ip_hash, user_agent,
-                device_fingerprint, request_data, response_data, fraud_signals, details
-            ) VALUES (
-                :event_type, :payment_id, :participant_id, :ip_hash, :user_agent,
-                :device_fingerprint, CAST(:request_data AS jsonb), CAST(:response_data AS jsonb), CAST(:fraud_signals AS jsonb), :details
-            )
-        """), {
+        db.execute(QUERY_INSERT_PAYMENT_AUDIT_LOG, {
             "event_type": event_type,
             "payment_id": payment_id,
             "participant_id": participant_id,
@@ -96,7 +127,8 @@ def log_payment_audit(
             "fraud_signals": json.dumps(fraud_signals or {}),
             "details": (details or "")[:8000],
         })
-    except Exception:
+    except Exception as exc:
+        log_event(logger, OBS_EVENT_PAYMENT_AUDIT_INSERT_FAILED, level=logging.WARNING, error=str(exc))
         return
 
 
@@ -117,15 +149,7 @@ def enqueue_payment_audit(
     def _write():
         try:
             with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO payment_audit_log (
-                        event_type, payment_id, participant_id, ip_hash, user_agent,
-                        device_fingerprint, request_data, response_data, fraud_signals, details
-                    ) VALUES (
-                        :event_type, :payment_id, :participant_id, :ip_hash, :user_agent,
-                        :device_fingerprint, CAST(:request_data AS jsonb), CAST(:response_data AS jsonb), CAST(:fraud_signals AS jsonb), :details
-                    )
-                """), {
+                conn.execute(QUERY_INSERT_PAYMENT_AUDIT_LOG, {
                     "event_type": event_type,
                     "payment_id": payment_id,
                     "participant_id": participant_id,
@@ -137,13 +161,13 @@ def enqueue_payment_audit(
                     "fraud_signals": json.dumps(fraud_signals or {}),
                     "details": (details or "")[:8000],
                 })
-        except Exception:
-            pass
+        except Exception as exc:
+            log_event(logger, OBS_EVENT_PAYMENT_AUDIT_WRITE_FAILED, level=logging.WARNING, error=str(exc))
 
     try:
         PAYMENT_AUDIT_EXECUTOR.submit(_write)
-    except Exception:
-        pass
+    except Exception as exc:
+        log_event(logger, OBS_EVENT_PAYMENT_AUDIT_ENQUEUE_FAILED, level=logging.WARNING, error=str(exc))
 
 
 def build_qr_base64(upi_link: str) -> str:
@@ -170,19 +194,16 @@ def is_expected_payment_amount(amount) -> bool:
 
 
 def get_participant_session_id(db, participant_id: int):
-    return db.execute(text("""
-        SELECT session_id FROM participants WHERE id = :pid
-    """), {"pid": participant_id}).scalar()
+    return db.execute(QUERY_GET_PARTICIPANT_SESSION_ID, {"pid": participant_id}).scalar()
 
 
 def mark_existing_active_payments_failed(db, participant_id: int):
-    db.execute(text("""
-        UPDATE payments
-        SET status = 'failed',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE participant_id = :pid
-          AND status IN ('pending', 'processing')
-    """), {"pid": participant_id})
+    db.execute(QUERY_MARK_EXISTING_ACTIVE_PAYMENTS_FAILED, {
+        "pid": participant_id,
+        "failed_status": PAYMENT_STATUS_FAILED,
+        "pending_status": PAYMENT_STATUS_PENDING,
+        "processing_status": PAYMENT_STATUS_PROCESSING,
+    })
 
 
 def create_payment_record(
@@ -196,22 +217,14 @@ def create_payment_record(
     expires_str = expires_at.isoformat()
     payment_public_id = str(uuid.uuid4())
     signature = generate_payment_signature(public_id, str(amount), expires_str)
-    payment_row = db.execute(text("""
-        INSERT INTO payments (
-            participant_id, public_id, amount, signature, expires_at, timer_activated_at, detected_app, metadata
-        ) VALUES (
-            :pid, :pub_id, :amt, :sig, :exp, :timer_time, :detected_app,
-            '{}'::jsonb
-        )
-        RETURNING id, public_id
-    """), {
+    payment_row = db.execute(QUERY_INSERT_PAYMENT_RECORD, {
         "pid": participant_id,
         "pub_id": payment_public_id,
         "amt": amount,
         "sig": signature,
         "exp": expires_at,
         "timer_time": datetime.now(timezone.utc),
-        "detected_app": "unknown",
+        "detected_app": PAYMENT_DETECTED_APP_UNKNOWN,
     }).fetchone()
     return payment_row, signature, expires_at, expires_str
 
@@ -233,11 +246,11 @@ def build_payment_response_payload(
 ):
     upi_link = generate_upi_link(amount)
     return {
-        "payment_id": str(payment_public_id),
-        "amount": amount,
-        "expires_at": expires_str,
-        "signature": signature,
-        "payment_token": issue_payment_write_token(
+        RESPONSE_KEY_PAYMENT_ID: str(payment_public_id),
+        RESPONSE_KEY_AMOUNT: amount,
+        RESPONSE_KEY_EXPIRES_AT: expires_str,
+        RESPONSE_KEY_SIGNATURE: signature,
+        RESPONSE_KEY_PAYMENT_TOKEN: issue_payment_write_token(
             db,
             payment_id=int(payment_row_id),
             payment_public_id=str(payment_public_id),
@@ -247,22 +260,19 @@ def build_payment_response_payload(
             device_fingerprint=device_fingerprint or "",
             session_id=session_id or "",
         ),
-        "upi_link": upi_link,
-        "qr_ready": True,
-        "timer_activated": True,
-        "time_remaining_seconds": time_remaining_seconds,
+        RESPONSE_KEY_UPI_LINK: upi_link,
+        RESPONSE_KEY_QR_READY: True,
+        RESPONSE_KEY_TIMER_ACTIVATED: True,
+        RESPONSE_KEY_TIME_REMAINING_SECONDS: time_remaining_seconds,
     }
 
 
 def fetch_active_payment_for_reuse(db, participant_id: int):
-    return db.execute(text("""
-        SELECT id, public_id, amount, expires_at, signature
-        FROM payments
-        WHERE participant_id = :pid
-          AND status IN ('pending', 'processing')
-        ORDER BY created_at DESC
-        LIMIT 1
-    """), {"pid": participant_id}).fetchone()
+    return db.execute(QUERY_FETCH_ACTIVE_PAYMENT_FOR_REUSE, {
+        "pid": participant_id,
+        "pending_status": PAYMENT_STATUS_PENDING,
+        "processing_status": PAYMENT_STATUS_PROCESSING,
+    }).fetchone()
 
 
 def build_reused_payment_response_payload(
@@ -299,52 +309,35 @@ def is_duplicate_active_payment_error(error: Exception) -> bool:
 
 
 def fetch_payment_status_row(db, payment_public_id: str):
-    return db.execute(text("""
-        SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app, p.auto_rejected, p.verification_attempts, p.signature, pr.session_id
-        FROM payments p
-        JOIN participants pr ON pr.id = p.participant_id
-        WHERE p.public_id = :pid
-    """), {"pid": payment_public_id}).fetchone()
+    return db.execute(QUERY_FETCH_PAYMENT_STATUS_ROW, {"pid": payment_public_id}).fetchone()
 
 
 def expire_payment_if_needed(db, *, payment_id: int, status: str, expires_at):
     now = datetime.now(timezone.utc)
     is_expired = expires_at and now > expires_at
     updated_status = status
-    if is_expired and status in ("pending", "processing"):
-        db.execute(text("""
-            UPDATE payments
-            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-            WHERE id = :pid
-        """), {"pid": payment_id})
+    if is_expired and status in PAYMENT_ACTIVE_STATUSES:
+        db.execute(QUERY_EXPIRE_PAYMENT_IF_NEEDED, {"pid": payment_id, "expired_status": PAYMENT_STATUS_EXPIRED})
         db.commit()
-        updated_status = "expired"
+        updated_status = PAYMENT_STATUS_EXPIRED
     return updated_status, now
 
 
 def build_payment_status_response(*, payment_public_id: str, status: str, amount, expires_at, now, verified_at, verification_details, detected_app, auto_rejected, verification_attempts):
     return {
-        "payment_id": payment_public_id,
-        "status": status,
-        "amount": float(amount) if amount else None,
-        "expires_at": expires_at.isoformat() if expires_at else None,
-        "is_expired": status == "expired",
-        "time_remaining_seconds": max(0, int((expires_at - now).total_seconds())) if expires_at and status in ("pending", "processing") else 0,
-        "verified_at": verified_at.isoformat() if verified_at else None,
-        "verification_attempts": int(verification_attempts or 0),
-        **({"verification_details": verification_details} if verification_details else {}),
-        **({"detected_app": detected_app} if detected_app else {}),
-        **({"auto_rejected": True} if auto_rejected else {}),
+        RESPONSE_KEY_PAYMENT_ID: payment_public_id,
+        RESPONSE_KEY_STATUS: status,
+        RESPONSE_KEY_AMOUNT: float(amount) if amount else None,
+        RESPONSE_KEY_EXPIRES_AT: expires_at.isoformat() if expires_at else None,
+        RESPONSE_KEY_IS_EXPIRED: status == PAYMENT_STATUS_EXPIRED,
+        RESPONSE_KEY_TIME_REMAINING_SECONDS: max(0, int((expires_at - now).total_seconds())) if expires_at and status in PAYMENT_ACTIVE_STATUSES else 0,
+        RESPONSE_KEY_VERIFIED_AT: verified_at.isoformat() if verified_at else None,
+        RESPONSE_KEY_VERIFICATION_ATTEMPTS: int(verification_attempts or 0),
+        **({RESPONSE_KEY_VERIFICATION_DETAILS: verification_details} if verification_details else {}),
+        **({RESPONSE_KEY_DETECTED_APP: detected_app} if detected_app else {}),
+        **({RESPONSE_KEY_AUTO_REJECTED: True} if auto_rejected else {}),
     }
 
 
 def fetch_token_mint_row(db, *, payment_public_id: str, public_id: str, session_id: str):
-    return db.execute(text("""
-        SELECT p.id, p.participant_id, p.status, p.expires_at, p.signature, pr.session_id
-        FROM payments p
-        JOIN participants pr ON pr.id = p.participant_id
-        WHERE p.public_id = :pid
-          AND pr.public_id = :pub
-          AND pr.session_id = :sid
-        LIMIT 1
-    """), {"pid": payment_public_id, "pub": public_id, "sid": session_id}).fetchone()
+    return db.execute(QUERY_FETCH_TOKEN_MINT_ROW, {"pid": payment_public_id, "pub": public_id, "sid": session_id}).fetchone()

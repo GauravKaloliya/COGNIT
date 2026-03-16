@@ -5,6 +5,8 @@ import time
 from flask import request, g
 from sqlalchemy import text
 
+from app.constants.log_messages import LOG_RANDOM_IMAGE_FAILED
+from app.constants.route_constants import IMAGES_RANDOM_ROUTE
 from app.database import get_db
 from app.utils.helpers import create_error_response, success_response
 from app.utils.decorators import track_performance
@@ -28,7 +30,7 @@ image_bp = Blueprint('image', __name__)
 # ────────────────────────────────────────────────
 
 
-@image_bp.route("/images/random")
+@image_bp.route(IMAGES_RANDOM_ROUTE)
 @track_performance
 def random_image():
     """Get a random image with deterministic attention-check placement."""
@@ -74,5 +76,5 @@ def random_image():
     except Exception as e:
         # Keep errors logged but avoid noisy prints in production.
         import logging
-        logging.getLogger(__name__).error("random_image failed error=%s request_id=%s", e, getattr(g, "request_id", None))
+        logging.getLogger(__name__).error(LOG_RANDOM_IMAGE_FAILED, e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")

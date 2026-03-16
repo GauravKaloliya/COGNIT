@@ -1,4 +1,5 @@
 import React from "react";
+import DSButton from "./design/DSButton.jsx";
 import { BUTTON_VARIANTS, CLASS_NAMES, PANEL_STATE_ICONS, PANEL_STATE_VARIANTS } from "../constants/componentUi";
 
 export default function PanelState({
@@ -32,14 +33,14 @@ export default function PanelState({
       {(actionLabel && onAction) || (secondaryActionLabel && onSecondaryAction) ? (
         <div className={CLASS_NAMES.panelStateActions}>
           {actionLabel && onAction ? (
-            <button className={BUTTON_VARIANTS.primary} onClick={onAction} disabled={disabled}>
+            <DSButton variant={BUTTON_VARIANTS.primary} onClick={onAction} disabled={disabled}>
               {actionLabel}
-            </button>
+            </DSButton>
           ) : null}
           {secondaryActionLabel && onSecondaryAction ? (
-            <button className={BUTTON_VARIANTS.ghost} onClick={onSecondaryAction} disabled={disabled}>
+            <DSButton variant={BUTTON_VARIANTS.ghost} onClick={onSecondaryAction} disabled={disabled}>
               {secondaryActionLabel}
-            </button>
+            </DSButton>
           ) : null}
         </div>
       ) : null}

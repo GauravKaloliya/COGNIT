@@ -7,6 +7,7 @@ import { REQUEST_CACHE, REQUEST_CODES, REQUEST_METHODS, ERROR_NAMES } from "../c
 import { APP_FLOW } from "../config/appFlow";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { API_ROUTES } from "../constants/routes";
+import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 
 export function useSystemHealth({
   publicId,
@@ -25,6 +26,7 @@ export function useSystemHealth({
   const [retryTrigger, setRetryTrigger] = useState(0);
   const [browserOnline, setBrowserOnline] = useState(navigator.onLine);
   const [apiReachable, setApiReachable] = useState(navigator.onLine);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
   const probeFailCountRef = useRef(0);
   const healthAbortRef = useRef(null);
   const paymentStatusAbortRef = useRef(null);
@@ -33,6 +35,7 @@ export function useSystemHealth({
   const markApiReachable = useCallback(() => {
     probeFailCountRef.current = 0;
     setApiReachable(true);
+    setLastSyncAt(Date.now());
   }, []);
 
   const markProbeFailure = useCallback(() => {
@@ -53,7 +56,7 @@ export function useSystemHealth({
     }
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), runtimeConfig.networkProbeTimeoutMs);
+      const timeoutId = scheduleTimeout(() => controller.abort(), runtimeConfig.networkProbeTimeoutMs);
       try {
         await apiFetch(API_ROUTES.health, {
           method: REQUEST_METHODS.get,
@@ -61,7 +64,7 @@ export function useSystemHealth({
           signal: controller.signal,
         });
       } finally {
-        clearTimeout(timeoutId);
+        clearScheduledTimeout(timeoutId);
       }
       markApiReachable();
       return true;
@@ -92,8 +95,8 @@ export function useSystemHealth({
     if (!isActiveTabOwner) return undefined;
     if (!browserOnline || apiReachable) return undefined;
     probeApiReachability();
-    const interval = setInterval(probeApiReachability, runtimeConfig.networkProbeIntervalMs);
-    return () => clearInterval(interval);
+    const interval = scheduleInterval(probeApiReachability, runtimeConfig.networkProbeIntervalMs);
+    return () => clearScheduledInterval(interval);
   }, [browserOnline, apiReachable, probeApiReachability, isActiveTabOwner]);
 
   useEffect(() => {
@@ -104,7 +107,7 @@ export function useSystemHealth({
     const scheduleNext = (baseMs) => {
       const jitter = Math.floor(Math.random() * 1000);
       const delay = Math.max(2000, baseMs + jitter);
-      timeoutId = setTimeout(checkHealth, delay);
+      timeoutId = scheduleTimeout(checkHealth, delay);
     };
 
     const checkHealth = async () => {
@@ -115,7 +118,7 @@ export function useSystemHealth({
         }
         const controller = new AbortController();
         healthAbortRef.current = controller;
-        const timeoutGuard = setTimeout(() => controller.abort(), runtimeConfig.healthCheckTimeoutMs);
+        const timeoutGuard = scheduleTimeout(() => controller.abort(), runtimeConfig.healthCheckTimeoutMs);
         try {
           const data = await apiFetch(API_ROUTES.health, { signal: controller.signal, method: REQUEST_METHODS.get });
           if (cancelled) return;
@@ -125,6 +128,7 @@ export function useSystemHealth({
             setSystemReady(true);
             setSystemError(null);
             healthBackoffRef.current = 1;
+            setLastSyncAt(Date.now());
           } else {
             setSystemReady(false);
             setSystemError(
@@ -135,7 +139,7 @@ export function useSystemHealth({
             healthBackoffRef.current = Math.min(4, healthBackoffRef.current * 2);
           }
         } finally {
-          clearTimeout(timeoutGuard);
+          clearScheduledTimeout(timeoutGuard);
         }
       } catch (err) {
         if (err?.name === ERROR_NAMES.abort) {
@@ -158,7 +162,7 @@ export function useSystemHealth({
     checkHealth();
     return () => {
       cancelled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      if (timeoutId) clearScheduledTimeout(timeoutId);
       if (healthAbortRef.current) {
         healthAbortRef.current.abort();
         healthAbortRef.current = null;
@@ -212,6 +216,7 @@ export function useSystemHealth({
     systemError,
     systemChecking,
     online: browserOnline && apiReachable,
+    lastSyncAt,
     retryHealthCheck: () => setRetryTrigger((prev) => prev + 1),
   };
 }

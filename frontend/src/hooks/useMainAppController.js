@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { runtimeConfig } from "../config/runtime";
 import { getStoredValue, saveStoredValue } from "../utils/storage";
 import { BROWSER_EVENTS, BROWSER_FLAGS } from "../constants/browser";
+import { initErrorReporter, reportClientError } from "../utils/errorReporter";
 
 function readDarkMode() {
   return getStoredValue(runtimeConfig.storageKeys.darkMode, false) === true;
@@ -18,20 +19,34 @@ export function useMainAppController() {
 
   useEffect(() => {
     const handleError = (event) => {
-      console.error("Application error:", event.error);
+      // No-op: suppress console noise in production.
       setError(event.error);
+      reportClientError({
+        message: event?.message || event?.error?.message,
+        stack: event?.error?.stack,
+        context: "window_error",
+        route: typeof window !== "undefined" ? window.location.pathname : "",
+      });
     };
 
     const handleUnhandledRejection = (event) => {
-      console.error("Unhandled promise rejection:", event.reason);
+      // No-op: suppress console noise in production.
       setError(event.reason);
+      reportClientError({
+        message: event?.reason?.message || String(event?.reason || ""),
+        stack: event?.reason?.stack,
+        context: "unhandled_rejection",
+        route: typeof window !== "undefined" ? window.location.pathname : "",
+      });
     };
 
+    const teardownReporter = initErrorReporter();
     window.addEventListener(BROWSER_EVENTS.error, handleError);
     window.addEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
     return () => {
       window.removeEventListener(BROWSER_EVENTS.error, handleError);
       window.removeEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
+      teardownReporter();
     };
   }, []);
 

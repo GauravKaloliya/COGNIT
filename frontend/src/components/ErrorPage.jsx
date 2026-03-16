@@ -4,6 +4,7 @@ import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
+import DSButton from './design/DSButton.jsx';
 import { writeExpiringValue } from "../utils/storage";
 import { APP_FLOW } from "../config/appFlow";
 import { APP_ROUTES } from "../constants/routes";
@@ -56,13 +57,14 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
           <p className="subtitle">{uiText("app.subtitle")}</p>
         </div>
         <div className="header-actions">
-          <button
-            className="ghost dark-mode-toggle"
+          <DSButton
+            variant="ghost"
+            className="dark-mode-toggle"
             onClick={onToggleDarkMode}
             title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
           >
             <ThemeToggleIcon darkMode={darkMode} />
-          </button>
+          </DSButton>
         </div>
       </header>
       <div className="panel">

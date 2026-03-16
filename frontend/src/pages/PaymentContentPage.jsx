@@ -9,6 +9,8 @@ export default function PaymentContentPage({ onNext, onBack }) {
   const {
     continuing,
     isOnline,
+    pendingContinue,
+    retryCountdown,
     paymentAmountLabel,
     rewardAmountLabel,
     handleContinue,
@@ -28,9 +30,9 @@ export default function PaymentContentPage({ onNext, onBack }) {
     <div className="panel payment-panel">
       <div className="page-top-actions">
         {onBack && (
-          <button className="ghost back-button" onClick={onBack}>
+          <DSButton variant="ghost" className="back-button" onClick={onBack}>
             ← Back
-          </button>
+          </DSButton>
         )}
       </div>
       {!isOnline && (
@@ -40,7 +42,7 @@ export default function PaymentContentPage({ onNext, onBack }) {
       )}
 
       <div className="payment-header">
-        <div className="payment-header-emoji" aria-hidden="true">🎁</div>
+        <div className="icon-badge" aria-hidden="true">G</div>
         <h2 className="payment-title ds-title">Win {rewardAmountLabel}</h2>
         <p className="payment-subtitle">Participate → Get a chance to receive {rewardAmountLabel}</p>
         <p className="payment-tagline ds-subtle">{paymentAmountLabel} entry. Real reward.</p>
@@ -48,62 +50,86 @@ export default function PaymentContentPage({ onNext, onBack }) {
 
       <div className="payment-content ds-stack">
         <DSCard className="payment-card">
-          <h3>
-            <span className="payment-card-emoji" aria-hidden="true">💰</span>
-            {paymentAmountLabel} Participation
-          </h3>
-          <p>Your {paymentAmountLabel} entry enters you into the reward pool.</p>
-          <ul className="payment-list">
-            <li>Entry fee: {paymentAmountLabel}</li>
-            <li>Chance to win {rewardAmountLabel} via UPI</li>
-          </ul>
+          <div className="card-header">
+            <h3>
+              <span className="icon-badge" aria-hidden="true">₹</span>
+              {paymentAmountLabel} Participation
+            </h3>
+          </div>
+          <div className="card-body">
+            <p>Your {paymentAmountLabel} entry enters you into the reward pool.</p>
+            <ul className="payment-list">
+              <li>Entry fee: {paymentAmountLabel}</li>
+              <li>Chance to win {rewardAmountLabel} via UPI</li>
+            </ul>
+          </div>
         </DSCard>
 
         <DSCard className="payment-card">
-          <h3>
-            <span className="payment-card-emoji" aria-hidden="true">⚡</span>
-            How It Works
-          </h3>
-          <ol className="payment-steps">
-            <li><span className="payment-step-emoji" aria-hidden="true">1️⃣</span> Pay {paymentAmountLabel} via UPI</li>
-            <li><span className="payment-step-emoji" aria-hidden="true">2️⃣</span> Upload payment screenshot</li>
-            <li><span className="payment-step-emoji" aria-hidden="true">3️⃣</span> Your entry is added to the pool</li>
-            <li><span className="payment-step-emoji" aria-hidden="true">4️⃣</span> Winners receive {rewardAmountLabel} (24–48 hours)</li>
-          </ol>
-          <p className="payment-note">{uiText("payment.cleanDirect")}</p>
+          <div className="card-header">
+            <h3>
+              <span className="icon-badge" aria-hidden="true">A</span>
+              How It Works
+            </h3>
+          </div>
+          <div className="card-body">
+            <ol className="payment-steps compact">
+              <li><span className="icon-badge" aria-hidden="true">1</span> Pay {paymentAmountLabel} via UPI</li>
+              <li><span className="icon-badge" aria-hidden="true">2</span> Upload payment screenshot</li>
+              <li><span className="icon-badge" aria-hidden="true">3</span> Your entry is added to the pool</li>
+              <li><span className="icon-badge" aria-hidden="true">4</span> Winners receive {rewardAmountLabel} (24–48 hours)</li>
+            </ol>
+            <p className="payment-note">{uiText("payment.cleanDirect")}</p>
+          </div>
         </DSCard>
 
         <DSCard className="payment-card">
-          <h3>
-            <span className="payment-card-emoji" aria-hidden="true">🔥</span>
-            Increase Your Odds
-          </h3>
-          <p>{uiText("payment.priorityIntro")}</p>
-          <p className="payment-callout">{uiText("payment.priorityUnlock")}</p>
-          <ul className="payment-checklist">
-            <li><span aria-hidden="true">✔</span> Writing 120+ total words</li>
-            <li><span aria-hidden="true">✔</span> Completing 3+ rounds</li>
-          </ul>
-          <p className="payment-note">{uiText("payment.priorityOutcome")}</p>
+          <div className="card-header">
+            <h3>
+              <span className="icon-badge" aria-hidden="true">P</span>
+              Increase Your Odds
+            </h3>
+          </div>
+          <div className="card-body">
+            <p>{uiText("payment.priorityIntro")}</p>
+            <p className="payment-callout">{uiText("payment.priorityUnlock")}</p>
+            <ul className="payment-checklist">
+              <li><span aria-hidden="true">✔</span> Writing 120+ total words</li>
+              <li><span aria-hidden="true">✔</span> Completing 3+ rounds</li>
+            </ul>
+            <p className="payment-note">{uiText("payment.priorityOutcome")}</p>
+          </div>
         </DSCard>
 
         <DSCard className="payment-card highlight">
-          <h3>
-            <span className="payment-card-emoji" aria-hidden="true">🎯</span>
-            Reward Details
-          </h3>
-          <ul className="payment-list">
-            <li>{rewardAmountLabel} per selected entry</li>
-            <li>{uiText("payment.rewardDirectUpi")}</li>
-            <li>{uiText("payment.rewardProcessed")}</li>
-            <li>{uiText("payment.rewardNoMinimum")}</li>
-          </ul>
+          <div className="card-header">
+            <h3>
+              <span className="icon-badge" aria-hidden="true">R</span>
+              Reward Details
+            </h3>
+          </div>
+          <div className="card-body">
+            <ul className="payment-list">
+              <li>{rewardAmountLabel} per selected entry</li>
+              <li>{uiText("payment.rewardDirectUpi")}</li>
+              <li>{uiText("payment.rewardProcessed")}</li>
+              <li>{uiText("payment.rewardNoMinimum")}</li>
+            </ul>
+          </div>
         </DSCard>
       </div>
 
       <div className="page-actions sticky-mobile-actions">
         <DSButton variant="primary" onClick={handleContinue} disabled={!isOnline || continuing}>
-          {uiText("payment.continueToPayment")}
+          {!isOnline && pendingContinue && retryCountdown > 0
+            ? uiText("survey.retryIn", { seconds: retryCountdown })
+            : uiText("payment.continueToPayment")}
+          {!isOnline && pendingContinue && retryCountdown > 0 && (
+            <span className="button-badge">
+              <span className="button-spinner small" />
+              {retryCountdown}s
+            </span>
+          )}
         </DSButton>
       </div>
     </div>
