@@ -47,6 +47,27 @@ export function useUserDetailsPage({
   setDemographics,
   onSubmit,
 }) {
+  const prioritizeEnglish = useCallback((items = []) => {
+    const list = Array.isArray(items) ? items : [];
+    const isEnglish = (item) => {
+      if (!item) return false;
+      if (typeof item === "string") return item.trim().toLowerCase() === "english";
+      const value = String(item.value || "").trim().toLowerCase();
+      const label = String(item.label || "").trim().toLowerCase();
+      return value === "english" || label === "english";
+    };
+    const isOther = (item) => {
+      if (!item) return false;
+      if (typeof item === "string") return item.trim().toLowerCase() === "other";
+      const value = String(item.value || "").trim().toLowerCase();
+      const label = String(item.label || "").trim().toLowerCase();
+      return value === "other" || label === "other";
+    };
+    const english = list.filter(isEnglish);
+    const otherItems = list.filter(isOther);
+    const remaining = list.filter((item) => !isEnglish(item) && !isOther(item));
+    return [...english, ...remaining, ...otherItems];
+  }, []);
   const isOnline = useOnlineStatus();
   const [optionLists, setOptionLists] = useState(() => {
     const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null);
@@ -112,7 +133,7 @@ export function useUserDetailsPage({
         if (cancelled) return;
         const nextOptions = {
           genders: Array.isArray(data?.genders) ? data.genders : [],
-          languages: Array.isArray(data?.languages) ? data.languages : [],
+          languages: prioritizeEnglish(Array.isArray(data?.languages) ? data.languages : []),
         };
         setOptionLists(nextOptions);
         writeJsonValue(PARTICIPANT_OPTIONS_KEY, nextOptions);
@@ -127,7 +148,7 @@ export function useUserDetailsPage({
         if (cancelled || error?.code === REQUEST_CODES.aborted) return;
         const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null);
         const cachedGenders = Array.isArray(cached?.genders) ? cached.genders : [];
-        const cachedLanguages = Array.isArray(cached?.languages) ? cached.languages : [];
+        const cachedLanguages = prioritizeEnglish(Array.isArray(cached?.languages) ? cached.languages : []);
         if (cachedGenders.length > 0 && cachedLanguages.length > 0) {
           setOptionLists({ genders: cachedGenders, languages: cachedLanguages });
         } else {
