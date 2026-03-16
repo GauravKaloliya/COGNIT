@@ -8,11 +8,11 @@ export const PANEL_STATE_VARIANTS = {
 };
 
 export const PANEL_STATE_ICONS = {
-  [PANEL_STATE_VARIANTS.info]: "i",
-  [PANEL_STATE_VARIANTS.success]: "✓",
-  [PANEL_STATE_VARIANTS.warning]: "!",
-  [PANEL_STATE_VARIANTS.error]: "×",
-  notFound: "404",
+  [PANEL_STATE_VARIANTS.info]: "ℹ️",
+  [PANEL_STATE_VARIANTS.success]: "✅",
+  [PANEL_STATE_VARIANTS.warning]: "⚠️",
+  [PANEL_STATE_VARIANTS.error]: "❌",
+  notFound: "🧭",
 };
 
 export const BUTTON_VARIANTS = {
