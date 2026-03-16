@@ -64,6 +64,7 @@ export function usePaymentLinkPage({
   const createAbortRef = useRef(null);
   const createOnceRef = useRef(false);
   const lastInitPublicIdRef = useRef(null);
+  const tokenRefreshAttemptedRef = useRef(false);
   const verifyAbortRef = useRef(null);
   const qrAbortRef = useRef(null);
 
@@ -859,6 +860,8 @@ export function usePaymentLinkPage({
         const existing = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
         if (existing) return existing;
         if (!publicId) return "";
+        if (tokenRefreshAttemptedRef.current) return "";
+        tokenRefreshAttemptedRef.current = true;
         const minted = await endpoints.mintPaymentToken(
           getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
           publicId,
@@ -886,7 +889,11 @@ export function usePaymentLinkPage({
       } catch (err) {
         if (err?.status === 403 || err?.code === "AUTH_002_0002") {
           const freshToken = await ensurePaymentToken();
-          if (!freshToken) throw err;
+          if (!freshToken) {
+            notifySessionExpired();
+            await createPayment();
+            return;
+          }
           precheckStatus = await endpoints.getPaymentStatus(
             getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
             { signal: precheckController.signal },
@@ -962,8 +969,8 @@ export function usePaymentLinkPage({
       if (!paymentWriteToken) {
         paymentWriteToken = await ensurePaymentToken();
         if (!paymentWriteToken) {
-          showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.tokenInvalid));
-          resumeTimerFromCurrentPayment();
+          notifySessionExpired();
+          await createPayment();
           return;
         }
       }
@@ -998,7 +1005,11 @@ export function usePaymentLinkPage({
       } catch (err) {
         if (err?.status === 403 || err?.code === "AUTH_002_0002") {
           const freshToken = await ensurePaymentToken();
-          if (!freshToken) throw err;
+          if (!freshToken) {
+            notifySessionExpired();
+            await createPayment();
+            return;
+          }
           verifyData = await endpoints.verifyUpload(
             getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
             imageBase64,
