@@ -424,6 +424,42 @@ export default function PaymentLinkPage({
                   {uiText("payment.keepTabOpen")}
                 </div>
 
+                <div className="page-actions sticky-mobile-actions payment-upload-actions">
+                  <DSButton
+                    variant="ghost"
+                    className={uploadFile ? "danger" : ""}
+                    type="button"
+                    disabled={verifying || offlineDisabled}
+                    onClick={() => {
+                      if (offlineDisabled) return;
+                      if (uploadFile) {
+                        clearSelectedFile();
+                        return;
+                      }
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    {uploadFile ? uiText("payment.clearScreenshot") : uiText("payment.selectImage")}
+                  </DSButton>
+                  <DSButton
+                    variant="primary"
+                    onClick={handleUploadAndFinalize}
+                    disabled={!uploadFile || verifying || offlineDisabled || retryBlocked}
+                  >
+                    {verifying
+                      ? uiText("payment.verifyingAction")
+                      : retryBlocked
+                        ? retryButtonLabel
+                        : uiText("payment.confirmPayment")}
+                    {retryBlocked && (
+                      <span className="button-badge">
+                        <span className="button-spinner small" />
+                        {retryInSeconds}s
+                      </span>
+                    )}
+                  </DSButton>
+                </div>
+
               </div>
 
               <input
@@ -438,43 +474,6 @@ export default function PaymentLinkPage({
           </section>
         )}
 
-        {paymentStatus === "pending" && (
-          <div className="page-actions sticky-mobile-actions payment-upload-actions">
-            <DSButton
-              variant="ghost"
-              className={uploadFile ? "danger" : ""}
-              type="button"
-              disabled={verifying || offlineDisabled}
-              onClick={() => {
-                if (offlineDisabled) return;
-                if (uploadFile) {
-                  clearSelectedFile();
-                  return;
-                }
-                fileInputRef.current?.click();
-              }}
-            >
-              {uploadFile ? uiText("payment.clearScreenshot") : uiText("payment.selectImage")}
-            </DSButton>
-            <DSButton
-              variant="primary"
-              onClick={handleUploadAndFinalize}
-              disabled={!uploadFile || verifying || offlineDisabled || retryBlocked}
-            >
-              {verifying
-                ? uiText("payment.verifyingAction")
-                : retryBlocked
-                  ? retryButtonLabel
-                  : uiText("payment.confirmPayment")}
-              {retryBlocked && (
-                <span className="button-badge">
-                  <span className="button-spinner small" />
-                  {retryInSeconds}s
-                </span>
-              )}
-            </DSButton>
-          </div>
-        )}
       </div>
     </div>
   );
