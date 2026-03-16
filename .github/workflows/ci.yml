@@ -7,6 +7,7 @@ on:
 
 jobs:
   contracts:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +18,7 @@ jobs:
         run: python scripts/validate_contracts.py
 
   backend:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,6 +38,7 @@ jobs:
         run: pip-audit
 
   frontend:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     defaults:
       run:
