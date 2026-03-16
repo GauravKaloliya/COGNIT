@@ -206,18 +206,26 @@ export function useUserDetailsPage({
     String(rawPriorExperience ?? "").trim() ? "" : getErrorMessage("VAL_001_0022")
   ), []);
 
+  const sanitizeLocationValue = useCallback((value) => {
+    const text = String(value ?? "").trim();
+    if (!text) return "";
+    const coordinateOnly = /^\s*[-+]?\d+(\.\d+)?\s*,\s*[-+]?\d+(\.\d+)?(\s*,\s*[-+]?\d+(\.\d+)?)?\s*$/.test(text);
+    return coordinateOnly ? "" : text;
+  }, []);
+
   const setDetectedLocation = useCallback((value) => {
     if (userEditedLocationRef.current) return;
-    setDemographics((prev) => ({ ...prev, location: value }));
+    const sanitized = sanitizeLocationValue(value);
+    setDemographics((prev) => ({ ...prev, location: sanitized }));
     setLocationPermissionDenied(false);
-    setManualLocationAllowed(false);
+    setManualLocationAllowed(!sanitized);
     setErrors((prev) => {
       if (!prev.location) return prev;
       const next = { ...prev };
       delete next.location;
       return next;
     });
-  }, [setDemographics]);
+  }, [sanitizeLocationValue, setDemographics]);
 
   const getBrowserPosition = useCallback((options) => (
     new Promise((resolve, reject) => {
@@ -271,8 +279,7 @@ export function useUserDetailsPage({
         }
 
         const { latitude, longitude } = position.coords;
-        const fallback = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-        let detectedLocation = fallback;
+        let detectedLocation = "";
 
         try {
           const now = Date.now();
@@ -296,9 +303,8 @@ export function useUserDetailsPage({
             // Ignore malformed cache
           }
           if (now < reverseState[REVERSE_GEOCODE_FIELDS.nextAllowedAt]) {
-            setLocationStatus(uiText("user.locationDetected"));
-            setDemographics((prev) => ({ ...prev, location: "" }));
-            setDetectedLocation(detectedLocation);
+            setManualLocationAllowed(true);
+            setLocationStatus(uiText("user.locationFallback"));
             return;
           }
           if (reverseGeocodeAbortRef.current) {
@@ -352,7 +358,12 @@ export function useUserDetailsPage({
         userEditedLocationRef.current = false;
         setDemographics((prev) => ({ ...prev, location: "" }));
         setDetectedLocation(detectedLocation);
-        setLocationStatus(uiText("user.locationDetected"));
+        if (sanitizeLocationValue(detectedLocation)) {
+          setLocationStatus(uiText("user.locationDetected"));
+        } else {
+          setManualLocationAllowed(true);
+          setLocationStatus(uiText("user.locationFallback"));
+        }
       } catch (error) {
         const denied = error?.code === GEOLOCATION_ERROR_CODES.permissionDenied;
         setLocationPermissionDenied(denied);
@@ -369,7 +380,15 @@ export function useUserDetailsPage({
     };
 
     resolveLocation();
-  }, [getBrowserPosition, setDemographics, setDetectedLocation]);
+  }, [
+    getBrowserPosition,
+    sanitizeLocationValue,
+    setDemographics,
+    setDetectedLocation,
+    setManualLocationAllowed,
+    setLocationPermissionDenied,
+    setLocationStatus,
+  ]);
 
   useEffect(() => {
     if (autoDetectStartedRef.current) return;
@@ -384,6 +403,14 @@ export function useUserDetailsPage({
     }
     detectLocation(GEOLOCATION_MODES.auto);
   }, [detectLocation]);
+
+  useEffect(() => {
+    const sanitized = sanitizeLocationValue(demographics.location);
+    if (sanitized !== String(demographics.location || "")) {
+      setDemographics((prev) => ({ ...prev, location: sanitized }));
+      if (!sanitized) setManualLocationAllowed(true);
+    }
+  }, [demographics.location, sanitizeLocationValue, setDemographics, setManualLocationAllowed]);
 
   useEffect(() => {
     const availabilityRef = availabilityAbortRef.current;
