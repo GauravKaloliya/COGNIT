@@ -855,15 +855,47 @@ export function usePaymentLinkPage({
     setRetryInSeconds(0);
 
     try {
+      const ensurePaymentToken = async () => {
+        const existing = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
+        if (existing) return existing;
+        if (!publicId) return "";
+        const minted = await endpoints.mintPaymentToken(
+          getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
+          publicId,
+          sessionId,
+          { signal: precheckController.signal }
+        );
+        const token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+        if (token) {
+          setPaymentData((prev) => (prev ? { ...prev, [PAYMENT_API_FIELDS.token]: token } : prev));
+        }
+        return token;
+      };
+
       // Server-authoritative pre-check before upload/verify.
       if (statusAbortRef.current) statusAbortRef.current.abort();
       const precheckController = new AbortController();
       statusAbortRef.current = precheckController;
-      const precheckStatus = await endpoints.getPaymentStatus(
-        getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
-        { signal: precheckController.signal },
-        getPaymentField(paymentData, PAYMENT_API_FIELDS.token)
-      );
+      let precheckStatus;
+      try {
+        precheckStatus = await endpoints.getPaymentStatus(
+          getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
+          { signal: precheckController.signal },
+          getPaymentField(paymentData, PAYMENT_API_FIELDS.token)
+        );
+      } catch (err) {
+        if (err?.status === 403 || err?.code === "AUTH_002_0002") {
+          const freshToken = await ensurePaymentToken();
+          if (!freshToken) throw err;
+          precheckStatus = await endpoints.getPaymentStatus(
+            getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
+            { signal: precheckController.signal },
+            freshToken
+          );
+        } else {
+          throw err;
+        }
+      }
       if (!isOperationCurrent(operationId)) return;
 
       if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) === PAYMENT_STATUS.expired || getPaymentField(precheckStatus, PAYMENT_API_FIELDS.isExpired)) {
@@ -926,11 +958,14 @@ export function usePaymentLinkPage({
       const sha256 = await calculateSha256(uploadFile);
       if (!isOperationCurrent(operationId)) return;
 
-      const paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || "";
+      let paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || "";
       if (!paymentWriteToken) {
-        showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.tokenInvalid));
-        resumeTimerFromCurrentPayment();
-        return;
+        paymentWriteToken = await ensurePaymentToken();
+        if (!paymentWriteToken) {
+          showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.tokenInvalid));
+          resumeTimerFromCurrentPayment();
+          return;
+        }
       }
 
       // Step 1: Convert file to base64 and verify. Backend uploads to S3 only on success.
@@ -941,23 +976,50 @@ export function usePaymentLinkPage({
       if (verifyAbortRef.current) verifyAbortRef.current.abort();
       const verifyController = new AbortController();
       verifyAbortRef.current = verifyController;
-      const verifyData = await endpoints.verifyUpload(
-        getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
-        imageBase64,
-        fileExtension,
-        sha256,
-        {
-          mime_type: uploadFile.type || "",
-          file_size: uploadFile.size || 0,
-          original_filename: uploadFile.name || "",
-        },
-        {
-          signal: verifyController.signal,
-          headers: {
-            [REQUEST_HEADERS.authorization]: `Bearer ${paymentWriteToken}`,
+      let verifyData;
+      try {
+        verifyData = await endpoints.verifyUpload(
+          getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
+          imageBase64,
+          fileExtension,
+          sha256,
+          {
+            mime_type: uploadFile.type || "",
+            file_size: uploadFile.size || 0,
+            original_filename: uploadFile.name || "",
           },
+          {
+            signal: verifyController.signal,
+            headers: {
+              [REQUEST_HEADERS.authorization]: `Bearer ${paymentWriteToken}`,
+            },
+          }
+        );
+      } catch (err) {
+        if (err?.status === 403 || err?.code === "AUTH_002_0002") {
+          const freshToken = await ensurePaymentToken();
+          if (!freshToken) throw err;
+          verifyData = await endpoints.verifyUpload(
+            getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
+            imageBase64,
+            fileExtension,
+            sha256,
+            {
+              mime_type: uploadFile.type || "",
+              file_size: uploadFile.size || 0,
+              original_filename: uploadFile.name || "",
+            },
+            {
+              signal: verifyController.signal,
+              headers: {
+                [REQUEST_HEADERS.authorization]: `Bearer ${freshToken}`,
+              },
+            }
+          );
+        } else {
+          throw err;
         }
-      );
+      }
       if (!isOperationCurrent(operationId)) return;
 
       // Check verification result
