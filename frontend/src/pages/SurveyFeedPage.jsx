@@ -58,7 +58,7 @@ export default function SurveyFeedPage({
             Remember to write at least {MIN_WORDS} words per description.</em>
           </p>
         </div>
-        <div className="page-actions sticky-mobile-actions survey-feedback-actions">
+        <div className="page-actions sticky-mobile-actions survey-feedback-actions inline-actions">
           <DSButton
             className="primary"
             onClick={handleSurveyContinue}

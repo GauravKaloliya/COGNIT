@@ -79,6 +79,7 @@ export function useUserDetailsPage({
   const reverseGeocodeAbortRef = useRef(null);
   const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
   const saveTimeoutRef = useRef(null);
+  const draftSaveTimeoutRef = useRef(null);
   const lastSavedAtRef = useRef(null);
 
   useEffect(() => {
@@ -586,26 +587,32 @@ export function useUserDetailsPage({
     if (!isOnline) return;
     setIsSaving(true);
     setSaveError("");
-    if (saveTimeoutRef.current) {
-      clearScheduledTimeout(saveTimeoutRef.current);
+    if (draftSaveTimeoutRef.current) {
+      clearScheduledTimeout(draftSaveTimeoutRef.current);
     }
-    saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
-    try {
-      const meta = readStoredMeta(DEMOGRAPHICS_KEY);
-      if (meta?.savedAt) {
-        lastSavedAtRef.current = meta.savedAt;
-        setLastSavedAt(meta.savedAt);
-      } else {
-        const now = Date.now();
-        lastSavedAtRef.current = now;
-        setLastSavedAt(now);
+    draftSaveTimeoutRef.current = scheduleTimeout(() => {
+      try {
+        const meta = readStoredMeta(DEMOGRAPHICS_KEY);
+        if (meta?.savedAt) {
+          lastSavedAtRef.current = meta.savedAt;
+          setLastSavedAt(meta.savedAt);
+        } else {
+          const now = Date.now();
+          lastSavedAtRef.current = now;
+          setLastSavedAt(now);
+        }
+      } catch {
+        setSaveError(uiText("autosave.failed"));
+        if (lastSavedAtRef.current) {
+          setLastSavedAt(lastSavedAtRef.current);
+        }
+      } finally {
+        if (saveTimeoutRef.current) {
+          clearScheduledTimeout(saveTimeoutRef.current);
+        }
+        saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
       }
-    } catch {
-      setSaveError(uiText("autosave.failed"));
-      if (lastSavedAtRef.current) {
-        setLastSavedAt(lastSavedAtRef.current);
-      }
-    }
+    }, 700);
   }, [demographics, isOnline]);
 
   useEffect(() => {
@@ -614,6 +621,7 @@ export function useUserDetailsPage({
 
   useEffect(() => () => {
     if (saveTimeoutRef.current) clearScheduledTimeout(saveTimeoutRef.current);
+    if (draftSaveTimeoutRef.current) clearScheduledTimeout(draftSaveTimeoutRef.current);
   }, []);
 
   const updateField = useCallback((field, value) => {
