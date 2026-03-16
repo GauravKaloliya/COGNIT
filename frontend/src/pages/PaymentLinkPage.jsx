@@ -49,6 +49,7 @@ export default function PaymentLinkPage({
     restartPayment,
     handleUploadAndFinalize,
     handleBackClick,
+    markQrVisible,
   } = usePaymentLinkPage({
     onNext,
     onBack,
@@ -282,6 +283,7 @@ export default function PaymentLinkPage({
                           src={`data:image/png;base64,${paymentData[PAYMENT_API_FIELDS.qrBase64]}`}
                           alt={uiText("payment.qrAlt")}
                           className="payment-qr-code"
+                          onLoad={markQrVisible}
                         />
                       ) : (
                         <div className="payment-qr-code" style={{ display: "grid", placeItems: "center" }}>
