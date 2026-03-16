@@ -26,6 +26,45 @@ from app.config import (
     PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS,
     PAYMENT_VERIFICATION_TIME_GRACE_SECONDS,
 )
+from app.constants.ocr_constants import (
+    APP_BHIM,
+    APP_GPAY,
+    APP_PAYTM,
+    APP_UNKNOWN,
+    CONTENT_TYPE_IMAGE_JPEG,
+    DEFAULT_SCREENSHOT_TIMEZONE,
+    DISALLOWED_APP_PATTERNS,
+    FAILURE_INVALID_AMOUNT,
+    FAILURE_INVALID_BANKING_NAME,
+    FAILURE_INVALID_DATETIME_BHIM,
+    FAILURE_INVALID_DATETIME_GPAY,
+    FAILURE_INVALID_DATETIME_PAYTM,
+    FAILURE_MISSING_BHIM_LABEL,
+    FAILURE_MISSING_PAID_BHIM,
+    FAILURE_MISSING_PAID_TO_COGNIT,
+    FAILURE_MISSING_PAYTM_LABEL,
+    FAILURE_TIME_OUT_OF_RANGE,
+    FAILURE_UNRECOGNIZED_APP,
+    IMAGE_FORMAT_PNG,
+    MONTH_FULL,
+    MONTH_SHORT,
+    REGEX_AMOUNT,
+    REGEX_BHIM_DATE,
+    REGEX_BHIM_LABEL,
+    REGEX_GAURAV,
+    REGEX_GOOGLE_PAY,
+    REGEX_GPAY_APP,
+    REGEX_GPAY_DATE,
+    REGEX_PAID,
+    REGEX_PAID_GAURAV,
+    REGEX_PAID_TO_COGNIT,
+    REGEX_PAID_TO_GAURAV,
+    REGEX_PAYTM_DATE_DAY_FIRST,
+    REGEX_PAYTM_DATE_MONTH_FIRST,
+    REGEX_PAYTM_LABEL,
+    REGEX_TIME_12H,
+    TEXTRACT_SERVICE_NAME,
+)
 from app.extensions import s3
 
 
@@ -44,7 +83,7 @@ def _get_textract_client():
             raise OCRServiceUnavailableError("AWS credentials not configured")
         try:
             _textract_client = boto3.client(
-                "textract",
+                TEXTRACT_SERVICE_NAME,
                 region_name=AWS_REGION,
                 aws_access_key_id=AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
@@ -120,7 +159,7 @@ def extract_text_with_confidence(image: Image.Image) -> Tuple[str, float]:
     try:
         # Convert PIL image to bytes
         buffer = BytesIO()
-        image.save(buffer, format="PNG")
+        image.save(buffer, format=IMAGE_FORMAT_PNG)
         image_bytes = buffer.getvalue()
 
         response = textract.detect_document_text(
@@ -202,19 +241,10 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
     try:
         local_tz = ZoneInfo(PAYMENT_SCREENSHOT_TIMEZONE)
     except Exception:
-        local_tz = ZoneInfo("Asia/Kolkata")
-
-    month_full = {
-        "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
-        "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
-    }
-    month_short = {
-        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
-    }
+        local_tz = ZoneInfo(DEFAULT_SCREENSHOT_TIMEZONE)
 
     # Supports zero-padded and non-padded HH:MM with AM/PM (case-insensitive)
-    time_match = re.search(r"\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)\b", lower, re.IGNORECASE)
+    time_match = REGEX_TIME_12H.search(lower)
     if not time_match:
         return None
     hour = int(time_match.group(1))
@@ -227,61 +257,37 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
 
     day = month = year = None
 
-    if app == "gpay":
+    if app == APP_GPAY:
         # Examples: 03 January 2026, 3 january 2026
-        m = re.search(
-            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
-            r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+"
-            r"(\d{4})\b",
-            lower,
-            re.IGNORECASE,
-        )
+        m = REGEX_GPAY_DATE.search(lower)
         if not m:
             return None
         day = int(m.group(1))
-        month = month_full[m.group(2).lower()]
+        month = MONTH_FULL[m.group(2).lower()]
         year = int(m.group(3))
-    elif app == "paytm":
+    elif app == APP_PAYTM:
         # Examples: 03 Jan 2026, 3 jan 26, Jan 03 2026
-        m = re.search(
-            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
-            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-            r"(\d{2}|\d{4})\b",
-            lower,
-            re.IGNORECASE,
-        )
+        m = REGEX_PAYTM_DATE_DAY_FIRST.search(lower)
         if not m:
-            m = re.search(
-                r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-                r"(0?[1-9]|[12][0-9]|3[01]),?\s+"
-                r"(\d{2}|\d{4})\b",
-                lower,
-                re.IGNORECASE,
-            )
+            m = REGEX_PAYTM_DATE_MONTH_FIRST.search(lower)
             if not m:
                 return None
-            month = month_short[m.group(1).lower()]
+            month = MONTH_SHORT[m.group(1).lower()]
             day = int(m.group(2))
             year = int(m.group(3))
         else:
             day = int(m.group(1))
-            month = month_short[m.group(2).lower()]
+            month = MONTH_SHORT[m.group(2).lower()]
             year = int(m.group(3))
         if year < 100:
             year += 2000
     else:  # bhim
         # Example: 03rd Jan 26, 3rd jan 26
-        m = re.search(
-            r"\b(0?[1-9]|[12][0-9]|3[01])(st|nd|rd|th)\s+"
-            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-            r"(\d{2})\b",
-            lower,
-            re.IGNORECASE,
-        )
+        m = REGEX_BHIM_DATE.search(lower)
         if not m:
             return None
         day = int(m.group(1))
-        month = month_short[m.group(3).lower()]
+        month = MONTH_SHORT[m.group(3).lower()]
         year = int(m.group(4)) + 2000
 
     try:
@@ -293,45 +299,21 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
 def _is_datetime_ambiguous(text: str, app: str) -> bool:
     """Return True when multiple conflicting date/time candidates are detected."""
     lower = text.lower()
-    time_matches = re.findall(r"\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)\b", lower, re.IGNORECASE)
+    time_matches = REGEX_TIME_12H.findall(lower)
     if len(set(time_matches)) > 1:
         return True
 
-    if app == "gpay":
-        date_matches = re.findall(
-            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
-            r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+"
-            r"(\d{4})\b",
-            lower,
-            re.IGNORECASE,
-        )
+    if app == APP_GPAY:
+        date_matches = REGEX_GPAY_DATE.findall(lower)
         return len(set(date_matches)) > 1
-    if app == "paytm":
-        matches_a = re.findall(
-            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
-            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-            r"(\d{2}|\d{4})\b",
-            lower,
-            re.IGNORECASE,
-        )
-        matches_b = re.findall(
-            r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-            r"(0?[1-9]|[12][0-9]|3[01]),?\s+"
-            r"(\d{2}|\d{4})\b",
-            lower,
-            re.IGNORECASE,
-        )
+    if app == APP_PAYTM:
+        matches_a = REGEX_PAYTM_DATE_DAY_FIRST.findall(lower)
+        matches_b = REGEX_PAYTM_DATE_MONTH_FIRST.findall(lower)
         normalized = set(matches_a) | set((d, m, y) for (m, d, y) in matches_b)
         return len(normalized) > 1
 
     # bhim
-    date_matches = re.findall(
-        r"\b(0?[1-9]|[12][0-9]|3[01])(st|nd|rd|th)\s+"
-        r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-        r"(\d{2})\b",
-        lower,
-        re.IGNORECASE,
-    )
+    date_matches = REGEX_BHIM_DATE.findall(lower)
     return len(set(date_matches)) > 1
 
 
@@ -375,12 +357,11 @@ def verify_payment_screenshot(
     failures = []
     lower = text.lower()
 
-    has_paytm = re.search(r"\bpaytm\b", lower, re.IGNORECASE) is not None
-    has_bhim = re.search(r"\bbhim\b", lower, re.IGNORECASE) is not None
-    has_paid_to_cognit = re.search(r"paid\s+to\s+cognit", lower, re.IGNORECASE) is not None
-    has_paid_to_gaurav = re.search(r"paid\s+to\s+gaurav\b", lower, re.IGNORECASE) is not None
-    has_paid_gaurav = re.search(r"\bpaid\s+gaurav\b", lower, re.IGNORECASE) is not None
-    has_paid_to_gaurav = re.search(r"\bpaid\s+to\s+gaurav\b", lower, re.IGNORECASE) is not None
+    has_paytm = REGEX_PAYTM_LABEL.search(lower) is not None
+    has_bhim = REGEX_BHIM_LABEL.search(lower) is not None
+    has_paid_to_cognit = REGEX_PAID_TO_COGNIT.search(lower) is not None
+    has_paid_to_gaurav = REGEX_PAID_TO_GAURAV.search(lower) is not None
+    has_paid_gaurav = REGEX_PAID_GAURAV.search(lower) is not None
     has_gpay_recipient_phrase = (
         has_paid_to_cognit
         or has_paid_to_gaurav
@@ -389,69 +370,64 @@ def verify_payment_screenshot(
     )
 
     if has_paytm:
-        detected_app = "paytm"
+        detected_app = APP_PAYTM
     elif has_bhim:
-        detected_app = "bhim"
+        detected_app = APP_BHIM
     elif has_gpay_recipient_phrase:
-        detected_app = "gpay"
+        detected_app = APP_GPAY
     else:
-        detected_app = "unknown"
+        detected_app = APP_UNKNOWN
 
     # Explicitly reject known non-allowed app names if present.
-    disallowed_app_markers = [
-        r"\bphone\s*pe\b", r"\bphonepe\b",
-        r"\bamazon\s*pay\b", r"\bamazonpay\b",
-        r"\bbharat\s*pe\b", r"\bbharatpe\b",
-    ]
-    if any(re.search(p, lower, re.IGNORECASE) for p in disallowed_app_markers):
-        failures.append("unrecognized_app")
-        return False, "unknown", failures
+    if any(pattern.search(lower) for pattern in DISALLOWED_APP_PATTERNS):
+        failures.append(FAILURE_UNRECOGNIZED_APP)
+        return False, APP_UNKNOWN, failures
 
-    if detected_app == "unknown":
-        failures.append("unrecognized_app")
+    if detected_app == APP_UNKNOWN:
+        failures.append(FAILURE_UNRECOGNIZED_APP)
         return False, detected_app, failures
 
     # Enforce OCR confidence floor after app detection.
     # Return unrecognized_app for low-confidence reads to keep user-facing messaging
     # focused on unsupported/unreadable payment app evidence.
     if confidence < MIN_OCR_CONFIDENCE:
-        failures.append("unrecognized_app")
+        failures.append(FAILURE_UNRECOGNIZED_APP)
         return False, detected_app, failures
 
     # App-specific rules
-    if detected_app == "gpay":
+    if detected_app == APP_GPAY:
         if not has_gpay_recipient_phrase:
-            failures.append("missing_paid_to_cognit")
-    elif detected_app == "paytm":
+            failures.append(FAILURE_MISSING_PAID_TO_COGNIT)
+    elif detected_app == APP_PAYTM:
         if not has_paytm:
-            failures.append("missing_paytm_label")
-    elif detected_app == "bhim":
+            failures.append(FAILURE_MISSING_PAYTM_LABEL)
+    elif detected_app == APP_BHIM:
         if not has_bhim:
-            failures.append("missing_bhim_label")
-        if re.search(r"\bpaid\b", lower, re.IGNORECASE) is None:
-            failures.append("missing_paid_bhim")
+            failures.append(FAILURE_MISSING_BHIM_LABEL)
+        if REGEX_PAID.search(lower) is None:
+            failures.append(FAILURE_MISSING_PAID_BHIM)
 
     # ─────────────────────────────────────────────
     # Global Rules (apply to all apps)
     # ─────────────────────────────────────────────
 
     # Rule 1: Banking name must contain strict token "gaurav" (case-insensitive).
-    if re.search(r"\bgaurav\b", lower, re.IGNORECASE) is None:
-        failures.append("invalid_banking_name")
+    if REGEX_GAURAV.search(lower) is None:
+        failures.append(FAILURE_INVALID_BANKING_NAME)
 
     # Rule 2: Amount must be exactly ₹1 / Rs.1 / rs 1 (optionally 1.00).
-    if re.search(r"(?:₹\s*1(?:\.00)?\b|rs\.?\s*1(?:\.00)?\b)", lower, re.IGNORECASE) is None:
-        failures.append("invalid_amount")
+    if REGEX_AMOUNT.search(lower) is None:
+        failures.append(FAILURE_INVALID_AMOUNT)
 
     # Rule 3: app-specific date+time must be parsable/unambiguous and within
     # either the payment session window (preferred) or fallback absolute diff window.
     if _is_datetime_ambiguous(text, detected_app):
-        if detected_app == "gpay":
-            failures.append("invalid_datetime_format_gpay")
-        elif detected_app == "paytm":
-            failures.append("invalid_datetime_format_paytm")
+        if detected_app == APP_GPAY:
+            failures.append(FAILURE_INVALID_DATETIME_GPAY)
+        elif detected_app == APP_PAYTM:
+            failures.append(FAILURE_INVALID_DATETIME_PAYTM)
         else:
-            failures.append("invalid_datetime_format_bhim")
+            failures.append(FAILURE_INVALID_DATETIME_BHIM)
     else:
         transaction_time = _extract_timestamp(text, detected_app)
         if transaction_time:
@@ -469,19 +445,19 @@ def verify_payment_screenshot(
 
                 txn_ts = transaction_time_utc.timestamp()
                 if txn_ts < (start_utc.timestamp() - grace) or txn_ts > (end_utc.timestamp() + grace):
-                    failures.append("time_out_of_range")
+                    failures.append(FAILURE_TIME_OUT_OF_RANGE)
             else:
                 now = datetime.now(timezone.utc)
                 time_diff = abs((now - transaction_time_utc).total_seconds())
                 if time_diff > PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS:
-                    failures.append("time_out_of_range")
+                    failures.append(FAILURE_TIME_OUT_OF_RANGE)
         else:
-            if detected_app == "gpay":
-                failures.append("invalid_datetime_format_gpay")
-            elif detected_app == "paytm":
-                failures.append("invalid_datetime_format_paytm")
+            if detected_app == APP_GPAY:
+                failures.append(FAILURE_INVALID_DATETIME_GPAY)
+            elif detected_app == APP_PAYTM:
+                failures.append(FAILURE_INVALID_DATETIME_PAYTM)
             else:
-                failures.append("invalid_datetime_format_bhim")
+                failures.append(FAILURE_INVALID_DATETIME_BHIM)
 
     return len(failures) == 0, detected_app, failures
 
@@ -507,48 +483,31 @@ def sanitize_extracted_text_for_storage(
                 kept_parts.append(value)
 
     # App markers
-    add_match(r"\bpaytm\b")
-    add_match(r"\bbhim\b")
-    add_match(r"\bgpay\b")
-    add_match(r"\bgoogle\s*pay\b")
+    add_match(REGEX_PAYTM_LABEL.pattern)
+    add_match(REGEX_BHIM_LABEL.pattern)
+    add_match(REGEX_GPAY_APP.pattern)
+    add_match(REGEX_GOOGLE_PAY.pattern)
 
     # Core payment semantics
-    add_match(r"paid\s+to\s+cognit")
-    add_match(r"paid\s+to\s+gaurav")
-    add_match(r"\bpaid\s+gaurav\b")
-    add_match(r"\bpaid\s+to\s+gaurav\b")
-    add_match(r"\bpaid\b")
+    add_match(REGEX_PAID_TO_COGNIT.pattern)
+    add_match(REGEX_PAID_TO_GAURAV.pattern)
+    add_match(REGEX_PAID_GAURAV.pattern)
+    add_match(REGEX_PAID.pattern)
     add_match(r"\bcognit\b")
-    add_match(r"\bgaurav\b")
-    add_match(r"(?:₹\s*1(?:\.00)?\b|rs\.?\s*1(?:\.00)?\b)")
+    add_match(REGEX_GAURAV.pattern)
+    add_match(REGEX_AMOUNT.pattern)
 
     # Time
-    add_match(r"\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)\b")
+    add_match(REGEX_TIME_12H.pattern)
 
     # Date by detected app
-    if detected_app == "gpay":
-        add_match(
-            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
-            r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+"
-            r"(\d{4})\b"
-        )
-    elif detected_app == "paytm":
-        add_match(
-            r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
-            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-            r"(\d{2}|\d{4})\b"
-        )
-        add_match(
-            r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-            r"(0?[1-9]|[12][0-9]|3[01]),?\s+"
-            r"(\d{2}|\d{4})\b"
-        )
-    elif detected_app == "bhim":
-        add_match(
-            r"\b(0?[1-9]|[12][0-9]|3[01])(st|nd|rd|th)\s+"
-            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-            r"(\d{2})\b"
-        )
+    if detected_app == APP_GPAY:
+        add_match(REGEX_GPAY_DATE.pattern)
+    elif detected_app == APP_PAYTM:
+        add_match(REGEX_PAYTM_DATE_DAY_FIRST.pattern)
+        add_match(REGEX_PAYTM_DATE_MONTH_FIRST.pattern)
+    elif detected_app == APP_BHIM:
+        add_match(REGEX_BHIM_DATE.pattern)
 
     # Deterministic compact output
     return " | ".join(kept_parts)
@@ -560,7 +519,7 @@ def compute_ocr_signature(text: str, detected_app: Optional[str]) -> Optional[st
     Used to detect edited/replayed screenshots with different pixels but
     effectively identical transaction text.
     """
-    sanitized = sanitize_extracted_text_for_storage(text or "", detected_app or "unknown")
+    sanitized = sanitize_extracted_text_for_storage(text or "", detected_app or APP_UNKNOWN)
     normalized = re.sub(r"\s+", " ", (sanitized or "").strip().lower())
     if not normalized:
         return None

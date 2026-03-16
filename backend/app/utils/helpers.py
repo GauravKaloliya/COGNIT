@@ -19,6 +19,23 @@ from app.config import (
     IP_HASH_SALT,
     TRUST_PROXY_HEADERS,
 )
+from app.constants.response_keys import (
+    RESPONSE_KEY_CATEGORY,
+    RESPONSE_KEY_CODE,
+    RESPONSE_KEY_DATA,
+    RESPONSE_KEY_DETAILS,
+    RESPONSE_KEY_ERROR,
+    RESPONSE_KEY_FIELD,
+    RESPONSE_KEY_FIELDS,
+    RESPONSE_KEY_HTTP_STATUS,
+    RESPONSE_KEY_MESSAGE,
+    RESPONSE_KEY_REQUEST_ID,
+    RESPONSE_KEY_RETRYABLE,
+    RESPONSE_KEY_SUCCESS,
+)
+from app.constants.log_messages import LOG_AUDIT_LOG_INSERT_FAILED, LOG_IP_HASH_SALT_MISSING
+from app.constants.observability_constants import OBS_EVENT_AUDIT_LOG_INSERT_FAILED, OBS_EVENT_IP_HASH_SALT_MISSING
+from app.utils.observability import log_event
 
 logger = logging.getLogger(__name__)
 _IP_HASH_SALT_WARNED = False
@@ -41,7 +58,7 @@ def get_ip_hash() -> str:
         import ipaddress
         salt = str(IP_HASH_SALT or "")
         if not salt and not _IP_HASH_SALT_WARNED:
-            logger.warning("IP_HASH_SALT is not set; IP hash will be unsalted.")
+            log_event(logger, OBS_EVENT_IP_HASH_SALT_MISSING, level=logging.WARNING, message=LOG_IP_HASH_SALT_MISSING)
             _IP_HASH_SALT_WARNED = True
         return hashlib.sha256(f"{ipaddress.ip_address(ip)}{salt}".encode()).hexdigest()
     except Exception:
@@ -152,7 +169,7 @@ def log_audit(
             "rid": getattr(g, "request_id", None),
         })
     except Exception as exc:
-        logger.warning("audit log insert failed error=%s", exc)
+        log_event(logger, OBS_EVENT_AUDIT_LOG_INSERT_FAILED, level=logging.WARNING, error=str(exc), message=LOG_AUDIT_LOG_INSERT_FAILED)
 
 
 # ────────────────────────────────────────────────
@@ -172,32 +189,32 @@ def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
     base_message = error_def["message"].format(**kwargs) if kwargs else error_def["message"]
     request_id = getattr(g, "request_id", None)
     response = {
-        "success": False,
-        "error": {
-            "code": error_def["code"],
-            "message": custom_message or base_message,
-            "category": category,
-            "http_status": status,
-            "retryable": bool(retryable),
-            "request_id": request_id,
+        RESPONSE_KEY_SUCCESS: False,
+        RESPONSE_KEY_ERROR: {
+            RESPONSE_KEY_CODE: error_def["code"],
+            RESPONSE_KEY_MESSAGE: custom_message or base_message,
+            RESPONSE_KEY_CATEGORY: category,
+            RESPONSE_KEY_HTTP_STATUS: status,
+            RESPONSE_KEY_RETRYABLE: bool(retryable),
+            RESPONSE_KEY_REQUEST_ID: request_id,
         }
     }
     if "field" in error_def:
-        response["error"]["field"] = error_def["field"]
+        response[RESPONSE_KEY_ERROR][RESPONSE_KEY_FIELD] = error_def["field"]
     if "fields" in kwargs and kwargs.get("fields") is not None:
-        response["error"]["fields"] = kwargs["fields"]
+        response[RESPONSE_KEY_ERROR][RESPONSE_KEY_FIELDS] = kwargs["fields"]
     if kwargs.get("details"):
-        response["error"]["details"] = kwargs["details"]
+        response[RESPONSE_KEY_ERROR][RESPONSE_KEY_DETAILS] = kwargs["details"]
     return jsonify(response), status
 
 
 def success_response(data: Optional[Dict] = None, message: Optional[str] = None):
     """Generate standardized success response."""
-    response = {"success": True}
+    response = {RESPONSE_KEY_SUCCESS: True}
     if message:
-        response["message"] = message
+        response[RESPONSE_KEY_MESSAGE] = message
     if data:
-        response["data"] = data
+        response[RESPONSE_KEY_DATA] = data
     return jsonify(response)
 
 

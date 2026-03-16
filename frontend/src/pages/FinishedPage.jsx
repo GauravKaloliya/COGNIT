@@ -1,8 +1,10 @@
 import React from "react";
 import PageSkeleton from "../components/PageSkeleton.jsx";
+import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import { useFinishedPage } from "../hooks/useFinishedPage";
 import { uiText } from "../utils/uiText";
+import DSButton from "../components/design/DSButton.jsx";
 
 export default function FinishedPage({ surveyCompleted, publicId }) {
   const { rewardStatus, loading, isOnline, rewardAmountLabel, handleFinish } = useFinishedPage({ publicId });
@@ -34,7 +36,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
           {uiText("finish.pageSubtitle", { count: surveyCompleted, suffix: surveyCompleted !== 1 ? "s" : "" })}
         </p>
         
-        {!loading && (
+        {!loading && rewardStatus ? (
           <PanelState
             variant="success"
             icon={isWinner ? "★" : "✓"}
@@ -54,10 +56,18 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
               </p>
             )}
           </PanelState>
+        ) : (
+          <SectionSkeleton
+            title={uiText("finish.loadingRewardsTitle")}
+            subtitle={uiText("finish.loadingRewardsSubtitle")}
+          />
         )}
 
-        <div className="finish-reminder">
-          <h4>💰 {uiText("finish.rewardHeading")}</h4>
+        <div className="finish-reminder card">
+          <div className="card-header">
+            <h4><span className="icon-badge" aria-hidden="true">R</span> {uiText("finish.rewardHeading")}</h4>
+          </div>
+          <div className="card-body">
           <ul>
             <li>Participants are <strong>randomly selected</strong> to receive <strong>{rewardAmountLabel} rewards</strong></li>
             <li>Active participants who write detailed descriptions get added to a <strong>priority list</strong></li>
@@ -65,6 +75,7 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
             <li>Rewards are sent via <strong>UPI transfer</strong> within 24-48 hours</li>
             <li>If you&apos;re selected, you&apos;ll receive an email/SMS with payment confirmation</li>
           </ul>
+          </div>
         </div>
 
         <p className="debrief">
@@ -74,9 +85,9 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
         </p>
 
         <div className="page-actions sticky-mobile-actions">
-          <button className="primary" onClick={handleFinish}>
+          <DSButton variant="primary" onClick={handleFinish}>
             {uiText("finish.finishButton")}
-          </button>
+          </DSButton>
         </div>
       </div>
     </div>

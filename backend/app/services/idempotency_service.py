@@ -3,8 +3,29 @@ import json
 from typing import Any, Dict, Optional, Tuple
 
 import logging
-from sqlalchemy import text
 
+from app.constants.idempotency_constants import (
+    IDEMPOTENCY_CONFLICT_ERROR_CODE,
+    IDEMPOTENCY_CONFLICT_MESSAGE,
+    IDEMPOTENCY_DEFAULT_STATUS,
+    LOG_IDEMPOTENCY_CONFLICT,
+)
+from app.utils.observability import log_event
+from app.constants.observability_constants import OBS_EVENT_IDEMPOTENCY_CONFLICT
+from app.constants.response_keys import (
+    RESPONSE_KEY_CODE,
+    RESPONSE_KEY_ERROR,
+    RESPONSE_KEY_MESSAGE,
+    RESPONSE_KEY_PAYLOAD,
+    RESPONSE_KEY_STATUS,
+    RESPONSE_KEY_STATUS_CODE,
+    RESPONSE_KEY_SUCCESS,
+)
+from app.services.idempotency_query_service import (
+    QUERY_DELETE_EXPIRED_IDEMPOTENCY,
+    QUERY_LOAD_IDEMPOTENCY_RESPONSE,
+    QUERY_SAVE_IDEMPOTENCY_RESPONSE,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -25,15 +46,7 @@ def load_idempotent_response(
         return None, None
 
     try:
-        row = db.execute(text("""
-            SELECT request_hash, status_code, response_body
-            FROM idempotency_keys
-            WHERE endpoint = :endpoint
-              AND idempotency_key = :key
-              AND participant_public_id IS NOT DISTINCT FROM :participant_public_id
-            ORDER BY created_at DESC
-            LIMIT 1
-        """), {
+        row = db.execute(QUERY_LOAD_IDEMPOTENCY_RESPONSE, {
             "endpoint": endpoint,
             "key": idempotency_key,
             "participant_public_id": participant_public_id,
@@ -46,22 +59,25 @@ def load_idempotent_response(
 
     existing_hash, status_code, response_body = row
     if existing_hash and existing_hash != request_hash:
-        logger.warning(
-            "idempotency_conflict endpoint=%s key=%s participant=%s",
-            endpoint,
-            (idempotency_key or "")[:16],
-            participant_public_id,
+        log_event(
+            logger,
+            OBS_EVENT_IDEMPOTENCY_CONFLICT,
+            level=logging.WARNING,
+            endpoint=endpoint,
+            idempotency_key=(idempotency_key or "")[:16],
+            participant_public_id=participant_public_id,
+            message=LOG_IDEMPOTENCY_CONFLICT,
         )
         return {
-            "error": {
-                "code": "ERR_IDEMPOTENCY_CONFLICT",
-                "message": "Idempotency key reuse with a different request payload is not allowed.",
+            RESPONSE_KEY_ERROR: {
+                RESPONSE_KEY_CODE: IDEMPOTENCY_CONFLICT_ERROR_CODE,
+                RESPONSE_KEY_MESSAGE: IDEMPOTENCY_CONFLICT_MESSAGE,
             }
         }, ({
-            "success": False,
-            "error": {
-                "code": "ERR_IDEMPOTENCY_CONFLICT",
-                "message": "Idempotency key reuse with a different request payload is not allowed.",
+            RESPONSE_KEY_SUCCESS: False,
+            RESPONSE_KEY_ERROR: {
+                RESPONSE_KEY_CODE: IDEMPOTENCY_CONFLICT_ERROR_CODE,
+                RESPONSE_KEY_MESSAGE: IDEMPOTENCY_CONFLICT_MESSAGE,
             }
         }, 409)
 
@@ -69,11 +85,11 @@ def load_idempotent_response(
         try:
             response_body = json.loads(response_body)
         except Exception:
-            response_body = {"status": "processed"}
+            response_body = {RESPONSE_KEY_STATUS: IDEMPOTENCY_DEFAULT_STATUS}
 
     return {
-        "payload": response_body,
-        "status_code": int(status_code or 200),
+        RESPONSE_KEY_PAYLOAD: response_body,
+        RESPONSE_KEY_STATUS_CODE: int(status_code or 200),
     }, (response_body, int(status_code or 200))
 
 
@@ -91,29 +107,7 @@ def save_idempotent_response(
         return
 
     try:
-        db.execute(text("""
-            INSERT INTO idempotency_keys (
-                endpoint,
-                idempotency_key,
-                participant_public_id,
-                request_hash,
-                response_body,
-                status_code
-            ) VALUES (
-                :endpoint,
-                :key,
-                :participant_public_id,
-                :request_hash,
-                CAST(:response_body AS jsonb),
-                :status_code
-            )
-            ON CONFLICT (endpoint, idempotency_key, participant_public_id)
-            DO UPDATE SET
-                request_hash = EXCLUDED.request_hash,
-                response_body = EXCLUDED.response_body,
-                status_code = EXCLUDED.status_code,
-                updated_at = CURRENT_TIMESTAMP
-        """), {
+        db.execute(QUERY_SAVE_IDEMPOTENCY_RESPONSE, {
             "endpoint": endpoint,
             "key": idempotency_key,
             "participant_public_id": participant_public_id,
@@ -121,5 +115,15 @@ def save_idempotent_response(
             "response_body": json.dumps(response_body or {}),
             "status_code": int(status_code or 200),
         })
+    except Exception:
+        return
+
+
+def cleanup_idempotency_keys(db, ttl_seconds: int) -> None:
+    """Best-effort cleanup of expired idempotency keys."""
+    if ttl_seconds <= 0:
+        return
+    try:
+        db.execute(QUERY_DELETE_EXPIRED_IDEMPOTENCY, {"ttl_seconds": int(ttl_seconds)})
     except Exception:
         return

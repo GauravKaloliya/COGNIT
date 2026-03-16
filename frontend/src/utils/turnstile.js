@@ -1,4 +1,5 @@
 import { runtimeConfig } from "../config/runtime";
+import { scheduleTimeout } from "./timing";
 
 let scriptPromise = null;
 
@@ -55,7 +56,7 @@ export const getTurnstileToken = async (action = "submit") => {
     await Promise.race([
       ensureTurnstileScript(),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Turnstile load timed out")), TURNSTILE_TIMEOUT_MS)
+        scheduleTimeout(() => reject(new Error("Turnstile load timed out")), TURNSTILE_TIMEOUT_MS)
       ),
     ]);
     if (!window.turnstile) {
@@ -115,7 +116,7 @@ export const getTurnstileToken = async (action = "submit") => {
       }
       }),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Turnstile execution timed out")), TURNSTILE_TIMEOUT_MS)
+        scheduleTimeout(() => reject(new Error("Turnstile execution timed out")), TURNSTILE_TIMEOUT_MS)
       ),
     ]);
   } catch (error) {

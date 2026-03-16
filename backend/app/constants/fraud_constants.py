@@ -1,0 +1,15 @@
+"""Shared fraud-domain constants."""
+
+DUPLICATE_CHECK_FAILED_LOG = "duplicate screenshot check failed error=%s"
+REJECTED_FAST_PATH_FAILED_LOG = "rejected screenshot fast-path check failed error=%s"
+REJECTED_FILE_HASH_FAILED_LOG = "rejected screenshot file-hash check failed error=%s"
+REJECTED_ATTEMPTS_FAILED_LOG = "rejected screenshot attempts check failed error=%s"
+NEAR_DUP_PRIMARY_FAILED_LOG = "near-duplicate primary SQL check failed error=%s"
+NEAR_DUP_SQL_FALLBACK_FAILED_LOG = "near-duplicate SQL fallback failed error=%s"
+NEAR_DUP_FINAL_FALLBACK_FAILED_LOG = "near-duplicate final fallback failed error=%s"
+FINGERPRINT_SAME_PERSON_FAILED_LOG = "fingerprint same-person check failed error=%s"
+OCR_SIGNATURE_REPLAY_FAILED_LOG = "ocr signature replay check failed error=%s"
+
+PAYMENT_UPLOAD_ATTEMPT_STATUS_SUCCESS = "success"
+PAYMENT_UPLOAD_ATTEMPT_STATUS_REJECTED = "rejected"
+PAYMENT_UPLOAD_ATTEMPT_STATUS_DUPLICATE = "duplicate"

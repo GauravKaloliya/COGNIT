@@ -4,6 +4,7 @@ import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import { sanitizeUsername, useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
 import { PRIOR_EXPERIENCE_GROUPS, PRIOR_EXPERIENCE_NONE } from "../content/userDetailsOptions";
+import DSButton from "../components/design/DSButton.jsx";
 
 export default function UserDetailsPage({
   demographics,
@@ -31,6 +32,11 @@ export default function UserDetailsPage({
     handleSubmit,
     handleFieldBlur,
     updateField,
+    draftRestored,
+    lastSavedAt,
+    isSaving,
+    saveError,
+    retryCountdown,
   } = useUserDetailsPage({
     demographics,
     setDemographics,
@@ -39,6 +45,13 @@ export default function UserDetailsPage({
 
   const AGE_MIN = constants.ageMin;
   const AGE_MAX = constants.ageMax;
+  const USERNAME_MIN = constants.usernameMin;
+  const LOCATION_MIN = constants.locationMin;
+  const usernameOk = (demographics.username || "").trim().length >= USERNAME_MIN;
+  const emailOk = Boolean((demographics.email || "").trim()) && !errors.email;
+  const phoneOk = Boolean((demographics.phone || "").trim()) && !errors.phone;
+  const ageOk = Boolean((demographics.age || "").trim()) && !errors.age;
+  const locationOk = (demographics.location || "").trim().length >= LOCATION_MIN && !errors.location;
 
   if (submitting) {
     return (
@@ -54,12 +67,13 @@ export default function UserDetailsPage({
     <div className="panel">
       <div className="page-top-actions">
         {onBack && (
-          <button
-            className="ghost back-button"
+          <DSButton
+            variant="ghost"
+            className="back-button"
             onClick={onBack}
           >
             ← Back
-          </button>
+          </DSButton>
         )}
       </div>
       {!isOnline && (
@@ -67,11 +81,45 @@ export default function UserDetailsPage({
           <span>{uiText("user.offlineBanner")}</span>
         </div>
       )}
+      {draftRestored && (
+        <div className="banner info">
+          <span>{uiText("draft.restored")}</span>
+        </div>
+      )}
+      {isSaving && (
+        <div className="banner info">
+          <span className="status-icon saving" aria-hidden="true" />
+          <span>{uiText("autosave.saving")}</span>
+        </div>
+      )}
+      {saveError && (
+        <div className="banner warning">
+          <span>{saveError}</span>
+        </div>
+      )}
+      {!isSaving && lastSavedAt && (
+        <div className="banner info">
+          <span className="status-icon saved" aria-hidden="true" />
+          <span>{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
+        </div>
+      )}
       <h2>{uiText("user.pageTitle")}</h2>
       <p className="page-subtitle left">
         {uiText("user.pageSubtitle")}
       </p>
       
+      {optionsLoading && (
+        <>
+          <SectionSkeleton
+            title={uiText("user.optionsLoadingTitle")}
+            subtitle={uiText("user.optionsLoadingSubtitle")}
+          />
+          <div className="inline-skeleton-row">
+            <div className="inline-skeleton" />
+            <div className="inline-skeleton" />
+          </div>
+        </>
+      )}
       <div className="form-grid">
         <div className={`form-field ${errors.username ? 'error' : ''}`}>
           <label>{uiText("user.username")} <span className="required" aria-label="required">*</span></label>
@@ -85,6 +133,9 @@ export default function UserDetailsPage({
           />
           {checking.username && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.username && <span className="error-text">{errors.username}</span>}
+          <span className={`helper-text ${usernameOk ? "ok" : "warning"}`}>
+            {usernameOk ? uiText("user.usernameHintOk") : uiText("user.usernameHint", { min: USERNAME_MIN })}
+          </span>
         </div>
 
         <div className={`form-field ${errors.email ? 'error' : ''}`}>
@@ -99,6 +150,7 @@ export default function UserDetailsPage({
           />
           {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
+          <span className={`helper-text ${emailOk ? "ok" : "warning"}`}>{uiText("user.emailHint")}</span>
         </div>
 
         <div className={`form-field ${errors.phone ? 'error' : ''}`}>
@@ -121,6 +173,8 @@ export default function UserDetailsPage({
           />
           {checking.phone && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.phone && <span className="error-text">{errors.phone}</span>}
+          <span className={`helper-text ${phoneOk ? "ok" : "warning"}`}>{uiText("user.phoneHint")}</span>
+          <span className="helper-text">{uiText("user.phoneCount", { count: (demographics.phone || "").length })}</span>
         </div>
 
         <div className={`form-field ${errors.gender_code ? 'error' : ''}`}>
@@ -161,6 +215,11 @@ export default function UserDetailsPage({
             }}
           />
           {errors.age && <span className="error-text">{errors.age}</span>}
+          <span className={`helper-text ${ageOk ? "ok" : "warning"}`}>
+            {uiText("user.ageHint", { min: AGE_MIN, max: AGE_MAX })}
+          </span>
+          <span className="helper-text">{uiText("user.ageRange", { min: AGE_MIN, max: AGE_MAX })}</span>
+          <span className="helper-text">{uiText("user.ageValue", { value: demographics.age || "-" })}</span>
         </div>
 
         <div className={`form-field ${errors.location ? 'error' : ''}`}>
@@ -191,16 +250,20 @@ export default function UserDetailsPage({
             </div>
           )}
           {locationPermissionDenied && !locating && (
-            <button
+            <DSButton
               type="button"
-              className="ghost location-permission-btn"
+              variant="ghost"
+              className="location-permission-btn"
               onClick={() => detectLocation("manual")}
             >
               {uiText("user.enableLocation")}
-            </button>
+            </DSButton>
           )}
           {locationStatus && <span className="checking-text">{locationStatus}</span>}
           {errors.location && <span className="error-text">{errors.location}</span>}
+          <span className={`helper-text ${locationOk ? "ok" : "warning"}`}>
+            {uiText("user.locationHint", { min: LOCATION_MIN })}
+          </span>
         </div>
 
         <div className={`form-field ${errors.language_code ? 'error' : ''}`}>
@@ -245,8 +308,8 @@ export default function UserDetailsPage({
 
       <div className="page-actions sticky-mobile-actions">
         {errors.general && <span className="error-text">{errors.general}</span>}
-        <button
-          className="primary"
+        <DSButton
+          variant="primary"
           onClick={handleSubmit}
           disabled={
             !systemReady ||
@@ -261,7 +324,16 @@ export default function UserDetailsPage({
           }
         >
           {submitting ? uiText("common.submitting") : uiText("common.continue")}
-        </button>
+          {!isOnline && retryCountdown > 0 && (
+            <span className="button-badge">
+              <span className="button-spinner small" />
+              {retryCountdown}s
+            </span>
+          )}
+        </DSButton>
+        {!isOnline && retryCountdown > 0 && (
+          <div className="helper-text">{uiText("survey.retryIn", { seconds: retryCountdown })}</div>
+        )}
       </div>
     </div>
   );

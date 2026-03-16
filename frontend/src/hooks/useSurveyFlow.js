@@ -6,6 +6,7 @@ import { uiText } from "../utils/uiText";
 import { PAYMENT_API_FIELDS, SURVEY_API_FIELDS } from "../constants/fields";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
+import { scheduleTimeout } from "../utils/timing";
 
 const normalizeSurveyPayload = (value) => {
   if (!value || typeof value !== "object") return null;
@@ -127,7 +128,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       }
 
       setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), runtimeConfig.confettiDurationMs);
+      scheduleTimeout(() => setShowConfetti(false), runtimeConfig.confettiDurationMs);
 
       const nextCompleted = surveyCompleted + 1;
       setSurveyCompleted(nextCompleted);

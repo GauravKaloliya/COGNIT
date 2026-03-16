@@ -1,0 +1,12 @@
+"""Shared audit detail templates."""
+
+AUDIT_DETAIL_PAYMENT_CREATED = "payment created"
+AUDIT_DETAIL_PAYMENT_REUSED = "reused existing active payment"
+AUDIT_DETAIL_PAYMENT_CREATE_FAILED = "payment creation failed: {error}"
+AUDIT_DETAIL_PARTICIPANT_CREATED = "public_id={public_id}"
+AUDIT_DETAIL_VERIFY_UPLOAD_CALLED = "verify-upload called"
+AUDIT_DETAIL_PAYMENT_AUTO_REJECTED_MISSING_OCR = "Payment {payment_id} auto-rejected due to missing OCR"
+AUDIT_DETAIL_INVALID_STATUS = "invalid status {status}"
+AUDIT_DETAIL_DUPLICATE_HASH_MATCH = "duplicate hash matched payment {payment_id}"
+AUDIT_DETAIL_REUSE_REJECTED_SCREENSHOT = "attempted reuse of previously rejected screenshot"
+AUDIT_DETAIL_NEAR_DUPLICATE_MATCH = "near duplicate matched payment {payment_id} with distance {distance}"

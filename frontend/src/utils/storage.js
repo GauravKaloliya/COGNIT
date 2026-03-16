@@ -33,6 +33,20 @@ export function readJsonValue(key, fallback = null, area = STORAGE_AREAS.session
   }
 }
 
+export function readStoredMeta(key, area = STORAGE_AREAS.session) {
+  try {
+    const parsed = readJsonValue(key, null, area);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      savedAt: parsed[STORAGE_ENVELOPE_FIELDS.savedAt],
+      expiresAt: parsed[STORAGE_ENVELOPE_FIELDS.expiresAt],
+      schemaVersion: parsed[STORAGE_ENVELOPE_FIELDS.schemaVersion],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function writeJsonValue(key, value, area = STORAGE_AREAS.session) {
   try {
     const storage = getStorageArea(area);

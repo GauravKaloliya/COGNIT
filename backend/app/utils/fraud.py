@@ -6,8 +6,37 @@ Provides duplicate detection, screenshot validation, and fraud scoring.
 import logging
 from typing import Optional, Tuple
 
-from sqlalchemy import text
 from PIL import Image
+
+from app.constants.fraud_constants import (
+    PAYMENT_UPLOAD_ATTEMPT_STATUS_DUPLICATE,
+    PAYMENT_UPLOAD_ATTEMPT_STATUS_REJECTED,
+    PAYMENT_UPLOAD_ATTEMPT_STATUS_SUCCESS,
+)
+from app.constants.observability_constants import (
+    OBS_EVENT_FRAUD_DUPLICATE_CHECK_FAILED,
+    OBS_EVENT_FRAUD_FINGERPRINT_SAME_PERSON_FAILED,
+    OBS_EVENT_FRAUD_NEAR_DUP_FINAL_FALLBACK_FAILED,
+    OBS_EVENT_FRAUD_NEAR_DUP_PRIMARY_FAILED,
+    OBS_EVENT_FRAUD_NEAR_DUP_SQL_FALLBACK_FAILED,
+    OBS_EVENT_FRAUD_OCR_SIGNATURE_REPLAY_FAILED,
+    OBS_EVENT_FRAUD_REJECTED_ATTEMPTS_FAILED,
+    OBS_EVENT_FRAUD_REJECTED_FAST_PATH_FAILED,
+    OBS_EVENT_FRAUD_REJECTED_FILE_HASH_FAILED,
+)
+from app.utils.fraud_queries import (
+    QUERY_DUPLICATE_SCREENSHOT,
+    QUERY_FINGERPRINT_MATCH_CURRENT,
+    QUERY_FINGERPRINT_MATCH_OVERLAP,
+    QUERY_NEAR_DUPLICATE_FALLBACK,
+    QUERY_NEAR_DUPLICATE_PRIMARY,
+    QUERY_NEAR_DUPLICATE_RECENT,
+    QUERY_OCR_SIGNATURE_REPLAY,
+    QUERY_REJECTED_SCREENSHOT_ATTEMPTS,
+    QUERY_REJECTED_SCREENSHOT_FAST,
+    QUERY_REJECTED_SCREENSHOT_FILE_HASH,
+)
+from app.utils.observability import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +61,7 @@ def check_duplicate_screenshot(
         Tuple of (is_duplicate, existing_payment_id, is_same_participant)
     """
     try:
-        result = db.execute(text("""
-            SELECT pf.payment_id, p.participant_id
-            FROM payment_files pf
-            JOIN payments p ON p.id = pf.payment_id
-            WHERE pf.sha256 = :hash
-            LIMIT 1
-        """), {"hash": sha256_hash}).fetchone()
+        result = db.execute(QUERY_DUPLICATE_SCREENSHOT, {"hash": sha256_hash}).fetchone()
         
         if result:
             existing_payment_id, existing_participant_id = result
@@ -48,7 +71,7 @@ def check_duplicate_screenshot(
             return True, existing_payment_id, is_same_participant
         return False, None, False
     except Exception as e:
-        logger.warning("duplicate screenshot check failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_DUPLICATE_CHECK_FAILED, level=logging.WARNING, error=str(e))
         return False, None, False
 
 
@@ -71,46 +94,26 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
     """
     # Fast path: denormalized indexed hash on payments.
     try:
-        hit = db.execute(text("""
-            SELECT 1
-            FROM payments
-            WHERE status = 'rejected_fraud'
-              AND uploaded_sha256 = :hash
-            LIMIT 1
-        """), {"hash": sha256_hash}).scalar()
+        hit = db.execute(QUERY_REJECTED_SCREENSHOT_FAST, {"hash": sha256_hash}).scalar()
         if hit:
             return True
     except Exception as e:
-        logger.warning("rejected screenshot fast-path check failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_REJECTED_FAST_PATH_FAILED, level=logging.WARNING, error=str(e))
 
     # Fallback path 1: historical file hashes linked to rejected payments.
     try:
-        hit = db.execute(text("""
-            SELECT 1
-            FROM payment_files pf
-            JOIN payments p ON p.id = pf.payment_id
-            WHERE p.status = 'rejected_fraud'
-              AND pf.sha256 = :hash
-            LIMIT 1
-        """), {"hash": sha256_hash}).scalar()
+        hit = db.execute(QUERY_REJECTED_SCREENSHOT_FILE_HASH, {"hash": sha256_hash}).scalar()
         if hit:
             return True
     except Exception as e:
-        logger.warning("rejected screenshot file-hash check failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_REJECTED_FILE_HASH_FAILED, level=logging.WARNING, error=str(e))
 
     # Fallback path 2: upload attempts on rejected payments.
     try:
-        hit = db.execute(text("""
-            SELECT 1
-            FROM payment_upload_attempts pua
-            JOIN payments p ON p.id = pua.payment_id
-            WHERE p.status = 'rejected_fraud'
-              AND pua.sha256 = :hash
-            LIMIT 1
-        """), {"hash": sha256_hash}).scalar()
+        hit = db.execute(QUERY_REJECTED_SCREENSHOT_ATTEMPTS, {"hash": sha256_hash}).scalar()
         return bool(hit)
     except Exception as e:
-        logger.warning("rejected screenshot attempts check failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_REJECTED_ATTEMPTS_FAILED, level=logging.WARNING, error=str(e))
         return False
 
 
@@ -178,18 +181,7 @@ def check_near_duplicate_screenshot(
 
     # Primary path: indexed coarse-bucket search, distance filter in SQL.
     try:
-        candidate = db.execute(text("""
-            SELECT
-                pf.payment_id,
-                p.participant_id,
-                bit_count((pf.image_phash_bits # CAST(:bits AS bit(64)))) AS hamming_distance
-            FROM payment_files pf
-            JOIN payments p ON p.id = pf.payment_id
-            WHERE pf.image_phash_bits IS NOT NULL
-              AND pf.image_phash_bucket = :bucket
-            ORDER BY hamming_distance ASC, p.created_at DESC
-            LIMIT 128
-        """), {"bits": bits, "bucket": bucket}).fetchone()
+        candidate = db.execute(QUERY_NEAR_DUPLICATE_PRIMARY, {"bits": bits, "bucket": bucket}).fetchone()
 
         if candidate:
             payment_id, owner_participant_id, distance = candidate
@@ -200,21 +192,11 @@ def check_near_duplicate_screenshot(
                 )
                 return True, int(payment_id), distance, is_same_participant
     except Exception as e:
-        logger.warning("near-duplicate primary SQL check failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_NEAR_DUP_PRIMARY_FAILED, level=logging.WARNING, error=str(e))
 
     # Secondary path: SQL distance scan (kept in DB), constrained candidate count.
     try:
-        candidate = db.execute(text("""
-            SELECT
-                pf.payment_id,
-                p.participant_id,
-                bit_count((pf.image_phash_bits # CAST(:bits AS bit(64)))) AS hamming_distance
-            FROM payment_files pf
-            JOIN payments p ON p.id = pf.payment_id
-            WHERE pf.image_phash_bits IS NOT NULL
-            ORDER BY hamming_distance ASC, p.created_at DESC
-            LIMIT 256
-        """), {"bits": bits}).fetchone()
+        candidate = db.execute(QUERY_NEAR_DUPLICATE_FALLBACK, {"bits": bits}).fetchone()
 
         if candidate:
             payment_id, owner_participant_id, distance = candidate
@@ -227,18 +209,11 @@ def check_near_duplicate_screenshot(
             return False, None, distance, False
         return False, None, None, False
     except Exception as e:
-        logger.warning("near-duplicate SQL fallback failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_NEAR_DUP_SQL_FALLBACK_FAILED, level=logging.WARNING, error=str(e))
 
     # Final safety fallback: tiny Python scan from recent rows only.
     try:
-        rows = db.execute(text("""
-            SELECT pf.payment_id, pf.image_phash, p.participant_id
-            FROM payment_files pf
-            JOIN payments p ON p.id = pf.payment_id
-            WHERE pf.image_phash IS NOT NULL
-            ORDER BY p.created_at DESC, p.id DESC
-            LIMIT 1024
-        """)).fetchall()
+        rows = db.execute(QUERY_NEAR_DUPLICATE_RECENT).fetchall()
         best_payment = None
         best_distance = None
         best_participant = None
@@ -255,7 +230,7 @@ def check_near_duplicate_screenshot(
             return True, best_payment, best_distance, is_same_participant
         return False, None, best_distance, False
     except Exception as e:
-        logger.warning("near-duplicate final fallback failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_NEAR_DUP_FINAL_FALLBACK_FAILED, level=logging.WARNING, error=str(e))
         return False, None, None, False
 
 
@@ -285,34 +260,20 @@ def is_same_person_by_fingerprint(
         candidate_hashes = list(dict.fromkeys([h for h in candidate_hashes if h]))
 
         if candidate_hashes:
-            hit = db.execute(text("""
-                SELECT 1
-                FROM device_fingerprints
-                WHERE participant_id = :other_pid
-                  AND fingerprint_hash = ANY(:fph_list)
-                LIMIT 1
-            """), {
+            hit = db.execute(QUERY_FINGERPRINT_MATCH_CURRENT, {
                 "other_pid": other_participant_id,
                 "fph_list": candidate_hashes,
             }).scalar()
             if hit:
                 return True
 
-        overlap = db.execute(text("""
-            SELECT 1
-            FROM device_fingerprints a
-            JOIN device_fingerprints b
-              ON a.fingerprint_hash = b.fingerprint_hash
-            WHERE a.participant_id = :pid
-              AND b.participant_id = :other_pid
-            LIMIT 1
-        """), {
+        overlap = db.execute(QUERY_FINGERPRINT_MATCH_OVERLAP, {
             "pid": participant_id,
             "other_pid": other_participant_id,
         }).scalar()
         return bool(overlap)
     except Exception as e:
-        logger.warning("fingerprint same-person check failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_FINGERPRINT_SAME_PERSON_FAILED, level=logging.WARNING, error=str(e))
         return False
 
 
@@ -329,16 +290,7 @@ def check_ocr_signature_replay(
     if not ocr_signature:
         return False, None, False
     try:
-        row = db.execute(text("""
-            SELECT pua.payment_id, p.participant_id
-            FROM payment_upload_attempts pua
-            JOIN payments p ON p.id = pua.payment_id
-            WHERE pua.status IN ('success', 'rejected', 'duplicate')
-              AND pua.sha256 <> :sha
-              AND COALESCE(pua.details->>'ocr_signature', '') = :ocr_sig
-            ORDER BY pua.created_at DESC
-            LIMIT 1
-        """), {
+        row = db.execute(QUERY_OCR_SIGNATURE_REPLAY, {
             "sha": sha256_hash,
             "ocr_sig": ocr_signature,
         }).fetchone()
@@ -350,5 +302,5 @@ def check_ocr_signature_replay(
         )
         return True, int(existing_payment_id), is_same_participant
     except Exception as e:
-        logger.warning("ocr signature replay check failed error=%s", e)
+        log_event(logger, OBS_EVENT_FRAUD_OCR_SIGNATURE_REPLAY_FAILED, level=logging.WARNING, error=str(e))
         return False, None, False

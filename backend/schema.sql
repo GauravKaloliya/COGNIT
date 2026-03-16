@@ -824,7 +824,8 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     status_code           INTEGER NOT NULL DEFAULT 200,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at            TIMESTAMPTZ
+    expires_at            TIMESTAMPTZ,
+    deleted_at            TIMESTAMPTZ
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_unique
@@ -833,6 +834,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_unique_endpoint_key_hash
     ON idempotency_keys (endpoint, idempotency_key, request_hash);
 CREATE INDEX IF NOT EXISTS idx_idempotency_created
     ON idempotency_keys (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_idempotency_deleted
+    ON idempotency_keys (deleted_at);
 
 -- =====================================================================
 -- PERFORMANCE METRICS (optional but useful)

@@ -3,24 +3,17 @@ Payment routes module for C.O.G.N.I.T. backend.
 Handles payment creation, screenshot upload, verification, and status.
 """
 
-import base64
-import json
 import logging
-import uuid
-from datetime import datetime, timedelta, timezone
-from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 from flask import request, g
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
-import qrcode
+from flask_limiter.util import get_remote_address
 
 from app.config import (
     PAYMENT_EXPIRY_SECONDS,
     PAYMENT_UPLOAD_URL_EXPIRY_SECONDS,
     PAYMENT_MAX_IMAGE_MB,
-    PAYMENT_AMOUNT,
     S3_BUCKET_NAME,
     PAYMENT_CREATE_RATE_LIMIT,
     PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
@@ -33,8 +26,64 @@ from app.config import (
     PARTICIPANT_SESSION_COOKIE_NAME,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
 )
+from app.constants.event_constants import (
+    AUDIT_EVENT_PAYMENT_CREATE_FAILED,
+    AUDIT_EVENT_PAYMENT_CREATE_REUSED_ACTIVE,
+    AUDIT_EVENT_PAYMENT_CREATE_SUCCESS,
+    HTTP_METHOD_GET,
+    HTTP_METHOD_POST,
+)
+from app.constants.error_codes import DETAIL_REASONS, ERROR_MESSAGE_TEMPLATES
+from app.constants.audit_details import (
+    AUDIT_DETAIL_PAYMENT_CREATED,
+    AUDIT_DETAIL_PAYMENT_CREATE_FAILED,
+    AUDIT_DETAIL_PAYMENT_REUSED,
+)
+from app.constants.log_messages import (
+    LOG_INTERNAL_VERIFY_DB_FAILED,
+    LOG_PAYMENT_CREATE_DB_FAILED,
+    LOG_PAYMENT_CREATE_FAILED,
+    LOG_PAYMENT_QR_FAILED,
+    LOG_PAYMENT_STATUS_FAILED,
+    LOG_PAYMENT_TOKEN_FAILED,
+    LOG_PAYMENT_UPLOAD_URL_FAILED,
+    LOG_PAYMENT_VERIFY_DB_FAILED,
+)
+from app.constants.request_keys import (
+    REQUEST_KEY_AMOUNT,
+    REQUEST_KEY_FILE_EXTENSION,
+    REQUEST_KEY_FILE_SIZE,
+    REQUEST_KEY_IDEMPOTENCY_KEY,
+    REQUEST_KEY_MIME_TYPE,
+    REQUEST_KEY_PUBLIC_ID,
+    REQUEST_KEY_SHA256,
+    REQUEST_KEY_TURNSTILE_TOKEN,
+    REQUEST_KEY_UPLOAD_OBJECT_KEY,
+)
+from app.constants.response_keys import (
+    RESPONSE_KEY_EXPIRES_AT,
+    RESPONSE_KEY_PAYMENT_ID,
+    RESPONSE_KEY_PAYMENT_TOKEN,
+    RESPONSE_KEY_QR_BASE64,
+)
+from app.constants.payment_constants import (
+    PAYMENT_ACTIVE_STATUSES,
+    PAYMENT_QR_BLOCKED_STATUSES,
+    PAYMENT_STATUS_FAILED,
+    PAYMENT_STATUS_READ_ALLOWED,
+)
+from app.constants.route_constants import (
+    INTERNAL_PAYMENT_VERIFY_ROUTE,
+    PAYMENTS_CREATE_ROUTE,
+    PAYMENT_QR_ROUTE,
+    PAYMENT_STATUS_ROUTE,
+    PAYMENT_TOKEN_ROUTE,
+    PAYMENT_UPLOAD_URL_ROUTE,
+    PAYMENT_VERIFY_UPLOAD_ENDPOINT_TEMPLATE,
+    PAYMENT_VERIFY_UPLOAD_ROUTE,
+)
 from app.extensions import limiter, s3
-from app.database import get_db, engine
+from app.database import get_db
 from app.utils.helpers import (
     create_error_response,
     get_ip_hash,
@@ -42,19 +91,33 @@ from app.utils.helpers import (
     validate_image_extension,
 )
 from app.utils.runtime_cache import resolve_participant_id
-from app.utils.security import (
-    generate_payment_signature,
-    generate_upi_link,
-    generate_payment_write_token,
-)
+from app.utils.security import generate_upi_link
 from app.utils.decorators import track_performance, require_idempotency_key
-from flask_limiter.util import get_remote_address
 from app.utils.turnstile import verify_turnstile_token
+from app.utils.observability import log_event
+from app.constants.observability_constants import OBS_EVENT_PAYMENT_REUSE_PROBE_FAILED
 from app.services.payment_verify_service import process_verify_upload, process_internal_verify
 from app.services import (
+    build_payment_response_payload,
+    build_payment_status_response,
+    build_qr_base64,
+    build_reused_payment_response_payload,
     build_request_hash,
+    create_payment_record,
+    enqueue_payment_audit,
+    expire_payment_if_needed,
+    fetch_active_payment_for_reuse,
+    fetch_payment_status_row,
+    fetch_token_mint_row,
+    get_participant_session_id,
+    is_duplicate_active_payment_error,
+    is_expected_payment_amount,
+    log_payment_audit,
     load_idempotent_response,
+    mark_existing_active_payments_failed,
+    normalize_payment_amount,
     save_idempotent_response,
+    issue_payment_write_token,
 )
 from middleware.payment_flow import require_valid_payment_session
 
@@ -66,181 +129,44 @@ from middleware.payment_flow import require_valid_payment_session
 from flask import Blueprint
 payment_bp = Blueprint('payment', __name__)
 logger = logging.getLogger(__name__)
-_QR_BASE64_CACHE = {}
-_PAYMENT_AUDIT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="payment-audit")
 
 
 def _payment_rate_key():
     payment_id = (getattr(request, "view_args", {}) or {}).get("payment_public_id") or ""
     return f"{get_remote_address()}:{payment_id}"
 
-
-def _issue_payment_write_token(
-    db,
-    *,
-    payment_id: int,
-    payment_public_id: str,
-    participant_id: int,
-    expires_at,
-    payment_signature: str,
-    device_fingerprint: str = "",
-    session_id: str = "",
-) -> str:
-    nonce = uuid.uuid4().hex
-    db.execute(text("""
-        UPDATE payments
-        SET metadata = COALESCE(metadata, '{}'::jsonb) || CAST(:patch AS jsonb),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = :pid
-    """), {
-        "pid": int(payment_id),
-        "patch": json.dumps({
-            "payment_write_nonce": nonce,
-            "payment_write_nonce_issued_at": datetime.now(timezone.utc).isoformat(),
-        }),
-    })
-    return generate_payment_write_token(
-        payment_public_id,
-        int(participant_id),
-        expires_at,
-        payment_signature,
-        device_fingerprint=device_fingerprint,
-        session_id=session_id,
-        nonce=nonce,
-    )
-
-
-def _log_payment_audit(
-    db,
-    event_type: str,
-    payment_id=None,
-    participant_id=None,
-    details: str = "",
-    request_data=None,
-    response_data=None,
-    fraud_signals=None
-):
-    """Best-effort payment audit log writer; never breaks request flow."""
-    try:
-        db.execute(text("""
-            INSERT INTO payment_audit_log (
-                event_type, payment_id, participant_id, ip_hash, user_agent,
-                device_fingerprint, request_data, response_data, fraud_signals, details
-            ) VALUES (
-                :event_type, :payment_id, :participant_id, :ip_hash, :user_agent,
-                :device_fingerprint, CAST(:request_data AS jsonb), CAST(:response_data AS jsonb), CAST(:fraud_signals AS jsonb), :details
-            )
-        """), {
-            "event_type": event_type,
-            "payment_id": payment_id,
-            "participant_id": participant_id,
-            "ip_hash": get_ip_hash(),
-            "user_agent": request.headers.get("User-Agent", "")[:512],
-            "device_fingerprint": getattr(g, "device_fingerprint", None),
-            "request_data": json.dumps(request_data or {}),
-            "response_data": json.dumps(response_data or {}),
-            "fraud_signals": json.dumps(fraud_signals or {}),
-            "details": (details or "")[:8000],
-        })
-    except Exception as exc:
-        logger.warning("payment_audit_log insert failed request_id=%s error=%s", getattr(g, "request_id", None), exc)
-
-
-def _enqueue_payment_audit(
-    *,
-    event_type: str,
-    payment_id=None,
-    participant_id=None,
-    details: str = "",
-    request_data=None,
-    response_data=None,
-    fraud_signals=None,
-    ip_hash: str = "",
-    user_agent: str = "",
-    device_fingerprint: str = "",
-):
-    """Best-effort async payment audit writer."""
-    def _write():
-        try:
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO payment_audit_log (
-                        event_type, payment_id, participant_id, ip_hash, user_agent,
-                        device_fingerprint, request_data, response_data, fraud_signals, details
-                    ) VALUES (
-                        :event_type, :payment_id, :participant_id, :ip_hash, :user_agent,
-                        :device_fingerprint, CAST(:request_data AS jsonb), CAST(:response_data AS jsonb), CAST(:fraud_signals AS jsonb), :details
-                    )
-                """), {
-                    "event_type": event_type,
-                    "payment_id": payment_id,
-                    "participant_id": participant_id,
-                    "ip_hash": ip_hash,
-                    "user_agent": user_agent[:512],
-                    "device_fingerprint": (device_fingerprint or "")[:128],
-                    "request_data": json.dumps(request_data or {}),
-                    "response_data": json.dumps(response_data or {}),
-                    "fraud_signals": json.dumps(fraud_signals or {}),
-                    "details": (details or "")[:8000],
-                })
-        except Exception:
-            pass
-
-    try:
-        _PAYMENT_AUDIT_EXECUTOR.submit(_write)
-    except Exception:
-        pass
-
-
-def _build_qr_base64(upi_link: str) -> str:
-    cached = _QR_BASE64_CACHE.get(upi_link)
-    if cached:
-        return cached
-    qr = qrcode.make(upi_link)
-    buffer = BytesIO()
-    qr.save(buffer, format="PNG")
-    encoded = base64.b64encode(buffer.getvalue()).decode()
-    _QR_BASE64_CACHE[upi_link] = encoded
-    return encoded
-
-
 # ────────────────────────────────────────────────
 # Routes
 # ────────────────────────────────────────────────
 
-@payment_bp.route("/payments/create", methods=["POST"])
+@payment_bp.route(PAYMENTS_CREATE_ROUTE, methods=[HTTP_METHOD_POST])
 @limiter.limit(PAYMENT_CREATE_RATE_LIMIT)
 @track_performance
 @require_idempotency_key
 def create_payment():
     """Create a new payment session with timer."""
     data = request.json or {}
-    logger.info("create_payment request_id=%s", getattr(g, "request_id", None))
-    public_id = data.get("public_id")
-    amount = data.get("amount")
+    public_id = data.get(REQUEST_KEY_PUBLIC_ID)
+    amount = data.get(REQUEST_KEY_AMOUNT)
     idempotency_key = (
         request.headers.get("X-Idempotency-Key")
-        or data.get("idempotency_key")
+        or data.get(REQUEST_KEY_IDEMPOTENCY_KEY)
         or ""
     ).strip()[:128]
-    turnstile_token = (data.get("turnstile_token") or "").strip()
+    turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
 
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
-    try:
-        amount = round(float(amount if amount is not None else PAYMENT_AMOUNT), 2)
-    except Exception:
-        amount = PAYMENT_AMOUNT
-
-    if round(float(PAYMENT_AMOUNT), 2) != amount:
+    amount = normalize_payment_amount(amount)
+    if not is_expected_payment_amount(amount):
         return create_error_response("INVALID_AMOUNT")
 
     try:
         db = get_db()
     except Exception as e:
-        logger.error("create_payment db connection failed request_id=%s error=%s", getattr(g, "request_id", None), e)
-        return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
+        logger.error(LOG_PAYMENT_CREATE_DB_FAILED, getattr(g, "request_id", None), e)
+        return create_error_response("INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_CREATE_FAILED"])
 
     participant_id = resolve_participant_id(db, str(public_id).strip())
     if not participant_id:
@@ -250,18 +176,16 @@ def create_payment():
     if not ok:
         return create_error_response("BOT_CHALLENGE_FAILED")
 
-    participant_session_id = db.execute(text("""
-        SELECT session_id FROM participants WHERE id = :pid
-    """), {"pid": participant_id}).scalar()
+    participant_session_id = get_participant_session_id(db, participant_id)
     request_hash = ""
     if idempotency_key:
         request_hash = build_request_hash({
-            "public_id": str(public_id).strip(),
-            "amount": amount,
+            REQUEST_KEY_PUBLIC_ID: str(public_id).strip(),
+            REQUEST_KEY_AMOUNT: amount,
         })
         _idem, replay = load_idempotent_response(
             db,
-            endpoint="/payments/create",
+            endpoint=PAYMENTS_CREATE_ROUTE,
             idempotency_key=idempotency_key,
             participant_public_id=str(public_id).strip(),
             request_hash=request_hash,
@@ -270,73 +194,34 @@ def create_payment():
             payload, status_code = replay
             return success_response(payload), status_code
 
-    # Mark any existing pending/processing payments as failed
-    db.execute(text("""
-        UPDATE payments
-        SET status = 'failed',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE participant_id = :pid
-          AND status IN ('pending', 'processing')
-    """), {"pid": participant_id})
-
-    # Timer starts immediately when payment is created
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)
-    expires_str = expires_at.isoformat()
-    payment_public_id = str(uuid.uuid4())
-
-    signature = generate_payment_signature(public_id, str(amount), expires_str)
+    mark_existing_active_payments_failed(db, participant_id)
 
     try:
-        payment_row = db.execute(text("""
-            INSERT INTO payments (
-                participant_id, public_id, amount, signature, expires_at, timer_activated_at, detected_app, metadata
-            ) VALUES (
-                :pid, :pub_id, :amt, :sig, :exp, :timer_time, :detected_app,
-                '{}'::jsonb
-            )
-            RETURNING id, public_id
-        """), {
-            "pid": participant_id,
-            "pub_id": payment_public_id,
-            "amt": amount,
-            "sig": signature,
-            "exp": expires_at,
-            "timer_time": datetime.now(timezone.utc),
-            "detected_app": "unknown",
-        }).fetchone()
-
-        # Generate UPI link and QR code
-        upi_link = generate_upi_link(amount)
-        
-        logger.info(
-            "payment created request_id=%s payment_id=%s participant_public_id=%s",
-            getattr(g, "request_id", None), payment_row[1], public_id[:8]
+        payment_row, signature, expires_at, expires_str = create_payment_record(
+            db,
+            participant_id=participant_id,
+            public_id=public_id,
+            amount=amount,
         )
-
-        response_payload = {
-            "payment_id": str(payment_row[1]),
-            "amount": amount,
-            "expires_at": expires_str,
-            "signature": signature,
-            "payment_token": _issue_payment_write_token(
-                db,
-                payment_id=int(payment_row[0]),
-                payment_public_id=str(payment_row[1]),
-                participant_id=int(participant_id),
-                expires_at=expires_at,
-                payment_signature=signature,
-                device_fingerprint=getattr(g, "device_fingerprint", None) or "",
-                session_id=participant_session_id or "",
-            ),
-            "upi_link": upi_link,
-            "qr_ready": True,
-            "timer_activated": True,
-            "time_remaining_seconds": PAYMENT_EXPIRY_SECONDS
-        }
+        
+        response_payload = build_payment_response_payload(
+            db,
+            payment_row_id=int(payment_row[0]),
+            payment_public_id=str(payment_row[1]),
+            participant_id=int(participant_id),
+            public_id=str(public_id),
+            amount=amount,
+            expires_at=expires_at,
+            expires_str=expires_str,
+            signature=signature,
+            device_fingerprint=getattr(g, "device_fingerprint", None) or "",
+            session_id=participant_session_id or "",
+            time_remaining_seconds=PAYMENT_EXPIRY_SECONDS,
+        )
         if idempotency_key:
             save_idempotent_response(
                 db,
-                endpoint="/payments/create",
+                endpoint=PAYMENTS_CREATE_ROUTE,
                 idempotency_key=idempotency_key,
                 participant_public_id=str(public_id).strip(),
                 request_hash=request_hash,
@@ -344,11 +229,11 @@ def create_payment():
                 status_code=200,
             )
         db.commit()
-        _enqueue_payment_audit(
-            event_type="payment_create_success",
+        enqueue_payment_audit(
+            event_type=AUDIT_EVENT_PAYMENT_CREATE_SUCCESS,
             payment_id=payment_row[0],
             participant_id=participant_id,
-            details="payment created",
+            details=AUDIT_DETAIL_PAYMENT_CREATED,
             request_data={"amount": amount, "public_id_prefix": public_id[:8]},
             response_data={"payment_public_id": str(payment_row[1]), "expires_at": expires_str},
             ip_hash=get_ip_hash(),
@@ -364,48 +249,21 @@ def create_payment():
             pass
         # Handle concurrent duplicate create calls (e.g., frontend double-invoke)
         # by returning the existing active payment instead of failing with 500.
-        if isinstance(e, IntegrityError) or "idx_payments_one_active_per_participant" in str(e):
+        if is_duplicate_active_payment_error(e):
             try:
-                existing = db.execute(text("""
-                    SELECT id, public_id, amount, expires_at, signature
-                    FROM payments
-                    WHERE participant_id = :pid
-                      AND status IN ('pending', 'processing')
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """), {"pid": participant_id}).fetchone()
+                existing = fetch_active_payment_for_reuse(db, participant_id)
                 if existing:
-                    existing_payment_row_id, existing_payment_id, existing_amount, existing_expires_at, existing_signature = existing
-                    upi_link = generate_upi_link(float(existing_amount))
-                    remaining_seconds = max(
-                        0,
-                        int((existing_expires_at - datetime.now(timezone.utc)).total_seconds())
-                    ) if existing_expires_at else PAYMENT_EXPIRY_SECONDS
-
-                    response_payload = {
-                        "payment_id": str(existing_payment_id),
-                        "amount": float(existing_amount),
-                        "expires_at": existing_expires_at.isoformat() if existing_expires_at else None,
-                        "signature": existing_signature or signature,
-                        "payment_token": _issue_payment_write_token(
-                            db,
-                            payment_id=int(existing_payment_row_id),
-                            payment_public_id=str(existing_payment_id),
-                            participant_id=int(participant_id),
-                            expires_at=existing_expires_at or (datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)),
-                            payment_signature=existing_signature or signature,
-                            device_fingerprint=getattr(g, "device_fingerprint", None) or "",
-                            session_id=participant_session_id or "",
-                        ),
-                        "upi_link": upi_link,
-                        "qr_ready": True,
-                        "timer_activated": True,
-                        "time_remaining_seconds": remaining_seconds
-                    }
+                    response_payload = build_reused_payment_response_payload(
+                        db,
+                        existing_payment_row=existing,
+                        participant_id=int(participant_id),
+                        participant_session_id=participant_session_id or "",
+                        device_fingerprint=getattr(g, "device_fingerprint", None) or "",
+                    )
                     if idempotency_key:
                         save_idempotent_response(
                             db,
-                            endpoint="/payments/create",
+                            endpoint=PAYMENTS_CREATE_ROUTE,
                             idempotency_key=idempotency_key,
                             participant_public_id=str(public_id).strip(),
                             request_hash=request_hash,
@@ -413,30 +271,38 @@ def create_payment():
                             status_code=200,
                         )
                     db.commit()
-                    _enqueue_payment_audit(
-                        event_type="payment_create_reused_active",
+                    enqueue_payment_audit(
+                        event_type=AUDIT_EVENT_PAYMENT_CREATE_REUSED_ACTIVE,
                         participant_id=participant_id,
-                        details="reused existing active payment",
+                        details=AUDIT_DETAIL_PAYMENT_REUSED,
                         request_data={"amount": amount, "public_id_prefix": public_id[:8]},
-                        response_data={"payment_public_id": str(existing_payment_id)},
+                        response_data={"payment_public_id": str(existing[1])},
                         ip_hash=get_ip_hash(),
                         user_agent=request.headers.get("User-Agent", "")[:512],
                         device_fingerprint=getattr(g, "device_fingerprint", None) or "",
                     )
                     return success_response(response_payload)
-            except Exception:
-                pass
-        logger.error("payment creation failed request_id=%s error=%s", getattr(g, "request_id", None), e)
-        _log_payment_audit(
+            except Exception as exc:
+                log_event(
+                    logger,
+                    OBS_EVENT_PAYMENT_REUSE_PROBE_FAILED,
+                    level=logging.WARNING,
+                    error=str(exc),
+                    request_id=getattr(g, "request_id", None),
+                )
+        logger.error(LOG_PAYMENT_CREATE_FAILED, getattr(g, "request_id", None), e)
+        log_payment_audit(
             db,
-            "payment_create_failed",
+            request=request,
+            device_fingerprint=getattr(g, "device_fingerprint", None),
+            event_type=AUDIT_EVENT_PAYMENT_CREATE_FAILED,
             participant_id=participant_id,
-            details=f"payment creation failed: {str(e)[:300]}",
+            details=AUDIT_DETAIL_PAYMENT_CREATE_FAILED.format(error=str(e)[:300]),
             request_data={"amount": amount, "public_id_prefix": public_id[:8]},
         )
-        return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
+        return create_error_response("INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_CREATE_FAILED"])
 
-@payment_bp.route("/payments/<payment_public_id>/qr", methods=["GET"])
+@payment_bp.route(PAYMENT_QR_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(PAYMENT_STATUS_RATE_LIMIT)
 @track_performance
 def get_payment_qr(payment_public_id):
@@ -452,38 +318,32 @@ def get_payment_qr(payment_public_id):
         if not row:
             return create_error_response("PAYMENT_NOT_FOUND")
         amount, status = row
-        expected_amount = round(float(PAYMENT_AMOUNT), 2)
         actual_amount = round(float(amount), 2) if amount is not None else None
-        if actual_amount is None or actual_amount != expected_amount:
+        if actual_amount is None or not is_expected_payment_amount(actual_amount):
             return create_error_response("INVALID_AMOUNT")
-        if status in ("expired", "failed", "rejected_fraud", "refunded"):
+        if status in PAYMENT_QR_BLOCKED_STATUSES:
             return create_error_response("PAYMENT_INVALID_STATE")
 
         upi_link = generate_upi_link(float(amount))
         return success_response({
-            "payment_id": payment_public_id,
-            "qr_base64": _build_qr_base64(upi_link),
+            RESPONSE_KEY_PAYMENT_ID: payment_public_id,
+            RESPONSE_KEY_QR_BASE64: build_qr_base64(upi_link),
         })
     except Exception as exc:
-        logger.error(
-            "get_payment_qr failed request_id=%s payment_id=%s error=%s",
-            getattr(g, "request_id", None),
-            payment_public_id,
-            exc,
-        )
-        return create_error_response("SYS_INTERNAL_ERROR", custom_message="Failed to load payment QR. Please retry.")
+        logger.error(LOG_PAYMENT_QR_FAILED, getattr(g, "request_id", None), payment_public_id, exc)
+        return create_error_response("SYS_INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_QR_FAILED"])
 
 
-@payment_bp.route("/payments/<payment_public_id>/upload-url", methods=["POST"])
+@payment_bp.route(PAYMENT_UPLOAD_URL_ROUTE, methods=[HTTP_METHOD_POST])
 @require_valid_payment_session(require_write_token=True)
 @limiter.limit(PAYMENT_VERIFY_UPLOAD_RATE_LIMIT)
 @track_performance
 def get_payment_upload_url(payment_public_id):
     data = request.json or {}
-    file_extension = (data.get("file_extension", "jpg") or "jpg").lower().strip(".")
-    sha256_hash = (data.get("sha256") or "").strip().lower()
-    mime_type = (data.get("mime_type") or "").strip()[:120]
-    file_size = data.get("file_size")
+    file_extension = (data.get(REQUEST_KEY_FILE_EXTENSION, "jpg") or "jpg").lower().strip(".")
+    sha256_hash = (data.get(REQUEST_KEY_SHA256) or "").strip().lower()
+    mime_type = (data.get(REQUEST_KEY_MIME_TYPE) or "").strip()[:120]
+    file_size = data.get(REQUEST_KEY_FILE_SIZE)
 
     if not sha256_hash:
         return create_error_response("PAY_INVALID_SHA256")
@@ -502,8 +362,8 @@ def get_payment_upload_url(payment_public_id):
             if normalized_size < 0 or normalized_size > max_bytes:
                 return create_error_response(
                     "VAL_FILE_TOO_LARGE",
-                    details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": "payment_image_too_large"},
-                    custom_message=f"The file is too large. Please upload an image smaller than {int(PAYMENT_MAX_IMAGE_MB)}MB.",
+                    details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": DETAIL_REASONS["PAYMENT_IMAGE_TOO_LARGE"]},
+                    custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_IMAGE_TOO_LARGE"].format(max_mb=int(PAYMENT_MAX_IMAGE_MB)),
                 )
         except Exception:
             return create_error_response("VAL_INVALID_FORMAT", details={"field": "file_size"})
@@ -521,13 +381,8 @@ def get_payment_upload_url(payment_public_id):
             HttpMethod="PUT",
         )
     except Exception as exc:
-        logger.error(
-            "get_payment_upload_url failed request_id=%s payment_id=%s error=%s",
-            getattr(g, "request_id", None),
-            payment_public_id,
-            exc,
-        )
-        return create_error_response("SYS_INTERNAL_ERROR", custom_message="Failed to prepare upload URL. Please try again.")
+        logger.error(LOG_PAYMENT_UPLOAD_URL_FAILED, getattr(g, "request_id", None), payment_public_id, exc)
+        return create_error_response("SYS_INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_UPLOAD_URL_FAILED"])
 
     return success_response({
         "upload_url": presigned_url,
@@ -537,20 +392,19 @@ def get_payment_upload_url(payment_public_id):
     })
 
 
-@payment_bp.route("/payments/<payment_public_id>/verify-upload", methods=["POST"])
+@payment_bp.route(PAYMENT_VERIFY_UPLOAD_ROUTE, methods=[HTTP_METHOD_POST])
 @require_valid_payment_session(require_write_token=True)
 @limiter.limit(PAYMENT_VERIFY_UPLOAD_RATE_LIMIT)
 @track_performance
 @require_idempotency_key
 def verify_and_upload_payment(payment_public_id):
-    logger.info("verify_upload request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     data = request.json or {}
-    turnstile_token = (data.get("turnstile_token") or "").strip()
+    turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
     try:
         db = get_db()
     except Exception as e:
-        logger.error("verify_and_upload_payment db connection failed request_id=%s error=%s", getattr(g, "request_id", None), e)
-        return create_error_response("INTERNAL_ERROR", custom_message="Payment verification failed. Please try again.")
+        logger.error(LOG_PAYMENT_VERIFY_DB_FAILED, getattr(g, "request_id", None), e)
+        return create_error_response("INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_VERIFY_FAILED"])
 
     ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
     if not ok:
@@ -566,14 +420,20 @@ def verify_and_upload_payment(payment_public_id):
         idempotency_key_header=request.headers.get("X-Idempotency-Key"),
         user_agent=request.headers.get("User-Agent", "")[:512],
         ip_hash=get_ip_hash(),
-        payment_audit_logger=_log_payment_audit,
+        payment_audit_logger=lambda db_handle, event_type, **kwargs: log_payment_audit(
+            db_handle,
+            request=request,
+            device_fingerprint=getattr(g, "device_fingerprint", None),
+            event_type=event_type,
+            **kwargs,
+        ),
     )
 
 
-@payment_bp.route("/payments/<payment_public_id>/status", methods=["GET"])
+@payment_bp.route(PAYMENT_STATUS_ROUTE, methods=[HTTP_METHOD_GET])
 @require_valid_payment_session(
     require_write_token=True,
-    allowed_states=["pending", "processing", "success", "expired", "rejected_fraud", "failed"],
+    allowed_states=PAYMENT_STATUS_READ_ALLOWED,
     skip_expiry_check=True,
 )
 @limiter.limit(PAYMENT_STATUS_RATE_LIMIT)
@@ -581,72 +441,50 @@ def verify_and_upload_payment(payment_public_id):
 @track_performance
 def get_payment_status(payment_public_id):
     """Get current payment status including expiry check."""
-    logger.info("payment_status request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     try:
         db = get_db()
-
-        row = db.execute(text("""
-            SELECT p.id, p.participant_id, p.status, p.expires_at, p.amount, p.verified_at, p.verification_details, p.detected_app, p.auto_rejected, p.verification_attempts, p.signature, pr.session_id
-            FROM payments p
-            JOIN participants pr ON pr.id = p.participant_id
-            WHERE p.public_id = :pid
-        """), {"pid": payment_public_id}).fetchone()
+        row = fetch_payment_status_row(db, payment_public_id)
 
         if not row:
             return create_error_response("PAYMENT_NOT_FOUND")
 
         payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected, verification_attempts, signature, participant_session_id = row
 
-        expected_amount = round(float(PAYMENT_AMOUNT), 2)
         actual_amount = round(float(amount), 2) if amount is not None else None
-        if actual_amount is None or actual_amount != expected_amount:
-            if status in ("pending", "processing"):
+        if actual_amount is None or not is_expected_payment_amount(actual_amount):
+            if status in PAYMENT_ACTIVE_STATUSES:
                 db.execute(text("""
                     UPDATE payments
-                    SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                    SET status = :failed_status, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :pid
-                """), {"pid": payment_id})
+                """), {"pid": payment_id, "failed_status": PAYMENT_STATUS_FAILED})
                 db.commit()
             return create_error_response("INVALID_AMOUNT")
 
-        # Check if payment should be marked as expired
-        now = datetime.now(timezone.utc)
-        is_expired = expires_at and now > expires_at
-
-        if is_expired and status in ("pending", "processing"):
-            db.execute(text("""
-                UPDATE payments
-                SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-                WHERE id = :pid
-            """), {"pid": payment_id})
-            db.commit()
-            status = "expired"
-
-        response = {
-            "payment_id": payment_public_id,
-            "status": status,
-            "amount": float(amount) if amount else None,
-            "expires_at": expires_at.isoformat() if expires_at else None,
-            "is_expired": status == "expired",
-            "time_remaining_seconds": max(0, int((expires_at - now).total_seconds())) if expires_at and status in ("pending", "processing") else 0,
-            "verified_at": verified_at.isoformat() if verified_at else None,
-            "verification_attempts": int(verification_attempts or 0)
-        }
-
-        if verification_details:
-            response["verification_details"] = verification_details
-        if detected_app:
-            response["detected_app"] = detected_app
-        if auto_rejected:
-            response["auto_rejected"] = True
-
-        return success_response(response)
+        status, now = expire_payment_if_needed(
+            db,
+            payment_id=int(payment_id),
+            status=status,
+            expires_at=expires_at,
+        )
+        return success_response(build_payment_status_response(
+            payment_public_id=payment_public_id,
+            status=status,
+            amount=amount,
+            expires_at=expires_at,
+            now=now,
+            verified_at=verified_at,
+            verification_details=verification_details,
+            detected_app=detected_app,
+            auto_rejected=auto_rejected,
+            verification_attempts=verification_attempts,
+        ))
     except Exception as e:
-        logger.error("get payment status failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
+        logger.error(LOG_PAYMENT_STATUS_FAILED, getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
 
-@payment_bp.route("/payments/<payment_public_id>/token", methods=["POST"])
+@payment_bp.route(PAYMENT_TOKEN_ROUTE, methods=[HTTP_METHOD_POST])
 @limiter.limit(PAYMENT_TOKEN_RATE_LIMIT)
 @limiter.limit(PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT, key_func=_payment_rate_key)
 @track_performance
@@ -668,15 +506,12 @@ def mint_payment_token(payment_public_id):
         return create_error_response("MISSING_FIELDS", {"fields": missing})
     try:
         db = get_db()
-        row = db.execute(text("""
-            SELECT p.id, p.participant_id, p.status, p.expires_at, p.signature, pr.session_id
-            FROM payments p
-            JOIN participants pr ON pr.id = p.participant_id
-            WHERE p.public_id = :pid
-              AND pr.public_id = :pub
-              AND pr.session_id = :sid
-            LIMIT 1
-        """), {"pid": payment_public_id, "pub": public_id, "sid": session_id}).fetchone()
+        row = fetch_token_mint_row(
+            db,
+            payment_public_id=payment_public_id,
+            public_id=public_id,
+            session_id=session_id,
+        )
         if not row:
             return create_error_response("AUTH_ACCESS_DENIED")
 
@@ -684,10 +519,10 @@ def mint_payment_token(payment_public_id):
         now = datetime.now(timezone.utc)
         if expires_at and now > expires_at:
             return create_error_response("PAYMENT_EXPIRED")
-        if status not in ("pending", "processing"):
+        if status not in PAYMENT_ACTIVE_STATUSES:
             return create_error_response("PAYMENT_INVALID_STATE")
 
-        token = _issue_payment_write_token(
+        token = issue_payment_write_token(
             db,
             payment_id=int(payment_id),
             payment_public_id=str(payment_public_id),
@@ -699,27 +534,26 @@ def mint_payment_token(payment_public_id):
         )
         db.commit()
         return success_response({
-            "payment_id": payment_public_id,
-            "payment_token": token,
-            "expires_at": expires_at.isoformat() if expires_at else None,
+            RESPONSE_KEY_PAYMENT_ID: payment_public_id,
+            RESPONSE_KEY_PAYMENT_TOKEN: token,
+            RESPONSE_KEY_EXPIRES_AT: expires_at.isoformat() if expires_at else None,
         })
     except Exception as e:
-        logger.error("mint payment token failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
+        logger.error(LOG_PAYMENT_TOKEN_FAILED, getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
 
-@payment_bp.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])
+@payment_bp.route(INTERNAL_PAYMENT_VERIFY_ROUTE, methods=[HTTP_METHOD_POST])
 @limiter.limit(INTERNAL_VERIFY_RATE_LIMIT)
 def verify_payment(payment_public_id):
     """Internal endpoint for payment verification (auth + rate limited)."""
-    logger.info("internal_verify request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     internal_token = (request.headers.get("X-Internal-Token") or "").strip()
     if not INTERNAL_VERIFY_TOKEN or internal_token != INTERNAL_VERIFY_TOKEN:
         return create_error_response("AUTH_ACCESS_DENIED")
     try:
         db = get_db()
     except Exception as e:
-        logger.error("internal verify payment db failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
+        logger.error(LOG_INTERNAL_VERIFY_DB_FAILED, getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
     return process_internal_verify(
