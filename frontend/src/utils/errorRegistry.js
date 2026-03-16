@@ -1,4 +1,5 @@
 import sharedErrorContract from "./error_contract.json";
+import { runtimeConfig } from "../config/runtime";
 
 /**
  * Centralized Error Registry
@@ -277,6 +278,15 @@ export function getErrorMessage(errorCode, lang = DEFAULT_LANGUAGE, params = {})
   Object.keys(params).forEach(key => {
     message = message.replace(`{${key}}`, params[key]);
   });
+
+  const paymentAmount = Number(runtimeConfig.paymentAmount);
+  const rewardAmount = Number(runtimeConfig.rewardAmount);
+  if (Number.isFinite(paymentAmount)) {
+    message = message.replace(/₹1\b/g, `₹${paymentAmount}`);
+  }
+  if (Number.isFinite(rewardAmount)) {
+    message = message.replace(/₹10\b/g, `₹${rewardAmount}`);
+  }
   
   return message;
 }

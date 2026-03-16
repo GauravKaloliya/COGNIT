@@ -1,6 +1,10 @@
 import { useCallback, useRef } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
+import { uiText } from "../utils/uiText";
+import { APP_FLOW } from "../config/appFlow";
+import { TOAST_VARIANTS } from "../constants/ui";
+import { REQUEST_CODES } from "../constants/request";
 
 export function usePaymentFlow({
   publicId,
@@ -18,12 +22,12 @@ export function usePaymentFlow({
     const skipVerification = options?.skipVerification === true;
 
     if (skipVerification) {
-      const switched = await transitionToSurvey();
-      if (switched) {
-        addToast("Participation confirmed successfully", "success");
-      } else {
-        addToast(getErrorMessage("SYS_002_0015"), "error");
-      }
+        const switched = await transitionToSurvey();
+        if (switched) {
+          addToast(uiText("payment.successConfirm"), TOAST_VARIANTS.success);
+        } else {
+          addToast(getErrorMessage("SYS_002_0015"), TOAST_VARIANTS.error);
+        }
       return;
     }
 
@@ -37,23 +41,23 @@ export function usePaymentFlow({
       if (paymentStatus.is_verified) {
         const switched = await transitionToSurvey();
         if (switched) {
-          addToast("Participation confirmed successfully", "success");
+          addToast(uiText("payment.successConfirm"), TOAST_VARIANTS.success);
         } else {
-          addToast(getErrorMessage("SYS_002_0015"), "error");
+          addToast(getErrorMessage("SYS_002_0015"), TOAST_VARIANTS.error);
         }
       } else {
-        addToast(getErrorMessage("PAY_001_0005"), "error");
+        addToast(getErrorMessage("PAY_001_0005"), TOAST_VARIANTS.error);
       }
     } catch (error) {
-      if (error?.code === "REQ_ABORTED") {
+      if (error?.code === REQUEST_CODES.aborted) {
         return;
       }
       const errorMessage = error.message || getErrorMessage("PAY_001_0005");
-      addToast(errorMessage, "error");
+      addToast(errorMessage, TOAST_VARIANTS.error);
       setPaymentVerified(false);
-      if (stage !== "payment") {
-        setStage("payment");
-        setPaymentSubStage("content");
+      if (stage !== APP_FLOW.stages.payment) {
+        setStage(APP_FLOW.stages.payment);
+        setPaymentSubStage(APP_FLOW.paymentSubStages.content);
       }
     } finally {
       verifyAbortRef.current = null;
@@ -61,16 +65,16 @@ export function usePaymentFlow({
   }, [addToast, publicId, setPaymentSubStage, setPaymentVerified, setStage, stage, transitionToSurvey]);
 
   const handlePaymentContentToLink = useCallback(() => {
-    setPaymentSubStage("link");
+    setPaymentSubStage(APP_FLOW.paymentSubStages.link);
   }, [setPaymentSubStage]);
 
   const handlePaymentBack = useCallback(() => {
-    if (paymentSubStage === "link") {
-      setPaymentSubStage("content");
+    if (paymentSubStage === APP_FLOW.paymentSubStages.link) {
+      setPaymentSubStage(APP_FLOW.paymentSubStages.content);
     } else {
-      setStage("user-details");
+      setStage(APP_FLOW.stages.userDetails);
       setPaymentVerified(false);
-      setPaymentSubStage("content");
+      setPaymentSubStage(APP_FLOW.paymentSubStages.content);
     }
   }, [paymentSubStage, setPaymentSubStage, setPaymentVerified, setStage]);
 

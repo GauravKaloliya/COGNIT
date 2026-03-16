@@ -2,48 +2,135 @@ import { runtimeConfig } from "../config/runtime";
 
 const UI_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const UI_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
+export const STORAGE_AREAS = {
+  local: "local",
+  session: "session",
+};
 
-export function getStoredValue(key, fallback) {
-  // Client storage is UX-only and user-controllable.
-  // Backend must remain source of truth for security-critical decisions.
+export const STORAGE_ENVELOPE_FIELDS = {
+  schemaVersion: "__schema_version",
+  savedAt: "saved_at",
+  expiresAt: "expires_at",
+  data: "data",
+};
+
+export const STORAGE_FLAG_VALUES = {
+  enabled: "1",
+};
+
+function getStorageArea(area = STORAGE_AREAS.session) {
+  return area === STORAGE_AREAS.local ? localStorage : sessionStorage;
+}
+
+export function readJsonValue(key, fallback = null, area = STORAGE_AREAS.session) {
   try {
-    const stored = sessionStorage.getItem(key);
-    if (!stored) return fallback;
-    const parsed = JSON.parse(stored);
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      parsed.__schema_version !== UI_STATE_SCHEMA_VERSION ||
-      typeof parsed.saved_at !== "number" ||
-      typeof parsed.expires_at !== "number"
-    ) {
-      return fallback;
-    }
-    if (Date.now() > parsed.expires_at) {
-      sessionStorage.removeItem(key);
-      return fallback;
-    }
-    return parsed.data ?? fallback;
+    const storage = getStorageArea(area);
+    const raw = storage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
   } catch {
     return fallback;
   }
 }
 
-export function saveStoredValue(key, value) {
-  // Client storage is UX-only and user-controllable.
-  // Backend must remain source of truth for security-critical decisions.
+export function writeJsonValue(key, value, area = STORAGE_AREAS.session) {
   try {
-    const now = Date.now();
-    sessionStorage.setItem(
-      key,
-      JSON.stringify({
-        __schema_version: UI_STATE_SCHEMA_VERSION,
-        saved_at: now,
-        expires_at: now + UI_STATE_TTL_MS,
-        data: value
-      })
-    );
+    const storage = getStorageArea(area);
+    storage.setItem(key, JSON.stringify(value));
   } catch {
     // Ignore storage failures; app should remain usable.
   }
+}
+
+export function removeStoredKey(key, area = STORAGE_AREAS.session) {
+  try {
+    const storage = getStorageArea(area);
+    storage.removeItem(key);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+export function getStoredValue(key, fallback) {
+  return readExpiringValue(key, fallback, {
+    schemaVersion: UI_STATE_SCHEMA_VERSION,
+    ttlMs: UI_STATE_TTL_MS,
+  });
+}
+
+export function saveStoredValue(key, value) {
+  writeExpiringValue(key, value, {
+    schemaVersion: UI_STATE_SCHEMA_VERSION,
+    ttlMs: UI_STATE_TTL_MS,
+  });
+}
+
+export function readExpiringValue(key, fallback, options = {}) {
+  const {
+    area = "session",
+    schemaVersion = UI_STATE_SCHEMA_VERSION,
+  } = options;
+
+  try {
+    const storage = getStorageArea(area);
+    const parsed = readJsonValue(key, null, area);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      parsed[STORAGE_ENVELOPE_FIELDS.schemaVersion] !== schemaVersion ||
+      typeof parsed[STORAGE_ENVELOPE_FIELDS.savedAt] !== "number" ||
+      typeof parsed[STORAGE_ENVELOPE_FIELDS.expiresAt] !== "number"
+    ) {
+      return fallback;
+    }
+    if (Date.now() > parsed[STORAGE_ENVELOPE_FIELDS.expiresAt]) {
+      storage.removeItem(key);
+      return fallback;
+    }
+    return parsed[STORAGE_ENVELOPE_FIELDS.data] ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeExpiringValue(key, value, options = {}) {
+  const {
+    area = "session",
+    schemaVersion = UI_STATE_SCHEMA_VERSION,
+    ttlMs = UI_STATE_TTL_MS,
+  } = options;
+
+  try {
+    const now = Date.now();
+    writeJsonValue(key, {
+      [STORAGE_ENVELOPE_FIELDS.schemaVersion]: schemaVersion,
+      [STORAGE_ENVELOPE_FIELDS.savedAt]: now,
+      [STORAGE_ENVELOPE_FIELDS.expiresAt]: now + ttlMs,
+      [STORAGE_ENVELOPE_FIELDS.data]: value,
+    }, area);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+export function getPendingFlag(key, area = STORAGE_AREAS.session) {
+  try {
+    const storage = getStorageArea(area);
+    return storage.getItem(key) === STORAGE_FLAG_VALUES.enabled;
+  } catch {
+    return false;
+  }
+}
+
+export function setPendingFlag(key, area = STORAGE_AREAS.session) {
+  try {
+    const storage = getStorageArea(area);
+    storage.setItem(key, STORAGE_FLAG_VALUES.enabled);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+export function clearPendingFlag(key, area = STORAGE_AREAS.session) {
+  removeStoredKey(key, area);
 }
