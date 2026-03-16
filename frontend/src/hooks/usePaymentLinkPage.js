@@ -63,6 +63,7 @@ export function usePaymentLinkPage({
   const statusAbortRef = useRef(null);
   const createAbortRef = useRef(null);
   const createOnceRef = useRef(false);
+  const lastInitPublicIdRef = useRef(null);
   const verifyAbortRef = useRef(null);
   const qrAbortRef = useRef(null);
 
@@ -583,8 +584,10 @@ export function usePaymentLinkPage({
     let cancelled = false;
 
     const initialize = async () => {
-      if (createOnceRef.current) return;
+      if (!publicId) return;
+      if (createOnceRef.current && lastInitPublicIdRef.current === publicId) return;
       createOnceRef.current = true;
+      lastInitPublicIdRef.current = publicId;
       const restored = loadPaymentViewState();
       const restoredPaymentData = restored?.[PAYMENT_STATE_FIELDS.paymentData];
       const restoredStatus = restored?.[PAYMENT_STATE_FIELDS.paymentStatus] || PAYMENT_STATUS.pending;

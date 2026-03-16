@@ -299,7 +299,7 @@ export default function PaymentLinkPage({
                   )}
                   </div>
 
-                  <div className="payment-status-badge pending">
+                  <div className="payment-status-badge pending two-col">
                     <span>⏱️</span>
                     {uiText("payment.pendingBadge")}
                   </div>
