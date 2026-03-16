@@ -2826,6 +2826,10 @@ body.dark .toast.warning {
   margin-bottom: var(--space-1);
 }
 
+.payment-header .icon-badge {
+  font-size: 3rem;
+}
+
 .payment-card.tone-1 {
   background: #f8fafc;
   border-color: #e2e8f0;
@@ -3751,6 +3755,13 @@ body.dark .payment-qr-code {
   font-size: 0.875rem;
   font-weight: 500;
   flex-wrap: wrap;
+}
+
+.payment-status-badge.two-col {
+  display: inline-grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 0.5rem;
 }
 
 .payment-status-badge.pending {
