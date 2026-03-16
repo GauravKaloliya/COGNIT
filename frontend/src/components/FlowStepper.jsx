@@ -21,7 +21,6 @@ export default function FlowStepper({ stage }) {
           const labelKey = STEP_LABELS[key] || key;
           return (
             <div key={key} className={`flow-step ${state}`} aria-current={state === "active" ? "step" : undefined}>
-              <div className="flow-step-index">{index + 1}</div>
               <div className="flow-step-label">{uiText(labelKey)}</div>
             </div>
           );
