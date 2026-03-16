@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { BROWSER_EVENTS } from "../constants/browser";
 
 export function useNavigationBlocker({ enabled, message, onBlocked }) {
   const blockedRef = useRef(false);
@@ -25,13 +26,12 @@ export function useNavigationBlocker({ enabled, message, onBlocked }) {
     };
 
     window.history.pushState(null, "", window.location.href);
-    window.addEventListener("beforeunload", preventUnload);
-    window.addEventListener("popstate", preventBack);
+    window.addEventListener(BROWSER_EVENTS.beforeUnload, preventUnload);
+    window.addEventListener(BROWSER_EVENTS.popState, preventBack);
 
     return () => {
-      window.removeEventListener("beforeunload", preventUnload);
-      window.removeEventListener("popstate", preventBack);
+      window.removeEventListener(BROWSER_EVENTS.beforeUnload, preventUnload);
+      window.removeEventListener(BROWSER_EVENTS.popState, preventBack);
     };
   }, [enabled, message, onBlocked]);
 }
-

@@ -24,13 +24,13 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
         <header className="header">
           <div className="brand">
             <h1>C.O.G.N.I.T.</h1>
-            <p className="subtitle">Describe each image with as much detail as possible</p>
+            <p className="subtitle">{uiText("app.subtitle")}</p>
           </div>
           <div className="header-actions">
             <button
               className="ghost dark-mode-toggle"
               onClick={onToggleDarkMode}
-              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+              title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
             >
               <ThemeToggleIcon darkMode={darkMode} />
             </button>
@@ -38,8 +38,8 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
         </header>
         <div className="panel">
           <PageSkeleton
-            title="Retrying service health check"
-            subtitle="Reconnecting to backend services"
+            title={uiText("service.retryingTitle")}
+            subtitle={uiText("service.retryingSubtitle")}
             variant="service"
             compact
           />
@@ -62,13 +62,13 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
       <header className="header">
         <div className="brand">
           <h1>C.O.G.N.I.T.</h1>
-          <p className="subtitle">Describe each image with as much detail as possible</p>
+          <p className="subtitle">{uiText("app.subtitle")}</p>
         </div>
         <div className="header-actions">
           <button
             className="ghost dark-mode-toggle"
             onClick={onToggleDarkMode}
-            title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
           >
             <ThemeToggleIcon darkMode={darkMode} />
           </button>
@@ -80,12 +80,12 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
           <PanelState
             variant="warning"
             icon="!"
-            title="Service Unavailable"
+            title={uiText("service.title")}
             message={error || getErrorMessage('SYS_001_0004')}
             actionLabel={
               isRetrying
-                ? "Retrying..."
-                : (retryInSeconds > 0 ? uiText("common.tryAgainIn", { seconds: retryInSeconds }) : "Reload")
+                ? uiText("survey.retryingShort")
+                : (retryInSeconds > 0 ? uiText("common.tryAgainIn", { seconds: retryInSeconds }) : uiText("common.reload"))
             }
             onAction={handleRetry}
             disabled={isRetrying || retryInSeconds > 0}
@@ -96,16 +96,16 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
               What you can try:
             </p>
             <ul className="service-unavailable-list">
-              <li>Check your internet connection</li>
-              <li>Refresh the page and try again</li>
-              <li>Wait a few minutes and retry if the issue persists</li>
-              <li>Contact support if the problem continues</li>
+              <li>{uiText("service.tipCheckConnection")}</li>
+              <li>{uiText("service.tipRefresh")}</li>
+              <li>{uiText("service.tipWait")}</li>
+              <li>{uiText("service.tipContact")}</li>
             </ul>
           </div>
         </div>
       </div>
 
-      <div className="branding-footer">Created by Gaurav Kaloliya</div>
+      <div className="branding-footer">{uiText("app.footerCredit")}</div>
     </div>
   );
 }

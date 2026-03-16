@@ -4,29 +4,25 @@ import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
+import { writeExpiringValue } from "../utils/storage";
+import { APP_FLOW } from "../config/appFlow";
+import { APP_ROUTES } from "../constants/routes";
+import { uiText } from "../utils/uiText";
 
 export default function ErrorPage({ error, resetError, darkMode = false, onToggleDarkMode }) {
   const [reloading, setReloading] = React.useState(false);
 
   const redirectToConsent = () => {
-    const write = (key, value) => {
-      const now = Date.now();
-      sessionStorage.setItem(
-        key,
-        JSON.stringify({
-          __schema_version: runtimeConfig.uiStateSchemaVersion,
-          saved_at: now,
-          expires_at: now + runtimeConfig.uiStateTtlMs,
-          data: value
-        })
-      );
-    };
-    write("stage", "consent");
-    write("paymentSubStage", "content");
-    write("consentGiven", false);
-    write("userDetailsSubmitted", false);
-    write("paymentVerified", false);
-    window.location.assign("/");
+    const write = (key, value) => writeExpiringValue(key, value, {
+      schemaVersion: runtimeConfig.uiStateSchemaVersion,
+      ttlMs: runtimeConfig.uiStateTtlMs,
+    });
+    write(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent);
+    write(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content);
+    write(runtimeConfig.storageKeys.consentGiven, false);
+    write(runtimeConfig.storageKeys.userDetailsSubmitted, false);
+    write(runtimeConfig.storageKeys.paymentVerified, false);
+    window.location.assign(APP_ROUTES.home);
   };
 
   const handleReset = () => {
@@ -42,8 +38,8 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
       <div className="app error-page-centered">
         <div className="panel">
           <PageSkeleton
-            title="Recovering application state"
-            subtitle="Resetting to consent step"
+            title={uiText("error.recoveringTitle")}
+            subtitle={uiText("error.recoveringSubtitle")}
             variant="error"
             compact
           />
@@ -57,13 +53,13 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
       <header className="header">
         <div className="brand">
           <h1>C.O.G.N.I.T.</h1>
-          <p className="subtitle">Describe each image with as much detail as possible</p>
+          <p className="subtitle">{uiText("app.subtitle")}</p>
         </div>
         <div className="header-actions">
           <button
             className="ghost dark-mode-toggle"
             onClick={onToggleDarkMode}
-            title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
           >
             <ThemeToggleIcon darkMode={darkMode} />
           </button>
@@ -74,14 +70,14 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
           <PanelState
             variant="error"
             icon="!"
-            title="Something went wrong"
+            title={uiText("error.title")}
             message={error?.message || getErrorMessage('SYS_002_0017')}
-            actionLabel="Reload"
+            actionLabel={uiText("common.reload")}
             onAction={handleReset}
           />
           {error?.stack && import.meta.env.DEV && (
             <details className="error-details">
-              <summary className="error-details-summary">Error Details</summary>
+              <summary className="error-details-summary">{uiText("error.details")}</summary>
               <pre className="error-details-pre">
                 {error.stack}
               </pre>
