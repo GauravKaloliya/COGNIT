@@ -765,6 +765,8 @@ export function usePaymentLinkPage({
       setUploadFile(file);
       setUploadPreviewUrl(URL.createObjectURL(file));
       setError(null);
+      setFailureReasons([]);
+      setPaymentStatus(PAYMENT_STATUS.pending);
       setRetryInSeconds(0);
     }
   };
@@ -775,6 +777,10 @@ export function usePaymentLinkPage({
     }
     setUploadFile(null);
     setUploadPreviewUrl("");
+    setFailureReasons([]);
+    setPaymentStatus(PAYMENT_STATUS.pending);
+    setError(null);
+    setRetryInSeconds(0);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
