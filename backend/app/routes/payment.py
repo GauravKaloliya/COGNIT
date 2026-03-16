@@ -452,6 +452,10 @@ def get_payment_qr(payment_public_id):
         if not row:
             return create_error_response("PAYMENT_NOT_FOUND")
         amount, status = row
+        expected_amount = round(float(PAYMENT_AMOUNT), 2)
+        actual_amount = round(float(amount), 2) if amount is not None else None
+        if actual_amount is None or actual_amount != expected_amount:
+            return create_error_response("INVALID_AMOUNT")
         if status in ("expired", "failed", "rejected_fraud", "refunded"):
             return create_error_response("PAYMENT_INVALID_STATE")
 
@@ -592,6 +596,18 @@ def get_payment_status(payment_public_id):
             return create_error_response("PAYMENT_NOT_FOUND")
 
         payment_id, participant_id, status, expires_at, amount, verified_at, verification_details, detected_app, auto_rejected, verification_attempts, signature, participant_session_id = row
+
+        expected_amount = round(float(PAYMENT_AMOUNT), 2)
+        actual_amount = round(float(amount), 2) if amount is not None else None
+        if actual_amount is None or actual_amount != expected_amount:
+            if status in ("pending", "processing"):
+                db.execute(text("""
+                    UPDATE payments
+                    SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :pid
+                """), {"pid": payment_id})
+                db.commit()
+            return create_error_response("INVALID_AMOUNT")
 
         # Check if payment should be marked as expired
         now = datetime.now(timezone.utc)
