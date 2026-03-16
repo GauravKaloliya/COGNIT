@@ -37,6 +37,7 @@ export function useConsentPage({ onConsentGiven, systemReady }) {
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const isOnline = useOnlineStatus();
   const saveTimeoutRef = useRef(null);
+  const draftSaveTimeoutRef = useRef(null);
   const lastSavedAtRef = useRef(null);
   const paymentAmountLabel = `₹${runtimeConfig.paymentAmount}`;
   const rewardAmountLabel = `₹${runtimeConfig.rewardAmount}`;
@@ -48,23 +49,29 @@ export function useConsentPage({ onConsentGiven, systemReady }) {
 
   useEffect(() => {
     if (!isOnline) return;
-    setIsSaving(true);
     setSaveError("");
-    try {
-      writeConsentDraft(consentChecked);
-      const now = Date.now();
-      lastSavedAtRef.current = now;
-      setLastSavedAt(now);
-    } catch {
-      setSaveError(uiText("autosave.failed"));
-      if (lastSavedAtRef.current) {
-        setLastSavedAt(lastSavedAtRef.current);
+    setIsSaving(true);
+    if (draftSaveTimeoutRef.current) {
+      clearScheduledTimeout(draftSaveTimeoutRef.current);
+    }
+    draftSaveTimeoutRef.current = scheduleTimeout(() => {
+      try {
+        writeConsentDraft(consentChecked);
+        const now = Date.now();
+        lastSavedAtRef.current = now;
+        setLastSavedAt(now);
+      } catch {
+        setSaveError(uiText("autosave.failed"));
+        if (lastSavedAtRef.current) {
+          setLastSavedAt(lastSavedAtRef.current);
+        }
+      } finally {
+        if (saveTimeoutRef.current) {
+          clearScheduledTimeout(saveTimeoutRef.current);
+        }
+        saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
       }
-    }
-    if (saveTimeoutRef.current) {
-      clearScheduledTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
+    }, 700);
   }, [consentChecked, isOnline]);
 
   useEffect(() => {
@@ -73,6 +80,7 @@ export function useConsentPage({ onConsentGiven, systemReady }) {
 
   useEffect(() => () => {
     if (saveTimeoutRef.current) clearScheduledTimeout(saveTimeoutRef.current);
+    if (draftSaveTimeoutRef.current) clearScheduledTimeout(draftSaveTimeoutRef.current);
   }, []);
 
   const resolveConsentError = useCallback((err) => {

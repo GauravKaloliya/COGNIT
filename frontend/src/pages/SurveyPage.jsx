@@ -140,29 +140,9 @@ export default function SurveyPage({
           <span>{uiText("draft.restored")}</span>
         </div>
       )}
-      {isSaving && (
-        <div className="banner info">
-          <span>{uiText("autosave.saving")}</span>
-        </div>
-      )}
       {saveError && (
         <div className="banner warning">
           <span>{saveError}</span>
-        </div>
-      )}
-      {!isSaving && lastSavedAt && (
-        <div className="banner info">
-          <span>{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
-        </div>
-      )}
-      {draftRestored && (
-        <div className="banner info">
-          <span>{uiText("draft.restored")}</span>
-        </div>
-      )}
-      {lastSavedAt && (
-        <div className="banner info">
-          <span>{uiText("autosave.saved")}</span>
         </div>
       )}
       <div className="meta meta-step-top">
@@ -370,7 +350,6 @@ export default function SurveyPage({
 
       <div className="actions page-actions survey-submit-actions survey-sticky-footer sticky-mobile-actions">
         <div className="submit-info-box">
-          <p className="submit-trust-note">{uiText("survey.autosave")}</p>
           <p className="submit-shortcut-hint">{uiText("survey.submitShortcut")}</p>
         </div>
         <DSButton
