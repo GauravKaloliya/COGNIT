@@ -14,7 +14,7 @@ import { BROWSER_EVENTS } from "../constants/browser";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REGEX_PATTERNS, STORAGE_EVENTS, STRING_PREFIXES } from "../constants/patterns";
 import { createFallbackUuid } from "../constants/ids";
-import { clearScheduledInterval, scheduleInterval, scheduleTimeout } from "../utils/timing";
+import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 
 const ACTIVE_TAB_LOCK_KEY = runtimeConfig.storageKeys.activeTabLock;
 const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
