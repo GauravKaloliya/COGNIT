@@ -5,27 +5,39 @@ from __future__ import annotations
 import re
 import uuid
 
-from sqlalchemy import text
-
 from app.config import (
     PARTICIPANT_PUBLIC_COOKIE_NAME,
     PARTICIPANT_SESSION_COOKIE_NAME,
     SESSION_COOKIE_SAMESITE,
     SESSION_COOKIE_SECURE,
 )
+from app.constants.participant_constants import (
+    PARTICIPANT_FIELD_EMAIL,
+    PARTICIPANT_FIELD_PHONE,
+    PARTICIPANT_FIELD_USERNAME,
+)
+from app.constants.participant_patterns import PUBLIC_ID_REGEX
+from app.services.participant_query_service import (
+    QUERY_CHECK_PARTICIPANT_FIELD_AVAILABLE_TEMPLATE,
+    QUERY_FETCH_GENDERS,
+    QUERY_FETCH_LANGUAGES,
+    QUERY_FIND_EXISTING_PARTICIPANT_CONFLICT,
+    QUERY_GET_EXISTING_SESSION_ID,
+    QUERY_INSERT_PARTICIPANT,
+)
+from sqlalchemy import text
 
 PARTICIPANT_REQUIRED_FIELDS = [
-    "username",
-    "email",
-    "phone",
+    PARTICIPANT_FIELD_USERNAME,
+    PARTICIPANT_FIELD_EMAIL,
+    PARTICIPANT_FIELD_PHONE,
     "gender_code",
     "age",
     "location",
     "language_code",
     "prior_experience",
 ]
-PUBLIC_ID_REGEX = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
-PARTICIPANT_AVAILABILITY_FIELDS = {"username", "email", "phone"}
+PARTICIPANT_AVAILABILITY_FIELDS = {PARTICIPANT_FIELD_USERNAME, PARTICIPANT_FIELD_EMAIL, PARTICIPANT_FIELD_PHONE}
 
 
 def set_participant_cookies(response, public_id: str, session_id: str):
@@ -65,17 +77,7 @@ def generate_session_id(data) -> str:
 
 
 def find_existing_participant_conflict(db, *, username: str, email: str, phone: str):
-    existing = db.execute(text("""
-        SELECT username, email, phone
-        FROM participants
-        WHERE is_deleted = false
-          AND (
-            username = :un
-            OR email = :em
-            OR phone = :ph
-          )
-        LIMIT 1
-    """), {
+    existing = db.execute(QUERY_FIND_EXISTING_PARTICIPANT_CONFLICT, {
         "un": username,
         "em": email,
         "ph": phone,
@@ -101,16 +103,7 @@ def insert_participant(
     ip_hash: str,
     user_agent: str,
 ):
-    result = db.execute(text("""
-        INSERT INTO participants (
-            public_id, session_id, username, email, phone,
-            gender_code, age, location, language_code, prior_experience,
-            ip_hash, user_agent, extra_metadata
-        ) VALUES (
-            :pub, :sid, :un, :em, :ph, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
-        )
-        RETURNING id
-    """), {
+    result = db.execute(QUERY_INSERT_PARTICIPANT, {
         "pub": public_id,
         "sid": session_id,
         "un": str(payload["username"]).strip()[:50],
@@ -131,40 +124,21 @@ def insert_participant(
 
 
 def get_existing_session_id_for_public_id(db, public_id: str):
-    row = db.execute(text("""
-        SELECT session_id
-        FROM participants
-        WHERE public_id = :pub AND is_deleted = false
-        LIMIT 1
-    """), {"pub": public_id}).fetchone()
+    row = db.execute(QUERY_GET_EXISTING_SESSION_ID, {"pub": public_id}).fetchone()
     return row[0] if row else None
 
 
 def is_participant_field_available(db, *, field_name: str, value: str) -> bool:
     if field_name not in PARTICIPANT_AVAILABILITY_FIELDS:
         raise ValueError(f"Unsupported participant availability field: {field_name}")
-    row = db.execute(text(f"""
-        SELECT 1 FROM participants
-        WHERE {field_name} = :value AND is_deleted = false
-        LIMIT 1
-    """), {"value": value}).scalar()
+    row = db.execute(text(QUERY_CHECK_PARTICIPANT_FIELD_AVAILABLE_TEMPLATE.format(field_name=field_name)), {"value": value}).scalar()
     return not bool(row)
 
 
 def fetch_participant_options(db):
-    genders = db.execute(text("""
-        SELECT code, display_name
-        FROM genders
-        WHERE active = true
-        ORDER BY sort_order ASC, display_name ASC
-    """)).fetchall()
+    genders = db.execute(QUERY_FETCH_GENDERS).fetchall()
 
-    languages = db.execute(text("""
-        SELECT code, name, native_name
-        FROM languages
-        WHERE active = true
-        ORDER BY name ASC
-    """)).fetchall()
+    languages = db.execute(QUERY_FETCH_LANGUAGES).fetchall()
 
     return {
         "genders": [

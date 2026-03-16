@@ -14,6 +14,7 @@ import { BROWSER_EVENTS } from "../constants/browser";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REGEX_PATTERNS, STORAGE_EVENTS, STRING_PREFIXES } from "../constants/patterns";
 import { createFallbackUuid } from "../constants/ids";
+import { clearScheduledInterval, scheduleInterval, scheduleTimeout } from "../utils/timing";
 
 const ACTIVE_TAB_LOCK_KEY = runtimeConfig.storageKeys.activeTabLock;
 const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
@@ -162,7 +163,7 @@ export function useAppController() {
 
   useEffect(() => {
     claimActiveTabLock();
-    const heartbeat = window.setInterval(() => {
+    const heartbeat = scheduleInterval(() => {
       claimActiveTabLock();
     }, ACTIVE_TAB_HEARTBEAT_MS);
     const onStorage = (event) => {
@@ -183,7 +184,7 @@ export function useAppController() {
     window.addEventListener(STORAGE_EVENTS.storage, onStorage);
     window.addEventListener(BROWSER_EVENTS.beforeUnload, releaseLockIfOwner);
     return () => {
-      window.clearInterval(heartbeat);
+      clearScheduledInterval(heartbeat);
       window.removeEventListener(STORAGE_EVENTS.storage, onStorage);
       window.removeEventListener(BROWSER_EVENTS.beforeUnload, releaseLockIfOwner);
       releaseLockIfOwner();
@@ -205,7 +206,7 @@ export function useAppController() {
     toastRef.current.set(dedupeKey, now);
     const id = createId();
     setToasts((prev) => [...prev, { id, message, type, action }]);
-    setTimeout(
+    scheduleTimeout(
       () => setToasts((prev) => prev.filter((toast) => toast.id !== id)),
       runtimeConfig.toastAutoDismissMs
     );
@@ -254,7 +255,7 @@ export function useAppController() {
     addToast,
   });
 
-  const { systemReady, systemError, systemChecking, online, retryHealthCheck } = systemHealth;
+  const { systemReady, systemError, systemChecking, online, lastSyncAt, retryHealthCheck } = systemHealth;
 
   const transitionToSurvey = useCallback(async () => {
     setSurveyTransitionInFlight(true);
@@ -363,6 +364,7 @@ export function useAppController() {
     stage,
     surveyCompleted,
     surveyFeedbackReady,
+    setSurveyFeedbackReady,
     userDetailsSubmitted,
   ]);
 
@@ -511,6 +513,7 @@ export function useAppController() {
     systemError,
     systemChecking,
     online,
+    lastSyncAt,
     retryHealthCheck,
     survey,
     surveyCompleted,

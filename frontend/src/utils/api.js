@@ -12,6 +12,7 @@ import {
 } from "../constants/request";
 import { PAYMENT_ERROR_CODES } from "../constants/payment";
 import { API_ROUTES, APP_ROUTES } from "../constants/routes";
+import { reportClientError } from "./errorReporter";
 
 /**
  * Enhanced fetch wrapper with standardized error handling
@@ -261,9 +262,14 @@ export function handleApiError(error, options = {}) {
     onWait
   } = options;
   
-  // Log the error
+  // Report errors safely without leaking sensitive payloads.
   if (context) {
-    console.error(`Error in ${context}:`, error);
+    reportClientError({
+      message: error?.message || String(error || ""),
+      context,
+      route: typeof window !== "undefined" ? window.location.pathname : "",
+      tag: "api_error",
+    });
   }
   
   // Determine appropriate action based on error category

@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.config import (
     API_LATENCY_SLO_MS,
+    DOCS_BASE_URL,
     HEALTH_CACHE_TTL_SECONDS,
     SECURITY_CONTENT_TYPE_OPTIONS,
     SECURITY_FRAME_OPTIONS,
@@ -23,12 +24,24 @@ from app.config import (
     SECURITY_REFERRER_POLICY,
     SECURITY_XSS_PROTECTION,
 )
+from app.constants.error_codes import DETAIL_REASONS, ERROR_MESSAGE_TEMPLATES
+from app.constants.log_messages import LOG_HEALTH_CHECK_FAILED
+from app.constants.observability_constants import OBS_EVENT_DB_SESSION_INIT_FAILED, OBS_EVENT_DEVICE_FINGERPRINT_COMMIT_FAILED, OBS_EVENT_DEVICE_FINGERPRINT_INIT_FAILED, OBS_EVENT_DEVICE_FINGERPRINT_ROLLBACK_FAILED, OBS_EVENT_SECURITY_HEADERS_APPLY_FAILED
 from app.database import engine, get_db
+from app.extensions import app
 from app.utils.helpers import create_error_response, success_response
 from app.utils.observability import log_event
+from app.constants.observability_constants import (
+    OBS_EVENT_DB_SESSION_INIT_FAILED,
+    OBS_EVENT_DEVICE_FINGERPRINT_INIT_FAILED,
+    OBS_EVENT_DEVICE_FINGERPRINT_COMMIT_FAILED,
+    OBS_EVENT_DEVICE_FINGERPRINT_ROLLBACK_FAILED,
+    OBS_EVENT_SECURITY_HEADERS_APPLY_FAILED,
+    OBS_EVENT_REQUEST_RECEIVED,
+    OBS_EVENT_REQUEST_COMPLETED,
+    OBS_EVENT_LATENCY_SLO_BREACH,
+)
 from middleware.device_fingerprint import device_fingerprint_middleware
-
-DOCS_BASE_URL = "https://api.cognit.online"
 
 
 def initialize_request_context(logger: logging.Logger):
@@ -40,17 +53,16 @@ def initialize_request_context(logger: logging.Logger):
     try:
         get_db()
     except Exception as exc:
-        logger.warning("DB session init failed in before_request: %s", exc)
+        log_event(logger, OBS_EVENT_DB_SESSION_INIT_FAILED, level=logging.WARNING, error=str(exc))
 
     try:
         device_fingerprint_middleware()
     except Exception as exc:
-        logger.warning("Device fingerprint middleware failed: %s", exc)
+        log_event(logger, OBS_EVENT_DEVICE_FINGERPRINT_INIT_FAILED, level=logging.WARNING, error=str(exc))
 
-    logger.info("REQUEST %s %s request_id=%s", request.method, request.path, g.request_id)
     log_event(
         logger,
-        "request_received",
+        OBS_EVENT_REQUEST_RECEIVED,
         method=request.method,
         path=request.path,
         request_id=g.request_id,
@@ -78,12 +90,12 @@ def _commit_device_fingerprint_if_needed(response, logger: logging.Logger):
             if db is not None and response.status_code < 400:
                 db.commit()
         except Exception as exc:
-            logger.warning("Device fingerprint commit failed: %s", exc)
+            log_event(logger, OBS_EVENT_DEVICE_FINGERPRINT_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
             try:
                 if db is not None:
                     db.rollback()
             except Exception:
-                pass
+                log_event(logger, OBS_EVENT_DEVICE_FINGERPRINT_ROLLBACK_FAILED, level=logging.WARNING)
 
 
 def _apply_security_headers(response):
@@ -106,7 +118,7 @@ def _apply_security_headers(response):
                 hsts_value += "; preload"
             response.headers.setdefault("Strict-Transport-Security", hsts_value)
     except Exception:
-        pass
+        log_event(logger, OBS_EVENT_SECURITY_HEADERS_APPLY_FAILED, level=logging.WARNING)
     return response
 
 
@@ -121,17 +133,9 @@ def finalize_response(response, logger: logging.Logger):
 
     if hasattr(g, "request_start_time"):
         duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
-        logger.info(
-            "RESPONSE %s %s - %s - %sms request_id=%s",
-            request.method,
-            request.path,
-            response.status_code,
-            duration_ms,
-            request_id,
-        )
         log_event(
             logger,
-            "request_completed",
+            OBS_EVENT_REQUEST_COMPLETED,
             method=request.method,
             path=request.path,
             request_id=request_id,
@@ -141,7 +145,7 @@ def finalize_response(response, logger: logging.Logger):
         if duration_ms > API_LATENCY_SLO_MS:
             log_event(
                 logger,
-                "latency_slo_breach",
+                OBS_EVENT_LATENCY_SLO_BREACH,
                 level=logging.WARNING,
                 method=request.method,
                 path=request.path,
@@ -158,8 +162,8 @@ def handle_payload_too_large(app):
     max_mb = max(1, round(max_bytes / (1024 * 1024)))
     return create_error_response(
         "VAL_FILE_TOO_LARGE",
-        details={"max_mb": max_mb, "reason": "payload_too_large"},
-        custom_message=f"The file is too large. Please upload an image smaller than {max_mb}MB.",
+        details={"max_mb": max_mb, "reason": DETAIL_REASONS["PAYLOAD_TOO_LARGE"]},
+        custom_message=ERROR_MESSAGE_TEMPLATES["PAYLOAD_TOO_LARGE"].format(max_mb=max_mb),
     )
 
 
@@ -169,41 +173,50 @@ def get_cached_health_response(app, logger: logging.Logger):
     if cache and (now_ts - cache.get("checked_at", 0.0)) <= max(0.5, HEALTH_CACHE_TTL_SECONDS):
         cached_ok = bool(cache.get("ok"))
         if cached_ok:
-            return success_response(cache.get("data", {"status": "healthy", "database": "connected"}))
+            response = success_response(cache.get("data", {"status": "healthy", "database": "connected"}))
+            response.headers.setdefault("Cache-Control", f"public, max-age={int(HEALTH_CACHE_TTL_SECONDS)}")
+            return response
         return create_error_response(
             "SYS_INTERNAL_ERROR",
             details=cache.get("details", {}),
-            custom_message=cache.get("message", "Service degraded"),
+            custom_message=cache.get("message", ERROR_MESSAGE_TEMPLATES["SERVICE_DEGRADED"]),
         )
 
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        logger.info("Health check passed")
         data = {"status": "healthy", "database": "connected"}
         app._health_cache = {"checked_at": now_ts, "ok": True, "data": data}
-        return success_response(data)
+        response = success_response(data)
+        response.headers.setdefault("Cache-Control", f"public, max-age={int(HEALTH_CACHE_TTL_SECONDS)}")
+        return response
     except Exception as exc:
-        logger.error("Health check failed: %s", exc)
+        logger.error(LOG_HEALTH_CHECK_FAILED, exc)
         app._health_cache = {
             "checked_at": now_ts,
             "ok": False,
-            "message": "Service degraded",
+            "message": ERROR_MESSAGE_TEMPLATES["SERVICE_DEGRADED"],
             "details": {"status": "degraded"},
         }
         return create_error_response(
             "SYS_INTERNAL_ERROR",
             details={"status": "degraded"},
-            custom_message="Service degraded",
+            custom_message=ERROR_MESSAGE_TEMPLATES["SERVICE_DEGRADED"],
         )
 
 
 def render_api_docs_page(template_name: str, active_page: str):
-    return render_template(
+    response = render_template(
         template_name,
         base_url=DOCS_BASE_URL,
         active_page=active_page,
     )
+    try:
+        response = app.make_response(response)
+        response.headers.setdefault("Cache-Control", "public, max-age=300")
+        return response
+    except Exception:
+        return response
 
 
 def redirect_to_api_docs_endpoints():

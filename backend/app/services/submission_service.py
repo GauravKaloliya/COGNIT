@@ -1,18 +1,27 @@
 import re
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any
 
 from sqlalchemy import text
 
-from app.constants.submission_constants import (
-    AUDIT_EVENT_SUBMISSION,
-    DOMAIN_EVENT_SUBMISSION_SAVED,
-    HTTP_METHOD_POST,
-    SUBMIT_ENDPOINT,
+from app.constants.event_constants import AUDIT_EVENT_SUBMISSION, DOMAIN_EVENT_SUBMISSION_SAVED, HTTP_METHOD_POST
+from app.constants.route_constants import SUBMIT_ROUTE
+from app.constants.submission_patterns import (
+    ALPHABETIC_TOKEN_RE,
+    ATTN_TOKEN_SPLIT_RE,
+    NORMALIZE_NON_ALNUM_RE,
+    NORMALIZE_WHITESPACE_RE,
+    STRICT_TERM_TEMPLATE,
 )
+from app.constants.observability_constants import (
+    OBS_EVENT_SUBMISSION_POST_COMMIT_ENQUEUE_FAILED,
+    OBS_EVENT_SUBMISSION_POST_COMMIT_FAILED,
+)
+from app.utils.observability import log_event
 
-ATTN_TOKEN_SPLIT_RE = re.compile(r"[|,;/]+")
 SUBMIT_POST_COMMIT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="submit-post-commit")
+logger = logging.getLogger(__name__)
 
 
 def safe_non_negative_int(value, default: int = 0) -> int:
@@ -57,8 +66,8 @@ def dynamic_too_fast_threshold(base_threshold: float, word_count: int) -> float:
 
 def normalize_for_attention(text: str) -> str:
     """Normalize text for robust attention keyword matching."""
-    normalized = re.sub(r"[^a-z0-9]+", " ", (text or "").lower())
-    return re.sub(r"\s+", " ", normalized).strip()
+    normalized = NORMALIZE_NON_ALNUM_RE.sub(" ", (text or "").lower())
+    return NORMALIZE_WHITESPACE_RE.sub(" ", normalized).strip()
 
 
 def extract_expected_terms(raw_expected: str):
@@ -77,7 +86,7 @@ def match_attention_terms(description: str, expected_terms, strict: bool):
     matched = []
     for term in expected_terms:
         if strict:
-            if re.search(rf"\b{re.escape(term)}\b", normalized_description):
+            if re.search(STRICT_TERM_TEMPLATE.format(term=re.escape(term)), normalized_description):
                 matched.append(term)
         elif term in normalized_description:
             matched.append(term)
@@ -85,7 +94,7 @@ def match_attention_terms(description: str, expected_terms, strict: bool):
 
 
 def alphabetic_tokens(text: str):
-    return re.findall(r"\b[a-z]{2,}\b", normalize_for_attention(text))
+    return ALPHABETIC_TOKEN_RE.findall(normalize_for_attention(text))
 
 
 def extract_survey_metrics(payload):
@@ -130,7 +139,7 @@ def enqueue_submit_post_commit_tasks(
                 """), {
                     "ev": AUDIT_EVENT_SUBMISSION,
                     "pid": participant_id,
-                    "ep": SUBMIT_ENDPOINT,
+                    "ep": SUBMIT_ROUTE,
                     "meth": HTTP_METHOD_POST,
                     "st": 200,
                     "iph": "0" * 64,
@@ -153,10 +162,10 @@ def enqueue_submit_post_commit_tasks(
                     },
                 )
                 evaluate_priority_and_rewards_fn(conn, participant_id, correlation_id="")
-        except Exception:
-            pass
+        except Exception as exc:
+            log_event(logger, OBS_EVENT_SUBMISSION_POST_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
 
     try:
         SUBMIT_POST_COMMIT_EXECUTOR.submit(_run)
-    except Exception:
-        pass
+    except Exception as exc:
+        log_event(logger, OBS_EVENT_SUBMISSION_POST_COMMIT_ENQUEUE_FAILED, level=logging.WARNING, error=str(exc))

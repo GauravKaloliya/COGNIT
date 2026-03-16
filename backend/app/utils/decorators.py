@@ -4,6 +4,7 @@ Provides error logging and performance tracking decorators.
 """
 
 import functools
+import logging
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -12,10 +13,14 @@ from flask import request
 from sqlalchemy import text
 
 from app.config import PERFORMANCE_LOG_SAMPLE_RATE, ENABLE_PERFORMANCE_METRICS
+from app.constants.error_codes import ERROR_MESSAGE_TEMPLATES
+from app.constants.observability_constants import OBS_EVENT_METRICS_EMIT_FAILED, OBS_EVENT_METRICS_ENQUEUE_FAILED
 from app.database import engine
 from app.utils.helpers import create_error_response
+from app.utils.observability import log_event
 
 _METRICS_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="perf-metrics")
+logger = logging.getLogger(__name__)
 
 
 def _persist_performance_metric(
@@ -47,8 +52,8 @@ def _persist_performance_metric(
 def _enqueue_performance_metric(**kwargs) -> None:
     try:
         _METRICS_EXECUTOR.submit(_persist_performance_metric, **kwargs)
-    except Exception:
-        pass
+    except Exception as exc:
+        log_event(logger, OBS_EVENT_METRICS_ENQUEUE_FAILED, level=logging.WARNING, error=str(exc))
 
 
 # ────────────────────────────────────────────────
@@ -95,7 +100,7 @@ def track_performance(f):
                     )
                 except Exception:
                     # Metrics must never break request handling.
-                    pass
+                    log_event(logger, OBS_EVENT_METRICS_EMIT_FAILED, level=logging.WARNING)
             return resp
         except Exception as exc:
             duration_ms = int((time.perf_counter() - start) * 1000)
@@ -113,7 +118,7 @@ def track_performance(f):
                         response_size_bytes=0,
                     )
                 except Exception:
-                    pass
+                    log_event(logger, OBS_EVENT_METRICS_EMIT_FAILED, level=logging.WARNING)
             raise exc
     return wrapper
 
@@ -129,13 +134,13 @@ def require_idempotency_key(f):
             return create_error_response(
                 "VAL_MISSING_FIELDS",
                 details={"fields": ["X-Idempotency-Key"]},
-                custom_message="Missing required X-Idempotency-Key header.",
+                custom_message=ERROR_MESSAGE_TEMPLATES["IDEMPOTENCY_HEADER_MISSING"],
             )
         if len(key) > 128:
             return create_error_response(
                 "VAL_INVALID_FORMAT",
                 details={"field": "X-Idempotency-Key"},
-                custom_message="X-Idempotency-Key must be <= 128 characters.",
+                custom_message=ERROR_MESSAGE_TEMPLATES["IDEMPOTENCY_HEADER_TOO_LONG"],
             )
         return f(*args, **kwargs)
     return wrapper

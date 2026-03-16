@@ -9,6 +9,8 @@ import FinishedPage from "./pages/FinishedPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import PageSkeleton from "./components/PageSkeleton.jsx";
 import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
+import FlowStepper from "./components/FlowStepper.jsx";
+import DSButton from "./components/design/DSButton.jsx";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { uiText } from "./utils/uiText.js";
 import { useAppController } from "./hooks/useAppController";
@@ -47,7 +49,8 @@ function Toasts({ toasts, onDismiss }) {
         <div key={toast.id} className={`toast ${toast.type}`}>
           <span>{toast.message}</span>
           {toast.action && (
-            <button
+            <DSButton
+              variant="ghost"
               className="toast-action"
               onClick={() => {
                 toast.action.onClick();
@@ -55,11 +58,11 @@ function Toasts({ toasts, onDismiss }) {
               }}
             >
               {toast.action.label}
-            </button>
+            </DSButton>
           )}
-          <button onClick={() => onDismiss(toast.id)} aria-label={uiText("toast.dismiss")}>
+          <DSButton variant="ghost" onClick={() => onDismiss(toast.id)} aria-label={uiText("toast.dismiss")}>
             ×
-          </button>
+          </DSButton>
         </div>
       ))}
     </div>
@@ -94,6 +97,7 @@ export default function App() {
     systemError,
     systemChecking,
     online,
+    lastSyncAt,
     retryHealthCheck,
     survey,
     surveyCompleted,
@@ -115,6 +119,21 @@ export default function App() {
     handlePaymentBack,
     handleAppError,
   } = useAppController();
+  const [showBackToTop, setShowBackToTop] = React.useState(false);
+
+  React.useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const onScroll = () => {
+      if (!media.matches) {
+        setShowBackToTop(false);
+        return;
+      }
+      setShowBackToTop(window.scrollY > 600);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const renderContent = () => {
     if (systemChecking && !systemReady) {
@@ -193,13 +212,14 @@ export default function App() {
               <p className="subtitle">{uiText("app.subtitle")}</p>
             </div>
             <div className="header-actions">
-              <button
-                className="ghost dark-mode-toggle"
-                onClick={toggleDarkMode}
-                title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
-              >
-                <ThemeToggleIcon darkMode={darkMode} />
-              </button>
+            <DSButton
+              variant="ghost"
+              className="dark-mode-toggle"
+              onClick={toggleDarkMode}
+              title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
+            >
+              <ThemeToggleIcon darkMode={darkMode} />
+            </DSButton>
             </div>
           </header>
           <div className="panel status-panel">
@@ -207,9 +227,9 @@ export default function App() {
             <p className="status-message">
               {uiText("app.anotherTabMessage")}
             </p>
-            <button className="primary" onClick={() => claimActiveTabLock()}>
+            <DSButton variant="primary" onClick={() => claimActiveTabLock()}>
               {uiText("app.reclaimTab")}
-            </button>
+            </DSButton>
           </div>
         </div>
       </ErrorBoundary>
@@ -239,22 +259,40 @@ export default function App() {
             <p className="subtitle">{uiText("app.subtitle")}</p>
           </div>
           <div className="header-actions">
-            <button
-              className="ghost dark-mode-toggle"
+            <DSButton
+              variant="ghost"
+              className="dark-mode-toggle"
               onClick={toggleDarkMode}
               title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
             >
               {darkMode ? "☀️" : "🌙"}
-            </button>
+            </DSButton>
             <div className={`status-dot ${online ? "online" : "offline"}`}>{online ? uiText("status.online") : uiText("status.offline")}</div>
           </div>
         </header>
 
-        {!online && systemReady && (
-          <div className="banner warning">
-            {uiText("status.offlineSubmissions")}
+        {systemReady && (
+          <div className={`status-banner ${online ? "online" : "offline"}`}>
+            <div className="status-banner-main">
+              <span className={`status-pill ${online ? "online" : "offline"}`}>
+                {online ? uiText("status.online") : uiText("status.offline")}
+              </span>
+              <span className="status-message">
+                {online ? uiText("status.onlineReady") : uiText("status.offlineSubmissions")}
+              </span>
+            </div>
+            <div className="status-meta">
+              {!online && <span>{uiText("status.offlineRetry")}</span>}
+              <span>
+                {lastSyncAt
+                  ? uiText("status.lastSync", { time: new Date(lastSyncAt).toLocaleTimeString() })
+                  : uiText("status.neverSynced")}
+              </span>
+            </div>
           </div>
         )}
+
+        <FlowStepper stage={stage} />
 
         <div className="route-transition">
           {renderContent()}
@@ -262,6 +300,16 @@ export default function App() {
 
         <div className="branding-footer">{uiText("app.footerCredit")}</div>
       </div>
+
+      {showBackToTop && (
+        <DSButton
+          variant="ghost"
+          className="back-to-top"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        >
+          {uiText("common.backToTop")}
+        </DSButton>
+      )}
 
       <Confetti show={showConfetti} />
       <Toasts toasts={toasts} onDismiss={dismissToast} />

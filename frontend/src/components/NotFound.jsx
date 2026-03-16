@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
+import DSButton from './design/DSButton.jsx';
 import { uiText } from '../utils/uiText.js';
 import { NOT_FOUND_ILLUSTRATION } from '../content/notFoundIllustration.js';
 import { APP_ROUTES } from '../constants/routes.js';
@@ -18,13 +19,14 @@ export default function NotFound({ darkMode = false, onToggleDarkMode }) {
           <h1>C.O.G.N.I.T.</h1>
         </div>
         <div className="header-actions">
-          <button
-            className={`${BUTTON_VARIANTS.ghost} dark-mode-toggle`}
+          <DSButton
+            variant={BUTTON_VARIANTS.ghost}
+            className="dark-mode-toggle"
             onClick={onToggleDarkMode}
             title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
           >
             <ThemeToggleIcon darkMode={darkMode} />
-          </button>
+          </DSButton>
         </div>
       </header>
       <div className="panel">

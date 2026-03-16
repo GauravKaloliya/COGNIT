@@ -4,6 +4,28 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+ERROR_MESSAGE_TEMPLATES = {
+    "IDEMPOTENCY_HEADER_MISSING": "Missing required X-Idempotency-Key header.",
+    "IDEMPOTENCY_HEADER_TOO_LONG": "X-Idempotency-Key must be <= 128 characters.",
+    "PAYMENT_CREATE_FAILED": "Payment creation failed. Please try again.",
+    "PAYMENT_QR_FAILED": "Failed to load payment QR. Please retry.",
+    "PAYMENT_UPLOAD_URL_FAILED": "Failed to prepare upload URL. Please try again.",
+    "PAYMENT_VERIFY_FAILED": "Payment verification failed. Please try again.",
+    "PAYMENT_IMAGE_TOO_LARGE": "The file is too large. Please upload an image smaller than {max_mb}MB.",
+    "PAYMENT_SCREENSHOT_SAVE_FAILED": "Failed to save payment screenshot",
+    "PAYLOAD_TOO_LARGE": "The file is too large. Please upload an image smaller than {max_mb}MB.",
+    "SERVICE_DEGRADED": "Service degraded",
+    "INVALID_IMAGE_DATA": "Invalid image data",
+}
+
+DETAIL_REASONS = {
+    "PAYMENT_IMAGE_TOO_LARGE": "payment_image_too_large",
+    "PAYLOAD_TOO_LARGE": "payload_too_large",
+    "SESSION_EXPIRED_BEFORE_VERIFY": "session_expired_before_verify",
+    "MAX_VERIFY_ATTEMPTS_EXCEEDED": "max_verify_attempts_exceeded",
+    "S3_UPLOAD_FAILED": "s3_upload_failed",
+}
+
 
 def build_error_codes(
     *,

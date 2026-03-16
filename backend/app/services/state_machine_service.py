@@ -3,19 +3,34 @@ from typing import Dict, Set, Optional
 
 from sqlalchemy import text
 
+from app.constants.event_constants import AUDIT_EVENT_PAYMENT_STATUS_TRANSITION
+from app.constants.participant_constants import (
+    PARTICIPANT_PAYMENT_STATUS_PAID,
+    PARTICIPANT_STAGE_FINISHED,
+    PARTICIPANT_STAGE_SURVEY,
+)
+from app.constants.payment_constants import (
+    PAYMENT_STATUS_EXPIRED,
+    PAYMENT_STATUS_FAILED,
+    PAYMENT_STATUS_PENDING,
+    PAYMENT_STATUS_PROCESSING,
+    PAYMENT_STATUS_REFUNDED,
+    PAYMENT_STATUS_REJECTED_FRAUD,
+    PAYMENT_STATUS_SUCCESS,
+)
 
 PAYMENT_STATUS_TRANSITIONS: Dict[str, Set[str]] = {
-    "pending": {"processing", "expired", "failed", "rejected_fraud"},
-    "processing": {"success", "rejected_fraud", "failed"},
-    "success": set(),
-    "rejected_fraud": set(),
-    "expired": set(),
-    "failed": set(),
-    "refunded": set(),
+    PAYMENT_STATUS_PENDING: {PAYMENT_STATUS_PROCESSING, PAYMENT_STATUS_EXPIRED, PAYMENT_STATUS_FAILED, PAYMENT_STATUS_REJECTED_FRAUD},
+    PAYMENT_STATUS_PROCESSING: {PAYMENT_STATUS_SUCCESS, PAYMENT_STATUS_REJECTED_FRAUD, PAYMENT_STATUS_FAILED},
+    PAYMENT_STATUS_SUCCESS: set(),
+    PAYMENT_STATUS_REJECTED_FRAUD: set(),
+    PAYMENT_STATUS_EXPIRED: set(),
+    PAYMENT_STATUS_FAILED: set(),
+    PAYMENT_STATUS_REFUNDED: set(),
 }
 
 SUBMISSION_WORKFLOW_ALLOWED_STAGES_BY_PAYMENT: Dict[str, Set[str]] = {
-    "paid": {"survey", "finished"},
+    PARTICIPANT_PAYMENT_STATUS_PAID: {PARTICIPANT_STAGE_SURVEY, PARTICIPANT_STAGE_FINISHED},
 }
 
 
@@ -95,7 +110,7 @@ def transition_payment_status(
             """
         ),
         {
-            "event_type": "payment_status_transition",
+            "event_type": AUDIT_EVENT_PAYMENT_STATUS_TRANSITION,
             "payment_id": int(payment_id),
             "details": f"{from_status}->{to_status}",
             "request_data": '{"request_id": "%s"}' % (request_id or ""),

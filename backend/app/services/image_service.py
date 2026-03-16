@@ -3,31 +3,41 @@
 from __future__ import annotations
 
 import random
+import logging
 import time
 from typing import Optional
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import text
-
 from app.config import (
     IMAGE_PICK_ATTEMPTS_ATTENTION,
     IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
-    IMAGE_PICK_ATTEMPTS_FALLBACK,
     IMAGE_POOL_CACHE_TTL_SECONDS,
     IMAGE_RESERVATION_TTL_SECONDS,
     IMAGE_VALIDATE_URL_AVAILABILITY,
     S3_BUCKET_NAME,
 )
 from app.extensions import s3
+from app.services.image_query_service import (
+    QUERY_CLEANUP_STALE_RESERVATIONS,
+    QUERY_LOAD_IMAGE_POOL,
+    QUERY_RESERVE_IMAGE,
+)
+from app.utils.observability import log_event
+from app.constants.observability_constants import OBS_EVENT_IMAGE_CLEANUP_FAILED, OBS_EVENT_IMAGE_EXTRACT_KEY_FAILED, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, OBS_EVENT_IMAGE_RESERVE_FAILED, OBS_EVENT_IMAGE_URL_HEAD_FAILED
 
-
+IMAGE_POOL_CACHE_KEY_EXPIRES_AT = "expires_at"
+IMAGE_POOL_CACHE_KEY_ATTENTION = "attention"
+IMAGE_POOL_CACHE_KEY_NON_ATTENTION = "non_attention"
+IMAGE_POOL_CACHE_KEY_ALL = "all"
+IMAGE_CACHE_KEY_OK = "ok"
 IMAGE_POOL_CACHE = {
-    "expires_at": 0.0,
-    "attention": [],
-    "non_attention": [],
-    "all": [],
+    IMAGE_POOL_CACHE_KEY_EXPIRES_AT: 0.0,
+    IMAGE_POOL_CACHE_KEY_ATTENTION: [],
+    IMAGE_POOL_CACHE_KEY_NON_ATTENTION: [],
+    IMAGE_POOL_CACHE_KEY_ALL: [],
 }
 IMAGE_URL_AVAILABILITY_CACHE = {}
+logger = logging.getLogger(__name__)
 
 
 def extract_s3_key_if_cognit_url(image_url: str) -> Optional[str]:
@@ -41,7 +51,8 @@ def extract_s3_key_if_cognit_url(image_url: str) -> Optional[str]:
         if parsed.netloc.startswith(f"{S3_BUCKET_NAME}.s3"):
             return unquote(parsed.path.lstrip("/"))
         return None
-    except Exception:
+    except Exception as exc:
+        log_event(logger, OBS_EVENT_IMAGE_EXTRACT_KEY_FAILED, level=logging.WARNING, error=str(exc))
         return None
 
 
@@ -53,39 +64,30 @@ def is_image_url_available(image_url: str) -> bool:
         return False
     now = time.time()
     cached = IMAGE_URL_AVAILABILITY_CACHE.get(image_url)
-    if cached and now < cached.get("expires_at", 0):
-        return bool(cached.get("ok"))
+    if cached and now < cached.get(IMAGE_POOL_CACHE_KEY_EXPIRES_AT, 0):
+        return bool(cached.get(IMAGE_CACHE_KEY_OK))
     key = extract_s3_key_if_cognit_url(image_url)
     if key:
         try:
             s3.head_object(Bucket=S3_BUCKET_NAME, Key=key)
             ok = True
-        except Exception:
+        except Exception as exc:
+            log_event(logger, OBS_EVENT_IMAGE_URL_HEAD_FAILED, level=logging.WARNING, error=str(exc))
             ok = False
     else:
         ok = True
     IMAGE_URL_AVAILABILITY_CACHE[image_url] = {
-        "ok": bool(ok),
-        "expires_at": now + max(60.0, float(IMAGE_POOL_CACHE_TTL_SECONDS)),
+        IMAGE_CACHE_KEY_OK: bool(ok),
+        IMAGE_POOL_CACHE_KEY_EXPIRES_AT: now + max(60.0, float(IMAGE_POOL_CACHE_TTL_SECONDS)),
     }
     return bool(ok)
 
 
 def ensure_image_pool_cache(db) -> None:
     now = time.time()
-    if now < float(IMAGE_POOL_CACHE["expires_at"]):
+    if now < float(IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_EXPIRES_AT]):
         return
-    rows = db.execute(text("""
-        SELECT
-            i.image_id,
-            i.url,
-            EXISTS (
-                SELECT 1
-                FROM attention_checks ac
-                WHERE ac.image_id = i.id AND ac.is_active = true
-            ) AS is_attention
-        FROM images i
-    """)).fetchall()
+    rows = db.execute(QUERY_LOAD_IMAGE_POOL).fetchall()
     attention_rows = []
     non_attention_rows = []
     all_rows = []
@@ -98,10 +100,10 @@ def ensure_image_pool_cache(db) -> None:
             attention_rows.append(item)
         else:
             non_attention_rows.append(item)
-    IMAGE_POOL_CACHE["attention"] = attention_rows
-    IMAGE_POOL_CACHE["non_attention"] = non_attention_rows
-    IMAGE_POOL_CACHE["all"] = all_rows
-    IMAGE_POOL_CACHE["expires_at"] = now + max(5.0, float(IMAGE_POOL_CACHE_TTL_SECONDS))
+    IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ATTENTION] = attention_rows
+    IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_NON_ATTENTION] = non_attention_rows
+    IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ALL] = all_rows
+    IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_EXPIRES_AT] = now + max(5.0, float(IMAGE_POOL_CACHE_TTL_SECONDS))
 
 
 def pick_from_pool(rows, excluded_set, attempts):
@@ -121,63 +123,39 @@ def pick_from_pool(rows, excluded_set, attempts):
 
 def reserve_image(db, image_id: str, participant_id: int | None, now_ts):
     try:
-        row = db.execute(text("""
-            INSERT INTO image_reservations (
-                image_id, participant_id, reserved_at, expires_at, released_at
-            ) VALUES (
-                :iid, :pid, :now, :now, NULL
-            )
-            ON CONFLICT (image_id) DO UPDATE SET
-                participant_id = EXCLUDED.participant_id,
-                reserved_at = EXCLUDED.reserved_at,
-                expires_at = EXCLUDED.expires_at,
-                released_at = NULL
-            WHERE image_reservations.released_at IS NOT NULL
-            RETURNING image_id
-        """), {"iid": image_id, "pid": participant_id, "now": now_ts}).fetchone()
+        row = db.execute(QUERY_RESERVE_IMAGE, {"iid": image_id, "pid": participant_id, "now": now_ts}).fetchone()
         return bool(row)
-    except Exception:
+    except Exception as exc:
+        log_event(logger, OBS_EVENT_IMAGE_RESERVE_FAILED, level=logging.WARNING, error=str(exc))
         return True
 
 
 def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
     ttl_value = ttl_seconds if ttl_seconds is not None else IMAGE_RESERVATION_TTL_SECONDS
     try:
-        db.execute(text("""
-            UPDATE image_reservations
-            SET released_at = CURRENT_TIMESTAMP
-            WHERE released_at IS NULL
-              AND reserved_at <= (CURRENT_TIMESTAMP - (:ttl || ' seconds')::interval)
-        """), {"ttl": int(max(60, ttl_value))})
-    except Exception:
-        pass
+        db.execute(QUERY_CLEANUP_STALE_RESERVATIONS, {"ttl": int(max(60, ttl_value))})
+    except Exception as exc:
+        log_event(logger, OBS_EVENT_IMAGE_CLEANUP_FAILED, level=logging.WARNING, error=str(exc))
 
 
 def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int):
     ensure_image_pool_cache(db)
     cleanup_stale_reservations(db)
     row = None
-    attempt_limit = max(3, min(10, len(IMAGE_POOL_CACHE["all"]) or 3))
+    attempt_limit = max(3, min(10, len(IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ALL]) or 3))
     for _ in range(attempt_limit):
         if should_prioritize_attention:
             row = pick_from_pool(
-                IMAGE_POOL_CACHE["attention"],
+                IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ATTENTION],
                 excluded_set,
                 IMAGE_PICK_ATTEMPTS_ATTENTION,
             )
 
         if not row:
             row = pick_from_pool(
-                IMAGE_POOL_CACHE["non_attention"],
+                IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_NON_ATTENTION],
                 excluded_set,
                 IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
-            )
-
-        if not row and should_prioritize_attention:
-            row = pick_from_pool(
-                IMAGE_POOL_CACHE["all"],
-                excluded_set,
-                IMAGE_PICK_ATTEMPTS_FALLBACK,
             )
 
         if not row:
@@ -186,8 +164,8 @@ def select_random_image_for_participant(db, *, excluded_set, participant_id: int
         if reserve_image(db, row[0], participant_id, now_ts):
             try:
                 db.commit()
-            except Exception:
-                pass
+            except Exception as exc:
+                log_event(logger, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
             return row
 
         excluded_set.add(row[0])

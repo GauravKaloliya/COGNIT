@@ -16,6 +16,7 @@ export const API_ROUTES = {
   paymentStatus: (paymentId) => `/payments/${paymentId}/status`,
   paymentToken: (paymentId) => `/payments/${paymentId}/token`,
   paymentVerifyUpload: (paymentId) => `/payments/${paymentId}/verify-upload`,
+  clientError: "/client-errors",
   checkUsername: (username) => `/check-username?username=${encodeURIComponent(username)}`,
   checkEmail: (email) => `/check-email?email=${encodeURIComponent(email)}`,
   checkPhone: (phone) => `/check-phone?phone=${encodeURIComponent(phone)}`,

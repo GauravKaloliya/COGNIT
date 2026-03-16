@@ -26,6 +26,31 @@ from app.config import (
     PRIORITY_ATTENTION_THRESHOLD,
     SUBMIT_RATE_LIMIT,
 )
+from app.constants.event_constants import HTTP_METHOD_POST
+from app.constants.log_messages import LOG_SUBMISSION_FAILED
+from app.utils.observability import log_event
+from app.constants.request_keys import (
+    REQUEST_KEY_DESCRIPTION,
+    REQUEST_KEY_FEEDBACK,
+    REQUEST_KEY_IDEMPOTENCY_KEY,
+    REQUEST_KEY_IMAGE_ID,
+    REQUEST_KEY_NETWORK_DISCONNECTS,
+    REQUEST_KEY_PAGE_CLOSE_ATTEMPTS,
+    REQUEST_KEY_PUBLIC_ID,
+    REQUEST_KEY_RATING,
+    REQUEST_KEY_SURVEY_CLICKS,
+    REQUEST_KEY_SURVEY_KEYPRESSES,
+    REQUEST_KEY_SURVEY_MAX_SCROLL_DEPTH_PCT,
+    REQUEST_KEY_SURVEY_NETWORK_DISCONNECTS,
+    REQUEST_KEY_SURVEY_PAGE_CLOSE_ATTEMPTS,
+    REQUEST_KEY_SURVEY_PAGE_VIEWS,
+    REQUEST_KEY_SURVEY_TAB_SWITCHES,
+    REQUEST_KEY_SURVEY_TIME_SPENT_MS,
+    REQUEST_KEY_TAB_SWITCH_COUNT,
+    REQUEST_KEY_TIME_SPENT_SECONDS,
+    REQUEST_KEY_TURNSTILE_TOKEN,
+)
+from app.constants.route_constants import SUBMIT_ROUTE
 from app.constants.submission_constants import (
     ATTENTION_FAILURE_COPIED_PATTERN,
     ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT,
@@ -45,7 +70,24 @@ from app.constants.submission_constants import (
     SUBMISSION_META_KEY_MATCHED_TERMS,
     SUBMISSION_META_KEY_STRICT,
     SUBMISSION_RESPONSE_STATUS,
-    SUBMIT_ENDPOINT,
+)
+from app.constants.response_keys import (
+    RESPONSE_KEY_ATTENTION_PASSED,
+    RESPONSE_KEY_ATTENTION_STATUS,
+    RESPONSE_KEY_ENGAGEMENT,
+    RESPONSE_KEY_FLAGGED_TOO_FAST,
+    RESPONSE_KEY_IS_ATTENTION_CHECK,
+    RESPONSE_KEY_IS_SURVEY,
+    RESPONSE_KEY_QUALITY_SCORE,
+    RESPONSE_KEY_STATUS,
+    RESPONSE_KEY_SURVEY_INDEX,
+    RESPONSE_KEY_WORD_COUNT,
+)
+from app.constants.observability_constants import (
+    OBS_EVENT_SUBMISSION_COMMIT_FAILED,
+    OBS_EVENT_SUBMISSION_RELEASE_RESERVATION_FAILED,
+    OBS_EVENT_SUBMISSION_ROLLBACK_FAILED,
+    OBS_EVENT_SUBMIT_BLOCKED_STATE_MACHINE,
 )
 from app.extensions import limiter
 from app.database import get_db, engine
@@ -107,7 +149,7 @@ logger = logging.getLogger(__name__)
 # Routes
 # ────────────────────────────────────────────────
 
-@submission_bp.route("/submit", methods=["POST"])
+@submission_bp.route(SUBMIT_ROUTE, methods=[HTTP_METHOD_POST])
 @require_payment_completed
 @limiter.limit(SUBMIT_RATE_LIMIT)
 @track_performance
@@ -115,14 +157,13 @@ logger = logging.getLogger(__name__)
 def submit():
     """Submit an image description or survey response."""
     d = request.json or {}
-    turnstile_token = (d.get("turnstile_token") or "").strip()
-    logger.info("submit request_id=%s", getattr(g, "request_id", None))
+    turnstile_token = (d.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
     idempotency_key = (
         request.headers.get("X-Idempotency-Key")
-        or d.get("idempotency_key")
+        or d.get(REQUEST_KEY_IDEMPOTENCY_KEY)
         or ""
     ).strip()[:128]
-    public_id = d.get("public_id")
+    public_id = d.get(REQUEST_KEY_PUBLIC_ID)
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
@@ -130,20 +171,20 @@ def submit():
     if not turnstile_ok:
         return create_error_response("BOT_CHALLENGE_FAILED")
 
-    image_id_str = d.get("image_id")
+    image_id_str = d.get(REQUEST_KEY_IMAGE_ID)
     if not image_id_str:
         return create_error_response("MISSING_FIELDS", {"fields": ["image_id"]})
 
-    description = (d.get("description") or "").strip()
+    description = (d.get(REQUEST_KEY_DESCRIPTION) or "").strip()
     if len(description) < MIN_DESCRIPTION_LENGTH or len(description) > MAX_DESCRIPTION_LENGTH:
         return create_error_response("DESCRIPTION_LENGTH")
 
-    feedback = (d.get("feedback") or "").strip()
+    feedback = (d.get(REQUEST_KEY_FEEDBACK) or "").strip()
     if len(feedback) < MIN_FEEDBACK_LENGTH or len(feedback) > MAX_FEEDBACK_LENGTH:
         return create_error_response("FEEDBACK_LENGTH")
 
     try:
-        rating = int(d["rating"])
+        rating = int(d[REQUEST_KEY_RATING])
         if not MIN_RATING <= rating <= MAX_RATING:
             raise ValueError
     except:
@@ -153,7 +194,7 @@ def submit():
     if word_count < MIN_WORD_COUNT:
         return create_error_response("WORD_COUNT", {"actual": word_count})
 
-    ts = clamp_time_spent_seconds(d.get("time_spent_seconds"))
+    ts = clamp_time_spent_seconds(d.get(REQUEST_KEY_TIME_SPENT_SECONDS))
 
     # Derive survey/attention behavior from selected image, not client defaults.
     is_survey = False
@@ -162,32 +203,32 @@ def submit():
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
     request_hash = build_request_hash({
-        "public_id": public_id,
-        "image_id": image_id_str,
-        "description": description,
-        "feedback": feedback,
-        "rating": rating,
-        "time_spent_seconds": ts,
-        "tab_switch_count": d.get("tab_switch_count"),
-        "page_close_attempts": d.get("page_close_attempts"),
-        "network_disconnects": d.get("network_disconnects"),
+        REQUEST_KEY_PUBLIC_ID: public_id,
+        REQUEST_KEY_IMAGE_ID: image_id_str,
+        REQUEST_KEY_DESCRIPTION: description,
+        REQUEST_KEY_FEEDBACK: feedback,
+        REQUEST_KEY_RATING: rating,
+        REQUEST_KEY_TIME_SPENT_SECONDS: ts,
+        REQUEST_KEY_TAB_SWITCH_COUNT: d.get(REQUEST_KEY_TAB_SWITCH_COUNT),
+        REQUEST_KEY_PAGE_CLOSE_ATTEMPTS: d.get(REQUEST_KEY_PAGE_CLOSE_ATTEMPTS),
+        REQUEST_KEY_NETWORK_DISCONNECTS: d.get(REQUEST_KEY_NETWORK_DISCONNECTS),
     })
     survey_metrics = extract_survey_metrics({
-        "survey_time_spent_ms": d.get("survey_time_spent_ms"),
-        "survey_page_views": d.get("survey_page_views"),
-        "survey_tab_switches": d.get("survey_tab_switches"),
-        "survey_page_close_attempts": d.get("survey_page_close_attempts"),
-        "survey_network_disconnects": d.get("survey_network_disconnects"),
-        "survey_max_scroll_depth_pct": d.get("survey_max_scroll_depth_pct"),
-        "survey_clicks": d.get("survey_clicks"),
-        "survey_keypresses": d.get("survey_keypresses"),
+        REQUEST_KEY_SURVEY_TIME_SPENT_MS: d.get(REQUEST_KEY_SURVEY_TIME_SPENT_MS),
+        REQUEST_KEY_SURVEY_PAGE_VIEWS: d.get(REQUEST_KEY_SURVEY_PAGE_VIEWS),
+        REQUEST_KEY_SURVEY_TAB_SWITCHES: d.get(REQUEST_KEY_SURVEY_TAB_SWITCHES),
+        REQUEST_KEY_SURVEY_PAGE_CLOSE_ATTEMPTS: d.get(REQUEST_KEY_SURVEY_PAGE_CLOSE_ATTEMPTS),
+        REQUEST_KEY_SURVEY_NETWORK_DISCONNECTS: d.get(REQUEST_KEY_SURVEY_NETWORK_DISCONNECTS),
+        REQUEST_KEY_SURVEY_MAX_SCROLL_DEPTH_PCT: d.get(REQUEST_KEY_SURVEY_MAX_SCROLL_DEPTH_PCT),
+        REQUEST_KEY_SURVEY_CLICKS: d.get(REQUEST_KEY_SURVEY_CLICKS),
+        REQUEST_KEY_SURVEY_KEYPRESSES: d.get(REQUEST_KEY_SURVEY_KEYPRESSES),
     })
 
     try:
         db = get_db()
         _idem, replay = load_idempotent_response(
             db,
-            endpoint=SUBMIT_ENDPOINT,
+            endpoint=SUBMIT_ROUTE,
             idempotency_key=idempotency_key,
             participant_public_id=public_id,
             request_hash=request_hash,
@@ -205,11 +246,13 @@ def submit():
         try:
             ensure_submission_workflow_state(p_row[4], p_row[5])
         except StateTransitionError as workflow_err:
-            logger.warning(
-                "submit blocked by state machine request_id=%s public_id=%s reason=%s",
-                getattr(g, "request_id", None),
-                public_id,
-                workflow_err,
+            log_event(
+                logger,
+                OBS_EVENT_SUBMIT_BLOCKED_STATE_MACHINE,
+                level=logging.WARNING,
+                request_id=getattr(g, "request_id", None),
+                public_id=public_id,
+                reason=str(workflow_err),
             )
             return create_error_response("PAYMENT_INVALID_STATE")
 
@@ -404,7 +447,7 @@ def submit():
         try:
             release_image_reservation(db, image_id=image_id_str, participant_id=participant_id)
         except Exception:
-            pass
+            log_event(logger, OBS_EVENT_SUBMISSION_RELEASE_RESERVATION_FAILED, level=logging.WARNING)
 
         db.commit()
         enqueue_submit_post_commit_tasks(
@@ -420,33 +463,24 @@ def submit():
             quality=float(quality),
             word_count=int(word_count),
         )
-        logger.info(
-            "submission accepted request_id=%s participant_id=%s submission_id=%s image_id=%s attention=%s passed=%s",
-            getattr(g, "request_id", None),
-            participant_id,
-            submission_id,
-            image_id_str,
-            is_attention,
-            attention_passed,
-        )
 
         response_payload = {
-            "status": SUBMISSION_RESPONSE_STATUS,
-            "word_count": word_count,
-            "quality_score": quality,
-            "attention_passed": attention_passed,
-            "flagged_too_fast": too_fast,
-            "survey_index": survey_index,
-            "is_survey": is_survey,
-            "is_attention_check": is_attention,
-            "engagement": {
+            RESPONSE_KEY_STATUS: SUBMISSION_RESPONSE_STATUS,
+            RESPONSE_KEY_WORD_COUNT: word_count,
+            RESPONSE_KEY_QUALITY_SCORE: quality,
+            RESPONSE_KEY_ATTENTION_PASSED: attention_passed,
+            RESPONSE_KEY_FLAGGED_TOO_FAST: too_fast,
+            RESPONSE_KEY_SURVEY_INDEX: survey_index,
+            RESPONSE_KEY_IS_SURVEY: is_survey,
+            RESPONSE_KEY_IS_ATTENTION_CHECK: is_attention,
+            RESPONSE_KEY_ENGAGEMENT: {
                 "tab_switch_count": tab_switch_count,
                 "page_close_attempts": page_close_attempts,
                 "network_disconnects": network_disconnects,
                 "survey_metrics": survey_metrics,
             },
-            "attention_status": {
-                "is_attention_check": is_attention,
+            RESPONSE_KEY_ATTENTION_STATUS: {
+                RESPONSE_KEY_IS_ATTENTION_CHECK: is_attention,
                 "passed": attention_passed if is_attention else None,
                 "expected_terms": attention_expected_terms,
                 "matched_terms": attention_matched_terms,
@@ -458,7 +492,7 @@ def submit():
         }
         save_idempotent_response(
             db,
-            endpoint=SUBMIT_ENDPOINT,
+            endpoint=SUBMIT_ROUTE,
             idempotency_key=idempotency_key,
             participant_public_id=public_id,
             request_hash=request_hash,
@@ -468,15 +502,15 @@ def submit():
         try:
             db.commit()
         except Exception:
-            pass
+            log_event(logger, OBS_EVENT_SUBMISSION_COMMIT_FAILED, level=logging.WARNING)
         return success_response(response_payload)
 
     except Exception as exc:
         try:
             db.rollback()
-        except:
-            pass
+        except Exception:
+            log_event(logger, OBS_EVENT_SUBMISSION_ROLLBACK_FAILED, level=logging.WARNING, error=str(exc))
         if "unique" in str(exc).lower() and "survey_index" in str(exc):
             return create_error_response("SURVEY_EXISTS")
-        logger.error("submit failed request_id=%s public_id=%s error=%s", getattr(g, "request_id", None), public_id, exc)
+        logger.error(LOG_SUBMISSION_FAILED, getattr(g, "request_id", None), public_id, exc)
         return create_error_response("DATABASE_ERROR")

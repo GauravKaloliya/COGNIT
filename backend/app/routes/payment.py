@@ -26,10 +26,61 @@ from app.config import (
     PARTICIPANT_SESSION_COOKIE_NAME,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
 )
+from app.constants.event_constants import (
+    AUDIT_EVENT_PAYMENT_CREATE_FAILED,
+    AUDIT_EVENT_PAYMENT_CREATE_REUSED_ACTIVE,
+    AUDIT_EVENT_PAYMENT_CREATE_SUCCESS,
+    HTTP_METHOD_GET,
+    HTTP_METHOD_POST,
+)
+from app.constants.error_codes import DETAIL_REASONS, ERROR_MESSAGE_TEMPLATES
+from app.constants.audit_details import (
+    AUDIT_DETAIL_PAYMENT_CREATED,
+    AUDIT_DETAIL_PAYMENT_CREATE_FAILED,
+    AUDIT_DETAIL_PAYMENT_REUSED,
+)
+from app.constants.log_messages import (
+    LOG_INTERNAL_VERIFY_DB_FAILED,
+    LOG_PAYMENT_CREATE_DB_FAILED,
+    LOG_PAYMENT_CREATE_FAILED,
+    LOG_PAYMENT_QR_FAILED,
+    LOG_PAYMENT_STATUS_FAILED,
+    LOG_PAYMENT_TOKEN_FAILED,
+    LOG_PAYMENT_UPLOAD_URL_FAILED,
+    LOG_PAYMENT_VERIFY_DB_FAILED,
+)
+from app.constants.request_keys import (
+    REQUEST_KEY_AMOUNT,
+    REQUEST_KEY_FILE_EXTENSION,
+    REQUEST_KEY_FILE_SIZE,
+    REQUEST_KEY_IDEMPOTENCY_KEY,
+    REQUEST_KEY_MIME_TYPE,
+    REQUEST_KEY_PUBLIC_ID,
+    REQUEST_KEY_SHA256,
+    REQUEST_KEY_TURNSTILE_TOKEN,
+    REQUEST_KEY_UPLOAD_OBJECT_KEY,
+)
+from app.constants.response_keys import (
+    RESPONSE_KEY_EXPIRES_AT,
+    RESPONSE_KEY_PAYMENT_ID,
+    RESPONSE_KEY_PAYMENT_TOKEN,
+    RESPONSE_KEY_QR_BASE64,
+)
 from app.constants.payment_constants import (
     PAYMENT_ACTIVE_STATUSES,
     PAYMENT_QR_BLOCKED_STATUSES,
+    PAYMENT_STATUS_FAILED,
     PAYMENT_STATUS_READ_ALLOWED,
+)
+from app.constants.route_constants import (
+    INTERNAL_PAYMENT_VERIFY_ROUTE,
+    PAYMENTS_CREATE_ROUTE,
+    PAYMENT_QR_ROUTE,
+    PAYMENT_STATUS_ROUTE,
+    PAYMENT_TOKEN_ROUTE,
+    PAYMENT_UPLOAD_URL_ROUTE,
+    PAYMENT_VERIFY_UPLOAD_ENDPOINT_TEMPLATE,
+    PAYMENT_VERIFY_UPLOAD_ROUTE,
 )
 from app.extensions import limiter, s3
 from app.database import get_db
@@ -43,6 +94,8 @@ from app.utils.runtime_cache import resolve_participant_id
 from app.utils.security import generate_upi_link
 from app.utils.decorators import track_performance, require_idempotency_key
 from app.utils.turnstile import verify_turnstile_token
+from app.utils.observability import log_event
+from app.constants.observability_constants import OBS_EVENT_PAYMENT_REUSE_PROBE_FAILED
 from app.services.payment_verify_service import process_verify_upload, process_internal_verify
 from app.services import (
     build_payment_response_payload,
@@ -86,22 +139,21 @@ def _payment_rate_key():
 # Routes
 # ────────────────────────────────────────────────
 
-@payment_bp.route("/payments/create", methods=["POST"])
+@payment_bp.route(PAYMENTS_CREATE_ROUTE, methods=[HTTP_METHOD_POST])
 @limiter.limit(PAYMENT_CREATE_RATE_LIMIT)
 @track_performance
 @require_idempotency_key
 def create_payment():
     """Create a new payment session with timer."""
     data = request.json or {}
-    logger.info("create_payment request_id=%s", getattr(g, "request_id", None))
-    public_id = data.get("public_id")
-    amount = data.get("amount")
+    public_id = data.get(REQUEST_KEY_PUBLIC_ID)
+    amount = data.get(REQUEST_KEY_AMOUNT)
     idempotency_key = (
         request.headers.get("X-Idempotency-Key")
-        or data.get("idempotency_key")
+        or data.get(REQUEST_KEY_IDEMPOTENCY_KEY)
         or ""
     ).strip()[:128]
-    turnstile_token = (data.get("turnstile_token") or "").strip()
+    turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
 
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
@@ -113,8 +165,8 @@ def create_payment():
     try:
         db = get_db()
     except Exception as e:
-        logger.error("create_payment db connection failed request_id=%s error=%s", getattr(g, "request_id", None), e)
-        return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
+        logger.error(LOG_PAYMENT_CREATE_DB_FAILED, getattr(g, "request_id", None), e)
+        return create_error_response("INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_CREATE_FAILED"])
 
     participant_id = resolve_participant_id(db, str(public_id).strip())
     if not participant_id:
@@ -128,12 +180,12 @@ def create_payment():
     request_hash = ""
     if idempotency_key:
         request_hash = build_request_hash({
-            "public_id": str(public_id).strip(),
-            "amount": amount,
+            REQUEST_KEY_PUBLIC_ID: str(public_id).strip(),
+            REQUEST_KEY_AMOUNT: amount,
         })
         _idem, replay = load_idempotent_response(
             db,
-            endpoint="/payments/create",
+            endpoint=PAYMENTS_CREATE_ROUTE,
             idempotency_key=idempotency_key,
             participant_public_id=str(public_id).strip(),
             request_hash=request_hash,
@@ -152,11 +204,6 @@ def create_payment():
             amount=amount,
         )
         
-        logger.info(
-            "payment created request_id=%s payment_id=%s participant_public_id=%s",
-            getattr(g, "request_id", None), payment_row[1], public_id[:8]
-        )
-
         response_payload = build_payment_response_payload(
             db,
             payment_row_id=int(payment_row[0]),
@@ -174,7 +221,7 @@ def create_payment():
         if idempotency_key:
             save_idempotent_response(
                 db,
-                endpoint="/payments/create",
+                endpoint=PAYMENTS_CREATE_ROUTE,
                 idempotency_key=idempotency_key,
                 participant_public_id=str(public_id).strip(),
                 request_hash=request_hash,
@@ -183,10 +230,10 @@ def create_payment():
             )
         db.commit()
         enqueue_payment_audit(
-            event_type="payment_create_success",
+            event_type=AUDIT_EVENT_PAYMENT_CREATE_SUCCESS,
             payment_id=payment_row[0],
             participant_id=participant_id,
-            details="payment created",
+            details=AUDIT_DETAIL_PAYMENT_CREATED,
             request_data={"amount": amount, "public_id_prefix": public_id[:8]},
             response_data={"payment_public_id": str(payment_row[1]), "expires_at": expires_str},
             ip_hash=get_ip_hash(),
@@ -216,7 +263,7 @@ def create_payment():
                     if idempotency_key:
                         save_idempotent_response(
                             db,
-                            endpoint="/payments/create",
+                            endpoint=PAYMENTS_CREATE_ROUTE,
                             idempotency_key=idempotency_key,
                             participant_public_id=str(public_id).strip(),
                             request_hash=request_hash,
@@ -225,9 +272,9 @@ def create_payment():
                         )
                     db.commit()
                     enqueue_payment_audit(
-                        event_type="payment_create_reused_active",
+                        event_type=AUDIT_EVENT_PAYMENT_CREATE_REUSED_ACTIVE,
                         participant_id=participant_id,
-                        details="reused existing active payment",
+                        details=AUDIT_DETAIL_PAYMENT_REUSED,
                         request_data={"amount": amount, "public_id_prefix": public_id[:8]},
                         response_data={"payment_public_id": str(existing[1])},
                         ip_hash=get_ip_hash(),
@@ -235,21 +282,27 @@ def create_payment():
                         device_fingerprint=getattr(g, "device_fingerprint", None) or "",
                     )
                     return success_response(response_payload)
-            except Exception:
-                pass
-        logger.error("payment creation failed request_id=%s error=%s", getattr(g, "request_id", None), e)
+            except Exception as exc:
+                log_event(
+                    logger,
+                    OBS_EVENT_PAYMENT_REUSE_PROBE_FAILED,
+                    level=logging.WARNING,
+                    error=str(exc),
+                    request_id=getattr(g, "request_id", None),
+                )
+        logger.error(LOG_PAYMENT_CREATE_FAILED, getattr(g, "request_id", None), e)
         log_payment_audit(
             db,
             request=request,
             device_fingerprint=getattr(g, "device_fingerprint", None),
-            event_type="payment_create_failed",
+            event_type=AUDIT_EVENT_PAYMENT_CREATE_FAILED,
             participant_id=participant_id,
-            details=f"payment creation failed: {str(e)[:300]}",
+            details=AUDIT_DETAIL_PAYMENT_CREATE_FAILED.format(error=str(e)[:300]),
             request_data={"amount": amount, "public_id_prefix": public_id[:8]},
         )
-        return create_error_response("INTERNAL_ERROR", custom_message="Payment creation failed. Please try again.")
+        return create_error_response("INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_CREATE_FAILED"])
 
-@payment_bp.route("/payments/<payment_public_id>/qr", methods=["GET"])
+@payment_bp.route(PAYMENT_QR_ROUTE, methods=[HTTP_METHOD_GET])
 @limiter.limit(PAYMENT_STATUS_RATE_LIMIT)
 @track_performance
 def get_payment_qr(payment_public_id):
@@ -273,29 +326,24 @@ def get_payment_qr(payment_public_id):
 
         upi_link = generate_upi_link(float(amount))
         return success_response({
-            "payment_id": payment_public_id,
-            "qr_base64": build_qr_base64(upi_link),
+            RESPONSE_KEY_PAYMENT_ID: payment_public_id,
+            RESPONSE_KEY_QR_BASE64: build_qr_base64(upi_link),
         })
     except Exception as exc:
-        logger.error(
-            "get_payment_qr failed request_id=%s payment_id=%s error=%s",
-            getattr(g, "request_id", None),
-            payment_public_id,
-            exc,
-        )
-        return create_error_response("SYS_INTERNAL_ERROR", custom_message="Failed to load payment QR. Please retry.")
+        logger.error(LOG_PAYMENT_QR_FAILED, getattr(g, "request_id", None), payment_public_id, exc)
+        return create_error_response("SYS_INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_QR_FAILED"])
 
 
-@payment_bp.route("/payments/<payment_public_id>/upload-url", methods=["POST"])
+@payment_bp.route(PAYMENT_UPLOAD_URL_ROUTE, methods=[HTTP_METHOD_POST])
 @require_valid_payment_session(require_write_token=True)
 @limiter.limit(PAYMENT_VERIFY_UPLOAD_RATE_LIMIT)
 @track_performance
 def get_payment_upload_url(payment_public_id):
     data = request.json or {}
-    file_extension = (data.get("file_extension", "jpg") or "jpg").lower().strip(".")
-    sha256_hash = (data.get("sha256") or "").strip().lower()
-    mime_type = (data.get("mime_type") or "").strip()[:120]
-    file_size = data.get("file_size")
+    file_extension = (data.get(REQUEST_KEY_FILE_EXTENSION, "jpg") or "jpg").lower().strip(".")
+    sha256_hash = (data.get(REQUEST_KEY_SHA256) or "").strip().lower()
+    mime_type = (data.get(REQUEST_KEY_MIME_TYPE) or "").strip()[:120]
+    file_size = data.get(REQUEST_KEY_FILE_SIZE)
 
     if not sha256_hash:
         return create_error_response("PAY_INVALID_SHA256")
@@ -314,8 +362,8 @@ def get_payment_upload_url(payment_public_id):
             if normalized_size < 0 or normalized_size > max_bytes:
                 return create_error_response(
                     "VAL_FILE_TOO_LARGE",
-                    details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": "payment_image_too_large"},
-                    custom_message=f"The file is too large. Please upload an image smaller than {int(PAYMENT_MAX_IMAGE_MB)}MB.",
+                    details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": DETAIL_REASONS["PAYMENT_IMAGE_TOO_LARGE"]},
+                    custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_IMAGE_TOO_LARGE"].format(max_mb=int(PAYMENT_MAX_IMAGE_MB)),
                 )
         except Exception:
             return create_error_response("VAL_INVALID_FORMAT", details={"field": "file_size"})
@@ -333,13 +381,8 @@ def get_payment_upload_url(payment_public_id):
             HttpMethod="PUT",
         )
     except Exception as exc:
-        logger.error(
-            "get_payment_upload_url failed request_id=%s payment_id=%s error=%s",
-            getattr(g, "request_id", None),
-            payment_public_id,
-            exc,
-        )
-        return create_error_response("SYS_INTERNAL_ERROR", custom_message="Failed to prepare upload URL. Please try again.")
+        logger.error(LOG_PAYMENT_UPLOAD_URL_FAILED, getattr(g, "request_id", None), payment_public_id, exc)
+        return create_error_response("SYS_INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_UPLOAD_URL_FAILED"])
 
     return success_response({
         "upload_url": presigned_url,
@@ -349,20 +392,19 @@ def get_payment_upload_url(payment_public_id):
     })
 
 
-@payment_bp.route("/payments/<payment_public_id>/verify-upload", methods=["POST"])
+@payment_bp.route(PAYMENT_VERIFY_UPLOAD_ROUTE, methods=[HTTP_METHOD_POST])
 @require_valid_payment_session(require_write_token=True)
 @limiter.limit(PAYMENT_VERIFY_UPLOAD_RATE_LIMIT)
 @track_performance
 @require_idempotency_key
 def verify_and_upload_payment(payment_public_id):
-    logger.info("verify_upload request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     data = request.json or {}
-    turnstile_token = (data.get("turnstile_token") or "").strip()
+    turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
     try:
         db = get_db()
     except Exception as e:
-        logger.error("verify_and_upload_payment db connection failed request_id=%s error=%s", getattr(g, "request_id", None), e)
-        return create_error_response("INTERNAL_ERROR", custom_message="Payment verification failed. Please try again.")
+        logger.error(LOG_PAYMENT_VERIFY_DB_FAILED, getattr(g, "request_id", None), e)
+        return create_error_response("INTERNAL_ERROR", custom_message=ERROR_MESSAGE_TEMPLATES["PAYMENT_VERIFY_FAILED"])
 
     ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
     if not ok:
@@ -388,7 +430,7 @@ def verify_and_upload_payment(payment_public_id):
     )
 
 
-@payment_bp.route("/payments/<payment_public_id>/status", methods=["GET"])
+@payment_bp.route(PAYMENT_STATUS_ROUTE, methods=[HTTP_METHOD_GET])
 @require_valid_payment_session(
     require_write_token=True,
     allowed_states=PAYMENT_STATUS_READ_ALLOWED,
@@ -399,7 +441,6 @@ def verify_and_upload_payment(payment_public_id):
 @track_performance
 def get_payment_status(payment_public_id):
     """Get current payment status including expiry check."""
-    logger.info("payment_status request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     try:
         db = get_db()
         row = fetch_payment_status_row(db, payment_public_id)
@@ -414,9 +455,9 @@ def get_payment_status(payment_public_id):
             if status in PAYMENT_ACTIVE_STATUSES:
                 db.execute(text("""
                     UPDATE payments
-                    SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                    SET status = :failed_status, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :pid
-                """), {"pid": payment_id})
+                """), {"pid": payment_id, "failed_status": PAYMENT_STATUS_FAILED})
                 db.commit()
             return create_error_response("INVALID_AMOUNT")
 
@@ -439,11 +480,11 @@ def get_payment_status(payment_public_id):
             verification_attempts=verification_attempts,
         ))
     except Exception as e:
-        logger.error("get payment status failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
+        logger.error(LOG_PAYMENT_STATUS_FAILED, getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
 
-@payment_bp.route("/payments/<payment_public_id>/token", methods=["POST"])
+@payment_bp.route(PAYMENT_TOKEN_ROUTE, methods=[HTTP_METHOD_POST])
 @limiter.limit(PAYMENT_TOKEN_RATE_LIMIT)
 @limiter.limit(PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT, key_func=_payment_rate_key)
 @track_performance
@@ -493,27 +534,26 @@ def mint_payment_token(payment_public_id):
         )
         db.commit()
         return success_response({
-            "payment_id": payment_public_id,
-            "payment_token": token,
-            "expires_at": expires_at.isoformat() if expires_at else None,
+            RESPONSE_KEY_PAYMENT_ID: payment_public_id,
+            RESPONSE_KEY_PAYMENT_TOKEN: token,
+            RESPONSE_KEY_EXPIRES_AT: expires_at.isoformat() if expires_at else None,
         })
     except Exception as e:
-        logger.error("mint payment token failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
+        logger.error(LOG_PAYMENT_TOKEN_FAILED, getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
 
-@payment_bp.route("/internal/payments/<payment_public_id>/verify", methods=["POST"])
+@payment_bp.route(INTERNAL_PAYMENT_VERIFY_ROUTE, methods=[HTTP_METHOD_POST])
 @limiter.limit(INTERNAL_VERIFY_RATE_LIMIT)
 def verify_payment(payment_public_id):
     """Internal endpoint for payment verification (auth + rate limited)."""
-    logger.info("internal_verify request_id=%s payment_id=%s", getattr(g, "request_id", None), payment_public_id)
     internal_token = (request.headers.get("X-Internal-Token") or "").strip()
     if not INTERNAL_VERIFY_TOKEN or internal_token != INTERNAL_VERIFY_TOKEN:
         return create_error_response("AUTH_ACCESS_DENIED")
     try:
         db = get_db()
     except Exception as e:
-        logger.error("internal verify payment db failed request_id=%s payment_id=%s error=%s", getattr(g, "request_id", None), payment_public_id, e)
+        logger.error(LOG_INTERNAL_VERIFY_DB_FAILED, getattr(g, "request_id", None), payment_public_id, e)
         return create_error_response("DATABASE_ERROR")
 
     return process_internal_verify(
