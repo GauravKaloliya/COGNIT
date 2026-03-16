@@ -22,8 +22,6 @@ export default function ConsentPage({
     rewardAmountLabel,
     handleSubmit,
     draftRestored,
-    lastSavedAt,
-    isSaving,
     saveError,
     retryCountdown,
   } = useConsentPage({ onConsentGiven, systemReady });
