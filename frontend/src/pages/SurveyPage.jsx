@@ -70,8 +70,6 @@ export default function SurveyPage({
     preventCopyPaste,
     preventClipboardShortcuts,
     draftRestored,
-    lastSavedAt,
-    isSaving,
     saveError,
   } = useSurveyPage({
     survey,
