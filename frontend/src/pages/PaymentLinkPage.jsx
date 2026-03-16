@@ -32,6 +32,7 @@ const PAYMENT_STATE_TTL_MS = runtimeConfig.paymentStateTtlMs;
 const MIN_SCREENSHOT_WIDTH = runtimeConfig.minScreenshotWidth;
 const MIN_SCREENSHOT_HEIGHT = runtimeConfig.minScreenshotHeight;
 const MIN_LAPLACIAN_VARIANCE = runtimeConfig.minLaplacianVariance;
+const EXPECTED_PAYMENT_AMOUNT = Number(runtimeConfig.paymentAmount);
 
 export default function PaymentLinkPage({ 
   onNext, 
@@ -156,6 +157,23 @@ export default function PaymentLinkPage({
       steps.push("If it still fails, tap Retry to create a new payment session.");
     }
     return steps;
+  }, []);
+
+  const isPaymentAmountMismatch = useCallback((paymentData) => {
+    if (!paymentData) return false;
+    if (!Number.isFinite(EXPECTED_PAYMENT_AMOUNT) || EXPECTED_PAYMENT_AMOUNT <= 0) {
+      return false;
+    }
+    const amountValue = Number(paymentData?.amount);
+    if (Number.isFinite(amountValue)) {
+      return Math.abs(amountValue - EXPECTED_PAYMENT_AMOUNT) > 0.001;
+    }
+    const link = String(paymentData?.upi_link || "");
+    const match = link.match(/[?&]am=([^&]+)/i);
+    if (!match) return false;
+    const parsed = Number(decodeURIComponent(match[1]));
+    if (!Number.isFinite(parsed)) return false;
+    return Math.abs(parsed - EXPECTED_PAYMENT_AMOUNT) > 0.001;
   }, []);
 
   const calculateBlurVariance = (image) => {
@@ -608,6 +626,12 @@ export default function PaymentLinkPage({
       const restoredStatus = restored?.paymentStatus || "pending";
 
       if (restoredPaymentData?.payment_id && restoredPaymentData?.expires_at) {
+        if (isPaymentAmountMismatch(restoredPaymentData)) {
+          clearPaymentViewState();
+          notifySessionExpired();
+          if (!cancelled) await createPayment();
+          return;
+        }
         if (!publicId) {
           return;
         }
