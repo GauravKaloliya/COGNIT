@@ -146,20 +146,20 @@ export const api = {
   }),
   
   post: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
+    ...options,
     method: REQUEST_METHODS.post,
     body: JSON.stringify(body),
-    ...options
   })),
   
   put: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
+    ...options,
     method: REQUEST_METHODS.put,
     body: JSON.stringify(body),
-    ...options
   })),
   
   delete: (endpoint, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
+    ...options,
     method: REQUEST_METHODS.delete,
-    ...options
   }))
 };
 
