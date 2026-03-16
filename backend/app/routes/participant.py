@@ -1,14 +1,7 @@
-"""
-Participant routes module for C.O.G.N.I.T. backend.
-Handles participant registration, validation, and consent.
-"""
-
-import re
-import uuid
+"""Participant routes module for C.O.G.N.I.T. backend."""
 
 import logging
 from flask import request, g
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import limiter
@@ -24,9 +17,20 @@ from app.utils.decorators import track_performance, require_idempotency_key
 from app.utils.turnstile import verify_turnstile_token
 from app.services import (
     build_request_hash,
+    collect_missing_participant_fields,
+    fetch_participant_options,
+    find_existing_participant_conflict,
+    generate_public_id,
+    generate_session_id,
+    get_existing_session_id_for_public_id,
+    insert_participant,
+    is_participant_field_available,
+    is_valid_public_id,
     load_idempotent_response,
     save_idempotent_response,
+    set_participant_cookies,
 )
+from app.utils.error_mapping import map_participant_create_exception
 from app.config import (
     PARTICIPANT_CREATE_RATE_LIMIT,
     PARTICIPANT_CHECK_RATE_LIMIT,
@@ -34,8 +38,6 @@ from app.config import (
     PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
     PARTICIPANT_SESSION_COOKIE_NAME,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
-    SESSION_COOKIE_SECURE,
-    SESSION_COOKIE_SAMESITE,
 )
 
 
@@ -46,27 +48,6 @@ from app.config import (
 from flask import Blueprint
 participant_bp = Blueprint('participant', __name__)
 logger = logging.getLogger(__name__)
-
-
-def _set_participant_cookies(response, public_id: str, session_id: str):
-    response.set_cookie(
-        PARTICIPANT_SESSION_COOKIE_NAME,
-        session_id,
-        httponly=True,
-        secure=bool(SESSION_COOKIE_SECURE),
-        samesite=SESSION_COOKIE_SAMESITE,
-        path="/",
-    )
-    response.set_cookie(
-        PARTICIPANT_PUBLIC_COOKIE_NAME,
-        public_id,
-        httponly=True,
-        secure=bool(SESSION_COOKIE_SECURE),
-        samesite=SESSION_COOKIE_SAMESITE,
-        path="/",
-    )
-    return response
-
 
 # ────────────────────────────────────────────────
 # Routes
@@ -80,15 +61,14 @@ def create_participant():
     """Create a new participant registration."""
     data = request.json or {}
     turnstile_token = (data.get("turnstile_token") or "").strip()
-    required = ["username", "email", "phone", "gender_code", "age", "location", "language_code", "prior_experience"]
-    missing = [f for f in required if f not in data or not data[f]]
+    missing = collect_missing_participant_fields(data)
     if missing:
         return create_error_response("MISSING_FIELDS", {"fields": missing})
 
-    public_id = str(data.get("public_id") or uuid.uuid4()).strip()
-    if data.get("public_id") and not re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', public_id, re.I):
+    public_id = generate_public_id(data)
+    if data.get("public_id") and not is_valid_public_id(public_id):
         return create_error_response("INVALID_UUID", {"field": "public_id"})
-    session_id = str(data.get("session_id") or f"sess_{uuid.uuid4().hex}").strip()[:128]
+    session_id = generate_session_id(data)
 
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
@@ -103,160 +83,54 @@ def create_participant():
         email = str(data["email"]).strip().lower()[:255]
         phone = str(data["phone"]).strip()[:20]
 
-        # Resolve likely duplicate conflicts before insert so the API can return
-        # stable field-level error codes for frontend mapping.
-        existing = db.execute(text("""
-            SELECT username, email, phone
-            FROM participants
-            WHERE is_deleted = false
-              AND (
-                username = :un
-                OR email = :em
-                OR phone = :ph
-              )
-            LIMIT 1
-        """), {
-            "un": username,
-            "em": email,
-            "ph": phone,
-        }).fetchone()
-        if existing:
-            existing_username, existing_email, existing_phone = existing
-            if existing_username == username:
-                return create_error_response("DUP_USERNAME")
-            if existing_email == email:
-                return create_error_response("DUP_EMAIL")
-            if existing_phone == phone:
-                return create_error_response("DUP_PHONE")
+        conflict_error_key = find_existing_participant_conflict(
+            db,
+            username=username,
+            email=email,
+            phone=phone,
+        )
+        if conflict_error_key:
+            return create_error_response(conflict_error_key)
 
-        result = db.execute(text("""
-            INSERT INTO participants (
-                public_id, session_id, username, email, phone,
-                gender_code, age, location, language_code, prior_experience,
-                ip_hash, user_agent, extra_metadata
-            ) VALUES (
-                :pub, :sid, :un, :em, :ph, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
-            )
-            RETURNING id
-        """), {
-            "pub": public_id,
-            "sid": session_id,
-            "un": username,
-            "em": email,
-            "ph": phone,
-            "gc": str(data["gender_code"]).strip().lower()[:32],
-            "age": int(data["age"]),
-            "loc": str(data["location"]).strip()[:120],
-            "lc": str(data["language_code"]).strip().lower()[:20],
-            "pe": str(data.get("prior_experience", "")).strip()[:120],
-            "iph": iph,
-            "ua": ua
-        })
-        participant_id = result.scalar()
-        if participant_id is None:
-            raise RuntimeError("participant insert did not return id")
+        participant_id = insert_participant(
+            db,
+            public_id=public_id,
+            session_id=session_id,
+            payload=data,
+            ip_hash=iph,
+            user_agent=ua,
+        )
         set_cached_participant_id(public_id, int(participant_id))
         
         log_audit(db, "participant_created", participant_id=participant_id, details=f"public_id={public_id}")
         db.commit()
         logger.info("participant created public_id_prefix=%s request_id=%s", public_id[:8], getattr(g, "request_id", None))
         response = success_response({"status": "created", "public_id": public_id, "session_id": session_id})
-        response = _set_participant_cookies(response, public_id, session_id)
+        response = set_participant_cookies(response, public_id, session_id)
         return response, 201
     except IntegrityError as e:
         try:
             db.rollback()
         except Exception:
             pass
-
-        constraint_name = ""
-        try:
-            constraint_name = str(e.orig.diag.constraint_name or "").lower()
-        except Exception:
-            constraint_name = ""
-
-        error_str = str(e).lower()
-        if "username" in constraint_name or "username" in error_str:
-            return create_error_response("DUP_USERNAME")
-        if "email" in constraint_name or "email" in error_str:
-            return create_error_response("DUP_EMAIL")
-        if "phone" in constraint_name or "phone" in error_str:
-            return create_error_response("DUP_PHONE")
-        if "public_id" in constraint_name or "public_id" in error_str:
-            existing = db.execute(text("""
-                SELECT session_id
-                FROM participants
-                WHERE public_id = :pub AND is_deleted = false
-                LIMIT 1
-            """), {"pub": public_id}).fetchone()
-            if existing:
-                response = success_response({
-                    "status": "exists",
-                    "public_id": public_id,
-                    "session_id": existing[0]
-                })
-                response = _set_participant_cookies(response, public_id, existing[0])
-                return response, 200
-            return create_error_response("DUP_PUBLIC_ID")
-        return create_error_response("PARTICIPANT_EXISTS")
+        return map_participant_create_exception(
+            error=e,
+            public_id=public_id,
+            get_existing_session_id=lambda value: get_existing_session_id_for_public_id(db, value),
+            set_cookies=set_participant_cookies,
+        )
     except Exception as e:
         try:
             db.rollback()
-        except:
+        except Exception:
             pass
-        error_str = str(e).lower()
-
-        # Handle unique/duplicate constraint violations from adapters that
-        # don't map to IntegrityError, while avoiding broad false positives.
-        if "duplicate key value" in error_str or "violates unique constraint" in error_str:
-            if "username" in error_str:
-                return create_error_response("DUP_USERNAME")
-            elif "email" in error_str:
-                return create_error_response("DUP_EMAIL")
-            elif "phone" in error_str:
-                return create_error_response("DUP_PHONE")
-            elif "public_id" in error_str:
-                # Treat duplicate public_id as idempotent registration.
-                # This commonly happens on rapid double-submit/retry from same client.
-                existing = db.execute(text("""
-                    SELECT session_id
-                    FROM participants
-                    WHERE public_id = :pub AND is_deleted = false
-                    LIMIT 1
-                """), {"pub": public_id}).fetchone()
-                if existing:
-                    response = success_response({
-                        "status": "exists",
-                        "public_id": public_id,
-                        "session_id": existing[0]
-                    })
-                    response = _set_participant_cookies(response, public_id, existing[0])
-                    return response, 200
-                return create_error_response("DUP_PUBLIC_ID")
-            return create_error_response("PARTICIPANT_EXISTS")
-        
-        # Handle foreign key constraint violations
-        if "foreign key" in error_str or "violates foreign key constraint" in error_str:
-            if "gender_code" in error_str:
-                return create_error_response("VAL_GENDER_REQUIRED")
-            elif "language_code" in error_str:
-                return create_error_response("VAL_LANGUAGE_REQUIRED")
-            logger.error("create_participant foreign key violation error=%s request_id=%s", e, getattr(g, "request_id", None))
-            return create_error_response("DATABASE_ERROR")
-        
-        # Handle check constraint violations
-        if "check constraint" in error_str or "violates check constraint" in error_str:
-            if "chk_email_format" in error_str or "email" in error_str:
-                return create_error_response("VAL_EMAIL_INVALID")
-            elif "chk_phone_format" in error_str or "phone" in error_str:
-                return create_error_response("VAL_PHONE_INVALID")
-            elif "chk_age" in error_str or "age" in error_str:
-                return create_error_response("VAL_AGE_INVALID")
-            logger.error("create_participant check constraint violation error=%s request_id=%s", e, getattr(g, "request_id", None))
-            return create_error_response("DATABASE_ERROR")
-        
         logger.error("create_participant failed error=%s request_id=%s", e, getattr(g, "request_id", None))
-        return create_error_response("DATABASE_ERROR")
+        return map_participant_create_exception(
+            error=e,
+            public_id=public_id,
+            get_existing_session_id=lambda value: get_existing_session_id_for_public_id(db, value),
+            set_cookies=set_participant_cookies,
+        )
 
 
 @participant_bp.route("/check-username")
@@ -271,12 +145,7 @@ def check_username():
         return success_response({"available": True})
     try:
         db = get_db()
-        exists = db.execute(text("""
-            SELECT 1 FROM participants
-            WHERE username = :un AND is_deleted = false
-            LIMIT 1
-        """), {"un": username}).scalar()
-        return success_response({"available": not bool(exists)})
+        return success_response({"available": is_participant_field_available(db, field_name="username", value=username)})
     except Exception as e:
         logger.error("check_username failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
@@ -292,12 +161,7 @@ def check_email():
         return create_error_response("MISSING_FIELDS", {"fields": ["email"]})
     try:
         db = get_db()
-        exists = db.execute(text("""
-            SELECT 1 FROM participants
-            WHERE email = :em AND is_deleted = false
-            LIMIT 1
-        """), {"em": email}).scalar()
-        return success_response({"available": not bool(exists)})
+        return success_response({"available": is_participant_field_available(db, field_name="email", value=email)})
     except Exception as e:
         logger.error("check_email failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
@@ -313,12 +177,7 @@ def check_phone():
         return create_error_response("MISSING_FIELDS", {"fields": ["phone"]})
     try:
         db = get_db()
-        exists = db.execute(text("""
-            SELECT 1 FROM participants
-            WHERE phone = :ph AND is_deleted = false
-            LIMIT 1
-        """), {"ph": phone}).scalar()
-        return success_response({"available": not bool(exists)})
+        return success_response({"available": is_participant_field_available(db, field_name="phone", value=phone)})
     except Exception as e:
         logger.error("check_phone failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
@@ -461,41 +320,7 @@ def get_participant_options():
     """Return participant form options sourced from the database."""
     try:
         db = get_db()
-
-        genders = db.execute(text("""
-            SELECT code, display_name
-            FROM genders
-            WHERE active = true
-            ORDER BY sort_order ASC, display_name ASC
-        """)).fetchall()
-
-        languages = db.execute(text("""
-            SELECT code, name, native_name
-            FROM languages
-            WHERE active = true
-            ORDER BY name ASC
-        """)).fetchall()
-
-        return success_response({
-            "genders": [
-                {
-                    "value": str(row[0]),
-                    "label": str(row[1]),
-                }
-                for row in genders
-            ],
-            "languages": [
-                {
-                    "value": str(row[0]),
-                    "label": (
-                        f"{row[1]} ({row[2]})"
-                        if row[2] and str(row[2]).strip() and str(row[2]) != str(row[1])
-                        else str(row[1])
-                    ),
-                }
-                for row in languages
-            ],
-        })
+        return success_response(fetch_participant_options(db))
     except Exception as e:
         logger.error("get_participant_options failed error=%s request_id=%s", e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
