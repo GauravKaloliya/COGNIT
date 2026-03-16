@@ -1,4 +1,6 @@
-const TELEMETRY_KEY = "client_telemetry_v1";
+import { runtimeConfig } from "../config/runtime";
+
+const TELEMETRY_KEY = runtimeConfig.storageKeys.telemetry;
 
 function nowMs() {
   return Date.now();

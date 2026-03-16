@@ -2,15 +2,19 @@ import { useCallback, useRef, useState } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { runtimeConfig } from "../config/runtime";
+import { uiText } from "../utils/uiText";
+import { PAYMENT_API_FIELDS, SURVEY_API_FIELDS } from "../constants/fields";
+import { TOAST_VARIANTS } from "../constants/ui";
+import { REQUEST_CODES } from "../constants/request";
 
 const normalizeSurveyPayload = (value) => {
   if (!value || typeof value !== "object") return null;
-  const imageId = value.image_id || value.imageId || null;
-  const imageUrl = value.url || value.image_url || value.imageUrl || "";
+  const imageId = value[SURVEY_API_FIELDS.imageId] || value.imageId || null;
+  const imageUrl = value[SURVEY_API_FIELDS.url] || value[SURVEY_API_FIELDS.imageUrl] || value.imageUrl || "";
   return {
     ...value,
-    image_id: imageId,
-    url: imageUrl,
+    [SURVEY_API_FIELDS.imageId]: imageId,
+    [SURVEY_API_FIELDS.url]: imageUrl,
   };
 };
 
@@ -32,7 +36,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
   const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
     // Keep refresh/session-resumed survey stable: do not request a new image
     // unless caller explicitly asks to clear current survey.
-    if (!clearCurrent && survey?.image_id && typeof survey?.url === "string" && survey.url.trim()) {
+    if (!clearCurrent && survey?.[SURVEY_API_FIELDS.imageId] && typeof survey?.[SURVEY_API_FIELDS.url] === "string" && survey[SURVEY_API_FIELDS.url].trim()) {
       return survey;
     }
 
@@ -56,10 +60,10 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
     try {
       const data = await endpoints.getRandomImage(shownImages, publicId, { signal: controller.signal });
       const normalizedData = normalizeSurveyPayload(data);
-      if (!normalizedData?.image_id) {
+      if (!normalizedData?.[SURVEY_API_FIELDS.imageId]) {
         throw new Error(getErrorMessage("SYS_002_0016"));
       }
-      setShownImages((prev) => [...prev, normalizedData.image_id]);
+      setShownImages((prev) => [...prev, normalizedData[SURVEY_API_FIELDS.imageId]]);
       setSurvey(normalizedData);
       return normalizedData;
     } catch (error) {
@@ -93,33 +97,33 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
 
     try {
       const result = await endpoints.submitDescription({
-        public_id: publicId,
-        image_id: survey.image_id,
+        [SURVEY_API_FIELDS.publicId]: publicId,
+        [SURVEY_API_FIELDS.imageId]: survey[SURVEY_API_FIELDS.imageId],
         description: formData.description,
         rating: formData.rating,
         feedback: formData.comments,
-        time_spent_seconds: formData.timeSpentSeconds,
-        is_survey: survey?.is_survey === true,
-        is_attention_check: survey?.is_attention_check === true,
-        survey_index: surveyCompleted + 1,
-        tab_switch_count: engagementData.tabSwitchCount || 0,
-        page_close_attempts: engagementData.pageCloseAttempts || 0,
-        network_disconnects: engagementData.networkDisconnects || 0,
+        [SURVEY_API_FIELDS.timeSpentSeconds]: formData.timeSpentSeconds,
+        [SURVEY_API_FIELDS.isSurvey]: survey?.[SURVEY_API_FIELDS.isSurvey] === true,
+        [SURVEY_API_FIELDS.isAttentionCheck]: survey?.[SURVEY_API_FIELDS.isAttentionCheck] === true,
+        [SURVEY_API_FIELDS.surveyIndex]: surveyCompleted + 1,
+        [SURVEY_API_FIELDS.tabSwitchCount]: engagementData.tabSwitchCount || 0,
+        [SURVEY_API_FIELDS.pageCloseAttempts]: engagementData.pageCloseAttempts || 0,
+        [SURVEY_API_FIELDS.networkDisconnects]: engagementData.networkDisconnects || 0,
       }, { signal: controller.signal });
 
-      const attentionStatus = result.attention_status || {};
-      if (attentionStatus.is_attention_check && result.attention_passed === false) {
-        if (attentionStatus.failure_reasons?.includes("too_fast_attention")) {
-          addToast("Attention check failed: response was too fast. Please read image instructions carefully.", "warning");
+      const attentionStatus = result[SURVEY_API_FIELDS.attentionStatus] || {};
+      if (attentionStatus[SURVEY_API_FIELDS.isAttentionCheck] && result[SURVEY_API_FIELDS.attentionPassed] === false) {
+        if (attentionStatus[PAYMENT_API_FIELDS.failureReasons]?.includes("too_fast_attention")) {
+          addToast(uiText("survey.attentionTooFast"), TOAST_VARIANTS.warning);
         } else {
-          addToast("Attention check failed: please follow the special instructions shown in the image.", "warning");
+          addToast(uiText("survey.attentionFailed"), TOAST_VARIANTS.warning);
         }
       } else {
-        addToast("Your response was saved!", "success");
+        addToast(uiText("survey.saved"), TOAST_VARIANTS.success);
       }
 
-      if (attentionStatus.hard_flag_triggered) {
-        addToast("Multiple attention failures detected. Please slow down and answer carefully.", "warning");
+      if (attentionStatus[SURVEY_API_FIELDS.hardFlagTriggered]) {
+        addToast(uiText("survey.attentionHardFlag"), TOAST_VARIANTS.warning);
       }
 
       setShowConfetti(true);
@@ -130,7 +134,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       setLastSubmissionSucceeded(true);
       setSurveyFeedbackReady(true);
     } catch (error) {
-      if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
+      if (error?.code === REQUEST_CODES.aborted || controller.signal.aborted) {
         return;
       }
       setLastSubmissionSucceeded(false);

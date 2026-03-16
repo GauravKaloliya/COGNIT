@@ -1,13 +1,24 @@
 import { getApiUrl } from './apiBase';
 import { parseErrorResponse, getErrorMessage } from './errorRegistry';
 import { getTurnstileToken } from './turnstile';
+import {
+  ERROR_NAMES,
+  REQUEST_ACTIONS,
+  REQUEST_CATEGORIES,
+  REQUEST_CODES,
+  REQUEST_HEADERS,
+  REQUEST_METHODS,
+  REQUEST_SEVERITY,
+} from "../constants/request";
+import { PAYMENT_ERROR_CODES } from "../constants/payment";
+import { API_ROUTES, APP_ROUTES } from "../constants/routes";
 
 /**
  * Enhanced fetch wrapper with standardized error handling
  */
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
-  const method = String(options.method || "GET").toUpperCase();
+  const method = String(options.method || REQUEST_METHODS.get).toUpperCase();
   const hasBody = options.body !== undefined && options.body !== null;
   const requestId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -17,11 +28,11 @@ export async function apiFetch(endpoint, options = {}) {
 
   // Keep GET/HEAD requests as "simple requests" to avoid unnecessary CORS preflights.
   // Add tracing/content headers only for requests that send a body or mutate state.
-  if (hasBody && !baseHeaders['Content-Type']) {
-    baseHeaders['Content-Type'] = 'application/json';
+  if (hasBody && !baseHeaders[REQUEST_HEADERS.contentType]) {
+    baseHeaders[REQUEST_HEADERS.contentType] = 'application/json';
   }
-  if (method !== 'GET' && method !== 'HEAD' && !baseHeaders['X-Request-ID']) {
-    baseHeaders['X-Request-ID'] = requestId;
+  if (method !== REQUEST_METHODS.get && method !== REQUEST_METHODS.head && !baseHeaders[REQUEST_HEADERS.requestId]) {
+    baseHeaders[REQUEST_HEADERS.requestId] = requestId;
   }
 
   try {
@@ -36,8 +47,8 @@ export async function apiFetch(endpoint, options = {}) {
     
     if (!response.ok) {
       if (!data && response.status === 413) {
-        const error = new Error(getErrorMessage('VAL_003_0005'));
-        error.code = 'VAL_003_0005';
+        const error = new Error(getErrorMessage(PAYMENT_ERROR_CODES.uploadTooLarge));
+        error.code = PAYMENT_ERROR_CODES.uploadTooLarge;
         error.category = 'VAL';
         error.severity = 'warning';
         error.action = 'fix_input';
@@ -58,7 +69,7 @@ export async function apiFetch(endpoint, options = {}) {
       error.status = response.status;
       error.details = parsedError.details;
       error.originalMessage = parsedError.originalMessage;
-      error.requestId = parsedError.requestId || response.headers.get('X-Request-ID') || requestId;
+      error.requestId = parsedError.requestId || response.headers.get(REQUEST_HEADERS.requestId) || requestId;
       
       throw error;
     }
@@ -75,12 +86,12 @@ export async function apiFetch(endpoint, options = {}) {
       return wrapped;
     };
 
-    if (error?.name === "AbortError") {
+    if (error?.name === ERROR_NAMES.abort) {
       throw wrapError(error, {
-        code: "REQ_ABORTED",
-        category: "SYS",
-        severity: "info",
-        action: "ignore",
+        code: REQUEST_CODES.aborted,
+        category: REQUEST_CATEGORIES.system,
+        severity: REQUEST_SEVERITY.info,
+        action: REQUEST_ACTIONS.ignore,
         message: "Request cancelled",
         requestId: error?.requestId || requestId,
       });
@@ -91,9 +102,9 @@ export async function apiFetch(endpoint, options = {}) {
     const message = error?.message || getErrorMessage("SYS_002_0007");
     throw wrapError(error, {
       code,
-      category: error?.category || "SYS",
-      severity: error?.severity || "error",
-      action: error?.action || "retry",
+      category: error?.category || REQUEST_CATEGORIES.system,
+      severity: error?.severity || REQUEST_SEVERITY.error,
+      action: error?.action || REQUEST_ACTIONS.retry,
       message,
       requestId: error?.requestId || requestId,
     });
@@ -107,14 +118,19 @@ const generateIdempotencyKey = () =>
 
 const withIdempotencyHeader = (options = {}) => {
   const method = String(options.method || "").toUpperCase();
-  const isMutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  const isMutating = [
+    REQUEST_METHODS.post,
+    REQUEST_METHODS.put,
+    REQUEST_METHODS.patch,
+    REQUEST_METHODS.delete,
+  ].includes(method);
   if (!isMutating) return options;
 
   const headers = {
     ...(options.headers || {})
   };
-  if (!headers["X-Idempotency-Key"]) {
-    headers["X-Idempotency-Key"] = generateIdempotencyKey();
+  if (!headers[REQUEST_HEADERS.idempotencyKey]) {
+    headers[REQUEST_HEADERS.idempotencyKey] = generateIdempotencyKey();
   }
   return { ...options, headers };
 };
@@ -124,24 +140,24 @@ const withIdempotencyHeader = (options = {}) => {
  */
 export const api = {
   get: (endpoint, options = {}) => apiFetch(endpoint, { 
-    method: 'GET',
+    method: REQUEST_METHODS.get,
     ...options
   }),
   
   post: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
-    method: 'POST',
+    method: REQUEST_METHODS.post,
     body: JSON.stringify(body),
     ...options
   })),
   
   put: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
-    method: 'PUT',
+    method: REQUEST_METHODS.put,
     body: JSON.stringify(body),
     ...options
   })),
   
   delete: (endpoint, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ 
-    method: 'DELETE',
+    method: REQUEST_METHODS.delete,
     ...options
   }))
 };
@@ -157,17 +173,18 @@ export const endpoints = {
     // Prevent legacy/stale client ids from causing duplicate public_id conflicts.
     delete payload.public_id;
     delete payload.session_id;
-    return api.post('/participants', {
+    return api.post(API_ROUTES.participants, {
       ...payload,
       turnstile_token: turnstileToken || undefined,
     }, options);
   },
-  checkUsername: (username, options = {}) => api.get(`/check-username?username=${encodeURIComponent(username)}`, options),
-  checkEmail: (email, options = {}) => api.get(`/check-email?email=${encodeURIComponent(email)}`, options),
-  checkPhone: (phone, options = {}) => api.get(`/check-phone?phone=${encodeURIComponent(phone)}`, options),
+  checkUsername: (username, options = {}) => api.get(API_ROUTES.checkUsername(username), options),
+  checkEmail: (email, options = {}) => api.get(API_ROUTES.checkEmail(email), options),
+  checkPhone: (phone, options = {}) => api.get(API_ROUTES.checkPhone(phone), options),
+  getParticipantOptions: (options = {}) => api.get(API_ROUTES.participantOptions, options),
   
   // Consent
-  recordConsent: (publicId, options = {}) => api.post('/consent', { public_id: publicId }, options),
+  recordConsent: (publicId, options = {}) => api.post(API_ROUTES.consent, { public_id: publicId }, options),
   
   // Images
   getRandomImage: (exclude = [], publicId = null, options = {}) => {
@@ -175,13 +192,13 @@ export const endpoints = {
     if (exclude.length > 0) params.set('exclude', exclude.join(','));
     if (publicId) params.set('public_id', publicId);
     const qs = params.toString();
-    return api.get(`/images/random${qs ? `?${qs}` : ''}`, options);
+    return api.get(API_ROUTES.randomImage(qs), options);
   },
   
   // Submissions
   submitDescription: async (data, options = {}) => {
     const turnstileToken = await getTurnstileToken("submission_submit");
-    return api.post('/submit', {
+    return api.post(API_ROUTES.submit, {
       ...data,
       turnstile_token: turnstileToken || undefined,
     }, options);
@@ -190,38 +207,38 @@ export const endpoints = {
   // Payment
   createPayment: async (publicId, options = {}) => {
     const turnstileToken = await getTurnstileToken("payment_create");
-    return api.post('/payments/create', {
+    return api.post(API_ROUTES.createPayment, {
       public_id: publicId,
       turnstile_token: turnstileToken || undefined,
     }, options);
   },
-  getPaymentQr: (paymentId, options = {}) => api.get(`/payments/${paymentId}/qr`, options),
+  getPaymentQr: (paymentId, options = {}) => api.get(API_ROUTES.paymentQr(paymentId), options),
   getPaymentStatus: (paymentId, options = {}, paymentToken = null) => {
     const headers = { ...(options.headers || {}) };
-    if (paymentToken && !headers.Authorization) {
-      headers.Authorization = `Bearer ${paymentToken}`;
+    if (paymentToken && !headers[REQUEST_HEADERS.authorization]) {
+      headers[REQUEST_HEADERS.authorization] = `Bearer ${paymentToken}`;
     }
-    return api.get(`/payments/${paymentId}/status`, { ...options, headers });
+    return api.get(API_ROUTES.paymentStatus(paymentId), { ...options, headers });
   },
   mintPaymentToken: (paymentId, publicId, sessionId, options = {}) => {
     const payload = { public_id: publicId };
     if (sessionId) payload.session_id = sessionId;
-    return api.post(`/payments/${paymentId}/token`, payload, options);
+    return api.post(API_ROUTES.paymentToken(paymentId), payload, options);
   },
-  getParticipantPaymentStatus: (publicId, options = {}) => api.get(`/participants/${publicId}/payment-status`, options),
-  getParticipantSession: (options = {}) => api.get("/participants/session", options),
+  getParticipantPaymentStatus: (publicId, options = {}) => api.get(API_ROUTES.participantPaymentStatus(publicId), options),
+  getParticipantSession: (options = {}) => api.get(API_ROUTES.participantSession, options),
   verifyUpload: async (paymentId, payloadOrImageBase64, fileExtension, sha256, extra = {}, options = {}) => {
     const turnstileToken = await getTurnstileToken("payment_verify");
     if (payloadOrImageBase64 && typeof payloadOrImageBase64 === "object" && !Array.isArray(payloadOrImageBase64)) {
       const requestOptions = (fileExtension && typeof fileExtension === "object" && !Array.isArray(fileExtension))
         ? fileExtension
         : (options || {});
-      return api.post(`/payments/${paymentId}/verify-upload`, {
+      return api.post(API_ROUTES.paymentVerifyUpload(paymentId), {
         ...payloadOrImageBase64,
         turnstile_token: turnstileToken || undefined,
       }, requestOptions);
     }
-    return api.post(`/payments/${paymentId}/verify-upload`, {
+    return api.post(API_ROUTES.paymentVerifyUpload(paymentId), {
       image_base64: payloadOrImageBase64,
       file_extension: fileExtension,
       sha256: sha256,
@@ -286,7 +303,7 @@ export function handleApiError(error, options = {}) {
         onRedirect(error.message);
       } else {
         // Default redirect to home
-        window.location.href = '/';
+        window.location.href = APP_ROUTES.home;
       }
       break;
       
