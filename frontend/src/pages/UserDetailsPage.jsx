@@ -261,9 +261,7 @@ export default function UserDetailsPage({
           )}
           {locationStatus && <span className="checking-text">{locationStatus}</span>}
           {errors.location && <span className="error-text">{errors.location}</span>}
-          <span className={`helper-text ${locationOk ? "ok" : "warning"}`}>
-            {uiText("user.locationHint", { min: LOCATION_MIN })}
-          </span>
+          <span className="helper-text warning">{uiText("user.locationHint", { min: LOCATION_MIN })}</span>
         </div>
 
         <div className={`form-field ${errors.language_code ? 'error' : ''}`}>

@@ -82,7 +82,7 @@ export function usePaymentLinkPage({
   }, []);
   const [isMobile, setIsMobile] = useState(detectMobileClient);
   const isCriticalAction = verifying || isLoading;
-  const backDisabled = isCriticalAction || paymentStatus === PAYMENT_STATUS.expired;
+  const backDisabled = paymentStatus === PAYMENT_STATUS.expired;
   const offlineDisabled = !isOnline;
   const retryBlocked = retryInSeconds > 0;
   const retryButtonLabel = retryBlocked
