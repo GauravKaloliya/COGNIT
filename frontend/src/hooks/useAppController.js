@@ -95,13 +95,14 @@ const deriveMaxAllowedStage = ({
 export function useAppController() {
   const manualStageRef = useRef(null);
   const tabIdRef = useRef(createId());
+  const demographicsSaveTimeoutRef = useRef(null);
   const isOnline = useOnlineStatus();
   const [isActiveTabOwner, setIsActiveTabOwner] = useState(true);
   const [darkMode, setDarkMode] = useState(getStoredValue(runtimeConfig.storageKeys.darkMode, false));
   const [stage, setStage] = useState(getStoredValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent));
   const [paymentSubStage, setPaymentSubStage] = useState(getStoredValue(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content));
-  const [publicId, setPublicId] = useState("");
-  const [sessionId, setSessionId] = useState("");
+  const [publicId, setPublicId] = useState(() => getStoredValue(runtimeConfig.storageKeys.publicId, ""));
+  const [sessionId, setSessionId] = useState(() => getStoredValue(runtimeConfig.storageKeys.sessionId, ""));
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue(runtimeConfig.storageKeys.consentGiven, false));
   const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => getStoredValue(runtimeConfig.storageKeys.userDetailsSubmitted, false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue(runtimeConfig.storageKeys.paymentVerified, false));
@@ -301,7 +302,10 @@ export function useAppController() {
   useEffect(() => {
     let cancelled = false;
     const hydrateFromCookies = async () => {
-      if (publicId) return;
+      if (publicId) {
+        if (!cancelled) setSessionHydrated(true);
+        return;
+      }
       try {
         const session = await endpoints.getParticipantSession();
         if (cancelled) return;
@@ -322,10 +326,22 @@ export function useAppController() {
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.consentGiven, consentGiven), [consentGiven]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.userDetailsSubmitted, userDetailsSubmitted), [userDetailsSubmitted]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.paymentVerified, paymentVerified), [paymentVerified]);
+  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.publicId, publicId), [publicId]);
+  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.sessionId, sessionId), [sessionId]);
   useEffect(() => {
     if (!isOnline) return;
-    saveStoredValue(runtimeConfig.storageKeys.demographics, demographics);
+    if (demographicsSaveTimeoutRef.current) {
+      clearScheduledTimeout(demographicsSaveTimeoutRef.current);
+    }
+    demographicsSaveTimeoutRef.current = scheduleTimeout(() => {
+      saveStoredValue(runtimeConfig.storageKeys.demographics, demographics);
+    }, 700);
   }, [demographics, isOnline]);
+  useEffect(() => () => {
+    if (demographicsSaveTimeoutRef.current) {
+      clearScheduledTimeout(demographicsSaveTimeoutRef.current);
+    }
+  }, []);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.stage, stage), [stage]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.paymentSubStage, paymentSubStage), [paymentSubStage]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.survey, survey), [survey]);

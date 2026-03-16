@@ -41,14 +41,7 @@ export default function ConsentPage({
   return (
     <div className="panel panel-with-corner-status">
       <div className="page-top-actions">
-        <div className="page-top-banners">
-          {isSaving && (
-            <span className="autosave-inline panel-corner-status">{uiText("autosave.saving")}</span>
-          )}
-          {!isSaving && lastSavedAt && (
-            <span className="autosave-inline panel-corner-status">{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
-          )}
-        </div>
+        <div className="page-top-banners" />
       </div>
       {!isOnline && (
         <div className="banner warning compact">

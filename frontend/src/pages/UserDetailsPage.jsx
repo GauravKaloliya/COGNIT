@@ -107,12 +107,7 @@ export default function UserDetailsPage({
           </div>
         )}
       </div>
-      {isSaving && (
-        <span className="autosave-inline panel-corner-status">{uiText("autosave.saving")}</span>
-      )}
-      {!isSaving && lastSavedAt && (
-        <span className="autosave-inline panel-corner-status">{uiText("autosave.savedAt", { time: new Date(lastSavedAt).toLocaleTimeString() })}</span>
-      )}
+      {null}
       <h2>{uiText("user.pageTitle")}</h2>
       <p className="page-subtitle left">
         {uiText("user.pageSubtitle")}
