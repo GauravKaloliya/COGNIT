@@ -73,6 +73,8 @@ export function usePaymentLinkPage({
   const [timerProgress, setTimerProgress] = useState(100);
   const timerIntervalRef = useRef(null);
   const timerTotalMsRef = useRef(runtimeConfig.paymentTimerDurationMs);
+  const pendingTimerExpiresAtRef = useRef(null);
+  const [qrVisible, setQrVisible] = useState(false);
 
   const detectMobileClient = useCallback(() => {
     if (typeof window === "undefined") return false;
@@ -421,16 +423,35 @@ export function usePaymentLinkPage({
     timerIntervalRef.current = scheduleInterval(updateTimer, runtimeConfig.paymentTimerTickMs);
   }, [calculateTimerValues, saveTimerState, handleExpiry, stopTimer]);
 
+  const requestStartTimer = useCallback((expiresAt) => {
+    if (!expiresAt) return;
+    if (isMobile || qrVisible) {
+      pendingTimerExpiresAtRef.current = null;
+      startTimer(expiresAt);
+      return;
+    }
+    pendingTimerExpiresAtRef.current = expiresAt;
+    stopTimer();
+    setTimeRemaining(0);
+    setTimerProgress(100);
+  }, [isMobile, qrVisible, startTimer]);
+
+  useEffect(() => {
+    if (!qrVisible || !pendingTimerExpiresAtRef.current) return;
+    startTimer(pendingTimerExpiresAtRef.current);
+    pendingTimerExpiresAtRef.current = null;
+  }, [qrVisible, startTimer]);
+
   const resumeTimerFromCurrentPayment = useCallback(() => {
     const expiresAt = getPaymentField(paymentData, PAYMENT_API_FIELDS.expiresAt);
     if (!expiresAt) return;
     const { remaining } = calculateTimerValues(expiresAt);
     if (remaining > 0) {
-      startTimer(expiresAt);
+      requestStartTimer(expiresAt);
       return;
     }
     handleExpiry();
-  }, [paymentData, calculateTimerValues, startTimer, handleExpiry]);
+  }, [paymentData, calculateTimerValues, requestStartTimer, handleExpiry]);
 
   const fetchPaymentQr = useCallback(async (paymentId, operationId) => {
     if (!paymentId) return;
@@ -505,7 +526,8 @@ export function usePaymentLinkPage({
         serverRemainingMs || Math.max(0, expiresAt.getTime() - now.getTime())
       );
       setPaymentData(data);
-      startTimer(getPaymentField(data, PAYMENT_API_FIELDS.expiresAt));
+      setQrVisible(false);
+      requestStartTimer(getPaymentField(data, PAYMENT_API_FIELDS.expiresAt));
       savePaymentViewState({
         [PAYMENT_STATE_FIELDS.publicId]: publicId,
         [PAYMENT_STATE_FIELDS.paymentData]: data,
@@ -680,7 +702,7 @@ export function usePaymentLinkPage({
               setError(restored?.[PAYMENT_STATE_FIELDS.error] || null);
               setTimeRemaining(remaining);
               setTimerProgress(progress);
-              startTimer(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
+              requestStartTimer(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
               if (!isMobile && !getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.qrBase64)) {
                 fetchPaymentQr(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.id), opVersionRef.current);
               }
@@ -828,6 +850,7 @@ export function usePaymentLinkPage({
     setFailureReasons([]);
     setError(null);
     setRetryInSeconds(0);
+    setQrVisible(false);
     await createPayment();
   };
 
@@ -1178,6 +1201,10 @@ export function usePaymentLinkPage({
     publicId,
   ]);
 
+  const markQrVisible = useCallback(() => {
+    setQrVisible(true);
+  }, []);
+
   useEffect(() => {
     const autoRetryOnReconnect = async () => {
       if (!isOnline || isCriticalAction) return;
@@ -1320,5 +1347,6 @@ export function usePaymentLinkPage({
     restartPayment,
     handleUploadAndFinalize,
     handleBackClick,
+    markQrVisible,
   };
 }

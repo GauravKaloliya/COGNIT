@@ -490,6 +490,7 @@ def get_payment_status(payment_public_id):
 @track_performance
 def mint_payment_token(payment_public_id):
     """Mint a new payment write token for an active session."""
+    logger.info("payment_token_request request_id=%s method=%s payment_id=%s", getattr(g, "request_id", None), request.method, payment_public_id)
     data = request.json or {}
     public_id = (data.get("public_id") or "").strip()
     session_id = (data.get("session_id") or "").strip()
