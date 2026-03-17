@@ -21,6 +21,7 @@ const TEXT = {
     "app.subtitle": "Describe each image with as much detail as possible",
     "app.darkModeLight": "Switch to light mode",
     "app.darkModeDark": "Switch to dark mode",
+    "app.storageUnavailable": "Storage is unavailable in this browser. Progress may reset on refresh.",
     "app.anotherTabTitle": "Another Tab Is Active",
     "app.anotherTabMessage": "This tab is read-only to prevent multi-tab state conflicts. Continue in the other tab or close it to resume here.",
     "app.reclaimTab": "Try Reclaiming This Tab",

@@ -58,7 +58,6 @@ from app.constants.request_keys import (
     REQUEST_KEY_PUBLIC_ID,
     REQUEST_KEY_SHA256,
     REQUEST_KEY_TURNSTILE_TOKEN,
-    REQUEST_KEY_UPLOAD_OBJECT_KEY,
 )
 from app.constants.response_keys import (
     RESPONSE_KEY_EXPIRES_AT,
@@ -79,7 +78,6 @@ from app.constants.route_constants import (
     PAYMENT_STATUS_ROUTE,
     PAYMENT_TOKEN_ROUTE,
     PAYMENT_UPLOAD_URL_ROUTE,
-    PAYMENT_VERIFY_UPLOAD_ENDPOINT_TEMPLATE,
     PAYMENT_VERIFY_UPLOAD_ROUTE,
 )
 from app.extensions import limiter, s3

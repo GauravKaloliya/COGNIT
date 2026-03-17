@@ -1,27 +1,11 @@
 import React from "react";
-import PageSkeleton from "../components/PageSkeleton.jsx";
-import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import { useFinishedPage } from "../hooks/useFinishedPage";
 import { uiText } from "../utils/uiText";
 import DSButton from "../components/design/DSButton.jsx";
 
 export default function FinishedPage({ surveyCompleted, publicId }) {
-  const { rewardStatus, loading, isOnline, rewardAmountLabel, handleFinish } = useFinishedPage({ publicId });
-
-  const isWinner = rewardStatus?.is_winner;
-  const totalWords = rewardStatus?.total_words || 0;
-  const priorityEligible = rewardStatus?.priority_eligible;
-
-  if (loading) {
-    return (
-      <PageSkeleton
-        title={uiText("finish.loadingTitle")}
-        subtitle={uiText("finish.loadingSubtitle")}
-        variant="finish"
-      />
-    );
-  }
+  const { isOnline, rewardAmountLabel, handleFinish } = useFinishedPage({ publicId });
 
   return (
     <div className="panel finish-panel">
@@ -35,33 +19,13 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
         <p className="page-subtitle">
           {uiText("finish.pageSubtitle", { count: surveyCompleted, suffix: surveyCompleted !== 1 ? "s" : "" })}
         </p>
-        
-        {!loading && rewardStatus ? (
-          <PanelState
-            variant="success"
-            icon={isWinner ? "★" : "✓"}
-            title={isWinner ? uiText("finish.congrats") : uiText("finish.thanks")}
-            message={
-              isWinner
-                ? uiText("finish.winnerMessage")
-                : uiText("finish.responsesRecorded")
-            }
-          >
-            {totalWords > 0 && (
-              <p className="finish-reward-body">
-                You wrote <strong>{totalWords} words</strong> across your responses.
-                {priorityEligible
-                  ? " Your detailed participation puts you in the priority pool for future opportunities!"
-                  : " Keep participating in future studies for more chances to win!"}
-              </p>
-            )}
-          </PanelState>
-        ) : (
-          <SectionSkeleton
-            title={uiText("finish.loadingRewardsTitle")}
-            subtitle={uiText("finish.loadingRewardsSubtitle")}
-          />
-        )}
+
+        <PanelState
+          variant="success"
+          icon="✓"
+          title={uiText("finish.thanks")}
+          message={uiText("finish.responsesRecorded")}
+        />
 
         <div className="finish-reminder card">
           <div className="card-header">

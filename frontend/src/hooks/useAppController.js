@@ -7,7 +7,7 @@ import { usePaymentFlow } from "./usePaymentFlow";
 import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
-import { getStoredValue, readJsonValue, removeStoredKey, saveStoredValue, writeJsonValue } from "../utils/storage";
+import { getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
 import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
 import { ACTIVE_TAB_LOCK_FIELDS } from "../constants/fields";
 import { BROWSER_EVENTS } from "../constants/browser";
@@ -20,7 +20,56 @@ const ACTIVE_TAB_LOCK_KEY = runtimeConfig.storageKeys.activeTabLock;
 const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
 const ACTIVE_TAB_HEARTBEAT_MS = runtimeConfig.activeTabHeartbeatMs;
 const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
-const MIN_SURVEYS_BEFORE_FINISH = Math.max(1, runtimeConfig.surveyUiTotalSteps || 1);
+const MIN_SURVEYS_BEFORE_FINISH = 1;
+const CORE_STATE_STORAGE_AREA = "local";
+const CORE_STATE_STORAGE_AREA_SESSION = "session";
+const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
+const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
+const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
+const CORE_SCOPE_ANON = "anon";
+const CORE_SCOPED_KEYS = [
+  runtimeConfig.storageKeys.stage,
+  runtimeConfig.storageKeys.paymentSubStage,
+  runtimeConfig.storageKeys.sessionId,
+  runtimeConfig.storageKeys.consentGiven,
+  runtimeConfig.storageKeys.userDetailsSubmitted,
+  runtimeConfig.storageKeys.emailVerified,
+  runtimeConfig.storageKeys.paymentVerified,
+  runtimeConfig.storageKeys.demographics,
+  runtimeConfig.storageKeys.survey,
+  runtimeConfig.storageKeys.surveyCompleted,
+  runtimeConfig.storageKeys.surveyFeedbackReady,
+  runtimeConfig.storageKeys.lastSubmissionSucceeded,
+  runtimeConfig.storageKeys.shownImages,
+];
+
+function getScopeId(publicId) {
+  const value = String(publicId || "").trim();
+  return value || CORE_SCOPE_ANON;
+}
+
+function readCoreValue(baseKey, fallback, scopeId, { ttlMs } = {}) {
+  const scopedKey = makeScopedKey(baseKey, getScopeId(scopeId));
+  const options = { schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs: ttlMs ?? CORE_STATE_TTL_MS };
+  const localScoped = readExpiringValue(scopedKey, undefined, { area: CORE_STATE_STORAGE_AREA, ...options });
+  if (localScoped !== undefined) return localScoped;
+  const sessionScoped = readExpiringValue(scopedKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, ...options });
+  if (sessionScoped !== undefined) return sessionScoped;
+  const localUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA, ...options });
+  if (localUnscoped !== undefined) return localUnscoped;
+  const sessionUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, ...options });
+  if (sessionUnscoped !== undefined) return sessionUnscoped;
+  return fallback;
+}
+
+function writeCoreValue(baseKey, value, scopeId, { ttlMs } = {}) {
+  const scopedKey = makeScopedKey(baseKey, getScopeId(scopeId));
+  writeExpiringValue(scopedKey, value, {
+    area: CORE_STATE_STORAGE_AREA,
+    schemaVersion: CORE_STATE_SCHEMA_VERSION,
+    ttlMs: ttlMs ?? CORE_STATE_TTL_MS,
+  });
+}
 
 function createId() {
   if (crypto?.randomUUID) return crypto.randomUUID();
@@ -74,6 +123,7 @@ const isDemographicsComplete = (demographics) => {
 };
 
 const deriveMaxAllowedStage = ({
+  currentStage,
   consentGiven,
   hasParticipant,
   userDetailsSubmitted,
@@ -90,8 +140,10 @@ const deriveMaxAllowedStage = ({
   if (!paymentVerified) return APP_FLOW.stages.payment;
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;
   if (surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
-  if (!surveyFeedbackReady && !(surveyCompleted > 0)) return APP_FLOW.stages.survey;
-  return APP_FLOW.stages.finished;
+  // Do not auto-advance to Finished; allow unlimited survey submissions.
+  // Only permit Finished when the user explicitly navigates there (e.g. via SurveyFeedPage "Finish").
+  if (currentStage === APP_FLOW.stages.finished) return APP_FLOW.stages.finished;
+  return APP_FLOW.stages.survey;
 };
 
 export function useAppController() {
@@ -100,18 +152,22 @@ export function useAppController() {
   const demographicsSaveTimeoutRef = useRef(null);
   const isOnline = useOnlineStatus();
   const [isActiveTabOwner, setIsActiveTabOwner] = useState(true);
-  const [darkMode, setDarkMode] = useState(getStoredValue(runtimeConfig.storageKeys.darkMode, false));
-  const [stage, setStage] = useState(getStoredValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent));
-  const [paymentSubStage, setPaymentSubStage] = useState(getStoredValue(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content));
-  const [publicId, setPublicId] = useState(() => getStoredValue(runtimeConfig.storageKeys.publicId, ""));
-  const [sessionId, setSessionId] = useState(() => getStoredValue(runtimeConfig.storageKeys.sessionId, ""));
-  const [consentGiven, setConsentGiven] = useState(() => getStoredValue(runtimeConfig.storageKeys.consentGiven, false));
-  const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => getStoredValue(runtimeConfig.storageKeys.userDetailsSubmitted, false));
-  const [emailVerified, setEmailVerified] = useState(() => getStoredValue(runtimeConfig.storageKeys.emailVerified, false));
-  const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue(runtimeConfig.storageKeys.paymentVerified, false));
+  const [publicId, setPublicId] = useState(() => (
+    getStoredValue(runtimeConfig.storageKeys.publicId, "", { area: CORE_STATE_STORAGE_AREA }) ||
+    getStoredValue(runtimeConfig.storageKeys.publicId, "", { area: CORE_STATE_STORAGE_AREA_SESSION }) ||
+    ""
+  ));
+  const scopeId = getScopeId(publicId);
+  const [sessionId, setSessionId] = useState(() => readCoreValue(runtimeConfig.storageKeys.sessionId, "", scopeId));
+  const [stage, setStage] = useState(() => readCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, scopeId));
+  const [paymentSubStage, setPaymentSubStage] = useState(() => readCoreValue(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content, scopeId));
+  const [consentGiven, setConsentGiven] = useState(() => readCoreValue(runtimeConfig.storageKeys.consentGiven, false, scopeId));
+  const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => readCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, false, scopeId));
+  const [emailVerified, setEmailVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.emailVerified, false, scopeId));
+  const [paymentVerified, setPaymentVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.paymentVerified, false, scopeId));
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [demographics, setDemographics] = useState(
-    getStoredValue(runtimeConfig.storageKeys.demographics, {
+    readCoreValue(runtimeConfig.storageKeys.demographics, {
       username: "",
       email: "",
       phone: "",
@@ -120,7 +176,7 @@ export function useAppController() {
       location: "",
       language_code: "",
       prior_experience: "",
-    })
+    }, scopeId, { ttlMs: PII_STATE_TTL_MS })
   );
   const [toasts, setToasts] = useState([]);
   const [surveyTransitionInFlight, setSurveyTransitionInFlight] = useState(false);
@@ -225,11 +281,11 @@ export function useAppController() {
     publicId,
     addToast,
     initial: {
-      survey: getStoredValue(runtimeConfig.storageKeys.survey, null),
-      surveyCompleted: getStoredValue(runtimeConfig.storageKeys.surveyCompleted, 0),
-      surveyFeedbackReady: getStoredValue(runtimeConfig.storageKeys.surveyFeedbackReady, false),
-      lastSubmissionSucceeded: getStoredValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, false),
-      shownImages: getStoredValue(runtimeConfig.storageKeys.shownImages, []),
+      survey: readCoreValue(runtimeConfig.storageKeys.survey, null, scopeId),
+      surveyCompleted: readCoreValue(runtimeConfig.storageKeys.surveyCompleted, 0, scopeId),
+      surveyFeedbackReady: readCoreValue(runtimeConfig.storageKeys.surveyFeedbackReady, false, scopeId),
+      lastSubmissionSucceeded: readCoreValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, false, scopeId),
+      shownImages: readCoreValue(runtimeConfig.storageKeys.shownImages, [], scopeId),
     },
   });
 
@@ -325,37 +381,113 @@ export function useAppController() {
     };
   }, [publicId]);
 
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.consentGiven, consentGiven), [consentGiven]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.userDetailsSubmitted, userDetailsSubmitted), [userDetailsSubmitted]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.paymentVerified, paymentVerified), [paymentVerified]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.publicId, publicId), [publicId]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.sessionId, sessionId), [sessionId]);
+  // Migration on boot: move previous sessionStorage / unscoped values into localStorage scoped-by-participant keys.
+  useEffect(() => {
+    CORE_SCOPED_KEYS.forEach((baseKey) => {
+      const ttlMs = baseKey === runtimeConfig.storageKeys.demographics ? PII_STATE_TTL_MS : CORE_STATE_TTL_MS;
+      const targetKey = makeScopedKey(baseKey, scopeId);
+
+      const localScoped = readExpiringValue(targetKey, undefined, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      if (localScoped !== undefined) {
+        // Clear any legacy/unscoped copies so reads are deterministic.
+        removeStoredKey(targetKey, CORE_STATE_STORAGE_AREA_SESSION);
+        removeStoredKey(baseKey, CORE_STATE_STORAGE_AREA);
+        removeStoredKey(baseKey, CORE_STATE_STORAGE_AREA_SESSION);
+        return;
+      }
+
+      const sessionScoped = readExpiringValue(targetKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      if (sessionScoped !== undefined) {
+        writeExpiringValue(targetKey, sessionScoped, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+        removeStoredKey(targetKey, CORE_STATE_STORAGE_AREA_SESSION);
+        removeStoredKey(baseKey, CORE_STATE_STORAGE_AREA);
+        removeStoredKey(baseKey, CORE_STATE_STORAGE_AREA_SESSION);
+        return;
+      }
+
+      const localUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      if (localUnscoped !== undefined) {
+        writeExpiringValue(targetKey, localUnscoped, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+        removeStoredKey(baseKey, CORE_STATE_STORAGE_AREA);
+        removeStoredKey(baseKey, CORE_STATE_STORAGE_AREA_SESSION);
+        return;
+      }
+
+      const sessionUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      if (sessionUnscoped !== undefined) {
+        writeExpiringValue(targetKey, sessionUnscoped, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+        removeStoredKey(baseKey, CORE_STATE_STORAGE_AREA_SESSION);
+      }
+    });
+  }, [scopeId]);
+
+  // Persist the current participant id (unscoped) as a fallback when cookies aren't available.
+  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.publicId, publicId, { area: CORE_STATE_STORAGE_AREA }), [publicId]);
+
+  // Persist scoped workflow state in localStorage.
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.stage, stage, scopeId), [scopeId, stage]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.paymentSubStage, paymentSubStage, scopeId), [paymentSubStage, scopeId]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.sessionId, sessionId, scopeId), [scopeId, sessionId]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.consentGiven, consentGiven, scopeId), [consentGiven, scopeId]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, userDetailsSubmitted, scopeId), [scopeId, userDetailsSubmitted]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.emailVerified, emailVerified, scopeId), [emailVerified, scopeId]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.paymentVerified, paymentVerified, scopeId), [paymentVerified, scopeId]);
   useEffect(() => {
     if (!isOnline) return;
     if (demographicsSaveTimeoutRef.current) {
       clearScheduledTimeout(demographicsSaveTimeoutRef.current);
     }
     demographicsSaveTimeoutRef.current = scheduleTimeout(() => {
-      saveStoredValue(runtimeConfig.storageKeys.demographics, demographics);
+      writeCoreValue(runtimeConfig.storageKeys.demographics, demographics, scopeId, { ttlMs: PII_STATE_TTL_MS });
     }, 700);
-  }, [demographics, isOnline]);
+  }, [demographics, isOnline, scopeId]);
   useEffect(() => () => {
     if (demographicsSaveTimeoutRef.current) {
       clearScheduledTimeout(demographicsSaveTimeoutRef.current);
     }
   }, []);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.stage, stage), [stage]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.paymentSubStage, paymentSubStage), [paymentSubStage]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.emailVerified, emailVerified), [emailVerified]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.survey, survey), [survey]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.surveyCompleted, surveyCompleted), [surveyCompleted]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.surveyFeedbackReady, surveyFeedbackReady), [surveyFeedbackReady]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, lastSubmissionSucceeded), [lastSubmissionSucceeded]);
-  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.shownImages, shownImages), [shownImages]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.survey, survey, scopeId), [scopeId, survey]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.surveyCompleted, surveyCompleted, scopeId), [scopeId, surveyCompleted]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.surveyFeedbackReady, surveyFeedbackReady, scopeId), [scopeId, surveyFeedbackReady]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, lastSubmissionSucceeded, scopeId), [lastSubmissionSucceeded, scopeId]);
+  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.shownImages, shownImages, scopeId), [scopeId, shownImages]);
+
+  // When participant id becomes available, migrate anon-scoped state to this participant (first-time create flow).
   useEffect(() => {
-    saveStoredValue(runtimeConfig.storageKeys.darkMode, darkMode);
-    document.body.classList.toggle("dark", darkMode);
-  }, [darkMode]);
+    if (!publicId) return;
+    const fromScope = CORE_SCOPE_ANON;
+    const toScope = publicId;
+    CORE_SCOPED_KEYS.forEach((baseKey) => {
+      const ttlMs = baseKey === runtimeConfig.storageKeys.demographics ? PII_STATE_TTL_MS : CORE_STATE_TTL_MS;
+      const fromKey = makeScopedKey(baseKey, fromScope);
+      const toKey = makeScopedKey(baseKey, toScope);
+      const already = readExpiringValue(toKey, undefined, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      if (already !== undefined) return;
+      const fromVal = readExpiringValue(fromKey, undefined, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      if (fromVal === undefined) return;
+      writeExpiringValue(toKey, fromVal, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      removeStoredKey(fromKey, CORE_STATE_STORAGE_AREA);
+    });
+
+    // Rehydrate current in-memory state from the participant scope after migration.
+    setSessionId(readCoreValue(runtimeConfig.storageKeys.sessionId, "", publicId));
+    setStage(readCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, publicId));
+    setPaymentSubStage(readCoreValue(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content, publicId));
+    setConsentGiven(readCoreValue(runtimeConfig.storageKeys.consentGiven, false, publicId));
+    setUserDetailsSubmitted(readCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, false, publicId));
+    setEmailVerified(readCoreValue(runtimeConfig.storageKeys.emailVerified, false, publicId));
+    setPaymentVerified(readCoreValue(runtimeConfig.storageKeys.paymentVerified, false, publicId));
+    setDemographics(readCoreValue(runtimeConfig.storageKeys.demographics, {
+      username: "",
+      email: "",
+      phone: "",
+      gender_code: "",
+      age: "",
+      location: "",
+      language_code: "",
+      prior_experience: "",
+    }, publicId, { ttlMs: PII_STATE_TTL_MS }));
+  }, [publicId]);
 
   useEffect(() => {
     if (!sessionHydrated) return;
@@ -364,6 +496,7 @@ export function useAppController() {
       return;
     }
     const maxAllowedStage = deriveMaxAllowedStage({
+      currentStage: stage,
       consentGiven,
       hasParticipant: Boolean(publicId),
       userDetailsSubmitted,
@@ -548,13 +681,11 @@ export function useAppController() {
       setStage(APP_FLOW.stages.payment);
     }
   }, [setEmailVerified, setStage]);
-  const toggleDarkMode = useCallback(() => setDarkMode((prev) => !prev), []);
   const handleAppError = useCallback(() => addToast(getErrorMessage("SYS_002_0017"), "error"), [addToast]);
 
   return {
     isOnline,
     isActiveTabOwner,
-    darkMode,
     stage,
     paymentSubStage,
     publicId,
@@ -582,7 +713,6 @@ export function useAppController() {
     handleSubmit,
     claimActiveTabLock,
     dismissToast,
-    toggleDarkMode,
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleUserDetailsBack,

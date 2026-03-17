@@ -7,6 +7,12 @@ export const STORAGE_AREAS = {
   session: "session",
 };
 
+export const ALL_STORAGE_AREAS = [STORAGE_AREAS.local, STORAGE_AREAS.session];
+
+export function forEachStorageArea(callback, areas = ALL_STORAGE_AREAS) {
+  areas.forEach((area) => callback(area));
+}
+
 export const STORAGE_ENVELOPE_FIELDS = {
   schemaVersion: "__schema_version",
   savedAt: "saved_at",
@@ -20,6 +26,24 @@ export const STORAGE_FLAG_VALUES = {
 
 function getStorageArea(area = STORAGE_AREAS.session) {
   return area === STORAGE_AREAS.local ? localStorage : sessionStorage;
+}
+
+export function isStorageAvailable(area = STORAGE_AREAS.session) {
+  try {
+    const storage = getStorageArea(area);
+    const key = "__cognit_storage_probe__";
+    storage.setItem(key, "1");
+    storage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function makeScopedKey(key, scope) {
+  const scoped = String(scope || "").trim();
+  if (!scoped) return key;
+  return `${key}:${scoped}`;
 }
 
 export function readJsonValue(key, fallback = null, area = STORAGE_AREAS.session) {
@@ -65,17 +89,19 @@ export function removeStoredKey(key, area = STORAGE_AREAS.session) {
   }
 }
 
-export function getStoredValue(key, fallback) {
+export function getStoredValue(key, fallback, options = {}) {
   return readExpiringValue(key, fallback, {
-    schemaVersion: UI_STATE_SCHEMA_VERSION,
-    ttlMs: UI_STATE_TTL_MS,
+    ...options,
+    schemaVersion: options.schemaVersion !== undefined ? options.schemaVersion : UI_STATE_SCHEMA_VERSION,
+    ttlMs: options.ttlMs !== undefined ? options.ttlMs : UI_STATE_TTL_MS,
   });
 }
 
-export function saveStoredValue(key, value) {
+export function saveStoredValue(key, value, options = {}) {
   writeExpiringValue(key, value, {
-    schemaVersion: UI_STATE_SCHEMA_VERSION,
-    ttlMs: UI_STATE_TTL_MS,
+    ...options,
+    schemaVersion: options.schemaVersion !== undefined ? options.schemaVersion : UI_STATE_SCHEMA_VERSION,
+    ttlMs: options.ttlMs !== undefined ? options.ttlMs : UI_STATE_TTL_MS,
   });
 }
 
@@ -116,10 +142,11 @@ export function writeExpiringValue(key, value, options = {}) {
 
   try {
     const now = Date.now();
+    const effectiveTtlMs = ttlMs === null ? Number.MAX_SAFE_INTEGER - now : ttlMs;
     writeJsonValue(key, {
       [STORAGE_ENVELOPE_FIELDS.schemaVersion]: schemaVersion,
       [STORAGE_ENVELOPE_FIELDS.savedAt]: now,
-      [STORAGE_ENVELOPE_FIELDS.expiresAt]: now + ttlMs,
+      [STORAGE_ENVELOPE_FIELDS.expiresAt]: now + effectiveTtlMs,
       [STORAGE_ENVELOPE_FIELDS.data]: value,
     }, area);
   } catch {
