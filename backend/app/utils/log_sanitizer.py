@@ -17,6 +17,7 @@ CONFIDENTIAL_KEYWORDS = {
     "vpa",
     "sha256",
     "hash",
+    "otp",
     "email",
     "phone",
     "ip",

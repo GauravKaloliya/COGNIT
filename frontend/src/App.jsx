@@ -114,6 +114,7 @@ export default function App() {
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleUserDetailsBack,
+    handleEmailVerified,
     handlePaymentComplete,
     handlePaymentContentToLink,
     handlePaymentBack,
@@ -154,9 +155,12 @@ export default function App() {
       case "user-details":
         return (
           <UserDetailsPage
+            publicId={publicId}
             demographics={demographics}
             setDemographics={setDemographics}
             onSubmit={handleUserDetailsSubmit}
+            onEmailVerified={handleEmailVerified}
+            addToast={addToast}
             onBack={handleUserDetailsBack}
             systemReady={systemReady}
           />
