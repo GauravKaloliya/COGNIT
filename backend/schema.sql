@@ -20,16 +20,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION prevent_random_key_update()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'UPDATE' AND NEW.random_key IS DISTINCT FROM OLD.random_key THEN
-        RAISE EXCEPTION 'random_key cannot be updated';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
 CREATE OR REPLACE FUNCTION update_last_seen()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -391,7 +381,6 @@ CREATE TABLE IF NOT EXISTS images (
     object_count SMALLINT CHECK (object_count >= 0),
     difficulty   NUMERIC(3,2) CHECK (difficulty BETWEEN 0 AND 10),
     tags         TEXT[],
-    random_key   DOUBLE PRECISION DEFAULT random(),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -400,18 +389,13 @@ CREATE TRIGGER trg_images_updated_at
     BEFORE UPDATE ON images
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE TRIGGER trg_prevent_random_key_change
-    BEFORE UPDATE ON images
-    FOR EACH ROW EXECUTE FUNCTION prevent_random_key_update();
-
 CREATE INDEX IF NOT EXISTS idx_images_image_id   ON images (image_id);
-CREATE INDEX IF NOT EXISTS idx_images_random_key ON images (random_key);
 CREATE INDEX IF NOT EXISTS idx_images_difficulty ON images (difficulty);
 
 CREATE TABLE IF NOT EXISTS attention_checks (
     id            BIGSERIAL PRIMARY KEY,
     image_id      BIGINT NOT NULL REFERENCES images(id) ON DELETE CASCADE,
-    expected_word VARCHAR(120) NOT NULL,
+    expected_word TEXT NOT NULL,
     is_strict     BOOLEAN NOT NULL DEFAULT TRUE,
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -419,6 +403,11 @@ CREATE TABLE IF NOT EXISTS attention_checks (
     CONSTRAINT one_active_check_per_image UNIQUE (image_id)
         DEFERRABLE INITIALLY DEFERRED
 );
+
+-- If an older schema already exists, widen the column so seed data (comma-separated tags)
+-- can be stored safely.
+ALTER TABLE attention_checks
+    ALTER COLUMN expected_word TYPE TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attention_checks_active_unique
     ON attention_checks (image_id) WHERE is_active = true;

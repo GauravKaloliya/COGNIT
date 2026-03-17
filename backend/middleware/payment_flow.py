@@ -32,7 +32,7 @@ def require_payment_completed(f):
         db = get_db()
 
         result = db.execute(text("""
-            SELECT payment_status, is_deleted
+            SELECT payment_status, is_deleted, email_verified
             FROM participants
             WHERE public_id = :pub
         """), {"pub": public_id}).fetchone()
@@ -40,10 +40,41 @@ def require_payment_completed(f):
         if not result:
             return create_error_response("NF_PARTICIPANT")
 
-        payment_status, is_deleted = result
+        payment_status, is_deleted, email_verified = result
 
         if is_deleted:
             return create_error_response("AUTH_ACCOUNT_DEACTIVATED")
+
+        if not email_verified:
+            try:
+                db.execute(text("""
+                    INSERT INTO audit_log (
+                        event_type, participant_id, details, ip_hash, user_agent
+                    ) VALUES (
+                        'unauthorized_access_attempt',
+                        (SELECT id FROM participants WHERE public_id = :pub),
+                        :details,
+                        :ip_hash,
+                        :ua
+                    )
+                """), {
+                    "pub": public_id,
+                    "details": json.dumps({
+                        "route": request.endpoint,
+                        "reason": "email_not_verified",
+                        "current_payment_status": payment_status,
+                    }),
+                    "ip_hash": get_ip_hash(),
+                    "ua": request.headers.get("User-Agent", "")[:512],
+                })
+                db.commit()
+            except Exception:
+                pass
+
+            return create_error_response(
+                "AUTH_EMAIL_NOT_VERIFIED",
+                custom_message="Email must be verified before accessing this feature",
+            )
 
         if payment_status != "paid":
             try:

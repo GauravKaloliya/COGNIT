@@ -770,12 +770,12 @@ export function useUserDetailsPage({
   const verifyOtp = useCallback(async () => {
     const effectivePublicId = submittedPublicIdRef.current || publicId;
     const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
-    const trimmed = String(otpValue || "").trim();
+    const normalizedOtp = String(otpValue || "").replace(/\D/g, "");
     if (!effectivePublicId || !normalizedEmail) {
       setOtpError(getErrorMessage("VAL_003_0001"));
       return;
     }
-    if (!trimmed || trimmed.length !== otpLength) {
+    if (!normalizedOtp || normalizedOtp.length !== otpLength) {
       setOtpError(getErrorMessage("AUTH_003_0001"));
       return;
     }
@@ -786,7 +786,7 @@ export function useUserDetailsPage({
     setOtpStatus("verifying");
     setOtpError("");
     try {
-      await endpoints.verifyEmailOtp(effectivePublicId, normalizedEmail, trimmed);
+      await endpoints.verifyEmailOtp(effectivePublicId, normalizedEmail, normalizedOtp);
       setOtpStatus("verified");
       removeStoredKey(EMAIL_OTP_STATE_KEY);
       addToast?.(uiText("email.verifiedToast"), "success");

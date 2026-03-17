@@ -73,6 +73,7 @@ export default function UserDetailsPage({
   const emailPlaceholderDomain = emailDomains[emailPlaceholderIndex % emailDomains.length] || "gmail.com";
   const showEmailGhost = !emailFocused && !(demographics.email || "").trim();
   const inputRefs = React.useRef([]);
+  const toOtpDigits = (value) => String(value || "").replace(/\D/g, "");
   const otpStatusMessage = otpStatus === "sending"
     ? uiText("email.requesting")
     : otpStatus === "sent"
@@ -254,15 +255,7 @@ export default function UserDetailsPage({
                   disabled={otpStatus === "verifying" || otpStatus === "sending"}
                   onChange={(e) => {
                     const raw = e.target.value;
-                    const digitsOnly = raw.replace(/\\D/g, "");
-
-                    // Mobile OTP autofill often dumps the full code into one input: treat it like paste
-                    // and overwrite the OTP from the start (no mid-editing).
-                    if (digitsOnly.length > 1) {
-                      setOtpFromPaste(0, digitsOnly);
-                      inputRefs.current[otpLength - 1]?.focus();
-                      return;
-                    }
+                    const digitsOnly = toOtpDigits(raw);
 
                     if (index !== editableOtpIndex) {
                       inputRefs.current[editableOtpIndex]?.focus();
@@ -271,7 +264,7 @@ export default function UserDetailsPage({
 
                     setOtpDigit(index, digitsOnly);
                     if (digitsOnly && index < otpLength - 1) {
-                      inputRefs.current[index + 1]?.focus();
+                      window.setTimeout(() => inputRefs.current[index + 1]?.focus(), 0);
                     }
                   }}
                   onKeyDown={(e) => {
@@ -298,10 +291,11 @@ export default function UserDetailsPage({
                   onPaste={(e) => {
                     e.preventDefault();
                     const pasted = e.clipboardData.getData("text");
-                    const digitsOnly = pasted.replace(/\D/g, "");
+                    const digitsOnly = toOtpDigits(pasted);
                     if (!digitsOnly) return;
                     setOtpFromPaste(0, digitsOnly);
-                    inputRefs.current[Math.min(otpLength - 1, digitsOnly.length - 1)]?.focus();
+                    const nextIndex = Math.min(otpLength - 1, digitsOnly.length - 1);
+                    window.setTimeout(() => inputRefs.current[nextIndex]?.focus(), 0);
                   }}
                   onFocus={() => {
                     if (index !== editableOtpIndex) inputRefs.current[editableOtpIndex]?.focus();
