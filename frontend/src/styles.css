@@ -3255,6 +3255,11 @@ body.dark .payment-card.tone-4 {
   margin-top: var(--space-3);
 }
 
+/* Survey feedback uses `inline-actions` for button sizing, but should stay centered. */
+.page-actions.survey-feedback-actions.inline-actions {
+  justify-content: center;
+}
+
 .survey-feedback-finish {
   border: 2px solid var(--error);
   color: var(--error);
