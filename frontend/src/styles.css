@@ -3391,6 +3391,20 @@ body.dark .payment-card.tone-4 {
   font-size: var(--text-base);
 }
 
+.finish-reminder.card {
+  padding: 0;
+  gap: 0;
+}
+
+.finish-reminder.card .card-header {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.finish-reminder.card h4 {
+  margin: 0;
+}
+
 .finish-reminder ul {
   padding-left: 1.25em;
   margin-bottom: 0;
