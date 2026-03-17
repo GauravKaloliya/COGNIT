@@ -846,6 +846,7 @@ export function useUserDetailsPage({
     } catch (err) {
       if (err?.code === REQUEST_CODES.aborted) return;
       setOtpStatus(OTP_STATUS.verifyFailed);
+      autoVerifyRef.current = "";
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
       setEmailEditable(true);
       setOtpError(err?.message || getErrorMessage("SYS_002_0002"));
@@ -853,7 +854,7 @@ export function useUserDetailsPage({
   }, [addToast, demographics.email, isOnline, onEmailVerified, otpLength, otpValue, publicId, scopedOtpKey]);
 
   useEffect(() => {
-    if (otpStatus !== OTP_STATUS.sent) return;
+    if (![OTP_STATUS.sent, OTP_STATUS.verifyFailed].includes(otpStatus)) return;
     if (!otpValue || otpValue.length !== otpLength) return;
     if (autoVerifyRef.current === otpValue) return;
     autoVerifyRef.current = otpValue;
@@ -872,13 +873,14 @@ export function useUserDetailsPage({
       return;
     }
     const emailUpdate = submittedEmailRef.current && submittedEmailRef.current !== normalizedEmail;
-      setOtpStatus(OTP_STATUS.sending);
+    autoVerifyRef.current = "";
+    setOtpStatus(OTP_STATUS.sending);
     setOtpError("");
     try {
       await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, emailUpdate);
       submittedEmailRef.current = normalizedEmail;
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
-        setOtpStatus(OTP_STATUS.sent);
+      setOtpStatus(OTP_STATUS.sent);
       setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
       resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
       setResendCountdownActive(true);
