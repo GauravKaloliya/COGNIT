@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
 import { runtimeConfig } from "../config/runtime";
-import { getStoredValue, saveStoredValue } from "../utils/storage";
+import { getStoredValue, isStorageAvailable, saveStoredValue } from "../utils/storage";
 import { BROWSER_EVENTS, BROWSER_FLAGS } from "../constants/browser";
 import { initErrorReporter, reportClientError } from "../utils/errorReporter";
 
 function readDarkMode() {
-  return getStoredValue(runtimeConfig.storageKeys.darkMode, false) === true;
+  return getStoredValue(runtimeConfig.storageKeys.darkMode, false, { area: "local" }) === true;
 }
 
 export function useMainAppController() {
   const [darkMode, setDarkMode] = useState(() => readDarkMode());
   const [error, setError] = useState(null);
+  const [storageOk] = useState(() => isStorageAvailable("local"));
 
   useEffect(() => {
     document.body.classList.toggle(BROWSER_FLAGS.darkModeClass, darkMode);
-    saveStoredValue(runtimeConfig.storageKeys.darkMode, darkMode === true);
+    saveStoredValue(runtimeConfig.storageKeys.darkMode, darkMode === true, { area: "local" });
   }, [darkMode]);
 
   useEffect(() => {
@@ -52,6 +53,7 @@ export function useMainAppController() {
 
   return {
     darkMode,
+    storageOk,
     error,
     resetError: () => setError(null),
     toggleDarkMode: () => setDarkMode((prev) => !prev),

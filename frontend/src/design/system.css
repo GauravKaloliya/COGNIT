@@ -14,16 +14,9 @@
   gap: var(--ds-space-3);
 }
 
-.ds-card {
-  border: 1px solid var(--border-light);
-  border-radius: var(--ds-radius-lg);
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
-}
 
-.ds-card-body {
-  padding: var(--ds-space-4);
-}
+
+
 
 .ds-title {
   font-family: var(--ds-font-title);
@@ -36,7 +29,5 @@
 }
 
 @media (max-width: 768px) {
-  .ds-card-body {
-    padding: var(--ds-space-3);
-  }
+  
 }

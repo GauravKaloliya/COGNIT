@@ -1,7 +1,6 @@
 import base64
 import logging
 import hashlib
-import json
 import re
 from datetime import datetime, timezone
 from io import BytesIO
@@ -9,7 +8,6 @@ from typing import Callable, Optional
 
 from PIL import Image
 from flask import jsonify
-from sqlalchemy import text
 
 from app.config import (
     S3_BUCKET_NAME,
@@ -19,7 +17,6 @@ from app.config import (
     FRAUD_SCORE_WEIGHTS,
     FRAUD_UNKNOWN_REASON_WEIGHT,
     FRAUD_REJECT_THRESHOLD,
-    FRAUD_SUCCESS_MAX_SCORE,
     PAYMENT_VERIFY_MAX_ATTEMPTS,
 )
 from app.constants.event_constants import (
@@ -84,7 +81,6 @@ from app.constants.payment_constants import (
 from app.constants.response_keys import (
     RESPONSE_KEY_DETECTED_APP,
     RESPONSE_KEY_ERROR,
-    RESPONSE_KEY_PAYMENT_ID,
     RESPONSE_KEY_STATUS,
     RESPONSE_KEY_VERIFICATION,
     RESPONSE_KEY_VERIFIED,

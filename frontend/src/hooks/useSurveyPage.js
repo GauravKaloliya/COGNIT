@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiUrl } from "../utils/apiBase";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { runtimeConfig } from "../config/runtime";
-import { clearPendingFlag, getPendingFlag, readExpiringValue, removeStoredKey, setPendingFlag, writeExpiringValue } from "../utils/storage";
+import { clearPendingFlag, getPendingFlag, readJsonValue, removeStoredKey, setPendingFlag, writeJsonValue } from "../utils/storage";
 import { uiText } from "../utils/uiText";
 import { useNavigationBlocker } from "./useNavigationBlocker";
 import { useOnlineStatus } from "./useOnlineStatus";
@@ -18,7 +18,6 @@ const PRIORITY_FEEDBACK_TARGET = runtimeConfig.priorityFeedbackTarget;
 const UI_TOTAL_STEPS = runtimeConfig.surveyUiTotalSteps;
 const COPY_PASTE_DISABLED = runtimeConfig.disableCopyPaste;
 const SURVEY_DRAFT_SCHEMA_VERSION = runtimeConfig.surveyDraftSchemaVersion;
-const SURVEY_DRAFT_TTL_MS = runtimeConfig.surveyDraftTtlMs;
 const SURVEY_PENDING_SUBMIT_KEY = runtimeConfig.storageKeys.surveyPendingSubmit;
 
 export const DESCRIPTION_NOTES = [
@@ -60,18 +59,36 @@ const getActiveDraftKey = (publicId) => {
 
 const readSurveyDraft = (key) => {
   if (!key) return null;
-  return readExpiringValue(key, null, {
-    schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
-    ttlMs: SURVEY_DRAFT_TTL_MS,
-  });
+  const unwrap = (value) => {
+    if (!value || typeof value !== "object") return null;
+    if ("__schema_version" in value && "expires_at" in value && "data" in value) return value.data || null;
+    return value;
+  };
+
+  // New: localStorage (no TTL)
+  const local = unwrap(readJsonValue(key, null, "local"));
+  if (local) return local;
+
+  // Backward compatible: old expiring drafts were stored in sessionStorage.
+  const session = unwrap(readJsonValue(key, null, "session"));
+  if (session) {
+    try {
+      writeJsonValue(key, session, "local");
+      removeStoredKey(key, "session");
+    } catch {
+      // Ignore migration failures.
+    }
+  }
+  return session || null;
 };
 
 const writeSurveyDraft = (key, data) => {
   if (!key) return;
-  writeExpiringValue(key, data, {
-    schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
-    ttlMs: SURVEY_DRAFT_TTL_MS,
-  });
+  writeJsonValue(key, {
+    __schema_version: SURVEY_DRAFT_SCHEMA_VERSION,
+    saved_at: Date.now(),
+    data,
+  }, "local");
 };
 
 export function useSurveyPage({
@@ -424,9 +441,11 @@ export function useSurveyPage({
         engagementData,
       });
       if (draftKey) {
-        removeStoredKey(draftKey);
+        removeStoredKey(draftKey, "session");
+        removeStoredKey(draftKey, "local");
       }
-      removeStoredKey(activeDraftKey);
+      removeStoredKey(activeDraftKey, "session");
+      removeStoredKey(activeDraftKey, "local");
       setDescription("");
       setRating(0);
       setComments("");

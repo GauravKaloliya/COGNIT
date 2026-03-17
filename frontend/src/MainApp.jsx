@@ -6,7 +6,7 @@ import ErrorPage from "./components/ErrorPage.jsx";
 import { useMainAppController } from "./hooks/useMainAppController";
 
 function MainApp() {
-  const { darkMode, error, resetError, toggleDarkMode } = useMainAppController();
+  const { darkMode, storageOk, error, resetError, toggleDarkMode } = useMainAppController();
 
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -19,7 +19,10 @@ function MainApp() {
         />
       ) : (
         <Routes>
-          <Route path="/" element={<App />} />
+          <Route
+            path="/"
+            element={<App darkMode={darkMode} toggleDarkMode={toggleDarkMode} storageOk={storageOk} />}
+          />
           <Route
             path="*"
             element={

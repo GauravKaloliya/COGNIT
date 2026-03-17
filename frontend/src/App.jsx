@@ -80,10 +80,9 @@ function Confetti({ show }) {
   );
 }
 
-export default function App() {
+export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const {
     isActiveTabOwner,
-    darkMode,
     stage,
     paymentSubStage,
     publicId,
@@ -110,7 +109,6 @@ export default function App() {
     handleSubmit,
     claimActiveTabLock,
     dismissToast,
-    toggleDarkMode,
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleUserDetailsBack,
@@ -148,9 +146,9 @@ export default function App() {
 
     if (systemError && !systemReady) return null;
 
-    switch (stage) {
-      case "consent":
-        return <ConsentPage onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
+      switch (stage) {
+        case "consent":
+        return <ConsentPage publicId={publicId} onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
       case "user-details":
         return (
           <UserDetailsPage
@@ -200,7 +198,7 @@ export default function App() {
       case "finished":
         return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} />;
       default:
-        return <ConsentPage onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
+        return <ConsentPage publicId={publicId} onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
     }
   };
 
@@ -225,6 +223,11 @@ export default function App() {
             </div>
           </header>
           <div className="panel status-panel">
+            {!storageOk && (
+              <div className="banner warning">
+                <span>{uiText("app.storageUnavailable")}</span>
+              </div>
+            )}
             <h2>{uiText("app.anotherTabTitle")}</h2>
             <p className="status-message">
               {uiText("app.anotherTabMessage")}
@@ -286,6 +289,12 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {!storageOk && (
+          <div className="banner warning">
+            <span>{uiText("app.storageUnavailable")}</span>
+          </div>
+        )}
 
         <FlowStepper stage={stage} />
 

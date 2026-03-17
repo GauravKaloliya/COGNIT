@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { runtimeConfig } from "../config/runtime";
-import { clearPendingFlag, getPendingFlag, readExpiringValue, removeStoredKey, setPendingFlag, writeExpiringValue } from "../utils/storage";
+import { clearPendingFlag, forEachStorageArea, getPendingFlag, makeScopedKey, readExpiringValue, removeStoredKey, setPendingFlag, writeExpiringValue } from "../utils/storage";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
@@ -12,25 +12,47 @@ const CONSENT_DRAFT_TTL_MS = runtimeConfig.consentDraftTtlMs;
 const CONSENT_DRAFT_KEY = runtimeConfig.storageKeys.consentDraft;
 const CONSENT_PENDING_KEY = runtimeConfig.storageKeys.consentPending;
 
-const readConsentDraft = () => {
-  return readExpiringValue(CONSENT_DRAFT_KEY, false, {
-    schemaVersion: CONSENT_DRAFT_SCHEMA_VERSION,
-    ttlMs: CONSENT_DRAFT_TTL_MS,
-  }) === true;
+const getConsentDraftKey = (scope) => makeScopedKey(CONSENT_DRAFT_KEY, scope);
+const getConsentPendingKey = (scope) => makeScopedKey(CONSENT_PENDING_KEY, scope);
+
+const readConsentDraft = (scope) => {
+  const key = getConsentDraftKey(scope);
+  const opts = { schemaVersion: CONSENT_DRAFT_SCHEMA_VERSION, ttlMs: CONSENT_DRAFT_TTL_MS };
+  const localScoped = readExpiringValue(key, false, { ...opts, area: "local" }) === true;
+  if (localScoped) return true;
+
+  // Backward-compatible migration: consent draft used to live in sessionStorage and/or unscoped keys.
+  const legacy =
+    (readExpiringValue(key, false, { ...opts, area: "session" }) === true) ||
+    (readExpiringValue(CONSENT_DRAFT_KEY, false, { ...opts, area: "local" }) === true) ||
+    (readExpiringValue(CONSENT_DRAFT_KEY, false, { ...opts, area: "session" }) === true);
+  if (legacy) {
+    try {
+      writeExpiringValue(key, true, { ...opts, area: "local" });
+      removeStoredKey(key, "session");
+      removeStoredKey(CONSENT_DRAFT_KEY, "local");
+      removeStoredKey(CONSENT_DRAFT_KEY, "session");
+    } catch {
+      // Ignore migration failures.
+    }
+  }
+  return legacy;
 };
 
-const writeConsentDraft = (checked) => {
-  writeExpiringValue(CONSENT_DRAFT_KEY, checked === true, {
+const writeConsentDraft = (scope, checked) => {
+  writeExpiringValue(getConsentDraftKey(scope), checked === true, {
+    area: "local",
     schemaVersion: CONSENT_DRAFT_SCHEMA_VERSION,
     ttlMs: CONSENT_DRAFT_TTL_MS,
   });
 };
 
-export function useConsentPage({ onConsentGiven, systemReady }) {
-  const [consentChecked, setConsentChecked] = useState(() => readConsentDraft());
+export function useConsentPage({ publicId, onConsentGiven, systemReady }) {
+  const scope = String(publicId || "").trim() || "anon";
+  const [consentChecked, setConsentChecked] = useState(() => readConsentDraft(scope));
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [draftRestored] = useState(() => readConsentDraft());
+  const [draftRestored] = useState(() => readConsentDraft(scope));
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -56,7 +78,7 @@ export function useConsentPage({ onConsentGiven, systemReady }) {
     }
     draftSaveTimeoutRef.current = scheduleTimeout(() => {
       try {
-        writeConsentDraft(consentChecked);
+        writeConsentDraft(scope, consentChecked);
         const now = Date.now();
         lastSavedAtRef.current = now;
         setLastSavedAt(now);
@@ -72,7 +94,7 @@ export function useConsentPage({ onConsentGiven, systemReady }) {
         saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
       }
     }, 700);
-  }, [consentChecked, isOnline]);
+  }, [consentChecked, isOnline, scope]);
 
   useEffect(() => {
     if (!isOnline) setIsSaving(false);
@@ -97,7 +119,7 @@ export function useConsentPage({ onConsentGiven, systemReady }) {
   const handleSubmit = useCallback(async () => {
     if (!isOnline) {
       setError(uiText("consent.offlineSubmit"));
-      setPendingFlag(CONSENT_PENDING_KEY);
+      setPendingFlag(getConsentPendingKey(scope));
       setPendingSubmit(true);
       return;
     }
@@ -116,22 +138,25 @@ export function useConsentPage({ onConsentGiven, systemReady }) {
 
     try {
       await onConsentGiven();
-      removeStoredKey(CONSENT_DRAFT_KEY);
+      forEachStorageArea((area) => {
+        removeStoredKey(CONSENT_DRAFT_KEY, area);
+        removeStoredKey(getConsentDraftKey(scope), area);
+      });
     } catch (err) {
       setError(resolveConsentError(err));
     } finally {
       setSubmitting(false);
     }
-  }, [consentChecked, isOnline, onConsentGiven, resolveConsentError, systemReady]);
+  }, [consentChecked, isOnline, onConsentGiven, resolveConsentError, scope, systemReady]);
 
   useEffect(() => {
     if (!isOnline || submitting) return;
-    const pending = getPendingFlag(CONSENT_PENDING_KEY);
+    const pending = getPendingFlag(getConsentPendingKey(scope));
     if (!pending || !consentChecked) return;
-    clearPendingFlag(CONSENT_PENDING_KEY);
+    clearPendingFlag(getConsentPendingKey(scope));
     setPendingSubmit(false);
     handleSubmit();
-  }, [consentChecked, handleSubmit, isOnline, submitting]);
+  }, [consentChecked, handleSubmit, isOnline, scope, submitting]);
 
   return {
     consentChecked,
