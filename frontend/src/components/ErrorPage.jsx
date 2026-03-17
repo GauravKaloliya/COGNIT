@@ -5,12 +5,14 @@ import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
 import DSButton from './design/DSButton.jsx';
+import { useIsMobile } from "../hooks/useIsMobile.js";
 import { forEachStorageArea, makeScopedKey, readExpiringValue, removeStoredKey, writeExpiringValue } from "../utils/storage";
 import { APP_FLOW } from "../config/appFlow";
 import { APP_ROUTES } from "../constants/routes";
 import { uiText } from "../utils/uiText";
 
 export default function ErrorPage({ error, resetError, darkMode = false, onToggleDarkMode }) {
+  const isMobile = useIsMobile();
   const [reloading, setReloading] = React.useState(false);
 
   const redirectToConsent = () => {
@@ -107,7 +109,7 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
       <header className="header">
         <div className="brand">
           <h1>{uiText("app.brand")}</h1>
-          <p className="subtitle">{uiText("app.subtitle")}</p>
+          {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
         </div>
         <div className="header-actions">
           <DSButton

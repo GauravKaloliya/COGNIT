@@ -14,6 +14,7 @@ import DSButton from "./components/design/DSButton.jsx";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { uiText } from "./utils/uiText.js";
 import { useAppController } from "./hooks/useAppController";
+import { useIsMobile } from "./hooks/useIsMobile.js";
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -48,21 +49,23 @@ function Toasts({ toasts, onDismiss }) {
       {toasts.map((toast) => (
         <div key={toast.id} className={`toast ${toast.type}`}>
           <span>{toast.message}</span>
-          {toast.action && (
-            <DSButton
-              variant="ghost"
-              className="toast-action"
-              onClick={() => {
-                toast.action.onClick();
-                onDismiss(toast.id);
-              }}
-            >
-              {toast.action.label}
+          <div className="toast-actions">
+            {toast.action && (
+              <DSButton
+                variant="ghost"
+                className="toast-action"
+                onClick={() => {
+                  toast.action.onClick();
+                  onDismiss(toast.id);
+                }}
+              >
+                {toast.action.label}
+              </DSButton>
+            )}
+            <DSButton variant="ghost" onClick={() => onDismiss(toast.id)} aria-label={uiText("toast.dismiss")}>
+              ×
             </DSButton>
-          )}
-          <DSButton variant="ghost" onClick={() => onDismiss(toast.id)} aria-label={uiText("toast.dismiss")}>
-            ×
-          </DSButton>
+          </div>
         </div>
       ))}
     </div>
@@ -117,6 +120,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     handlePaymentContentToLink,
     handleAppError,
   } = useAppController();
+  const isMobile = useIsMobile();
   const [showBackToTop, setShowBackToTop] = React.useState(false);
 
   React.useEffect(() => {
@@ -132,6 +136,12 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  React.useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    if (!media.matches) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+  }, [stage, paymentSubStage, systemReady]);
 
   const renderContent = () => {
     if (systemChecking && !systemReady) {
@@ -209,7 +219,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           <header className="header">
             <div className="brand">
               <h1>{uiText("app.brand")}</h1>
-              <p className="subtitle">{uiText("app.subtitle")}</p>
+              {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
             </div>
             <div className="header-actions">
             <DSButton
@@ -261,7 +271,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
         <header className="header">
           <div className="brand">
             <h1>{uiText("app.brand")}</h1>
-            <p className="subtitle">{uiText("app.subtitle")}</p>
+            {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
           </div>
           <div className="header-actions">
             <DSButton
