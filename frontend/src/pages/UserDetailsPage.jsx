@@ -353,7 +353,6 @@ export default function UserDetailsPage({
           {!ageOk && (
             <span className="helper-text warning">{uiText("user.ageHint", { min: AGE_MIN, max: AGE_MAX })}</span>
           )}
-          <span className="helper-text">{uiText("user.ageRange", { min: AGE_MIN, max: AGE_MAX })}</span>
         </div>
 
         <div className={`form-field ${errors.location ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
