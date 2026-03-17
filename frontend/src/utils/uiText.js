@@ -260,7 +260,6 @@ const TEXT = {
     "user.emailHint": "Use a valid email format",
     "user.phone": "Phone Number",
     "user.phonePlaceholder": "10-digit Indian mobile number",
-    "user.phoneCount": "Digits: {count}/10",
     "user.phoneHint": "Enter a valid 10-digit Indian mobile number",
     "user.gender": "Gender",
     "user.genderPlaceholder": "Select gender",

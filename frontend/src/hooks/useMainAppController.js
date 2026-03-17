@@ -19,9 +19,14 @@ export function useMainAppController() {
   }, [darkMode]);
 
   useEffect(() => {
+    const deferSetError = (value) => {
+      const schedule = typeof queueMicrotask === "function" ? queueMicrotask : (cb) => setTimeout(cb, 0);
+      schedule(() => setError(value));
+    };
+
     const handleError = (event) => {
       // No-op: suppress console noise in production.
-      setError(event.error);
+      deferSetError(event.error);
       reportClientError({
         message: event?.message || event?.error?.message,
         stack: event?.error?.stack,
@@ -32,7 +37,7 @@ export function useMainAppController() {
 
     const handleUnhandledRejection = (event) => {
       // No-op: suppress console noise in production.
-      setError(event.reason);
+      deferSetError(event.reason);
       reportClientError({
         message: event?.reason?.message || String(event?.reason || ""),
         stack: event?.reason?.stack,
