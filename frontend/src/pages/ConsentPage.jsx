@@ -61,40 +61,42 @@ export default function ConsentPage({
         {CONSENT_CONTENT.subtitle}
       </p>
       
-      <div className={`welcome-info consent-content ${showFullConsent ? "expanded" : "collapsed"}`}>
-        {CONSENT_CONTENT.sections.map((section) => (
-          <React.Fragment key={section.heading}>
-            <h3>{section.heading}</h3>
-            {section.intro && <p>{section.intro}</p>}
-            {section.paragraphs?.map((paragraph) => (
-              <p key={paragraph}>
-                {paragraph.startsWith("Estimated duration:") ? <><strong>Estimated duration:</strong> {paragraph.replace("Estimated duration: ", "")}</> : paragraph}
-              </p>
-            ))}
-            {section.dynamicList ? (
-              <ul>
-                <li><strong>Entry fee:</strong> {paymentAmountLabel}</li>
-                <li><strong>Reward draw:</strong> Randomly selected participants receive {rewardAmountLabel} via UPI (typically within 24-48 hours)</li>
-              </ul>
-            ) : null}
-            {section.items?.length ? (
-              <ul>
-                {section.items.map((item) => <li key={item}>{item}</li>)}
-              </ul>
-            ) : null}
-            {section.secondaryIntro && <p>{section.secondaryIntro}</p>}
-            {section.secondaryItems?.length ? (
-              <ul>
-                {section.secondaryItems.map((item) => <li key={item}>{item}</li>)}
-              </ul>
-            ) : null}
-            {section.contactEmail ? (
-              <p><strong>Email:</strong> <a href={`mailto:${section.contactEmail}`}>{section.contactEmail}</a></p>
-            ) : null}
-            {section.outro && <p>{section.outro}</p>}
-          </React.Fragment>
-        ))}
-        {!showFullConsent && <div className="consent-fade" aria-hidden="true" />}
+      <div className="welcome-info consent-content">
+        <div className={`consent-body ${showFullConsent ? "expanded" : "collapsed"}`}>
+          {CONSENT_CONTENT.sections.map((section) => (
+            <React.Fragment key={section.heading}>
+              <h3>{section.heading}</h3>
+              {section.intro && <p>{section.intro}</p>}
+              {section.paragraphs?.map((paragraph) => (
+                <p key={paragraph}>
+                  {paragraph.startsWith("Estimated duration:") ? <><strong>Estimated duration:</strong> {paragraph.replace("Estimated duration: ", "")}</> : paragraph}
+                </p>
+              ))}
+              {section.dynamicList ? (
+                <ul>
+                  <li><strong>Entry fee:</strong> {paymentAmountLabel}</li>
+                  <li><strong>Reward draw:</strong> Randomly selected participants receive {rewardAmountLabel} via UPI (typically within 24-48 hours)</li>
+                </ul>
+              ) : null}
+              {section.items?.length ? (
+                <ul>
+                  {section.items.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              ) : null}
+              {section.secondaryIntro && <p>{section.secondaryIntro}</p>}
+              {section.secondaryItems?.length ? (
+                <ul>
+                  {section.secondaryItems.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              ) : null}
+              {section.contactEmail ? (
+                <p><strong>Email:</strong> <a href={`mailto:${section.contactEmail}`}>{section.contactEmail}</a></p>
+              ) : null}
+              {section.outro && <p>{section.outro}</p>}
+            </React.Fragment>
+          ))}
+          {!showFullConsent && <div className="consent-fade" aria-hidden="true" />}
+        </div>
         <div className="consent-toggle">
           <button
             type="button"
