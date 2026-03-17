@@ -271,7 +271,6 @@ const TEXT = {
     "user.age": "Age",
     "user.agePlaceholderRange": "Age ({min}-{max})",
     "user.ageHint": "Age must be between {min} and {max}",
-    "user.ageRange": "Range: {min}-{max}",
     "user.ageValue": "{value}",
     "user.location": "Place/Location",
     "user.locationPlaceholderDetecting": "Detecting your location...",
