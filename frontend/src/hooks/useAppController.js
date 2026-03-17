@@ -20,7 +20,7 @@ const ACTIVE_TAB_LOCK_KEY = runtimeConfig.storageKeys.activeTabLock;
 const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
 const ACTIVE_TAB_HEARTBEAT_MS = runtimeConfig.activeTabHeartbeatMs;
 const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
-const MIN_SURVEYS_BEFORE_FINISH = Math.max(1, runtimeConfig.surveyUiTotalSteps || 1);
+const MIN_SURVEYS_BEFORE_FINISH = 1;
 
 function createId() {
   if (crypto?.randomUUID) return crypto.randomUUID();
@@ -74,6 +74,7 @@ const isDemographicsComplete = (demographics) => {
 };
 
 const deriveMaxAllowedStage = ({
+  currentStage,
   consentGiven,
   hasParticipant,
   userDetailsSubmitted,
@@ -90,8 +91,10 @@ const deriveMaxAllowedStage = ({
   if (!paymentVerified) return APP_FLOW.stages.payment;
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;
   if (surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
-  if (!surveyFeedbackReady && !(surveyCompleted > 0)) return APP_FLOW.stages.survey;
-  return APP_FLOW.stages.finished;
+  // Do not auto-advance to Finished; allow unlimited survey submissions.
+  // Only permit Finished when the user explicitly navigates there (e.g. via SurveyFeedPage "Finish").
+  if (currentStage === APP_FLOW.stages.finished) return APP_FLOW.stages.finished;
+  return APP_FLOW.stages.survey;
 };
 
 export function useAppController() {
@@ -364,6 +367,7 @@ export function useAppController() {
       return;
     }
     const maxAllowedStage = deriveMaxAllowedStage({
+      currentStage: stage,
       consentGiven,
       hasParticipant: Boolean(publicId),
       userDetailsSubmitted,
