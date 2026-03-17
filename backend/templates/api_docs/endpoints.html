@@ -37,6 +37,18 @@
       <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: optional</span><span>Rate limit: yes</span></div>
     </article>
 
+    <article class="endpoint-card" data-method="post" data-path="/email-otp/request" data-search="email otp request verify code authentication">
+      <header><span class="method post">POST</span><code>/email-otp/request</code></header>
+      <p>Send OTP to verify email. Required body: <code>public_id,email</code>. Optional: <code>email_update</code> (boolean).</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
+    <article class="endpoint-card" data-method="post" data-path="/email-otp/verify" data-search="email otp verify code authentication">
+      <header><span class="method post">POST</span><code>/email-otp/verify</code></header>
+      <p>Verify OTP and mark email as verified. Required body: <code>public_id,email,otp</code>.</p>
+      <div class="endpoint-meta"><span>Auth: none</span><span>Idempotency: n/a</span><span>Rate limit: yes</span></div>
+    </article>
+
     <article class="endpoint-card" data-method="get" data-path="/participants/{public_id}/payment-status" data-search="participants payment status verified stage">
       <header><span class="method get">GET</span><code>/participants/{public_id}/payment-status</code></header>
       <p>Get participant payment progression (<code>is_verified</code>, <code>payment_status</code>, <code>current_stage</code>).</p>

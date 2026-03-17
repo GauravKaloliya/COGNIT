@@ -37,6 +37,28 @@
     </article>
 
     <article class="example-card">
+      <h3>Request Email OTP</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/email-otp/request" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "public_id": "8dff4977-a180-4ef5-9a4c-47b98f5e47dd",
+    "email": "demo@example.com",
+    "email_update": false
+  }'</pre></div>
+    </article>
+
+    <article class="example-card">
+      <h3>Verify Email OTP</h3>
+      <div class="code-block"><pre>curl -X POST "{{ base_url }}/email-otp/verify" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "public_id": "8dff4977-a180-4ef5-9a4c-47b98f5e47dd",
+    "email": "demo@example.com",
+    "otp": "123456"
+  }'</pre></div>
+    </article>
+
+    <article class="example-card">
       <h3>Generate Screenshot Upload URL</h3>
       <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/{payment_public_id}/upload-url" \
   -H "Content-Type: application/json" \
