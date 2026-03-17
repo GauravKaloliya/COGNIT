@@ -2,7 +2,7 @@
 
 import time
 
-from flask import request, g
+from flask import request, g, current_app
 from sqlalchemy import text
 
 from app.constants.log_messages import LOG_RANDOM_IMAGE_FAILED
@@ -38,6 +38,8 @@ def random_image():
     excluded = [x.strip() for x in exclude.split(",") if x.strip()]
     excluded_set = set(excluded)
     public_id = (request.args.get("public_id") or "").strip()
+    force_attention_raw = (request.args.get("force_attention") or "").strip().lower()
+    force_attention_requested = force_attention_raw in ("1", "true", "yes", "on")
 
     try:
         db = get_db()
@@ -46,6 +48,7 @@ def random_image():
             raise ValueError("ATTENTION_INTERVAL must be > 0")
 
         should_prioritize_attention = False
+        force_attention = False
         participant_id = None
         if public_id:
             participant_id = resolve_participant_id(db, public_id)
@@ -56,16 +59,21 @@ def random_image():
                 """), {"pid": participant_id}).scalar() or 0
                 should_prioritize_attention = ((total_submissions + 1) % ATTENTION_INTERVAL) == 0
 
+        # Dev-only escape hatch to force attention images for testing.
+        if force_attention_requested and (current_app.debug or current_app.testing):
+            force_attention = True
+
         row = select_random_image_for_participant(
             db,
             excluded_set=excluded_set,
             participant_id=participant_id,
             should_prioritize_attention=should_prioritize_attention,
             now_ts=now_ts,
+            force_attention=force_attention,
         )
 
         if not row:
-            return create_error_response("INTERNAL_ERROR")
+            return create_error_response("NO_IMAGES") if force_attention else create_error_response("INTERNAL_ERROR")
 
         return success_response({
             "image_id": row[0],

@@ -201,11 +201,6 @@ export function useAppController() {
     };
   }, [claimActiveTabLock]);
 
-  useEffect(() => {
-    removeStoredKey(runtimeConfig.storageKeys.sessionId);
-    removeStoredKey(runtimeConfig.storageKeys.publicId);
-  }, []);
-
   const addToast = useCallback((message, type = TOAST_VARIANTS.info, action) => {
     const dedupeKey = `${type}:${message}`;
     const now = Date.now();
@@ -297,16 +292,14 @@ export function useAppController() {
   const paymentFlow = usePaymentFlow({
     publicId,
     stage,
-    paymentSubStage,
     setStage,
-    setStageManual,
     setPaymentSubStage,
     setPaymentVerified,
     addToast,
     transitionToSurvey,
   });
 
-  const { handlePaymentComplete, handlePaymentContentToLink, handlePaymentBack } = paymentFlow;
+  const { handlePaymentComplete, handlePaymentContentToLink } = paymentFlow;
 
   useEffect(() => {
     let cancelled = false;
@@ -383,10 +376,26 @@ export function useAppController() {
     });
     const currentIndex = APP_STAGE_ORDER.indexOf(stage);
     const maxAllowedIndex = APP_STAGE_ORDER.indexOf(maxAllowedStage);
-    if (currentIndex > maxAllowedIndex && maxAllowedIndex >= 0) {
-      setStage(maxAllowedStage);
-      if (maxAllowedStage === APP_FLOW.stages.payment) {
-        setPaymentSubStage(APP_FLOW.paymentSubStages.content);
+    if (maxAllowedIndex >= 0) {
+      if (currentIndex > maxAllowedIndex) {
+        setStage(maxAllowedStage);
+        if (maxAllowedStage === APP_FLOW.stages.payment) {
+          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
+        }
+      } else if (currentIndex >= 0 && currentIndex < maxAllowedIndex) {
+        // On refresh, stage can be missing/stale in storage even though prerequisite flags are present.
+        // Fast-forward to the furthest valid stage without skipping gated transitions.
+        let nextStage = stage;
+        let nextIndex = currentIndex;
+        while (nextIndex < maxAllowedIndex) {
+          const candidate = APP_STAGE_ORDER[nextIndex + 1];
+          if (!validateStageTransition(nextStage, candidate, paymentVerified)) break;
+          nextStage = candidate;
+          nextIndex += 1;
+        }
+        if (nextStage !== stage) {
+          setStage(nextStage);
+        }
       }
     }
     if (surveyFeedbackReady && !lastSubmissionSucceeded) {
@@ -580,7 +589,6 @@ export function useAppController() {
     handleEmailVerified,
     handlePaymentComplete,
     handlePaymentContentToLink,
-    handlePaymentBack,
     handleAppError,
   };
 }

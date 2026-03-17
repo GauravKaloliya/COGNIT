@@ -119,6 +119,7 @@ def build_error_codes(
         "AUTH_EMAIL_OTP_SEND_FAILED": {"code": "AUTH_003_0005", "message": "Failed to send verification code. Please try again.", "status": 502, "category": "AUTH"},
         "AUTH_EMAIL_MISMATCH": {"code": "AUTH_003_0006", "message": "Email does not match your registration details.", "status": 403, "category": "AUTH", "field": "email"},
         "AUTH_EMAIL_SAME": {"code": "AUTH_003_0007", "message": "Please enter a different email address to update.", "status": 400, "category": "AUTH", "field": "email"},
+        "AUTH_EMAIL_NOT_VERIFIED": {"code": "AUTH_003_0008", "message": "Please verify your email before submitting.", "status": 403, "category": "AUTH"},
         "BOT_CHALLENGE_FAILED": {"code": "BOT_001_0001", "message": "Human verification failed. Please retry.", "status": 403, "category": "AUTH"},
         "PAYMENT_EXPIRED": {"code": "ERR_PAYMENT_EXPIRED", "message": "Payment session has expired. Please create a new payment.", "status": 410, "category": "PAY"},
         "PAYMENT_INVALID_STATE": {"code": "ERR_PAYMENT_INVALID_STATE", "message": "This payment has already been processed.", "status": 400, "category": "PAY"},

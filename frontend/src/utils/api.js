@@ -19,18 +19,26 @@ import { reportClientError } from "./errorReporter";
  */
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
-  const hasBody = options.body !== undefined && options.body !== null;
-  const inferredMethod = options.method || (hasBody ? REQUEST_METHODS.post : REQUEST_METHODS.get);
+  const providedBody = options.body;
+  const hasProvidedBody = providedBody !== undefined && providedBody !== null;
+  const inferredMethod = options.method || (hasProvidedBody ? REQUEST_METHODS.post : REQUEST_METHODS.get);
   let method = String(inferredMethod).toUpperCase();
   // Safety: Email OTP endpoints must be POST-only.
   if (String(endpoint || "").startsWith("/email-otp/") && method !== REQUEST_METHODS.post) {
+    method = REQUEST_METHODS.post;
+  }
+  // Safety: payment token mint endpoint is POST-only.
+  if (/^\/payments\/[^/]+\/token\/?$/.test(String(endpoint || "")) && method !== REQUEST_METHODS.post) {
     method = REQUEST_METHODS.post;
   }
   const requestId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const baseHeaders = { ...(options.headers || {}) };
-  const requestBody = options.body;
+  const requestBody = (method !== REQUEST_METHODS.get && method !== REQUEST_METHODS.head)
+    ? providedBody
+    : undefined;
+  const hasBody = requestBody !== undefined && requestBody !== null;
 
   // Keep GET/HEAD requests as "simple requests" to avoid unnecessary CORS preflights.
   // Add tracing/content headers only for requests that send a body or mutate state.
@@ -44,6 +52,7 @@ export async function apiFetch(endpoint, options = {}) {
   try {
     const response = await fetch(url, {
       ...options,
+      method,
       credentials: options.credentials || "include",
       headers: baseHeaders,
       body: requestBody,
@@ -202,6 +211,13 @@ export const endpoints = {
     const params = new URLSearchParams();
     if (exclude.length > 0) params.set('exclude', exclude.join(','));
     if (publicId) params.set('public_id', publicId);
+    // Dev-only: allow forcing attention images by adding ?force_attention=1 to the app URL.
+    if (import.meta.env.DEV && typeof window !== "undefined") {
+      const qs = new URLSearchParams(window.location.search || "");
+      if ((qs.get("force_attention") || "").trim() === "1") {
+        params.set("force_attention", "1");
+      }
+    }
     const qs = params.toString();
     return api.get(API_ROUTES.randomImage(qs), options);
   },
