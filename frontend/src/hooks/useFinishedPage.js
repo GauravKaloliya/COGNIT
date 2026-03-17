@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { runtimeConfig } from "../config/runtime";
 import { readExpiringValue, removeStoredKey, writeExpiringValue } from "../utils/storage";
 import { useOnlineStatus } from "./useOnlineStatus";
@@ -6,14 +6,11 @@ import { uiText } from "../utils/uiText";
 import { APP_ROUTES } from "../constants/routes";
 
 export function useFinishedPage({ publicId }) {
-  const [rewardStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
   const isOnline = useOnlineStatus();
   const rewardAmountLabel = `₹${runtimeConfig.rewardAmount}`;
 
   useEffect(() => {
     document.title = uiText("finish.documentTitle");
-    setLoading(false);
   }, [publicId]);
 
   const handleFinish = useCallback(() => {
@@ -49,8 +46,6 @@ export function useFinishedPage({ publicId }) {
   }, []);
 
   return {
-    rewardStatus,
-    loading,
     isOnline,
     rewardAmountLabel,
     handleFinish,
