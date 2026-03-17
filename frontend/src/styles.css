@@ -683,10 +683,14 @@ body.dark .status-dot.offline {
   width: auto;
 }
 
+.finish-panel .page-actions.inline-actions {
+  justify-content: center;
+}
+
 .finish-panel .page-actions .primary:hover:not(:disabled) {
-  background: var(--error);
+  background: var(--primary);
+  box-shadow: var(--shadow-sm);
   filter: none;
-  box-shadow: var(--shadow-md);
 }
 
 .skeleton-line {
