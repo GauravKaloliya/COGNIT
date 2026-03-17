@@ -138,20 +138,24 @@ def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
         log_event(logger, OBS_EVENT_IMAGE_CLEANUP_FAILED, level=logging.WARNING, error=str(exc))
 
 
-def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int):
+def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int, force_attention: bool = False):
     ensure_image_pool_cache(db)
     cleanup_stale_reservations(db)
     row = None
     attempt_limit = max(3, min(10, len(IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ALL]) or 3))
     for _ in range(attempt_limit):
-        if should_prioritize_attention:
+        if force_attention or should_prioritize_attention:
             row = pick_from_pool(
                 IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ATTENTION],
                 excluded_set,
                 IMAGE_PICK_ATTEMPTS_ATTENTION,
             )
 
-        if not row:
+        if force_attention:
+            # When forced, do not fall back to non-attention images.
+            if not row:
+                break
+        elif not row:
             row = pick_from_pool(
                 IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_NON_ATTENTION],
                 excluded_set,
