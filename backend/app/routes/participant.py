@@ -34,7 +34,9 @@ from app.constants.participant_constants import (
 from app.constants.payment_constants import PAYMENT_STATUS_SUCCESS
 from app.constants.request_keys import (
     REQUEST_KEY_EMAIL,
+    REQUEST_KEY_EMAIL_UPDATE,
     REQUEST_KEY_IDEMPOTENCY_KEY,
+    REQUEST_KEY_OTP,
     REQUEST_KEY_PHONE,
     REQUEST_KEY_PUBLIC_ID,
     REQUEST_KEY_TURNSTILE_TOKEN,
@@ -44,6 +46,9 @@ from app.constants.response_keys import (
     RESPONSE_KEY_AVAILABLE,
     RESPONSE_KEY_CURRENT_STAGE,
     RESPONSE_KEY_DETECTED_APP,
+    RESPONSE_KEY_EMAIL,
+    RESPONSE_KEY_EMAIL_VERIFIED,
+    RESPONSE_KEY_EXPIRES_AT,
     RESPONSE_KEY_PAYMENT_ID,
     RESPONSE_KEY_PUBLIC_ID,
     RESPONSE_KEY_REASON,
@@ -56,6 +61,8 @@ from app.constants.route_constants import (
     CHECK_PHONE_ROUTE,
     CHECK_USERNAME_ROUTE,
     CONSENT_ROUTE,
+    EMAIL_OTP_REQUEST_ROUTE,
+    EMAIL_OTP_VERIFY_ROUTE,
     PARTICIPANTS_ROUTE,
     PARTICIPANT_OPTIONS_ROUTE,
     PARTICIPANT_PAYMENT_STATUS_ROUTE,
@@ -86,6 +93,23 @@ from app.services import (
     load_idempotent_response,
     save_idempotent_response,
     set_participant_cookies,
+    build_email_otp_payload,
+    email_in_use_by_other,
+    fetch_latest_email_otp,
+    fetch_participant_by_public_email,
+    fetch_participant_by_public_id,
+    generate_email_otp,
+    hash_email_otp,
+    increment_email_otp_attempts,
+    insert_email_otp,
+    mark_email_otp_used,
+    mark_existing_otps_used,
+    mark_participant_email_verified,
+    update_participant_email,
+    otp_expiry_timestamp,
+    otp_is_expired,
+    otp_is_over_attempts,
+    send_email_otp,
 )
 from app.utils.error_mapping import map_participant_create_exception
 from app.config import (
@@ -95,6 +119,9 @@ from app.config import (
     PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
     PARTICIPANT_SESSION_COOKIE_NAME,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
+    EMAIL_OTP_LENGTH,
+    EMAIL_OTP_REQUEST_RATE_LIMIT,
+    EMAIL_OTP_VERIFY_RATE_LIMIT,
 )
 
 
@@ -383,4 +410,117 @@ def get_participant_options():
         return success_response(fetch_participant_options(db))
     except Exception as e:
         logger.error(LOG_PARTICIPANT_OPTIONS_FAILED, e, getattr(g, "request_id", None))
+        return create_error_response("DATABASE_ERROR")
+
+
+@participant_bp.route(EMAIL_OTP_REQUEST_ROUTE, methods=[HTTP_METHOD_POST])
+@limiter.limit(EMAIL_OTP_REQUEST_RATE_LIMIT)
+@track_performance
+def request_email_otp():
+    """Request a verification OTP to be sent via email."""
+    payload = request.json or {}
+    public_id = str(payload.get(REQUEST_KEY_PUBLIC_ID) or "").strip()
+    email = str(payload.get(REQUEST_KEY_EMAIL) or "").strip().lower()
+    email_update = bool(payload.get(REQUEST_KEY_EMAIL_UPDATE))
+    if not public_id or not email:
+        return create_error_response("VAL_MISSING_FIELDS", fields=[REQUEST_KEY_PUBLIC_ID, REQUEST_KEY_EMAIL])
+    if not is_valid_public_id(public_id):
+        return create_error_response("VAL_INVALID_REQUEST_ID")
+    try:
+        db = get_db()
+        participant_row = fetch_participant_by_public_id(db, public_id=public_id)
+        if not participant_row:
+            return create_error_response("AUTH_EMAIL_MISMATCH")
+        participant_id, stored_email, email_verified = participant_row
+        if stored_email == email and email_update:
+            return create_error_response("AUTH_EMAIL_SAME")
+        if stored_email != email:
+            if email_in_use_by_other(db, public_id=public_id, email=email):
+                return create_error_response("DUP_EMAIL")
+            try:
+                update_participant_email(db, participant_id=int(participant_id), email=email)
+                stored_email = email
+                email_verified = False
+            except IntegrityError as exc:
+                err = str(exc).lower()
+                if "check constraint" in err:
+                    return create_error_response("VAL_EMAIL_INVALID")
+                if "duplicate key" in err or "unique constraint" in err:
+                    return create_error_response("DUP_EMAIL")
+                return create_error_response("DATABASE_ERROR")
+        if email_verified:
+            return success_response({
+                RESPONSE_KEY_EMAIL: stored_email,
+                RESPONSE_KEY_EMAIL_VERIFIED: True,
+            })
+        otp = generate_email_otp()
+        otp_hash = hash_email_otp(public_id=public_id, email=email, otp=otp)
+        expires_at = otp_expiry_timestamp()
+        mark_existing_otps_used(db, public_id=public_id, email=stored_email)
+        otp_id = insert_email_otp(db, public_id=public_id, email=stored_email, otp_hash=otp_hash, expires_at=expires_at)
+        try:
+            send_email_otp(build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id))
+        except Exception:
+            mark_email_otp_used(db, otp_id=otp_id)
+            db.commit()
+            return create_error_response("AUTH_EMAIL_OTP_SEND_FAILED")
+        db.commit()
+        return success_response({
+            RESPONSE_KEY_EMAIL: stored_email,
+            RESPONSE_KEY_EMAIL_VERIFIED: False,
+            RESPONSE_KEY_EXPIRES_AT: expires_at.isoformat(),
+        })
+    except Exception:
+        return create_error_response("DATABASE_ERROR")
+
+
+@participant_bp.route(EMAIL_OTP_VERIFY_ROUTE, methods=[HTTP_METHOD_POST])
+@limiter.limit(EMAIL_OTP_VERIFY_RATE_LIMIT)
+@track_performance
+def verify_email_otp():
+    """Verify an email OTP and mark participant email as verified."""
+    payload = request.json or {}
+    public_id = str(payload.get(REQUEST_KEY_PUBLIC_ID) or "").strip()
+    email = str(payload.get(REQUEST_KEY_EMAIL) or "").strip().lower()
+    otp = str(payload.get(REQUEST_KEY_OTP) or "").strip()
+    if not public_id or not email or not otp:
+        return create_error_response("VAL_MISSING_FIELDS", fields=[REQUEST_KEY_PUBLIC_ID, REQUEST_KEY_EMAIL, REQUEST_KEY_OTP])
+    if not is_valid_public_id(public_id):
+        return create_error_response("VAL_INVALID_REQUEST_ID")
+    if not (otp.isdigit() and len(otp) == int(EMAIL_OTP_LENGTH)):
+        return create_error_response("AUTH_EMAIL_OTP_INVALID")
+    try:
+        db = get_db()
+        participant_row = fetch_participant_by_public_email(db, public_id=public_id, email=email)
+        if not participant_row:
+            return create_error_response("AUTH_EMAIL_MISMATCH")
+        participant_id, stored_email, email_verified = participant_row
+        if email_verified:
+            return success_response({
+                RESPONSE_KEY_EMAIL: stored_email,
+                RESPONSE_KEY_EMAIL_VERIFIED: True,
+            })
+        latest = fetch_latest_email_otp(db, public_id=public_id, email=email)
+        if not latest:
+            return create_error_response("AUTH_EMAIL_OTP_NOT_FOUND")
+        otp_id, otp_hash, attempts, is_used, expires_at = latest
+        if is_used:
+            return create_error_response("AUTH_EMAIL_OTP_INVALID")
+        if otp_is_over_attempts(attempts):
+            return create_error_response("AUTH_EMAIL_OTP_TOO_MANY")
+        if otp_is_expired(expires_at):
+            return create_error_response("AUTH_EMAIL_OTP_EXPIRED")
+        expected = hash_email_otp(public_id=public_id, email=email, otp=otp)
+        if expected != otp_hash:
+            increment_email_otp_attempts(db, otp_id=int(otp_id))
+            db.commit()
+            return create_error_response("AUTH_EMAIL_OTP_INVALID")
+        mark_email_otp_used(db, otp_id=int(otp_id))
+        mark_participant_email_verified(db, participant_id=int(participant_id))
+        db.commit()
+        return success_response({
+            RESPONSE_KEY_EMAIL: stored_email,
+            RESPONSE_KEY_EMAIL_VERIFIED: True,
+        })
+    except Exception:
         return create_error_response("DATABASE_ERROR")

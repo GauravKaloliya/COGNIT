@@ -7,7 +7,16 @@ import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { ALLOWED_EMAIL_DOMAINS } from "../content/userDetailsOptions";
-import { getPendingFlag, readJsonValue, readStoredMeta, removeStoredKey, setPendingFlag, writeJsonValue } from "../utils/storage";
+import {
+  getPendingFlag,
+  readExpiringValue,
+  readJsonValue,
+  readStoredMeta,
+  removeStoredKey,
+  setPendingFlag,
+  writeExpiringValue,
+  writeJsonValue,
+} from "../utils/storage";
 import {
   GEOLOCATION_ERROR_CODES,
   GEOLOCATION_MODES,
@@ -33,6 +42,11 @@ const REVERSE_GEOCODE_TTL_MS = runtimeConfig.reverseGeocodeTtlMs;
 const USER_DETAILS_PENDING_KEY = runtimeConfig.storageKeys.userDetailsPending;
 const PARTICIPANT_OPTIONS_KEY = runtimeConfig.storageKeys.participantOptions;
 const DEMOGRAPHICS_KEY = runtimeConfig.storageKeys.demographics;
+const EMAIL_OTP_STATE_KEY = runtimeConfig.storageKeys.emailOtpState;
+const EMAIL_OTP_TTL_MS = Math.max(
+  30000,
+  (runtimeConfig.emailOtpExpirySeconds || 300) * 1000
+);
 
 export const sanitizeUsername = (value) => value.replace(/[^a-zA-Z0-9_]/g, "");
 
@@ -43,9 +57,12 @@ const normalizePhoneForApi = (rawPhone) => {
 };
 
 export function useUserDetailsPage({
+  publicId,
   demographics,
   setDemographics,
   onSubmit,
+  onEmailVerified,
+  addToast,
 }) {
   const prioritizeEnglish = useCallback((items = []) => {
     const list = Array.isArray(items) ? items : [];
@@ -81,6 +98,13 @@ export function useUserDetailsPage({
   ));
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const otpLength = runtimeConfig.emailOtpLength;
+  const [otpDigits, setOtpDigits] = useState(() => Array.from({ length: otpLength }, () => ""));
+  const [otpStatus, setOtpStatus] = useState("idle");
+  const [otpError, setOtpError] = useState("");
+  const [resendCountdownActive, setResendCountdownActive] = useState(false);
+  const [resendInitialSeconds, setResendInitialSeconds] = useState(runtimeConfig.emailOtpResendCooldownSeconds);
+  const [emailEditable, setEmailEditable] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -96,12 +120,23 @@ export function useUserDetailsPage({
   const participantOptionsLoadedRef = useRef(optionLists.genders.length > 0 && optionLists.languages.length > 0);
   const userEditedLocationRef = useRef(false);
   const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
+  const resendSeconds = useRetryCountdown(resendCountdownActive, resendInitialSeconds);
   const debounceTimerRef = useRef({ username: null, email: null, phone: null });
   const reverseGeocodeAbortRef = useRef(null);
   const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
   const saveTimeoutRef = useRef(null);
   const draftSaveTimeoutRef = useRef(null);
   const lastSavedAtRef = useRef(null);
+  const submittedPublicIdRef = useRef("");
+  const submittedEmailRef = useRef("");
+  const autoVerifyRef = useRef("");
+  const resendEndsAtRef = useRef(null);
+
+  const otpValue = otpDigits.join("");
+  const showOtpField = otpStatus === "sent" || otpStatus === "verifying" || otpStatus === "verify_failed";
+  const inputsLocked = submitting || otpStatus === "sending" || otpStatus === "verifying" || otpStatus === "sent" || otpStatus === "verify_failed";
+  const allowEmailDuringOtp = otpStatus !== "idle";
+  const emailInputDisabled = inputsLocked && !allowEmailDuringOtp;
 
   useEffect(() => {
     document.title = uiText("user.documentTitle");
@@ -113,6 +148,34 @@ export function useUserDetailsPage({
       setDraftRestored(true);
     }
   }, []);
+
+  useEffect(() => {
+    const storedOtp = readExpiringValue(EMAIL_OTP_STATE_KEY, null, { ttlMs: EMAIL_OTP_TTL_MS });
+    if (!storedOtp || typeof storedOtp !== "object") return;
+    if (storedOtp.otpStatus === "verified") {
+      removeStoredKey(EMAIL_OTP_STATE_KEY);
+      return;
+    }
+    if (storedOtp.publicId) submittedPublicIdRef.current = String(storedOtp.publicId);
+    if (storedOtp.submittedEmail) submittedEmailRef.current = String(storedOtp.submittedEmail);
+    if (typeof storedOtp.emailEditable === "boolean") setEmailEditable(storedOtp.emailEditable);
+    if (typeof storedOtp.otpStatus === "string") {
+      const normalizedStatus = ["sending", "verifying"].includes(storedOtp.otpStatus)
+        ? "sent"
+        : storedOtp.otpStatus === "failed"
+          ? "verify_failed"
+          : storedOtp.otpStatus;
+      setOtpStatus(normalizedStatus);
+    }
+    if (storedOtp.resendEndsAt && typeof storedOtp.resendEndsAt === "number") {
+      const remaining = Math.max(0, Math.ceil((storedOtp.resendEndsAt - Date.now()) / 1000));
+      if (remaining > 0) {
+        resendEndsAtRef.current = storedOtp.resendEndsAt;
+        setResendInitialSeconds(remaining);
+        setResendCountdownActive(true);
+      }
+    }
+  }, [otpLength]);
 
   useEffect(() => {
     if (participantOptionsLoadedRef.current) {
@@ -169,7 +232,7 @@ export function useUserDetailsPage({
     return () => {
       cancelled = true;
     };
-  }, [isOnline]);
+  }, [isOnline, prioritizeEnglish]);
 
   const validateUsernameInput = useCallback((rawUsername) => {
     const value = String(rawUsername ?? "").trim();
@@ -508,35 +571,33 @@ export function useUserDetailsPage({
     setChecking({ username: true, email: true, phone: true });
 
     try {
-      const checks = [];
-      if (demographics.username && demographics.username.trim().length >= USERNAME_MIN_LENGTH) {
-        checks.push(
-          endpoints.checkUsername(demographics.username.trim())
-            .then((data) => ({ field: "username", available: data.available }))
-            .catch(() => ({ field: "username", available: true }))
-        );
-      }
-      if (demographics.email && REGEX_PATTERNS.email.test(demographics.email.trim())) {
-        checks.push(
-          endpoints.checkEmail(demographics.email.trim())
-            .then((data) => ({ field: "email", available: data.available }))
-            .catch(() => ({ field: "email", available: true }))
-        );
-      }
-      if (demographics.phone) {
-        const phoneDigits = normalizePhoneForApi(demographics.phone);
-        const isValidIndian = REGEX_PATTERNS.indianPhone.test(phoneDigits)
-          || (phoneDigits.length === 12 && phoneDigits.startsWith(STRING_PREFIXES.countryCode91) && REGEX_PATTERNS.indianPhone.test(phoneDigits.slice(2)));
-        if (isValidIndian) {
-          checks.push(
-            endpoints.checkPhone(phoneDigits)
-              .then((data) => ({ field: "phone", available: data.available }))
-              .catch(() => ({ field: "phone", available: true }))
-          );
-        }
+      const normalizedUsername = String(demographics.username || "").trim();
+      const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
+      const phoneDigits = normalizePhoneForApi(demographics.phone);
+
+      let usernameCheck;
+      let emailCheck;
+      let phoneCheck;
+      try {
+        [usernameCheck, emailCheck, phoneCheck] = await Promise.all([
+          endpoints.checkUsername(normalizedUsername),
+          endpoints.checkEmail(normalizedEmail),
+          endpoints.checkPhone(phoneDigits),
+        ]);
+      } catch (error) {
+        if (error?.code === REQUEST_CODES.aborted) return;
+        setErrors((prev) => ({
+          ...prev,
+          [USER_DETAIL_FIELDS.general]: error?.message || getErrorMessage("SYS_001_0001"),
+        }));
+        return;
       }
 
-      const results = await Promise.all(checks);
+      const results = [
+        { field: "username", available: usernameCheck?.available !== false },
+        { field: "email", available: emailCheck?.available !== false },
+        { field: "phone", available: phoneCheck?.available !== false },
+      ];
       const newErrors = {};
       results.forEach((result) => {
         if (!result.available) {
@@ -549,7 +610,31 @@ export function useUserDetailsPage({
         return;
       }
 
-      await onSubmit();
+      const participant = await onSubmit();
+      const effectivePublicId = participant?.public_id || publicId;
+      if (effectivePublicId) {
+        submittedPublicIdRef.current = effectivePublicId;
+      }
+      submittedEmailRef.current = normalizedEmail;
+      setEmailEditable(false);
+      setOtpError("");
+      setOtpDigits(Array.from({ length: otpLength }, () => ""));
+      setOtpStatus("sending");
+      try {
+        await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, false);
+        setOtpStatus("sent");
+        setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
+        resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
+        setResendCountdownActive(true);
+        addToast?.(uiText("email.sentToast"), "success");
+      } catch (err) {
+        if (err?.code === REQUEST_CODES.aborted) return;
+        setOtpStatus("send_failed");
+        setResendCountdownActive(false);
+        resendEndsAtRef.current = null;
+        setEmailEditable(true);
+        setOtpError(err?.message || getErrorMessage("SYS_002_0002"));
+      }
     } catch (error) {
       if (error?.code === REQUEST_CODES.aborted) return;
       const mappedField = USER_DETAILS_ERROR_CODE_TO_FIELD[error?.code] || error?.field || null;
@@ -593,7 +678,7 @@ export function useUserDetailsPage({
       setSubmitting(false);
       setChecking({ username: false, email: false, phone: false });
     }
-  }, [demographics, isOnline, onSubmit, validateForm]);
+  }, [addToast, demographics, isOnline, onSubmit, otpLength, publicId, validateForm]);
 
   useEffect(() => {
     if (!isOnline || submitting) return;
@@ -655,6 +740,150 @@ export function useUserDetailsPage({
       });
     }
   }, [errors, setDemographics]);
+
+  const setOtpDigit = useCallback((index, value) => {
+    const digitsOnly = String(value || "").replace(/\D/g, "");
+    setOtpDigits((prev) => {
+      const next = [...prev];
+      if (!digitsOnly) {
+        next[index] = "";
+        return next;
+      }
+      next[index] = digitsOnly.slice(-1);
+      return next;
+    });
+  }, []);
+
+  const setOtpFromPaste = useCallback((index, value) => {
+    const digitsOnly = String(value || "").replace(/\D/g, "");
+    if (!digitsOnly) return;
+    setOtpDigits((prev) => {
+      const next = [...prev];
+      const slice = digitsOnly.slice(0, otpLength - index);
+      slice.split("").forEach((digit, offset) => {
+        next[index + offset] = digit;
+      });
+      return next;
+    });
+  }, [otpLength]);
+
+  const verifyOtp = useCallback(async () => {
+    const effectivePublicId = submittedPublicIdRef.current || publicId;
+    const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
+    const trimmed = String(otpValue || "").trim();
+    if (!effectivePublicId || !normalizedEmail) {
+      setOtpError(getErrorMessage("VAL_003_0001"));
+      return;
+    }
+    if (!trimmed || trimmed.length !== otpLength) {
+      setOtpError(getErrorMessage("AUTH_003_0001"));
+      return;
+    }
+    if (!isOnline) {
+      setOtpError(uiText("email.offlineBanner"));
+      return;
+    }
+    setOtpStatus("verifying");
+    setOtpError("");
+    try {
+      await endpoints.verifyEmailOtp(effectivePublicId, normalizedEmail, trimmed);
+      setOtpStatus("verified");
+      removeStoredKey(EMAIL_OTP_STATE_KEY);
+      addToast?.(uiText("email.verifiedToast"), "success");
+      onEmailVerified?.();
+    } catch (err) {
+      if (err?.code === REQUEST_CODES.aborted) return;
+      setOtpStatus("verify_failed");
+      setOtpDigits(Array.from({ length: otpLength }, () => ""));
+      setEmailEditable(true);
+      setOtpError(err?.message || getErrorMessage("SYS_002_0002"));
+    }
+  }, [addToast, demographics.email, isOnline, onEmailVerified, otpLength, otpValue, publicId]);
+
+  useEffect(() => {
+    if (otpStatus !== "sent") return;
+    if (!otpValue || otpValue.length !== otpLength) return;
+    if (autoVerifyRef.current === otpValue) return;
+    autoVerifyRef.current = otpValue;
+    verifyOtp();
+  }, [otpLength, otpStatus, otpValue, verifyOtp]);
+
+  const handleResend = useCallback(async () => {
+    const effectivePublicId = submittedPublicIdRef.current || publicId;
+    const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
+    if (!effectivePublicId || !normalizedEmail) {
+      setOtpError(getErrorMessage("VAL_003_0001"));
+      return;
+    }
+    if (!isOnline) {
+      setOtpError(uiText("email.offlineRequest"));
+      return;
+    }
+    const emailUpdate = submittedEmailRef.current && submittedEmailRef.current !== normalizedEmail;
+    setOtpStatus("sending");
+    setOtpError("");
+    try {
+      await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, emailUpdate);
+      submittedEmailRef.current = normalizedEmail;
+      setOtpDigits(Array.from({ length: otpLength }, () => ""));
+      setOtpStatus("sent");
+      setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
+      resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
+      setResendCountdownActive(true);
+      addToast?.(uiText("email.sentToast"), "success");
+    } catch (err) {
+      if (err?.code === REQUEST_CODES.aborted) return;
+      setOtpStatus("send_failed");
+      setResendCountdownActive(false);
+      resendEndsAtRef.current = null;
+      setEmailEditable(true);
+      setOtpError(err?.message || getErrorMessage("SYS_002_0002"));
+    }
+  }, [addToast, demographics.email, isOnline, otpLength, publicId]);
+
+  useEffect(() => {
+    if (resendCountdownActive && resendSeconds === 0) {
+      setResendCountdownActive(false);
+      resendEndsAtRef.current = null;
+    }
+  }, [resendCountdownActive, resendSeconds]);
+
+  useEffect(() => {
+    if (!submittedEmailRef.current) return;
+    const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
+    if (normalizedEmail !== submittedEmailRef.current && otpStatus !== "verified") {
+      setOtpDigits(Array.from({ length: otpLength }, () => ""));
+      setOtpStatus((prev) => (prev === "idle" ? prev : "send_failed"));
+      setOtpError("");
+    }
+  }, [demographics.email, otpLength, otpStatus]);
+
+  useEffect(() => {
+    if (otpStatus === "idle") {
+      removeStoredKey(EMAIL_OTP_STATE_KEY);
+      return;
+    }
+    if (resendCountdownActive && !resendEndsAtRef.current) {
+      resendEndsAtRef.current = Date.now() + Math.max(1, resendSeconds) * 1000;
+    }
+    const payload = {
+      publicId: submittedPublicIdRef.current || publicId,
+      email: String(demographics.email || "").trim().toLowerCase(),
+      submittedEmail: submittedEmailRef.current,
+      otpStatus,
+      resendEndsAt: resendEndsAtRef.current,
+      emailEditable,
+    };
+    writeExpiringValue(EMAIL_OTP_STATE_KEY, payload, { ttlMs: EMAIL_OTP_TTL_MS });
+  }, [
+    demographics.email,
+    emailEditable,
+    otpDigits,
+    otpStatus,
+    publicId,
+    resendCountdownActive,
+    resendSeconds,
+  ]);
 
   const getFieldError = useCallback((field, value) => {
     switch (field) {
@@ -805,5 +1034,17 @@ export function useUserDetailsPage({
     isSaving,
     saveError,
     retryCountdown,
+    otpDigits,
+    otpValue,
+    otpLength,
+    showOtpField,
+    otpStatus,
+    otpError,
+    resendSeconds,
+    emailInputDisabled,
+    inputsLocked,
+    setOtpDigit,
+    setOtpFromPaste,
+    handleResend,
   };
 }

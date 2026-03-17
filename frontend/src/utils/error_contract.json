@@ -470,6 +470,48 @@
     "status": 403,
     "category": "AUTH"
   },
+  "AUTH_EMAIL_OTP_INVALID": {
+    "code": "AUTH_003_0001",
+    "message": "Invalid verification code. Please try again.",
+    "status": 403,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_OTP_EXPIRED": {
+    "code": "AUTH_003_0002",
+    "message": "Verification code expired. Request a new one.",
+    "status": 410,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_OTP_TOO_MANY": {
+    "code": "AUTH_003_0003",
+    "message": "Too many attempts. Request a new verification code.",
+    "status": 429,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_OTP_NOT_FOUND": {
+    "code": "AUTH_003_0004",
+    "message": "No verification code found. Please request a new one.",
+    "status": 404,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_OTP_SEND_FAILED": {
+    "code": "AUTH_003_0005",
+    "message": "Failed to send verification code. Please try again.",
+    "status": 502,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_MISMATCH": {
+    "code": "AUTH_003_0006",
+    "message": "Email does not match your registration details.",
+    "status": 403,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_SAME": {
+    "code": "AUTH_003_0007",
+    "message": "Please enter a different email address to update.",
+    "status": 400,
+    "category": "AUTH"
+  },
   "BOT_CHALLENGE_FAILED": {
     "code": "BOT_001_0001",
     "message": "Human verification failed. Please retry.",

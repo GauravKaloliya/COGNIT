@@ -10,6 +10,8 @@ export const API_ROUTES = {
   participantSession: "/participants/session",
   participantPaymentStatus: (publicId) => `/participants/${publicId}/payment-status`,
   consent: "/consent",
+  emailOtpRequest: "/email-otp/request",
+  emailOtpVerify: "/email-otp/verify",
   submit: "/submit",
   createPayment: "/payments/create",
   paymentQr: (paymentId) => `/payments/${paymentId}/qr`,
