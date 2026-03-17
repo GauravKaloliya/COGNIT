@@ -319,6 +319,8 @@ CREATE TABLE IF NOT EXISTS participants (
     prior_experience VARCHAR(120),
     consent_given    BOOLEAN NOT NULL DEFAULT FALSE,
     consent_at       TIMESTAMPTZ,
+    email_verified   BOOLEAN NOT NULL DEFAULT FALSE,
+    email_verified_at TIMESTAMPTZ,
     payment_status   VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (payment_status IN ('pending','paid','failed','refunded','cancelled')),
     current_stage    VARCHAR(32) NOT NULL DEFAULT 'consent'
@@ -358,6 +360,22 @@ CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (publi
 CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (payment_status);
+
+-- Email OTPs (verification)
+CREATE TABLE IF NOT EXISTS email_otps (
+    id           BIGSERIAL PRIMARY KEY,
+    public_id    UUID NOT NULL,
+    email        VARCHAR(255) NOT NULL,
+    otp_hash     CHAR(64) NOT NULL,
+    attempts     SMALLINT NOT NULL DEFAULT 0,
+    is_used      BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at   TIMESTAMPTZ NOT NULL,
+    verified_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_otps_public_email ON email_otps (public_id, email);
+CREATE INDEX IF NOT EXISTS idx_email_otps_expires_at ON email_otps (expires_at);
 CREATE INDEX IF NOT EXISTS idx_participants_consent       ON participants (consent_given);
 CREATE INDEX IF NOT EXISTS idx_participants_active        ON participants (is_deleted) WHERE is_deleted = false;
 

@@ -12,10 +12,22 @@ const STEP_LABELS = {
 
 export default function FlowStepper({ stage }) {
   const currentIndex = Math.max(0, APP_STAGE_ORDER.indexOf(stage));
+  const stepperRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const el = stepperRef.current;
+    if (!el) return;
+    const active = el.querySelector('[aria-current="step"]');
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ block: "nearest", inline: "start" });
+    } else {
+      el.scrollLeft = 0;
+    }
+  }, [stage]);
 
   return (
     <div className="flow-stepper-wrap" aria-label="Progress">
-      <div className="flow-stepper">
+      <div ref={stepperRef} className="flow-stepper">
         {APP_STAGE_ORDER.map((key, index) => {
           const state = index < currentIndex ? "done" : index === currentIndex ? "active" : "upcoming";
           const labelKey = STEP_LABELS[key] || key;

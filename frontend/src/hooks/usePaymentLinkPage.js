@@ -434,7 +434,7 @@ export function usePaymentLinkPage({
     stopTimer();
     setTimeRemaining(0);
     setTimerProgress(100);
-  }, [isMobile, qrVisible, startTimer]);
+  }, [isMobile, qrVisible, startTimer, stopTimer]);
 
   useEffect(() => {
     if (!qrVisible || !pendingTimerExpiresAtRef.current) return;
@@ -566,7 +566,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, publicId, savePaymentViewState, showRetryHintError, startTimer]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, publicId, requestStartTimer, savePaymentViewState, showRetryHintError]);
 
   useEffect(() => {
     return () => {
@@ -745,6 +745,7 @@ export function usePaymentLinkPage({
     onNext,
     refreshNoticeVariant,
     startTimer,
+    requestStartTimer,
     stopTimer,
     publicId,
     sessionId,
@@ -1050,6 +1051,12 @@ export function usePaymentLinkPage({
               },
             }
           );
+        } else if (err?.status === 409) {
+          // Known conflict errors (e.g., reused/rejected screenshot). Show UI message and stop.
+          showRetryHintError(err?.message || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
+          setVerifying(false);
+          resumeTimerFromCurrentPayment();
+          return;
         } else {
           throw err;
         }
@@ -1199,6 +1206,9 @@ export function usePaymentLinkPage({
     clearPaymentViewState,
     setPaymentData,
     publicId,
+    createPayment,
+    notifySessionExpired,
+    sessionId,
   ]);
 
   const markQrVisible = useCallback(() => {

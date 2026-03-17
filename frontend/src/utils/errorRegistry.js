@@ -95,6 +95,13 @@ const TRANSLATIONS = {
     'AUTH_001_0003': 'Account has been deactivated',
     'AUTH_002_0001': 'Access denied',
     'AUTH_002_0002': 'Invalid or expired payment authorization token.',
+    'AUTH_003_0001': 'Invalid verification code. Please try again.',
+    'AUTH_003_0002': 'Verification code expired. Request a new one.',
+    'AUTH_003_0003': 'Too many attempts. Request a new verification code.',
+    'AUTH_003_0004': 'No verification code found. Please request a new one.',
+    'AUTH_003_0005': 'Failed to send verification code. Please try again.',
+    'AUTH_003_0006': 'Email does not match your registration details.',
+    'AUTH_003_0007': 'Please enter a different email address to update.',
     'BOT_001_0001': 'Human verification failed. Please retry.',
     
     // =====================================================================

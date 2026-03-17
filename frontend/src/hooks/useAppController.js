@@ -78,6 +78,7 @@ const deriveMaxAllowedStage = ({
   hasParticipant,
   userDetailsSubmitted,
   demographicsComplete,
+  emailVerified,
   paymentVerified,
   surveyCompleted,
   surveyFeedbackReady,
@@ -85,6 +86,7 @@ const deriveMaxAllowedStage = ({
 }) => {
   if (!consentGiven) return APP_FLOW.stages.consent;
   if (!hasParticipant || !userDetailsSubmitted || !demographicsComplete) return APP_FLOW.stages.userDetails;
+  if (!emailVerified) return APP_FLOW.stages.userDetails;
   if (!paymentVerified) return APP_FLOW.stages.payment;
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;
   if (surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
@@ -105,6 +107,7 @@ export function useAppController() {
   const [sessionId, setSessionId] = useState(() => getStoredValue(runtimeConfig.storageKeys.sessionId, ""));
   const [consentGiven, setConsentGiven] = useState(() => getStoredValue(runtimeConfig.storageKeys.consentGiven, false));
   const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => getStoredValue(runtimeConfig.storageKeys.userDetailsSubmitted, false));
+  const [emailVerified, setEmailVerified] = useState(() => getStoredValue(runtimeConfig.storageKeys.emailVerified, false));
   const [paymentVerified, setPaymentVerified] = useState(() => getStoredValue(runtimeConfig.storageKeys.paymentVerified, false));
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [demographics, setDemographics] = useState(
@@ -124,6 +127,12 @@ export function useAppController() {
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
+
+  useEffect(() => {
+    if (stage === "email-verify") {
+      setStage(APP_FLOW.stages.userDetails);
+    }
+  }, [stage, setStage]);
 
   const claimActiveTabLock = useCallback(() => {
     const now = Date.now();
@@ -344,6 +353,7 @@ export function useAppController() {
   }, []);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.stage, stage), [stage]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.paymentSubStage, paymentSubStage), [paymentSubStage]);
+  useEffect(() => saveStoredValue(runtimeConfig.storageKeys.emailVerified, emailVerified), [emailVerified]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.survey, survey), [survey]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.surveyCompleted, surveyCompleted), [surveyCompleted]);
   useEffect(() => saveStoredValue(runtimeConfig.storageKeys.surveyFeedbackReady, surveyFeedbackReady), [surveyFeedbackReady]);
@@ -365,6 +375,7 @@ export function useAppController() {
       hasParticipant: Boolean(publicId),
       userDetailsSubmitted,
       demographicsComplete: isDemographicsComplete(demographics),
+      emailVerified,
       paymentVerified,
       surveyCompleted,
       surveyFeedbackReady,
@@ -385,6 +396,7 @@ export function useAppController() {
     consentGiven,
     demographics,
     lastSubmissionSucceeded,
+    emailVerified,
     paymentVerified,
     publicId,
     sessionHydrated,
@@ -434,7 +446,7 @@ export function useAppController() {
         participantStatusAbortRef.current = null;
       }
     };
-  }, [addToast, isActiveTabOwner, publicId, stage, systemReady]);
+  }, [addToast, emailVerified, isActiveTabOwner, publicId, stage, systemReady, userDetailsSubmitted]);
 
   useEffect(() => () => {
     cancelInFlightRequests?.();
@@ -505,13 +517,14 @@ export function useAppController() {
       const participant = await createParticipant();
       const consentPublicId = participant?.public_id || publicId;
       if (consentGiven) await recordConsent(consentPublicId);
-      if (validateStageTransition(APP_FLOW.stages.userDetails, APP_FLOW.stages.payment)) setStage(APP_FLOW.stages.payment);
+      setEmailVerified(false);
       addToast(uiText("user.detailsSaved"), "success");
+      return participant;
     } catch (err) {
       addToast(err.message, "error");
       throw err;
     }
-  }, [addToast, consentGiven, createParticipant, publicId, recordConsent]);
+  }, [addToast, consentGiven, createParticipant, publicId, recordConsent, setEmailVerified]);
 
   const handleConsentGiven = useCallback(async () => {
     setConsentGiven(true);
@@ -520,6 +533,12 @@ export function useAppController() {
   }, [addToast]);
 
   const handleUserDetailsBack = useCallback(() => setStageManual(APP_FLOW.stages.consent), [setStageManual]);
+  const handleEmailVerified = useCallback(() => {
+    setEmailVerified(true);
+    if (validateStageTransition(APP_FLOW.stages.userDetails, APP_FLOW.stages.payment)) {
+      setStage(APP_FLOW.stages.payment);
+    }
+  }, [setEmailVerified, setStage]);
   const toggleDarkMode = useCallback(() => setDarkMode((prev) => !prev), []);
   const handleAppError = useCallback(() => addToast(getErrorMessage("SYS_002_0017"), "error"), [addToast]);
 
@@ -534,6 +553,7 @@ export function useAppController() {
     demographics,
     setDemographics,
     setStage,
+    emailVerified,
     toasts,
     addToast,
     systemReady,
@@ -557,6 +577,7 @@ export function useAppController() {
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleUserDetailsBack,
+    handleEmailVerified,
     handlePaymentComplete,
     handlePaymentContentToLink,
     handlePaymentBack,
