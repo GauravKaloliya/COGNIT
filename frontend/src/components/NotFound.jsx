@@ -8,16 +8,18 @@ import { NOT_FOUND_ILLUSTRATION } from '../content/notFoundIllustration.js';
 import { APP_ROUTES } from '../constants/routes.js';
 import { BUTTON_VARIANTS, PANEL_STATE_ICONS, PANEL_STATE_VARIANTS } from '../constants/componentUi.js';
 import { DOM_ROLES } from '../constants/dom.js';
+import { useIsMobile } from "../hooks/useIsMobile.js";
 
 export default function NotFound({ darkMode = false, onToggleDarkMode }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   return (
     <div className="app">
       <header className="header">
         <div className="brand">
           <h1>{uiText("app.brand")}</h1>
-          <p className="subtitle">{uiText("app.subtitle")}</p>
+          {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
         </div>
         <div className="header-actions">
           <DSButton

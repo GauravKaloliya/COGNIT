@@ -6,8 +6,10 @@ import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
 import DSButton from './design/DSButton.jsx';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 
 export default function ServiceUnavailablePage({ error, darkMode = false, onToggleDarkMode, onRetry, isRetrying = false }) {
+  const isMobile = useIsMobile();
   const [retryInSeconds, setRetryInSeconds] = React.useState(runtimeConfig.serviceRetrySeconds);
 
   React.useEffect(() => {
@@ -25,7 +27,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
         <header className="header">
           <div className="brand">
             <h1>{uiText("app.brand")}</h1>
-            <p className="subtitle">{uiText("app.subtitle")}</p>
+            {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
           </div>
           <div className="header-actions">
             <DSButton
@@ -64,7 +66,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
       <header className="header">
         <div className="brand">
           <h1>{uiText("app.brand")}</h1>
-          <p className="subtitle">{uiText("app.subtitle")}</p>
+          {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
         </div>
         <div className="header-actions">
           <DSButton

@@ -423,14 +423,6 @@ textarea {
   max-width: 100%;
 }
 
-@media (max-width: 640px) {
-  .brand .subtitle {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-  }
-}
-
 @media (min-width: 768px) {
   .brand .subtitle {
     font-size: var(--text-sm);
@@ -828,6 +820,10 @@ body.dark .status-dot.offline {
   animation: skeleton-shimmer 1.5s ease infinite;
 }
 
+.section-skeleton {
+  margin-top: var(--space-3);
+}
+
 
 
 
@@ -949,6 +945,13 @@ body.dark .section-skeleton {
   }
 }
 
+@media (max-width: 768px) {
+  .payment-panel .banner.warning {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
 .banner.warning {
   background: #fff7ed;
   color: #9a3412;
@@ -1017,7 +1020,6 @@ body.dark .banner.error {
   padding: 0.15rem 0.45rem;
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
-  background: color-mix(in srgb, var(--border-light) 70%, var(--primary) 30%);
   color: var(--text);
 }
 
@@ -1954,6 +1956,7 @@ textarea {
 .timer {
   font-weight: var(--font-semibold);
   color: var(--primary);
+  margin-top: var(--space-2);
 }
 
 .step-chip {
@@ -2409,6 +2412,19 @@ body.dark .counts {
   font-size: var(--text-sm);
 }
 
+.toast > span {
+  flex: 1;
+}
+
+.toast-actions {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
 @media (min-width: 640px) {
   .toast {
     min-width: 280px;
@@ -2468,7 +2484,6 @@ body.dark .toast.warning {
 }
 
 .toast-action {
-  margin-left: auto;
   background: var(--primary);
   border: none;
   color: white;
@@ -2482,7 +2497,6 @@ body.dark .toast.warning {
 }
 
 .toast button[aria-label="Dismiss"] {
-  margin-left: auto;
   background: transparent;
   border: none;
   font-size: 20px;
@@ -2496,6 +2510,31 @@ body.dark .toast.warning {
   border-radius: var(--radius-md);
   transition: all var(--transition-fast);
   flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .toast {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+  }
+
+  .toast-actions {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+  }
+
+  .toast-action {
+    padding: 2px var(--space-2);
+    min-height: 24px;
+  }
+
+  .toast button[aria-label="Dismiss"] {
+    width: 24px;
+    height: 24px;
+    font-size: 18px;
+  }
 }
 
 .toast button[aria-label="Dismiss"]:hover {
@@ -2936,6 +2975,10 @@ body.dark .payment-card.tone-4 {
   color: var(--muted);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
+}
+
+.payment-card-qr .payment-note {
+  margin: 0;
 }
 
 @media (max-width: 540px) {
@@ -3806,6 +3849,10 @@ body.dark .payment-status-badge.success {
   margin: 0;
 }
 
+.payment-failure-details p {
+  margin: 0;
+}
+
 .payment-failure-details ul {
   margin: 0;
   padding-left: 1.25rem;
@@ -4159,8 +4206,12 @@ select option {
     width: auto !important;
     max-width: fit-content;
     min-width: auto;
-    padding-left: var(--space-3);
-    padding-right: var(--space-3);
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+    padding-top: var(--space-1);
+    padding-bottom: var(--space-1);
+    font-size: var(--text-xs);
+    min-height: 28px;
   }
 
   .image-container {
@@ -4487,7 +4538,7 @@ canvas {
   }
 
   .header .brand h1,
-  .header .subtitle {
+  .header .brand h1 {
     white-space: normal;
     overflow-wrap: anywhere;
   }
