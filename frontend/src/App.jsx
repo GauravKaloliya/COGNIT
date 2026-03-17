@@ -117,7 +117,6 @@ export default function App() {
     handleEmailVerified,
     handlePaymentComplete,
     handlePaymentContentToLink,
-    handlePaymentBack,
     handleAppError,
   } = useAppController();
   const [showBackToTop, setShowBackToTop] = React.useState(false);
@@ -167,11 +166,10 @@ export default function App() {
         );
       case "payment":
         return paymentSubStage === "content" ? (
-          <PaymentContentPage onNext={handlePaymentContentToLink} onBack={handlePaymentBack} />
+          <PaymentContentPage onNext={handlePaymentContentToLink} />
         ) : (
           <PaymentLinkPage
             onNext={handlePaymentComplete}
-            onBack={handlePaymentBack}
             publicId={publicId}
             sessionId={sessionId}
             addToast={addToast}

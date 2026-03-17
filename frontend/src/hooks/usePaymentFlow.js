@@ -3,17 +3,13 @@ import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { uiText } from "../utils/uiText";
 import { APP_FLOW } from "../config/appFlow";
-import { runtimeConfig } from "../config/runtime";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
-import { clearPendingFlag } from "../utils/storage";
 
 export function usePaymentFlow({
   publicId,
   stage,
-  paymentSubStage,
   setStage,
-  setStageManual,
   setPaymentSubStage,
   setPaymentVerified,
   addToast,
@@ -71,26 +67,8 @@ export function usePaymentFlow({
     setPaymentSubStage(APP_FLOW.paymentSubStages.link);
   }, [setPaymentSubStage]);
 
-  const handlePaymentBack = useCallback(() => {
-    if (paymentSubStage === APP_FLOW.paymentSubStages.link) {
-      // If a previous offline "continue" was queued, it can auto-forward back to link.
-      // Clearing it makes Back behave deterministically.
-      clearPendingFlag(runtimeConfig.storageKeys.paymentContentPending);
-      setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-    } else {
-      if (setStageManual) {
-        setStageManual(APP_FLOW.stages.userDetails);
-      } else {
-        setStage(APP_FLOW.stages.userDetails);
-      }
-      setPaymentVerified(false);
-      setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-    }
-  }, [paymentSubStage, setPaymentSubStage, setPaymentVerified, setStage, setStageManual]);
-
   return {
     handlePaymentComplete,
     handlePaymentContentToLink,
-    handlePaymentBack,
   };
 }

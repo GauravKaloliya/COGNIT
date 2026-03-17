@@ -39,7 +39,6 @@ const getFailureReasons = (payload) => getVerificationDetails(payload)?.[PAYMENT
 
 export function usePaymentLinkPage({ 
   onNext, 
-  onBack,
   publicId,
   sessionId,
   addToast
@@ -49,6 +48,7 @@ export function usePaymentLinkPage({
   const [paymentStatus, setPaymentStatus] = useState(PAYMENT_STATUS.pending);
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
+  const uploadFileRef = useRef(null);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState(null);
   const [retryInSeconds, setRetryInSeconds] = useState(0);
@@ -86,7 +86,6 @@ export function usePaymentLinkPage({
   }, []);
   const [isMobile, setIsMobile] = useState(detectMobileClient);
   const isCriticalAction = verifying || isLoading;
-  const backDisabled = paymentStatus === PAYMENT_STATUS.expired;
   const offlineDisabled = !isOnline;
   const retryBlocked = retryInSeconds > 0;
   const retryButtonLabel = retryBlocked
@@ -265,10 +264,6 @@ export function usePaymentLinkPage({
     if (!isOnline) return;
     try {
       const safeState = { ...(state || {}) };
-      if (safeState.paymentData && typeof safeState.paymentData === "object") {
-        const { [PAYMENT_API_FIELDS.token]: _token, ...rest } = safeState.paymentData;
-        safeState.paymentData = rest;
-      }
       writeExpiringValue(PAYMENT_STATE_KEY, safeState, {
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
         ttlMs: PAYMENT_STATE_TTL_MS,
@@ -774,12 +769,30 @@ export function usePaymentLinkPage({
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      const clearPreviouslySelected = () => {
+        if (uploadPreviewUrl) {
+          URL.revokeObjectURL(uploadPreviewUrl);
+        }
+        setUploadFile(null);
+        uploadFileRef.current = null;
+        setUploadPreviewUrl("");
+        setFailureReasons([]);
+        setPaymentStatus(PAYMENT_STATUS.pending);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        if (e?.target) {
+          e.target.value = "";
+        }
+      };
       if (!file.type.startsWith("image/")) {
+        clearPreviouslySelected();
         showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.invalidImage));
         return;
       }
       if (file.size > MAX_UPLOAD_BYTES) {
         const actualMb = (file.size / (1024 * 1024)).toFixed(2);
+        clearPreviouslySelected();
         showRetryHintError(uiText("payment.fileTooLarge", { actual: actualMb, max: MAX_UPLOAD_MB }));
         return;
       }
@@ -787,6 +800,7 @@ export function usePaymentLinkPage({
         URL.revokeObjectURL(uploadPreviewUrl);
       }
       setUploadFile(file);
+      uploadFileRef.current = file;
       setUploadPreviewUrl(URL.createObjectURL(file));
       setError(null);
       setFailureReasons([]);
@@ -800,6 +814,7 @@ export function usePaymentLinkPage({
       URL.revokeObjectURL(uploadPreviewUrl);
     }
     setUploadFile(null);
+    uploadFileRef.current = null;
     setUploadPreviewUrl("");
     setFailureReasons([]);
     setPaymentStatus(PAYMENT_STATUS.pending);
@@ -844,6 +859,7 @@ export function usePaymentLinkPage({
     setPaymentData(null);
     setPaymentStatus(PAYMENT_STATUS.pending);
     setUploadFile(null);
+    uploadFileRef.current = null;
     if (uploadPreviewUrl) {
       URL.revokeObjectURL(uploadPreviewUrl);
       setUploadPreviewUrl("");
@@ -863,7 +879,8 @@ export function usePaymentLinkPage({
     }
     const operationId = beginOperation();
 
-    if (!uploadFile) {
+    const selectedFile = uploadFileRef.current || uploadFile;
+    if (!selectedFile) {
       showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.missingUpload));
       return;
     }
@@ -975,7 +992,7 @@ export function usePaymentLinkPage({
           : prev);
       }
 
-      const qualityCheck = await validateScreenshotQuality(uploadFile);
+      const qualityCheck = await validateScreenshotQuality(selectedFile);
       if (!isOperationCurrent(operationId)) return;
       if (!qualityCheck.ok) {
         showRetryHintError(qualityCheck.message || getErrorMessage(PAYMENT_ERROR_CODES.invalidImage));
@@ -985,8 +1002,8 @@ export function usePaymentLinkPage({
       }
 
       // Extract file extension from uploaded file
-      const fileExtension = uploadFile.name.split(".").pop().toLowerCase();
-      const sha256 = await calculateSha256(uploadFile);
+      const fileExtension = selectedFile.name.split(".").pop().toLowerCase();
+      const sha256 = await calculateSha256(selectedFile);
       if (!isOperationCurrent(operationId)) return;
 
       let paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || "";
@@ -1000,7 +1017,7 @@ export function usePaymentLinkPage({
       }
 
       // Step 1: Convert file to base64 and verify. Backend uploads to S3 only on success.
-      const imageBase64 = await fileToBase64(uploadFile);
+      const imageBase64 = await fileToBase64(selectedFile);
       if (!isOperationCurrent(operationId)) return;
 
       // Step 2: Trigger verification with inline image payload
@@ -1015,9 +1032,9 @@ export function usePaymentLinkPage({
           fileExtension,
           sha256,
           {
-            mime_type: uploadFile.type || "",
-            file_size: uploadFile.size || 0,
-            original_filename: uploadFile.name || "",
+            mime_type: selectedFile.type || "",
+            file_size: selectedFile.size || 0,
+            original_filename: selectedFile.name || "",
           },
           {
             signal: verifyController.signal,
@@ -1040,9 +1057,9 @@ export function usePaymentLinkPage({
             fileExtension,
             sha256,
             {
-              mime_type: uploadFile.type || "",
-              file_size: uploadFile.size || 0,
-              original_filename: uploadFile.name || "",
+              mime_type: selectedFile.type || "",
+              file_size: selectedFile.size || 0,
+              original_filename: selectedFile.name || "",
             },
             {
               signal: verifyController.signal,
@@ -1277,15 +1294,6 @@ export function usePaymentLinkPage({
     onNext,
   ]);
 
-  const handleBackClick = useCallback(() => {
-    if (backDisabled) return;
-    opVersionRef.current += 1;
-    if (statusAbortRef.current) statusAbortRef.current.abort();
-    if (createAbortRef.current) createAbortRef.current.abort();
-    if (verifyAbortRef.current) verifyAbortRef.current.abort();
-    onBack?.();
-  }, [backDisabled, onBack]);
-
   useEffect(() => {
     savePaymentViewState({
       [PAYMENT_STATE_FIELDS.publicId]: publicId,
@@ -1341,7 +1349,6 @@ export function usePaymentLinkPage({
     timerProgress,
     isMobile,
     isCriticalAction,
-    backDisabled,
     offlineDisabled,
     retryBlocked,
     retryButtonLabel,
@@ -1356,7 +1363,6 @@ export function usePaymentLinkPage({
     clearSelectedFile,
     restartPayment,
     handleUploadAndFinalize,
-    handleBackClick,
     markQrVisible,
   };
 }
