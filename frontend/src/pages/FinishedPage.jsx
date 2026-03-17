@@ -33,20 +33,16 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
           </div>
           <div className="card-body">
           <ul>
-            <li>Participants are <strong>randomly selected</strong> to receive <strong>{rewardAmountLabel} rewards</strong></li>
-            <li>Active participants who write detailed descriptions get added to a <strong>priority list</strong></li>
-            <li>Priority participants have <strong>higher chances</strong> of being selected</li>
-            <li>Rewards are sent via <strong>UPI transfer</strong> within 24-48 hours</li>
-            <li>If you&apos;re selected, you&apos;ll receive an email/SMS with payment confirmation</li>
+            <li>{uiText("finish.rewardBullet1", { amount: rewardAmountLabel })}</li>
+            <li>{uiText("finish.rewardBullet2")}</li>
+            <li>{uiText("finish.rewardBullet3")}</li>
+            <li>{uiText("finish.rewardBullet4")}</li>
+            <li>{uiText("finish.rewardBullet5")}</li>
           </ul>
           </div>
         </div>
 
-        <p className="debrief">
-          Debrief: C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling)
-          advances our understanding of how humans describe visual content and how AI can better model this cognitive process. Your responses
-          contribute to improving image-text understanding and generation systems.
-        </p>
+        <p className="debrief">{uiText("finish.debrief")}</p>
 
         <div className="page-actions sticky-mobile-actions inline-actions">
           <DSButton variant="primary" onClick={handleFinish}>

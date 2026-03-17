@@ -6,7 +6,6 @@ import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
-import { ALLOWED_EMAIL_DOMAINS } from "../content/userDetailsOptions";
 import {
   forEachStorageArea,
   getPendingFlag,
@@ -34,6 +33,7 @@ const USERNAME_MIN_LENGTH = runtimeConfig.usernameMinLength;
 const AGE_MIN = runtimeConfig.ageMin;
 const AGE_MAX = runtimeConfig.ageMax;
 const LOCATION_MIN_LENGTH = runtimeConfig.locationMinLength;
+const OTP_STATUS = runtimeConfig.otpStatus;
 const MAX_AUTO_LOCATION_ATTEMPTS = 2;
 const AUTO_LOCATION_PROMPT_KEY = runtimeConfig.storageKeys.autoLocationPrompt;
 const AUTO_LOCATION_PROMPT_DEDUPE_MS = 2000;
@@ -107,7 +107,6 @@ export function useUserDetailsPage({
   const [submitting, setSubmitting] = useState(false);
   const otpLength = runtimeConfig.emailOtpLength;
   const [otpDigits, setOtpDigits] = useState(() => Array.from({ length: otpLength }, () => ""));
-  const [otpStatus, setOtpStatus] = useState("idle");
   const [otpError, setOtpError] = useState("");
   const [resendCountdownActive, setResendCountdownActive] = useState(false);
   const [resendInitialSeconds, setResendInitialSeconds] = useState(runtimeConfig.emailOtpResendCooldownSeconds);
@@ -139,10 +138,21 @@ export function useUserDetailsPage({
   const autoVerifyRef = useRef("");
   const resendEndsAtRef = useRef(null);
 
+  const [otpStatus, setOtpStatus] = useState(OTP_STATUS.idle);
   const otpValue = otpDigits.join("");
-  const showOtpField = otpStatus === "sent" || otpStatus === "verifying" || otpStatus === "verify_failed";
-  const inputsLocked = submitting || otpStatus === "sending" || otpStatus === "verifying" || otpStatus === "sent" || otpStatus === "verify_failed";
-  const allowEmailDuringOtp = otpStatus !== "idle";
+  const showOtpField = [
+    OTP_STATUS.sending,
+    OTP_STATUS.sent,
+    OTP_STATUS.sendFailed,
+    OTP_STATUS.verifying,
+    OTP_STATUS.verifyFailed,
+  ].includes(otpStatus);
+  const inputsLocked = submitting
+    || otpStatus === OTP_STATUS.sending
+    || otpStatus === OTP_STATUS.verifying
+    || otpStatus === OTP_STATUS.sent
+    || otpStatus === OTP_STATUS.verifyFailed;
+  const allowEmailDuringOtp = otpStatus !== OTP_STATUS.idle;
   const emailInputDisabled = inputsLocked && !allowEmailDuringOtp;
 
   useEffect(() => {
@@ -176,7 +186,7 @@ export function useUserDetailsPage({
     const storedOtp = stored?.value;
     if (!storedOtp || typeof storedOtp !== "object") return;
 
-    if (storedOtp.otpStatus === "verified") {
+    if (storedOtp.otpStatus === OTP_STATUS.verified) {
       forEachStorageArea((area) => {
         removeStoredKey(EMAIL_OTP_STATE_KEY, area);
         removeStoredKey(scopedOtpKey, area);
@@ -197,10 +207,10 @@ export function useUserDetailsPage({
     if (storedOtp.submittedEmail) submittedEmailRef.current = String(storedOtp.submittedEmail);
     if (typeof storedOtp.emailEditable === "boolean") setEmailEditable(storedOtp.emailEditable);
     if (typeof storedOtp.otpStatus === "string") {
-      const normalizedStatus = ["sending", "verifying"].includes(storedOtp.otpStatus)
-        ? "sent"
-        : storedOtp.otpStatus === "failed"
-          ? "verify_failed"
+      const normalizedStatus = [OTP_STATUS.sending, OTP_STATUS.verifying].includes(storedOtp.otpStatus)
+        ? OTP_STATUS.sent
+        : storedOtp.otpStatus === OTP_STATUS.sendFailed
+          ? OTP_STATUS.verifyFailed
           : storedOtp.otpStatus;
       setOtpStatus(normalizedStatus);
     }
@@ -287,7 +297,7 @@ export function useUserDetailsPage({
     if (!value) return getErrorMessage("VAL_001_0012");
     if (!REGEX_PATTERNS.email.test(value)) return getErrorMessage("VAL_001_0013");
     const domain = value.split("@")[1];
-    if (!ALLOWED_EMAIL_DOMAINS.includes(domain)) return getErrorMessage("VAL_001_0014");
+    if (!runtimeConfig.allowedEmailDomains.includes(domain)) return getErrorMessage("VAL_001_0014");
     return "";
   }, []);
 
@@ -656,17 +666,17 @@ export function useUserDetailsPage({
       setEmailEditable(false);
       setOtpError("");
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
-      setOtpStatus("sending");
+      setOtpStatus(OTP_STATUS.sending);
       try {
         await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, false);
-        setOtpStatus("sent");
+        setOtpStatus(OTP_STATUS.sent);
         setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
         resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
         setResendCountdownActive(true);
         addToast?.(uiText("email.sentToast"), "success");
       } catch (err) {
         if (err?.code === REQUEST_CODES.aborted) return;
-        setOtpStatus("send_failed");
+        setOtpStatus(OTP_STATUS.sendFailed);
         setResendCountdownActive(false);
         resendEndsAtRef.current = null;
         setEmailEditable(true);
@@ -822,11 +832,11 @@ export function useUserDetailsPage({
       setOtpError(uiText("email.offlineBanner"));
       return;
     }
-    setOtpStatus("verifying");
+    setOtpStatus(OTP_STATUS.verifying);
     setOtpError("");
     try {
       await endpoints.verifyEmailOtp(effectivePublicId, normalizedEmail, normalizedOtp);
-      setOtpStatus("verified");
+      setOtpStatus(OTP_STATUS.verified);
       forEachStorageArea((area) => {
         removeStoredKey(EMAIL_OTP_STATE_KEY, area);
         removeStoredKey(scopedOtpKey, area);
@@ -835,7 +845,7 @@ export function useUserDetailsPage({
       onEmailVerified?.();
     } catch (err) {
       if (err?.code === REQUEST_CODES.aborted) return;
-      setOtpStatus("verify_failed");
+      setOtpStatus(OTP_STATUS.verifyFailed);
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
       setEmailEditable(true);
       setOtpError(err?.message || getErrorMessage("SYS_002_0002"));
@@ -843,7 +853,7 @@ export function useUserDetailsPage({
   }, [addToast, demographics.email, isOnline, onEmailVerified, otpLength, otpValue, publicId, scopedOtpKey]);
 
   useEffect(() => {
-    if (otpStatus !== "sent") return;
+    if (otpStatus !== OTP_STATUS.sent) return;
     if (!otpValue || otpValue.length !== otpLength) return;
     if (autoVerifyRef.current === otpValue) return;
     autoVerifyRef.current = otpValue;
@@ -862,20 +872,20 @@ export function useUserDetailsPage({
       return;
     }
     const emailUpdate = submittedEmailRef.current && submittedEmailRef.current !== normalizedEmail;
-    setOtpStatus("sending");
+      setOtpStatus(OTP_STATUS.sending);
     setOtpError("");
     try {
       await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, emailUpdate);
       submittedEmailRef.current = normalizedEmail;
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
-      setOtpStatus("sent");
+        setOtpStatus(OTP_STATUS.sent);
       setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
       resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
       setResendCountdownActive(true);
       addToast?.(uiText("email.sentToast"), "success");
     } catch (err) {
       if (err?.code === REQUEST_CODES.aborted) return;
-      setOtpStatus("send_failed");
+      setOtpStatus(OTP_STATUS.sendFailed);
       setResendCountdownActive(false);
       resendEndsAtRef.current = null;
       setEmailEditable(true);
@@ -893,15 +903,15 @@ export function useUserDetailsPage({
   useEffect(() => {
     if (!submittedEmailRef.current) return;
     const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
-    if (normalizedEmail !== submittedEmailRef.current && otpStatus !== "verified") {
+    if (normalizedEmail !== submittedEmailRef.current && otpStatus !== OTP_STATUS.verified) {
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
-      setOtpStatus((prev) => (prev === "idle" ? prev : "send_failed"));
+      setOtpStatus((prev) => (prev === OTP_STATUS.idle ? prev : OTP_STATUS.sendFailed));
       setOtpError("");
     }
   }, [demographics.email, otpLength, otpStatus]);
 
   useEffect(() => {
-    if (otpStatus === "idle") {
+    if (otpStatus === OTP_STATUS.idle) {
       forEachStorageArea((area) => {
         removeStoredKey(EMAIL_OTP_STATE_KEY, area);
         removeStoredKey(scopedOtpKey, area);

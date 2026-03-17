@@ -70,13 +70,20 @@ export default function ConsentPage({
               {section.intro && <p>{section.intro}</p>}
               {section.paragraphs?.map((paragraph) => (
                 <p key={paragraph}>
-                  {paragraph.startsWith("Estimated duration:") ? <><strong>Estimated duration:</strong> {paragraph.replace("Estimated duration: ", "")}</> : paragraph}
+                  {paragraph.startsWith(uiText("consent.estimatedDurationPrefix"))
+                    ? (
+                      <>
+                        <strong>{uiText("consent.estimatedDurationPrefix")}</strong>{" "}
+                        {paragraph.replace(`${uiText("consent.estimatedDurationPrefix")} `, "")}
+                      </>
+                    )
+                    : paragraph}
                 </p>
               ))}
               {section.dynamicList ? (
                 <ul>
-                  <li><strong>Entry fee:</strong> {paymentAmountLabel}</li>
-                  <li><strong>Reward draw:</strong> Randomly selected participants receive {rewardAmountLabel} via UPI (typically within 24-48 hours)</li>
+                  <li><strong>{uiText("consent.entryFeeLabel")}</strong> {paymentAmountLabel}</li>
+                  <li><strong>{uiText("consent.rewardDrawLabel")}</strong> {uiText("consent.rewardDrawMessage", { reward: rewardAmountLabel })}</li>
                 </ul>
               ) : null}
               {section.items?.length ? (
@@ -91,7 +98,7 @@ export default function ConsentPage({
                 </ul>
               ) : null}
               {section.contactEmail ? (
-                <p><strong>Email:</strong> <a href={`mailto:${section.contactEmail}`}>{section.contactEmail}</a></p>
+                <p><strong>{uiText("consent.emailLabel")}</strong> <a href={`mailto:${section.contactEmail}`}>{section.contactEmail}</a></p>
               ) : null}
               {section.outro && <p>{section.outro}</p>}
             </React.Fragment>

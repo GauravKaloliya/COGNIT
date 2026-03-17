@@ -4,6 +4,7 @@ import DSCard from "../components/design/DSCard.jsx";
 import DSButton from "../components/design/DSButton.jsx";
 import { usePaymentContentPage } from "../hooks/usePaymentContentPage";
 import { uiText } from "../utils/uiText";
+import { runtimeConfig } from "../config/runtime";
 
 export default function PaymentContentPage({ onNext }) {
   const {
@@ -36,9 +37,9 @@ export default function PaymentContentPage({ onNext }) {
 
       <div className="payment-header">
         <div className="icon-badge payment-emoji" aria-hidden="true">🎁</div>
-        <h2 className="payment-title ds-title">Win {rewardAmountLabel}</h2>
-        <p className="payment-subtitle">Participate → Get a chance to receive {rewardAmountLabel}</p>
-        <p className="payment-tagline ds-subtle">{paymentAmountLabel} entry. Real reward.</p>
+        <h2 className="payment-title ds-title">{uiText("payment.contentTitle", { reward: rewardAmountLabel })}</h2>
+        <p className="payment-subtitle">{uiText("payment.contentSubtitle", { reward: rewardAmountLabel })}</p>
+        <p className="payment-tagline ds-subtle">{uiText("payment.contentTagline", { fee: paymentAmountLabel })}</p>
       </div>
 
       <div className="payment-content ds-stack">
@@ -46,14 +47,14 @@ export default function PaymentContentPage({ onNext }) {
           <div className="card-header">
             <h3>
               <span className="icon-badge" aria-hidden="true">💸</span>
-              {paymentAmountLabel} Participation
+              {uiText("payment.contentParticipationHeading", { fee: paymentAmountLabel })}
             </h3>
           </div>
           <div className="card-body">
-            <p>Your {paymentAmountLabel} entry enters you into the reward pool.</p>
+            <p>{uiText("payment.contentParticipationIntro", { fee: paymentAmountLabel })}</p>
             <ul className="payment-list">
-              <li>Entry fee: {paymentAmountLabel}</li>
-              <li>Chance to win {rewardAmountLabel} via UPI</li>
+              <li>{uiText("payment.contentParticipationBullet1", { fee: paymentAmountLabel })}</li>
+              <li>{uiText("payment.contentParticipationBullet2", { reward: rewardAmountLabel })}</li>
             </ul>
           </div>
         </DSCard>
@@ -62,15 +63,15 @@ export default function PaymentContentPage({ onNext }) {
           <div className="card-header">
             <h3>
               <span className="icon-badge" aria-hidden="true">🧾</span>
-              How It Works
+              {uiText("payment.contentHowItWorksHeading")}
             </h3>
           </div>
           <div className="card-body">
             <ol className="payment-steps compact">
-              <li><span className="icon-badge" aria-hidden="true">1️⃣</span> Pay {paymentAmountLabel} via UPI</li>
-              <li><span className="icon-badge" aria-hidden="true">2️⃣</span> Upload payment screenshot</li>
-              <li><span className="icon-badge" aria-hidden="true">3️⃣</span> Your entry is added to the pool</li>
-              <li><span className="icon-badge" aria-hidden="true">4️⃣</span> Winners receive {rewardAmountLabel} (24–48 hours)</li>
+              <li><span className="icon-badge" aria-hidden="true">1️⃣</span> {uiText("payment.contentStep1", { fee: paymentAmountLabel })}</li>
+              <li><span className="icon-badge" aria-hidden="true">2️⃣</span> {uiText("payment.contentStep2")}</li>
+              <li><span className="icon-badge" aria-hidden="true">3️⃣</span> {uiText("payment.contentStep3")}</li>
+              <li><span className="icon-badge" aria-hidden="true">4️⃣</span> {uiText("payment.contentStep4", { reward: rewardAmountLabel })}</li>
             </ol>
             <p className="payment-note">{uiText("payment.cleanDirect")}</p>
           </div>
@@ -80,15 +81,15 @@ export default function PaymentContentPage({ onNext }) {
           <div className="card-header">
             <h3>
               <span className="icon-badge" aria-hidden="true">🚀</span>
-              Increase Your Odds
+              {uiText("payment.contentIncreaseOddsHeading")}
             </h3>
           </div>
           <div className="card-body">
             <p>{uiText("payment.priorityIntro")}</p>
             <p className="payment-callout">{uiText("payment.priorityUnlock")}</p>
             <ul className="payment-checklist">
-              <li><span aria-hidden="true">✅</span> Writing 120+ total words</li>
-              <li><span aria-hidden="true">✅</span> Completing 3+ rounds</li>
+              <li><span aria-hidden="true">✅</span> {uiText("payment.contentChecklist1", { words: runtimeConfig.priorityDescWordTarget })}</li>
+              <li><span aria-hidden="true">✅</span> {uiText("payment.contentChecklist2", { rounds: runtimeConfig.priorityMinRounds })}</li>
             </ul>
             <p className="payment-note">{uiText("payment.priorityOutcome")}</p>
           </div>
@@ -98,12 +99,12 @@ export default function PaymentContentPage({ onNext }) {
           <div className="card-header">
             <h3>
               <span className="icon-badge" aria-hidden="true">🏆</span>
-              Reward Details
+              {uiText("payment.contentRewardDetailsHeading")}
             </h3>
           </div>
           <div className="card-body">
             <ul className="payment-list">
-              <li>{rewardAmountLabel} per selected entry</li>
+              <li>{uiText("payment.contentRewardDetail1", { reward: rewardAmountLabel })}</li>
               <li>{uiText("payment.rewardDirectUpi")}</li>
               <li>{uiText("payment.rewardProcessed")}</li>
               <li>{uiText("payment.rewardNoMinimum")}</li>

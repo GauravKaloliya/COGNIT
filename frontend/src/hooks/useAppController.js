@@ -122,6 +122,21 @@ const isDemographicsComplete = (demographics) => {
   return usernameOk && emailOk && phoneOk && gender && ageOk && locationOk && language && prior;
 };
 
+const hasAnyDemographicsValue = (demographics) => {
+  if (!demographics) return false;
+  const fields = [
+    demographics.username,
+    demographics.email,
+    demographics.phone,
+    demographics.gender_code,
+    demographics.age,
+    demographics.location,
+    demographics.language_code,
+    demographics.prior_experience,
+  ];
+  return fields.some((value) => String(value || "").trim().length > 0);
+};
+
 const deriveMaxAllowedStage = ({
   currentStage,
   consentGiven,
@@ -469,15 +484,28 @@ export function useAppController() {
       removeStoredKey(fromKey, CORE_STATE_STORAGE_AREA);
     });
 
+    const readScoped = (baseKey, fallback, ttlMs) => {
+      const scopedKey = makeScopedKey(baseKey, publicId);
+      const stored = readExpiringValue(scopedKey, undefined, { area: CORE_STATE_STORAGE_AREA, schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs });
+      return stored === undefined ? { hasValue: false, value: fallback } : { hasValue: true, value: stored };
+    };
+
     // Rehydrate current in-memory state from the participant scope after migration.
-    setSessionId(readCoreValue(runtimeConfig.storageKeys.sessionId, "", publicId));
-    setStage(readCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, publicId));
-    setPaymentSubStage(readCoreValue(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content, publicId));
-    setConsentGiven(readCoreValue(runtimeConfig.storageKeys.consentGiven, false, publicId));
-    setUserDetailsSubmitted(readCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, false, publicId));
-    setEmailVerified(readCoreValue(runtimeConfig.storageKeys.emailVerified, false, publicId));
-    setPaymentVerified(readCoreValue(runtimeConfig.storageKeys.paymentVerified, false, publicId));
-    setDemographics(readCoreValue(runtimeConfig.storageKeys.demographics, {
+    const sessionStored = readScoped(runtimeConfig.storageKeys.sessionId, "", CORE_STATE_TTL_MS);
+    setSessionId((prev) => (sessionStored.hasValue ? sessionStored.value : prev));
+    const stageStored = readScoped(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, CORE_STATE_TTL_MS);
+    setStage((prev) => (stageStored.hasValue ? stageStored.value : prev));
+    const paymentSubStageStored = readScoped(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content, CORE_STATE_TTL_MS);
+    setPaymentSubStage((prev) => (paymentSubStageStored.hasValue ? paymentSubStageStored.value : prev));
+    const consentStored = readScoped(runtimeConfig.storageKeys.consentGiven, false, CORE_STATE_TTL_MS);
+    setConsentGiven((prev) => (consentStored.hasValue ? consentStored.value : prev));
+    const userDetailsStored = readScoped(runtimeConfig.storageKeys.userDetailsSubmitted, false, CORE_STATE_TTL_MS);
+    setUserDetailsSubmitted((prev) => (userDetailsStored.hasValue ? userDetailsStored.value : prev));
+    const emailStored = readScoped(runtimeConfig.storageKeys.emailVerified, false, CORE_STATE_TTL_MS);
+    setEmailVerified((prev) => (emailStored.hasValue ? emailStored.value : prev));
+    const paymentStored = readScoped(runtimeConfig.storageKeys.paymentVerified, false, CORE_STATE_TTL_MS);
+    setPaymentVerified((prev) => (paymentStored.hasValue ? paymentStored.value : prev));
+    const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
       username: "",
       email: "",
       phone: "",
@@ -486,7 +514,8 @@ export function useAppController() {
       location: "",
       language_code: "",
       prior_experience: "",
-    }, publicId, { ttlMs: PII_STATE_TTL_MS }));
+    }, publicId, { ttlMs: PII_STATE_TTL_MS });
+    setDemographics((prev) => (hasAnyDemographicsValue(storedDemographics) ? storedDemographics : prev));
   }, [publicId]);
 
   useEffect(() => {
