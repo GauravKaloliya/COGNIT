@@ -226,7 +226,6 @@ export default function UserDetailsPage({
           {checking.phone && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.phone && <span className="error-text">{errors.phone}</span>}
           {!phoneOk && <span className="helper-text warning">{uiText("user.phoneHint")}</span>}
-          <span className="helper-text">{uiText("user.phoneCount", { count: (demographics.phone || "").length })}</span>
         </div>
 
         {showOtpField && (

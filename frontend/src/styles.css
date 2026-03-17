@@ -585,6 +585,15 @@ body.dark .status-dot.offline {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  align-items: center;
+  text-align: center;
+}
+
+.panel-state h1,
+.panel-state h2,
+.panel-state h3,
+.panel-state p {
+  margin: 0;
 }
 
 .panel-state-icon {
@@ -3298,6 +3307,31 @@ body.dark .payment-card.tone-4 {
 
 .error-page-centered .panel {
   width: 100%;
+}
+
+.error-page-centered .panel {
+  padding: var(--space-4);
+}
+
+.error-page-centered .page-hero {
+  padding: var(--space-2) 0;
+}
+
+.error-page-centered .panel-state {
+  gap: var(--space-2);
+}
+
+.error-page-centered .error-details {
+  margin-bottom: var(--space-3);
+}
+
+.error-page-centered .error-details-summary {
+  margin-bottom: var(--space-2);
+}
+
+.service-unavailable-card {
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 /* --------------------------------------------------------------------------
