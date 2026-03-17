@@ -8,6 +8,7 @@ import secrets
 import base64
 import json
 import time
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -23,7 +24,6 @@ from app.config import (
     EMAIL_OTP_WEBHOOK_URL,
     EMAIL_OTP_JWT_SECRET,
     EMAIL_OTP_JWT_TTL_SECONDS,
-    EMAIL_OTP_BODY_TEMPLATE,
     EMAIL_OTP_HTML_TEMPLATE,
     SECRET_KEY,
 )
@@ -117,16 +117,27 @@ def update_participant_email(db, *, participant_id: int, email: str) -> None:
     db.execute(QUERY_UPDATE_PARTICIPANT_EMAIL, {"pid": participant_id, "em": email})
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _html_to_text(html: str) -> str:
+    # Minimal, dependency-free HTML -> text fallback for email clients that don't render HTML.
+    text = html.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    text = _HTML_TAG_RE.sub("", text)
+    return " ".join(text.split()).strip()
+
+
 def build_email_otp_payload(*, email: str, otp: str, public_id: str) -> dict:
-    body = EMAIL_OTP_BODY_TEMPLATE.replace("{otp}", otp)
     html = EMAIL_OTP_HTML_TEMPLATE.replace("{otp}", otp)
+    text = _html_to_text(html)
     return {
         "to": email,
         "otp": otp,
         "from": EMAIL_OTP_SENDER,
         "subject": EMAIL_OTP_SUBJECT,
-        "body": body,
-        "text": body,
+        # Keep both fields for compatibility with existing n8n mappings; both are derived from the HTML template.
+        "body": text,
+        "text": text,
         "html": html,
         "public_id": public_id,
     }
