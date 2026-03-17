@@ -3,6 +3,7 @@ import { sanitizeUsername, useUserDetailsPage } from "../hooks/useUserDetailsPag
 import { uiText } from "../utils/uiText";
 import { PRIOR_EXPERIENCE_GROUPS, PRIOR_EXPERIENCE_NONE } from "../content/userDetailsOptions";
 import DSButton from "../components/design/DSButton.jsx";
+import { runtimeConfig } from "../config/runtime";
 
 export default function UserDetailsPage({
   publicId,
@@ -70,24 +71,29 @@ export default function UserDetailsPage({
   const locationOk = (demographics.location || "").trim().length >= LOCATION_MIN && !errors.location;
   const rawEmailDomains = uiText("user.emailDomains").split("|").map((d) => d.trim()).filter(Boolean);
   const emailDomains = Array.from(new Set(rawEmailDomains));
-  const emailPlaceholderDomain = emailDomains[emailPlaceholderIndex % emailDomains.length] || "gmail.com";
+  const emailPlaceholderDomain =
+    emailDomains[emailPlaceholderIndex % emailDomains.length]
+    || uiText("user.emailDefaultDomain")
+    || runtimeConfig.allowedEmailDomains[0]
+    || "";
   const showEmailGhost = !emailFocused && !(demographics.email || "").trim();
   const inputRefs = React.useRef([]);
   const toOtpDigits = (value) => String(value || "").replace(/\D/g, "");
-  const otpStatusMessage = otpStatus === "sending"
+  const OTP_STATUS = runtimeConfig.otpStatus;
+  const otpStatusMessage = otpStatus === OTP_STATUS.sending
     ? uiText("email.requesting")
-    : otpStatus === "sent"
+    : otpStatus === OTP_STATUS.sent
       ? uiText("email.sentToast")
-      : otpStatus === "verifying"
+      : otpStatus === OTP_STATUS.verifying
         ? uiText("email.verifying")
         : "";
   const resendLabel = resendSeconds > 0
     ? uiText("email.resendIn", { seconds: resendSeconds })
     : uiText("email.sendAgain");
-  const canResend = resendSeconds === 0 && otpStatus !== "sending" && otpStatus !== "verifying";
-  const submitLabel = otpStatus === "sending"
+  const canResend = resendSeconds === 0 && otpStatus !== OTP_STATUS.sending && otpStatus !== OTP_STATUS.verifying;
+  const submitLabel = otpStatus === OTP_STATUS.sending
     ? uiText("email.requesting")
-    : otpStatus === "sent"
+    : otpStatus === OTP_STATUS.sent
       ? uiText("email.sentToast")
       : submitting
         ? uiText("common.submitting")
@@ -102,7 +108,7 @@ export default function UserDetailsPage({
     !isFormComplete ||
     (locationPermissionDenied && !manualLocationAllowed) ||
     Object.keys(errors).length > 0 ||
-    otpStatus !== "idle"
+    otpStatus !== OTP_STATUS.idle
   );
   const firstEmptyOtpIndex = otpDigits.findIndex((digit) => !digit);
   const editableOtpIndex = firstEmptyOtpIndex === -1 ? otpLength - 1 : firstEmptyOtpIndex;
@@ -113,7 +119,7 @@ export default function UserDetailsPage({
     const id = window.setInterval(() => {
       setEmailPlaceholderIndex((prev) => (prev + 1) % emailDomains.length);
       setEmailPlaceholderTick((prev) => prev + 1);
-    }, 1800);
+    }, runtimeConfig.emailPlaceholderRotateMs);
     return () => window.clearInterval(id);
   }, [emailDomains.length, showEmailGhost]);
 
@@ -126,7 +132,7 @@ export default function UserDetailsPage({
             className="back-button"
             onClick={onBack}
           >
-            ← Back
+            {uiText("common.backWithArrow")}
           </DSButton>
         )}
         {draftRestored && (
@@ -188,7 +194,7 @@ export default function UserDetailsPage({
             />
             {showEmailGhost && (
               <span className="ghost-placeholder simple">
-                <span className="ghost-prefix">yourname@</span>
+                <span className="ghost-prefix">{uiText("user.emailGhostPrefix")}</span>
                 <span key={emailPlaceholderTick} className="ghost-domain simple-animate">{emailPlaceholderDomain}</span>
               </span>
             )}
@@ -196,19 +202,6 @@ export default function UserDetailsPage({
           {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
           {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
-          {(otpStatus === "sending" || otpStatus === "sent" || otpStatus === "verifying" || otpStatus === "failed") && (
-            <div className="inline-actions">
-              <DSButton
-                variant="ghost"
-                type="button"
-                disabled={!canResend}
-                onClick={handleResend}
-              >
-                {otpStatus === "sending" ? uiText("email.requesting") : resendLabel}
-              </DSButton>
-              {otpStatusMessage && <span className="checking-text">{otpStatusMessage}</span>}
-            </div>
-          )}
         </div>
 
         <div className={`form-field ${errors.phone ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
@@ -252,7 +245,7 @@ export default function UserDetailsPage({
                   className="otp-input"
                   maxLength={1}
                   value={digit}
-                  disabled={otpStatus === "verifying" || otpStatus === "sending"}
+                  disabled={otpStatus === OTP_STATUS.verifying || otpStatus === OTP_STATUS.sending}
                   onChange={(e) => {
                     const raw = e.target.value;
                     const digitsOnly = toOtpDigits(raw);
@@ -264,7 +257,7 @@ export default function UserDetailsPage({
 
                     setOtpDigit(index, digitsOnly);
                     if (digitsOnly && index < otpLength - 1) {
-                      window.setTimeout(() => inputRefs.current[index + 1]?.focus(), 0);
+                      window.setTimeout(() => inputRefs.current[index + 1]?.focus(), runtimeConfig.focusAdvanceDelayMs);
                     }
                   }}
                   onKeyDown={(e) => {
@@ -295,7 +288,7 @@ export default function UserDetailsPage({
                     if (!digitsOnly) return;
                     setOtpFromPaste(0, digitsOnly);
                     const nextIndex = Math.min(otpLength - 1, digitsOnly.length - 1);
-                    window.setTimeout(() => inputRefs.current[nextIndex]?.focus(), 0);
+                    window.setTimeout(() => inputRefs.current[nextIndex]?.focus(), runtimeConfig.focusAdvanceDelayMs);
                   }}
                   onFocus={() => {
                     if (index !== editableOtpIndex) inputRefs.current[editableOtpIndex]?.focus();
@@ -305,6 +298,17 @@ export default function UserDetailsPage({
               ))}
             </div>
             {otpError && <span className="error-text">{otpError}</span>}
+            <div className="inline-actions">
+              <DSButton
+                variant="ghost"
+                type="button"
+                disabled={!canResend}
+                onClick={handleResend}
+              >
+                {otpStatus === OTP_STATUS.sending ? uiText("email.requesting") : resendLabel}
+              </DSButton>
+              {otpStatusMessage && <span className="checking-text">{otpStatusMessage}</span>}
+            </div>
           </div>
         )}
 
@@ -335,7 +339,7 @@ export default function UserDetailsPage({
             className={`number-left${errors.age ? ' error-input' : ''}`}
             min={AGE_MIN}
             max={AGE_MAX}
-            placeholder={`Age (${AGE_MIN}-${AGE_MAX})`}
+            placeholder={uiText("user.agePlaceholderRange", { min: AGE_MIN, max: AGE_MAX })}
             value={demographics.age || ''}
             disabled={inputsLocked}
             onChange={(e) => {

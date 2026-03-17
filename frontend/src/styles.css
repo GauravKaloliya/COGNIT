@@ -581,6 +581,49 @@ body.dark .status-dot.offline {
   margin: var(--space-6) auto 0;
 }
 
+.panel-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.panel-state-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-bold);
+  background: color-mix(in srgb, var(--muted) 10%, var(--panel) 90%);
+  border: 1px solid var(--border-light);
+  color: var(--muted);
+}
+
+.panel-state-warning .panel-state-icon {
+  background: color-mix(in srgb, var(--warning) 14%, var(--panel) 86%);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border-light) 65%);
+  color: var(--warning);
+}
+
+.panel-state-info .panel-state-icon {
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel) 90%);
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border-light) 70%);
+  color: var(--primary);
+}
+
+.panel-state-success .panel-state-icon {
+  background: color-mix(in srgb, var(--success) 12%, var(--panel) 88%);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border-light) 65%);
+  color: var(--success);
+}
+
+.panel-state-error .panel-state-icon {
+  background: color-mix(in srgb, var(--error) 12%, var(--panel) 88%);
+  border-color: color-mix(in srgb, var(--error) 35%, var(--border-light) 65%);
+  color: var(--error);
+}
+
 
 
 
