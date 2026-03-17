@@ -303,8 +303,9 @@ export default function App() {
           variant="ghost"
           className="back-to-top"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          aria-label={uiText("common.backToTop")}
         >
-          {uiText("common.backToTop")}
+          ↑
         </DSButton>
       )}
 

@@ -1102,10 +1102,10 @@ body.dark .banner.error {
   right: 0;
   bottom: 0;
   height: 120px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--panel));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), transparent);
 }
 body.dark .consent-fade {
-  background: linear-gradient(180deg, rgba(36, 37, 38, 0), var(--panel));
+  background: linear-gradient(180deg, rgba(36, 37, 38, 0), transparent);
 }
 .consent-toggle {
   display: flex;
@@ -2661,12 +2661,21 @@ body.dark .toast.warning {
 
 .back-to-top {
   position: fixed;
-  right: var(--space-3);
-  bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  right: calc(var(--mobile-padding) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--mobile-padding) + env(safe-area-inset-bottom, 0px));
   z-index: 30;
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--panel);
   border: 1px solid var(--border-light);
   box-shadow: var(--shadow-sm);
+  font-size: 20px;
+  line-height: 1;
 }
 
 @media (min-width: 768px) {
