@@ -484,7 +484,7 @@ def get_payment_status(payment_public_id):
         return create_error_response("DATABASE_ERROR")
 
 
-@payment_bp.route(PAYMENT_TOKEN_ROUTE, methods=[HTTP_METHOD_POST])
+@payment_bp.route(PAYMENT_TOKEN_ROUTE, methods=[HTTP_METHOD_GET, HTTP_METHOD_POST])
 @limiter.limit(PAYMENT_TOKEN_RATE_LIMIT)
 @limiter.limit(PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT, key_func=_payment_rate_key)
 @track_performance
@@ -494,6 +494,10 @@ def mint_payment_token(payment_public_id):
     data = request.json or {}
     public_id = (data.get("public_id") or "").strip()
     session_id = (data.get("session_id") or "").strip()
+    if not public_id:
+        public_id = (request.args.get("public_id") or "").strip()
+    if not session_id:
+        session_id = (request.args.get("session_id") or "").strip()
     if not session_id:
         session_id = (request.cookies.get(PARTICIPANT_SESSION_COOKIE_NAME) or "").strip()
     if not public_id:
