@@ -211,6 +211,13 @@ export const endpoints = {
     const params = new URLSearchParams();
     if (exclude.length > 0) params.set('exclude', exclude.join(','));
     if (publicId) params.set('public_id', publicId);
+    // Dev-only: allow forcing attention images by adding ?force_attention=1 to the app URL.
+    if (import.meta.env.DEV && typeof window !== "undefined") {
+      const qs = new URLSearchParams(window.location.search || "");
+      if ((qs.get("force_attention") || "").trim() === "1") {
+        params.set("force_attention", "1");
+      }
+    }
     const qs = params.toString();
     return api.get(API_ROUTES.randomImage(qs), options);
   },
