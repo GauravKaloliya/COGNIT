@@ -7,6 +7,7 @@ import { PAYMENT_API_FIELDS, SURVEY_API_FIELDS } from "../constants/fields";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
 import { scheduleTimeout } from "../utils/timing";
+import { forEachStorageArea, makeScopedKey, removeStoredKey } from "../utils/storage";
 
 const normalizeSurveyPayload = (value) => {
   if (!value || typeof value !== "object") return null;
@@ -134,6 +135,15 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       setSurveyCompleted(nextCompleted);
       setLastSubmissionSucceeded(true);
       setSurveyFeedbackReady(true);
+
+      // OTP state is only needed for gating email verification; once the user is successfully submitting surveys,
+      // clear it to avoid stale "OTP in progress" state on future refreshes.
+      const scope = String(publicId || "").trim() || "anon";
+      forEachStorageArea((area) => {
+        removeStoredKey(runtimeConfig.storageKeys.emailOtpState, area);
+        removeStoredKey(makeScopedKey(runtimeConfig.storageKeys.emailOtpState, scope), area);
+        removeStoredKey(makeScopedKey(runtimeConfig.storageKeys.emailOtpState, "anon"), area);
+      });
     } catch (error) {
       if (error?.code === REQUEST_CODES.aborted || controller.signal.aborted) {
         return;

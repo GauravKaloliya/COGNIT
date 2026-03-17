@@ -8,7 +8,9 @@ import { useRetryCountdown } from "./useRetryCountdown";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { ALLOWED_EMAIL_DOMAINS } from "../content/userDetailsOptions";
 import {
+  forEachStorageArea,
   getPendingFlag,
+  makeScopedKey,
   readExpiringValue,
   readJsonValue,
   readStoredMeta,
@@ -64,6 +66,11 @@ export function useUserDetailsPage({
   onEmailVerified,
   addToast,
 }) {
+  const scope = String(publicId || "").trim() || "anon";
+  const scopedUserDetailsPendingKey = makeScopedKey(USER_DETAILS_PENDING_KEY, scope);
+  const scopedOtpKey = makeScopedKey(EMAIL_OTP_STATE_KEY, scope);
+  const scopedDemographicsKey = makeScopedKey(DEMOGRAPHICS_KEY, scope);
+
   const prioritizeEnglish = useCallback((items = []) => {
     const list = Array.isArray(items) ? items : [];
     const isEnglish = (item) => {
@@ -87,7 +94,7 @@ export function useUserDetailsPage({
   }, []);
   const isOnline = useOnlineStatus();
   const [optionLists, setOptionLists] = useState(() => {
-    const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null);
+    const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null, "local");
     return {
       genders: Array.isArray(cached?.genders) ? cached.genders : [],
       languages: Array.isArray(cached?.languages) ? cached.languages : [],
@@ -143,19 +150,49 @@ export function useUserDetailsPage({
   }, []);
 
   useEffect(() => {
-    const stored = readJsonValue(DEMOGRAPHICS_KEY, null);
-    if (stored && typeof stored === "object") {
+    const storedMeta =
+      readStoredMeta(scopedDemographicsKey, "local") ||
+      readStoredMeta(DEMOGRAPHICS_KEY, "local");
+    if (storedMeta) {
       setDraftRestored(true);
     }
-  }, []);
+  }, [scopedDemographicsKey]);
 
   useEffect(() => {
-    const storedOtp = readExpiringValue(EMAIL_OTP_STATE_KEY, null, { ttlMs: EMAIL_OTP_TTL_MS });
+    const opts = { ttlMs: EMAIL_OTP_TTL_MS, schemaVersion: runtimeConfig.uiStateSchemaVersion };
+    const readOtp = () => {
+      const scopedLocal = readExpiringValue(scopedOtpKey, null, { ...opts, area: "local" });
+      if (scopedLocal) return { value: scopedLocal, source: { key: scopedOtpKey, area: "local" } };
+      const unscopedLocal = readExpiringValue(EMAIL_OTP_STATE_KEY, null, { ...opts, area: "local" });
+      if (unscopedLocal) return { value: unscopedLocal, source: { key: EMAIL_OTP_STATE_KEY, area: "local" } };
+      const scopedSession = readExpiringValue(scopedOtpKey, null, { ...opts, area: "session" });
+      if (scopedSession) return { value: scopedSession, source: { key: scopedOtpKey, area: "session" } };
+      const unscopedSession = readExpiringValue(EMAIL_OTP_STATE_KEY, null, { ...opts, area: "session" });
+      if (unscopedSession) return { value: unscopedSession, source: { key: EMAIL_OTP_STATE_KEY, area: "session" } };
+      return null;
+    };
+
+    const stored = readOtp();
+    const storedOtp = stored?.value;
     if (!storedOtp || typeof storedOtp !== "object") return;
+
     if (storedOtp.otpStatus === "verified") {
-      removeStoredKey(EMAIL_OTP_STATE_KEY);
+      forEachStorageArea((area) => {
+        removeStoredKey(EMAIL_OTP_STATE_KEY, area);
+        removeStoredKey(scopedOtpKey, area);
+      });
       return;
     }
+
+    if (stored?.source && stored.source.key !== scopedOtpKey) {
+      try {
+        writeExpiringValue(scopedOtpKey, storedOtp, { ...opts, area: "local" });
+        removeStoredKey(stored.source.key, stored.source.area);
+      } catch {
+        // Ignore migration failures.
+      }
+    }
+
     if (storedOtp.publicId) submittedPublicIdRef.current = String(storedOtp.publicId);
     if (storedOtp.submittedEmail) submittedEmailRef.current = String(storedOtp.submittedEmail);
     if (typeof storedOtp.emailEditable === "boolean") setEmailEditable(storedOtp.emailEditable);
@@ -175,7 +212,7 @@ export function useUserDetailsPage({
         setResendCountdownActive(true);
       }
     }
-  }, [otpLength]);
+  }, [otpLength, scopedOtpKey]);
 
   useEffect(() => {
     if (participantOptionsLoadedRef.current) {
@@ -199,7 +236,7 @@ export function useUserDetailsPage({
           languages: prioritizeEnglish(Array.isArray(data?.languages) ? data.languages : []),
         };
         setOptionLists(nextOptions);
-        writeJsonValue(PARTICIPANT_OPTIONS_KEY, nextOptions);
+        writeJsonValue(PARTICIPANT_OPTIONS_KEY, nextOptions, "local");
         participantOptionsLoadedRef.current = true;
         setErrors((prev) => {
           if (!prev.general) return prev;
@@ -555,7 +592,7 @@ export function useUserDetailsPage({
         ...prev,
         [USER_DETAIL_FIELDS.general]: uiText("user.offlineSubmit"),
       }));
-      setPendingFlag(USER_DETAILS_PENDING_KEY);
+      setPendingFlag(scopedUserDetailsPendingKey);
       setPendingSubmit(true);
       return;
     }
@@ -678,16 +715,16 @@ export function useUserDetailsPage({
       setSubmitting(false);
       setChecking({ username: false, email: false, phone: false });
     }
-  }, [addToast, demographics, isOnline, onSubmit, otpLength, publicId, validateForm]);
+  }, [addToast, demographics, isOnline, onSubmit, otpLength, publicId, scopedUserDetailsPendingKey, validateForm]);
 
   useEffect(() => {
     if (!isOnline || submitting) return;
-    const pending = getPendingFlag(USER_DETAILS_PENDING_KEY) === true;
+    const pending = getPendingFlag(scopedUserDetailsPendingKey) === true;
     if (!pending) return;
-    removeStoredKey(USER_DETAILS_PENDING_KEY);
+    removeStoredKey(scopedUserDetailsPendingKey);
     setPendingSubmit(false);
     handleSubmit();
-  }, [handleSubmit, isOnline, submitting]);
+  }, [handleSubmit, isOnline, scopedUserDetailsPendingKey, submitting]);
 
   useEffect(() => {
     if (!isOnline) return;
@@ -698,7 +735,9 @@ export function useUserDetailsPage({
     }
     draftSaveTimeoutRef.current = scheduleTimeout(() => {
       try {
-        const meta = readStoredMeta(DEMOGRAPHICS_KEY);
+        const meta =
+          readStoredMeta(scopedDemographicsKey, "local") ||
+          readStoredMeta(DEMOGRAPHICS_KEY, "local");
         if (meta?.savedAt) {
           lastSavedAtRef.current = meta.savedAt;
           setLastSavedAt(meta.savedAt);
@@ -719,7 +758,7 @@ export function useUserDetailsPage({
         saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
       }
     }, 700);
-  }, [demographics, isOnline]);
+  }, [demographics, isOnline, scopedDemographicsKey]);
 
   useEffect(() => {
     if (!isOnline) setIsSaving(false);
@@ -788,7 +827,10 @@ export function useUserDetailsPage({
     try {
       await endpoints.verifyEmailOtp(effectivePublicId, normalizedEmail, normalizedOtp);
       setOtpStatus("verified");
-      removeStoredKey(EMAIL_OTP_STATE_KEY);
+      forEachStorageArea((area) => {
+        removeStoredKey(EMAIL_OTP_STATE_KEY, area);
+        removeStoredKey(scopedOtpKey, area);
+      });
       addToast?.(uiText("email.verifiedToast"), "success");
       onEmailVerified?.();
     } catch (err) {
@@ -798,7 +840,7 @@ export function useUserDetailsPage({
       setEmailEditable(true);
       setOtpError(err?.message || getErrorMessage("SYS_002_0002"));
     }
-  }, [addToast, demographics.email, isOnline, onEmailVerified, otpLength, otpValue, publicId]);
+  }, [addToast, demographics.email, isOnline, onEmailVerified, otpLength, otpValue, publicId, scopedOtpKey]);
 
   useEffect(() => {
     if (otpStatus !== "sent") return;
@@ -860,7 +902,10 @@ export function useUserDetailsPage({
 
   useEffect(() => {
     if (otpStatus === "idle") {
-      removeStoredKey(EMAIL_OTP_STATE_KEY);
+      forEachStorageArea((area) => {
+        removeStoredKey(EMAIL_OTP_STATE_KEY, area);
+        removeStoredKey(scopedOtpKey, area);
+      });
       return;
     }
     if (resendCountdownActive && !resendEndsAtRef.current) {
@@ -874,7 +919,14 @@ export function useUserDetailsPage({
       resendEndsAt: resendEndsAtRef.current,
       emailEditable,
     };
-    writeExpiringValue(EMAIL_OTP_STATE_KEY, payload, { ttlMs: EMAIL_OTP_TTL_MS });
+    writeExpiringValue(scopedOtpKey, payload, {
+      area: "local",
+      ttlMs: EMAIL_OTP_TTL_MS,
+      schemaVersion: runtimeConfig.uiStateSchemaVersion,
+    });
+    // Clear any legacy/unscoped copies.
+    removeStoredKey(EMAIL_OTP_STATE_KEY, "session");
+    removeStoredKey(EMAIL_OTP_STATE_KEY, "local");
   }, [
     demographics.email,
     emailEditable,
@@ -883,6 +935,7 @@ export function useUserDetailsPage({
     publicId,
     resendCountdownActive,
     resendSeconds,
+    scopedOtpKey,
   ]);
 
   const getFieldError = useCallback((field, value) => {

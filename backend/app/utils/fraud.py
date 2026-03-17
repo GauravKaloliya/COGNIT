@@ -8,11 +8,6 @@ from typing import Optional, Tuple
 
 from PIL import Image
 
-from app.constants.fraud_constants import (
-    PAYMENT_UPLOAD_ATTEMPT_STATUS_DUPLICATE,
-    PAYMENT_UPLOAD_ATTEMPT_STATUS_REJECTED,
-    PAYMENT_UPLOAD_ATTEMPT_STATUS_SUCCESS,
-)
 from app.constants.observability_constants import (
     OBS_EVENT_FRAUD_DUPLICATE_CHECK_FAILED,
     OBS_EVENT_FRAUD_FINGERPRINT_SAME_PERSON_FAILED,

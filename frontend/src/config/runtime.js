@@ -17,7 +17,9 @@ export const runtimeConfig = {
   msPerSecond: 1000,
   countdownTickMs: 1000,
   uiStateSchemaVersion: 1,
-  uiStateTtlMs: 900000,
+  uiStateTtlMs: 3600000,
+  // Shorter TTL for personally-identifiable fields persisted in local state.
+  piiStateTtlMs: 900000,
   activeTabLockSchemaVersion: 1,
   activeTabHeartbeatMs: 4000,
   activeTabStaleMs: 15000,
@@ -90,7 +92,8 @@ export const runtimeConfig = {
   minScreenshotHeight: 640,
   minLaplacianVariance: 22,
   surveyDraftSchemaVersion: 1,
-  surveyDraftTtlMs: 900000,
+  // Drafts are cleared on successful submit/finish, not by TTL.
+  surveyDraftTtlMs: null,
   consentDraftSchemaVersion: 1,
   consentDraftTtlMs: 900000,
   disableCopyPaste: toBool(import.meta.env.VITE_DISABLE_COPY_PASTE, true),

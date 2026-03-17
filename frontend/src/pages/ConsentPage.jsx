@@ -7,6 +7,7 @@ import { CONSENT_CONTENT } from "../content/consentContent";
 import DSButton from "../components/design/DSButton.jsx";
 
 export default function ConsentPage({ 
+  publicId,
   onConsentGiven, 
   systemReady 
 }) {
@@ -24,7 +25,7 @@ export default function ConsentPage({
     draftRestored,
     saveError,
     retryCountdown,
-  } = useConsentPage({ onConsentGiven, systemReady });
+  } = useConsentPage({ publicId, onConsentGiven, systemReady });
 
   if (submitting) {
     return (
