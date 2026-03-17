@@ -221,10 +221,11 @@ def success_response(data: Optional[Dict] = None, message: Optional[str] = None)
 def create_error_response(
     error_key: str, 
     details: Optional[dict] = None, 
-    custom_message: Optional[str] = None
+    custom_message: Optional[str] = None,
+    **kwargs,
 ) -> Tuple[Any, int]:
     """Project-wide error response helper."""
-    return error_response(error_key, details=details, custom_message=custom_message)
+    return error_response(error_key, details=details, custom_message=custom_message, **kwargs)
 
 
 # ────────────────────────────────────────────────
