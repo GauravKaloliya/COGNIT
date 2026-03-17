@@ -1,14 +1,16 @@
 import React from "react";
-import PageSkeleton from "../components/PageSkeleton.jsx";
 import { sanitizeUsername, useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
 import { PRIOR_EXPERIENCE_GROUPS, PRIOR_EXPERIENCE_NONE } from "../content/userDetailsOptions";
 import DSButton from "../components/design/DSButton.jsx";
 
 export default function UserDetailsPage({
+  publicId,
   demographics,
   setDemographics,
   onSubmit,
+  onEmailVerified,
+  addToast,
   systemReady,
   onBack
 }) {
@@ -31,6 +33,17 @@ export default function UserDetailsPage({
     userEditedLocationRef,
     isFormComplete,
     detectLocation,
+    otpDigits,
+    otpLength,
+    showOtpField,
+    otpStatus,
+    otpError,
+    resendSeconds,
+    emailInputDisabled,
+    inputsLocked,
+    setOtpDigit,
+    setOtpFromPaste,
+    handleResend,
     handleSubmit,
     handleFieldBlur,
     updateField,
@@ -38,9 +51,12 @@ export default function UserDetailsPage({
     saveError,
     retryCountdown,
   } = useUserDetailsPage({
+    publicId,
     demographics,
     setDemographics,
     onSubmit,
+    onEmailVerified,
+    addToast,
   });
 
   const AGE_MIN = constants.ageMin;
@@ -56,6 +72,39 @@ export default function UserDetailsPage({
   const emailDomains = Array.from(new Set(rawEmailDomains));
   const emailPlaceholderDomain = emailDomains[emailPlaceholderIndex % emailDomains.length] || "gmail.com";
   const showEmailGhost = !emailFocused && !(demographics.email || "").trim();
+  const inputRefs = React.useRef([]);
+  const otpStatusMessage = otpStatus === "sending"
+    ? uiText("email.requesting")
+    : otpStatus === "sent"
+      ? uiText("email.sentToast")
+      : otpStatus === "verifying"
+        ? uiText("email.verifying")
+        : "";
+  const resendLabel = resendSeconds > 0
+    ? uiText("email.resendIn", { seconds: resendSeconds })
+    : uiText("email.sendAgain");
+  const canResend = resendSeconds === 0 && otpStatus !== "sending" && otpStatus !== "verifying";
+  const submitLabel = otpStatus === "sending"
+    ? uiText("email.requesting")
+    : otpStatus === "sent"
+      ? uiText("email.sentToast")
+      : submitting
+        ? uiText("common.submitting")
+        : uiText("common.continue");
+  const submitDisabled = (
+    !systemReady ||
+    submitting ||
+    optionsLoading ||
+    genderOptions.length === 0 ||
+    languageOptions.length === 0 ||
+    !isOnline ||
+    !isFormComplete ||
+    (locationPermissionDenied && !manualLocationAllowed) ||
+    Object.keys(errors).length > 0 ||
+    otpStatus !== "idle"
+  );
+  const firstEmptyOtpIndex = otpDigits.findIndex((digit) => !digit);
+  const editableOtpIndex = firstEmptyOtpIndex === -1 ? otpLength - 1 : firstEmptyOtpIndex;
 
   React.useEffect(() => {
     if (!showEmailGhost) return undefined;
@@ -66,16 +115,6 @@ export default function UserDetailsPage({
     }, 1800);
     return () => window.clearInterval(id);
   }, [emailDomains.length, showEmailGhost]);
-
-  if (submitting) {
-    return (
-      <PageSkeleton
-        title={uiText("user.loadingTitle")}
-        subtitle={uiText("user.loadingSubtitle")}
-        variant="user"
-      />
-    );
-  }
 
   return (
     <div className="panel panel-with-corner-status">
@@ -119,6 +158,7 @@ export default function UserDetailsPage({
             className={errors.username ? 'error-input' : ''}
             placeholder={uiText("user.usernamePlaceholder")}
             value={demographics.username || ''}
+            disabled={inputsLocked}
             onChange={(e) => updateField('username', sanitizeUsername(e.target.value))}
             onBlur={(e) => handleFieldBlur('username', e.target.value, true)}
           />
@@ -137,6 +177,7 @@ export default function UserDetailsPage({
               className={errors.email ? 'error-input' : ''}
               placeholder=""
               value={demographics.email || ''}
+              disabled={emailInputDisabled}
               onChange={(e) => updateField('email', e.target.value)}
               onFocus={() => setEmailFocused(true)}
               onBlur={(e) => {
@@ -154,6 +195,19 @@ export default function UserDetailsPage({
           {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
           {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
+          {(otpStatus === "sending" || otpStatus === "sent" || otpStatus === "verifying" || otpStatus === "failed") && (
+            <div className="inline-actions">
+              <DSButton
+                variant="ghost"
+                type="button"
+                disabled={!canResend}
+                onClick={handleResend}
+              >
+                {otpStatus === "sending" ? uiText("email.requesting") : resendLabel}
+              </DSButton>
+              {otpStatusMessage && <span className="checking-text">{otpStatusMessage}</span>}
+            </div>
+          )}
         </div>
 
         <div className={`form-field ${errors.phone ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
@@ -165,6 +219,7 @@ export default function UserDetailsPage({
             className={errors.phone ? 'error-input' : ''}
             placeholder={uiText("user.phonePlaceholder")}
             value={demographics.phone || ''}
+            disabled={inputsLocked}
             onChange={(e) => {
               const value = e.target.value.replace(/\D/g, '');
               updateField('phone', value);
@@ -180,12 +235,91 @@ export default function UserDetailsPage({
           <span className="helper-text">{uiText("user.phoneCount", { count: (demographics.phone || "").length })}</span>
         </div>
 
+        {showOtpField && (
+          <div className="form-field">
+            <label>{uiText("email.otpLabel")} <span className="required" aria-label="required">*</span></label>
+            <div className="otp-inputs" role="group" aria-label={uiText("email.otpLabel")}>
+              {otpDigits.map((digit, index) => (
+                <input
+                  key={`otp-${index}`}
+                  ref={(el) => {
+                    inputRefs.current[index] = el;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  className="otp-input"
+                  maxLength={1}
+                  value={digit}
+                  disabled={otpStatus === "verifying" || otpStatus === "sending"}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const digitsOnly = raw.replace(/\\D/g, "");
+
+                    // Mobile OTP autofill often dumps the full code into one input: treat it like paste
+                    // and overwrite the OTP from the start (no mid-editing).
+                    if (digitsOnly.length > 1) {
+                      setOtpFromPaste(0, digitsOnly);
+                      inputRefs.current[otpLength - 1]?.focus();
+                      return;
+                    }
+
+                    if (index !== editableOtpIndex) {
+                      inputRefs.current[editableOtpIndex]?.focus();
+                      return;
+                    }
+
+                    setOtpDigit(index, digitsOnly);
+                    if (digitsOnly && index < otpLength - 1) {
+                      inputRefs.current[index + 1]?.focus();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Backspace") {
+                      e.preventDefault();
+                      if (index !== editableOtpIndex) {
+                        inputRefs.current[editableOtpIndex]?.focus();
+                        return;
+                      }
+                      // Allow clearing only the current editable digit (no going back).
+                      setOtpDigit(index, "");
+                      return;
+                    }
+                    if (e.key === "ArrowLeft") {
+                      e.preventDefault();
+                      inputRefs.current[editableOtpIndex]?.focus();
+                      return;
+                    }
+                    if (e.key === "ArrowRight") {
+                      e.preventDefault();
+                      inputRefs.current[editableOtpIndex]?.focus();
+                    }
+                  }}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const pasted = e.clipboardData.getData("text");
+                    const digitsOnly = pasted.replace(/\D/g, "");
+                    if (!digitsOnly) return;
+                    setOtpFromPaste(0, digitsOnly);
+                    inputRefs.current[Math.min(otpLength - 1, digitsOnly.length - 1)]?.focus();
+                  }}
+                  onFocus={() => {
+                    if (index !== editableOtpIndex) inputRefs.current[editableOtpIndex]?.focus();
+                  }}
+                  aria-label={`${uiText("email.otpLabel")} ${index + 1}`}
+                />
+              ))}
+            </div>
+            {otpError && <span className="error-text">{otpError}</span>}
+          </div>
+        )}
+
         <div className={`form-field ${errors.gender_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.gender")} <span className="required" aria-label="required">*</span></label>
           <select
             className={errors.gender_code ? 'error-input' : ''}
             value={demographics.gender_code || ''}
-            disabled={optionsLoading || genderOptions.length === 0}
+            disabled={optionsLoading || genderOptions.length === 0 || inputsLocked}
             onChange={(e) => updateField('gender_code', e.target.value)}
             onBlur={(e) => handleFieldBlur('gender_code', e.target.value)}
           >
@@ -209,6 +343,7 @@ export default function UserDetailsPage({
             max={AGE_MAX}
             placeholder={`Age (${AGE_MIN}-${AGE_MAX})`}
             value={demographics.age || ''}
+            disabled={inputsLocked}
             onChange={(e) => {
               const value = e.target.value.replace(/\D/g, '');
               updateField('age', value);
@@ -235,8 +370,8 @@ export default function UserDetailsPage({
                 : (manualLocationAllowed ? uiText("user.locationPlaceholderManual") : uiText("user.locationPlaceholderAuto"))
             }
             value={demographics.location || ''}
-            disabled={locating || !manualLocationAllowed}
-            readOnly={locating || !manualLocationAllowed}
+            disabled={locating || !manualLocationAllowed || inputsLocked}
+            readOnly={locating || !manualLocationAllowed || inputsLocked}
             onChange={(e) => {
               userEditedLocationRef.current = true;
               updateField("location", e.target.value);
@@ -250,6 +385,7 @@ export default function UserDetailsPage({
               type="button"
               variant="ghost"
               className="location-permission-btn"
+              disabled={inputsLocked}
               onClick={() => detectLocation("manual")}
             >
               {uiText("user.enableLocation")}
@@ -267,7 +403,7 @@ export default function UserDetailsPage({
           <select
             className={errors.language_code ? 'error-input' : ''}
             value={demographics.language_code || ''}
-            disabled={optionsLoading || languageOptions.length === 0}
+            disabled={optionsLoading || languageOptions.length === 0 || inputsLocked}
             onChange={(e) => updateField('language_code', e.target.value)}
             onBlur={(e) => handleFieldBlur('language_code', e.target.value)}
           >
@@ -285,6 +421,7 @@ export default function UserDetailsPage({
           <select
             className={errors.prior_experience ? 'error-input' : ''}
             value={demographics.prior_experience || ''}
+            disabled={inputsLocked}
             onChange={(e) => updateField('prior_experience', e.target.value)}
             onBlur={(e) => handleFieldBlur('prior_experience', e.target.value)}
           >
@@ -307,19 +444,9 @@ export default function UserDetailsPage({
         <DSButton
           variant="primary"
           onClick={handleSubmit}
-          disabled={
-            !systemReady ||
-            submitting ||
-            optionsLoading ||
-            genderOptions.length === 0 ||
-            languageOptions.length === 0 ||
-            !isOnline ||
-            !isFormComplete ||
-            (locationPermissionDenied && !manualLocationAllowed) ||
-            Object.keys(errors).length > 0
-          }
+          disabled={submitDisabled}
         >
-          {submitting ? uiText("common.submitting") : uiText("common.continue")}
+          {submitLabel}
           {!isOnline && retryCountdown > 0 && (
             <span className="button-badge">
               <span className="button-spinner small" />

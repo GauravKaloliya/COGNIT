@@ -19,8 +19,13 @@ import { reportClientError } from "./errorReporter";
  */
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
-  const method = String(options.method || REQUEST_METHODS.get).toUpperCase();
   const hasBody = options.body !== undefined && options.body !== null;
+  const inferredMethod = options.method || (hasBody ? REQUEST_METHODS.post : REQUEST_METHODS.get);
+  let method = String(inferredMethod).toUpperCase();
+  // Safety: Email OTP endpoints must be POST-only.
+  if (String(endpoint || "").startsWith("/email-otp/") && method !== REQUEST_METHODS.post) {
+    method = REQUEST_METHODS.post;
+  }
   const requestId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -186,6 +191,11 @@ export const endpoints = {
   
   // Consent
   recordConsent: (publicId, options = {}) => api.post(API_ROUTES.consent, { public_id: publicId }, options),
+
+  // Email OTP verification
+  requestEmailOtp: (publicId, email, emailUpdate = false, options = {}) =>
+    api.post(API_ROUTES.emailOtpRequest, { public_id: publicId, email, email_update: emailUpdate }, options),
+  verifyEmailOtp: (publicId, email, otp, options = {}) => api.post(API_ROUTES.emailOtpVerify, { public_id: publicId, email, otp }, options),
   
   // Images
   getRandomImage: (exclude = [], publicId = null, options = {}) => {
