@@ -2,55 +2,131 @@
 {% block docs_content %}
 <section class="doc-section">
   <h2>Errors</h2>
-  <p class="section-note">Use <code>error.code</code> for client behavior. Respect <code>error.retryable</code> and log <code>error.request_id</code> on every failure.</p>
+  <p class="section-note">Source of truth: backend <code>app.config.ERROR_CODES</code>. Use <code>error.code</code> for client behavior; always log <code>error.request_id</code>.</p>
 
   <div class="error-grid">
     <article>
-      <h3>Validation</h3>
+      <h3>AUTH</h3>
       <ul>
-        <li><code>MISSING_FIELDS</code>, <code>INVALID_UUID</code>, <code>INVALID_AMOUNT</code>, <code>DESCRIPTION_LENGTH</code>, <code>RATING_INVALID</code>, <code>WORD_COUNT</code>.</li>
-        <li>Send corrected payload and retry with new idempotency key when required.</li>
+      <li><code>AUTH_003_0007</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>email</code>)</span><br><span class="section-note">Please enter a different email address to update.</span></li>
+      <li><code>AUTH_001_0001</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Please agree to the consent terms to continue</span></li>
+      <li><code>AUTH_001_0002</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Your account has been flagged. Contact support.</span></li>
+      <li><code>AUTH_001_0003</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Account has been deactivated</span></li>
+      <li><code>AUTH_002_0001</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Access denied</span></li>
+      <li><code>AUTH_002_0002</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Invalid or expired payment authorization token.</span></li>
+      <li><code>AUTH_003_0001</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Invalid verification code. Please try again.</span></li>
+      <li><code>AUTH_003_0006</code> <span class="section-note">HTTP 403</span> <span class="section-note">(field: <code>email</code>)</span><br><span class="section-note">Email does not match your registration details.</span></li>
+      <li><code>AUTH_003_0008</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Please verify your email before submitting.</span></li>
+      <li><code>BOT_001_0001</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Human verification failed. Please retry.</span></li>
+      <li><code>AUTH_003_0004</code> <span class="section-note">HTTP 404</span><br><span class="section-note">No verification code found. Please request a new one.</span></li>
+      <li><code>AUTH_003_0002</code> <span class="section-note">HTTP 410</span><br><span class="section-note">Verification code expired. Request a new one.</span></li>
+      <li><code>AUTH_003_0003</code> <span class="section-note">HTTP 429</span><br><span class="section-note">Too many attempts. Request a new verification code.</span></li>
+      <li><code>AUTH_003_0005</code> <span class="section-note">HTTP 502</span><br><span class="section-note">Failed to send verification code. Please try again.</span></li>
       </ul>
     </article>
-
     <article>
-      <h3>Bot/Rate</h3>
+      <h3>DUP</h3>
       <ul>
-        <li><code>BOT_CHALLENGE_FAILED</code> when Turnstile token validation fails.</li>
-        <li><code>RATE_LIMIT_EXCEEDED</code> temporary throttle.</li>
-        <li>Retry with fresh token (if bot check) and exponential backoff.</li>
+      <li><code>DUP_001_0001</code> <span class="section-note">HTTP 409</span> <span class="section-note">(field: <code>username</code>)</span><br><span class="section-note">This username is already taken</span></li>
+      <li><code>DUP_001_0002</code> <span class="section-note">HTTP 409</span> <span class="section-note">(field: <code>email</code>)</span><br><span class="section-note">This email is already registered</span></li>
+      <li><code>DUP_001_0003</code> <span class="section-note">HTTP 409</span> <span class="section-note">(field: <code>phone</code>)</span><br><span class="section-note">This phone number is already registered</span></li>
+      <li><code>DUP_001_0004</code> <span class="section-note">HTTP 409</span><br><span class="section-note">You have already registered</span></li>
+      <li><code>DUP_002_0001</code> <span class="section-note">HTTP 409</span><br><span class="section-note">You have already described this image</span></li>
+      <li><code>DUP_002_0002</code> <span class="section-note">HTTP 409</span><br><span class="section-note">You have already completed this survey round</span></li>
+      <li><code>DUP_003_0001</code> <span class="section-note">HTTP 409</span><br><span class="section-note">This screenshot has already been submitted</span></li>
+      <li><code>DUP_003_0002</code> <span class="section-note">HTTP 409</span><br><span class="section-note">This transaction has already been used</span></li>
+      <li><code>DUP_003_0003</code> <span class="section-note">HTTP 409</span><br><span class="section-note">This screenshot was already used by another user</span></li>
+      <li><code>ERR_PARTICIPANT_EXISTS</code> <span class="section-note">HTTP 409</span><br><span class="section-note">Username, email, or phone is already registered.</span></li>
       </ul>
     </article>
-
     <article>
-      <h3>System</h3>
+      <h3>FRAUD</h3>
       <ul>
-        <li><code>DATABASE_ERROR</code>, <code>INTERNAL_ERROR</code>, <code>SYS_INTERNAL_ERROR</code>, <code>SYS_SERVICE_UNAVAILABLE</code>.</li>
-        <li>Retry only for idempotent operations; include <code>request_id</code> in support logs.</li>
+      <li><code>FRAUD_001_0001</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Screenshot is too blurry. Please upload a clearer image.</span></li>
+      <li><code>FRAUD_001_0002</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Could not read the screenshot text. Please retake.</span></li>
+      <li><code>FRAUD_001_0003</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Please use Google Pay, Paytm, or BHIM</span></li>
+      <li><code>FRAUD_001_0004</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment not made to the correct beneficiary</span></li>
+      <li><code>FRAUD_001_0005</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment amount must be exactly ₹1</span></li>
+      <li><code>FRAUD_001_0006</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment time is outside the allowed payment-session window</span></li>
+      <li><code>FRAUD_001_0007</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Could not read payment time from screenshot</span></li>
+      <li><code>FRAUD_001_0008</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment time not found in screenshot</span></li>
+      <li><code>FRAUD_002_0001</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment not made to correct UPI ID</span></li>
+      <li><code>FRAUD_002_0002</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment note does not match. Use the exact note shown.</span></li>
+      <li><code>FRAUD_002_0003</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment amount must be exactly ₹1</span></li>
+      <li><code>FRAUD_002_0004</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment success not detected in screenshot</span></li>
+      <li><code>FRAUD_002_0005</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment appears to have failed. Check your UPI app.</span></li>
+      <li><code>FRAUD_002_0008</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Screenshot does not appear to be a UPI payment</span></li>
+      <li><code>FRAUD_002_0009</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment recipient details not found in screenshot</span></li>
+      <li><code>FRAUD_003_0001</code> <span class="section-note">HTTP 409</span><br><span class="section-note">This screenshot was already submitted by another user</span></li>
+      <li><code>FRAUD_003_0002</code> <span class="section-note">HTTP 409</span><br><span class="section-note">This screenshot was previously rejected</span></li>
+      <li><code>FRAUD_003_0004</code> <span class="section-note">HTTP 409</span><br><span class="section-note">You already submitted this screenshot. Please use a new payment screenshot.</span></li>
       </ul>
     </article>
-
     <article>
-      <h3>Payment</h3>
+      <h3>NF</h3>
       <ul>
-        <li><code>PAY_INVALID_SHA256</code>, <code>PAY_INVALID_IMAGE_TYPE</code>, <code>PAYMENT_NOT_FOUND</code>, <code>PAYMENT_INVALID_STATE</code>, <code>PAYMENT_EXPIRED</code>.</li>
-        <li>Call <code>GET /payments/{payment_public_id}/status</code> before retrying verify/upload actions.</li>
+      <li><code>NF_001_0001</code> <span class="section-note">HTTP 404</span><br><span class="section-note">Account not found. Please register first.</span></li>
+      <li><code>NF_001_0002</code> <span class="section-note">HTTP 404</span><br><span class="section-note">Image not found</span></li>
+      <li><code>NF_001_0003</code> <span class="section-note">HTTP 404</span><br><span class="section-note">Payment not found</span></li>
+      <li><code>NF_001_0004</code> <span class="section-note">HTTP 404</span><br><span class="section-note">Consent record not found</span></li>
+      <li><code>NF_001_0005</code> <span class="section-note">HTTP 404</span><br><span class="section-note">Route not found</span></li>
       </ul>
     </article>
-
     <article>
-      <h3>Fraud</h3>
+      <h3>PAY</h3>
       <ul>
-        <li><code>DUPLICATE_IMAGE</code>, <code>DUPLICATE_IMAGE_SELF</code>, <code>REJECTED_REUSE</code>.</li>
-        <li>Require new payment screenshot and do not reuse previously rejected files.</li>
+      <li><code>PAY_001_0002</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment cannot be processed in current state</span></li>
+      <li><code>PAY_001_0003</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Invalid payment amount</span></li>
+      <li><code>PAY_001_0004</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Payment has already been processed</span></li>
+      <li><code>PAY_001_0005</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Invalid image format. Allowed: JPG, PNG, WEBP</span></li>
+      <li><code>PAY_001_0006</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Invalid file hash</span></li>
+      <li><code>PAY_001_0007</code> <span class="section-note">HTTP 403</span><br><span class="section-note">Payment not verified. Please complete payment first.</span></li>
+      <li><code>PAY_001_0008</code> <span class="section-note">HTTP 409</span><br><span class="section-note">Maximum verification attempts reached. Please create a new payment session.</span></li>
+      <li><code>PAY_001_0001</code> <span class="section-note">HTTP 410</span><br><span class="section-note">Payment session expired. Please start a new payment.</span></li>
       </ul>
     </article>
-
     <article>
-      <h3>State/Access</h3>
+      <h3>RATE</h3>
       <ul>
-        <li><code>PARTICIPANT_NOT_FOUND</code>, <code>CONSENT_REQUIRED</code>, <code>FLAGGED_ACCOUNT</code>, <code>PAYMENT_INVALID_STATE</code>.</li>
-        <li>Drive UI flow transitions from backend status instead of local-only state.</li>
+      <li><code>RATE_001_0001</code> <span class="section-note">HTTP 429</span><br><span class="section-note">Too many attempts. Please wait a moment.</span></li>
+      <li><code>RATE_001_0002</code> <span class="section-note">HTTP 429</span><br><span class="section-note">Rate limit exceeded. Please slow down.</span></li>
+      </ul>
+    </article>
+    <article>
+      <h3>SYS</h3>
+      <ul>
+      <li><code>SYS_001_0001</code> <span class="section-note">HTTP 500</span><br><span class="section-note">Something went wrong. Please try again.</span></li>
+      <li><code>SYS_001_0002</code> <span class="section-note">HTTP 500</span><br><span class="section-note">Database error occurred. Please try again later.</span></li>
+      <li><code>SYS_001_0004</code> <span class="section-note">HTTP 500</span><br><span class="section-note">Configuration error. Please contact support.</span></li>
+      <li><code>SYS_001_0003</code> <span class="section-note">HTTP 503</span><br><span class="section-note">Service temporarily unavailable. Please try later.</span></li>
+      </ul>
+    </article>
+    <article>
+      <h3>VAL</h3>
+      <ul>
+      <li><code>ERR_INVALID_IMAGE_ID</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Invalid image identifier.</span></li>
+      <li><code>VAL_001_0001</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>username</code>)</span><br><span class="section-note">Username must be at least 2 characters and contain only letters, numbers, and underscores</span></li>
+      <li><code>VAL_001_0002</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>email</code>)</span><br><span class="section-note">Please enter a valid email address from Gmail, Outlook, Hotmail, or iCloud</span></li>
+      <li><code>VAL_001_0003</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>phone</code>)</span><br><span class="section-note">Please enter a valid 10-digit Indian mobile number</span></li>
+      <li><code>VAL_001_0004</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>age</code>)</span><br><span class="section-note">Age must be between 13 and 100</span></li>
+      <li><code>VAL_001_0005</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>gender_code</code>)</span><br><span class="section-note">Please select a gender</span></li>
+      <li><code>VAL_001_0006</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>location</code>)</span><br><span class="section-note">Please enter your location</span></li>
+      <li><code>VAL_001_0007</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>language_code</code>)</span><br><span class="section-note">Please select your native language</span></li>
+      <li><code>VAL_001_0008</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>prior_experience</code>)</span><br><span class="section-note">Please select your prior experience</span></li>
+      <li><code>VAL_002_0001</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>description</code>)</span><br><span class="section-note">Description must be 60-10000 characters</span></li>
+      <li><code>VAL_002_0002</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>description</code>)</span><br><span class="section-note">Description must be at least 60 characters</span></li>
+      <li><code>VAL_002_0003</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>description</code>)</span><br><span class="section-note">Description cannot exceed 10000 characters</span></li>
+      <li><code>VAL_002_0004</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>description</code>)</span><br><span class="section-note">At least 60 words required</span></li>
+      <li><code>VAL_002_0005</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>feedback</code>)</span><br><span class="section-note">Feedback must be 5-2000 characters</span></li>
+      <li><code>VAL_002_0006</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>feedback</code>)</span><br><span class="section-note">Feedback must be at least 5 characters</span></li>
+      <li><code>VAL_002_0007</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>feedback</code>)</span><br><span class="section-note">Feedback cannot exceed 2000 characters</span></li>
+      <li><code>VAL_002_0008</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>rating</code>)</span><br><span class="section-note">Rating must be between 1 and 10</span></li>
+      <li><code>VAL_002_0011</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>survey_index</code>)</span><br><span class="section-note">Invalid survey index</span></li>
+      <li><code>VAL_003_0001</code> <span class="section-note">HTTP 400</span> <span class="section-note">(field: <code>general</code>)</span><br><span class="section-note">Please fill in all required fields</span></li>
+      <li><code>VAL_003_0002</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Invalid request format</span></li>
+      <li><code>VAL_003_0003</code> <span class="section-note">HTTP 400</span><br><span class="section-note">Invalid request ID format</span></li>
+      <li><code>VAL_003_0007</code> <span class="section-note">HTTP 405</span><br><span class="section-note">HTTP method not allowed for this route</span></li>
+      <li><code>VAL_003_0005</code> <span class="section-note">HTTP 413</span> <span class="section-note">(field: <code>image_base64</code>)</span><br><span class="section-note">The file is too large. Please upload a smaller image.</span></li>
       </ul>
     </article>
   </div>
@@ -59,11 +135,11 @@
 <pre>{
   "success": false,
   "error": {
-    "code": "PAYMENT_INVALID_STATE",
-    "message": "Payment is not in a valid state for this action.",
-    "category": "PAY",
-    "http_status": 400,
-    "retryable": true,
+    "code": "VAL_003_0007",
+    "message": "HTTP method not allowed for this route",
+    "category": "VAL",
+    "http_status": 405,
+    "retryable": false,
     "request_id": "6d1902a2-9f91-41da-b3df-128565f4bdb3"
   }
 }</pre>

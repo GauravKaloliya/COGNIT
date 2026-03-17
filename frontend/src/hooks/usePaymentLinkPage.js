@@ -3,7 +3,7 @@ import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { uiText } from "../utils/uiText.js";
 import { runtimeConfig } from "../config/runtime";
-import { clearPendingFlag, getPendingFlag, readExpiringValue, removeStoredKey, setPendingFlag, writeExpiringValue } from "../utils/storage";
+import { clearPendingFlag, forEachStorageArea, getPendingFlag, makeScopedKey, readExpiringValue, removeStoredKey, setPendingFlag, writeExpiringValue } from "../utils/storage";
 import { useNavigationBlocker } from "./useNavigationBlocker";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { BROWSER_EVENTS } from "../constants/browser";
@@ -75,6 +75,13 @@ export function usePaymentLinkPage({
   const timerTotalMsRef = useRef(runtimeConfig.paymentTimerDurationMs);
   const pendingTimerExpiresAtRef = useRef(null);
   const [qrVisible, setQrVisible] = useState(false);
+
+  const paymentScope = String(publicId || "").trim() || "anon";
+  const scopedPaymentStateKey = makeScopedKey(PAYMENT_STATE_KEY, paymentScope);
+  const scopedPaymentTimerKey = makeScopedKey(PAYMENT_TIMER_KEY, paymentScope);
+  const scopedPaymentIdKey = makeScopedKey(PAYMENT_ID_KEY, paymentScope);
+  const scopedPendingCreateKey = makeScopedKey(PAYMENT_PENDING_CREATE_KEY, paymentScope);
+  const scopedPendingVerifyKey = makeScopedKey(PAYMENT_PENDING_VERIFY_KEY, paymentScope);
 
   const detectMobileClient = useCallback(() => {
     if (typeof window === "undefined") return false;
@@ -264,51 +271,91 @@ export function usePaymentLinkPage({
     if (!isOnline) return;
     try {
       const safeState = { ...(state || {}) };
-      writeExpiringValue(PAYMENT_STATE_KEY, safeState, {
+      writeExpiringValue(scopedPaymentStateKey, safeState, {
+        area: "local",
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
         ttlMs: PAYMENT_STATE_TTL_MS,
       });
+      // Clear any legacy/unscoped copies.
+      removeStoredKey(PAYMENT_STATE_KEY, "session");
+      removeStoredKey(PAYMENT_STATE_KEY, "local");
     } catch {
       // Ignore storage failures
     }
-  }, [isOnline]);
+  }, [isOnline, scopedPaymentStateKey]);
 
   const clearPaymentViewState = useCallback(() => {
-    removeStoredKey(PAYMENT_STATE_KEY);
-  }, []);
+    forEachStorageArea((area) => {
+      removeStoredKey(PAYMENT_STATE_KEY, area);
+      removeStoredKey(scopedPaymentStateKey, area);
+    });
+    tokenRefreshAttemptedRef.current = false;
+  }, [scopedPaymentStateKey]);
 
   const loadPaymentViewState = useCallback(() => {
     try {
-      const data = readExpiringValue(PAYMENT_STATE_KEY, null, {
-        schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
-        ttlMs: PAYMENT_STATE_TTL_MS,
-      });
+      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
+      let data = readExpiringValue(scopedPaymentStateKey, null, { ...readOpts, area: "local" });
+      if (!data) {
+        const legacy = readExpiringValue(scopedPaymentStateKey, null, { ...readOpts, area: "session" }) ||
+          readExpiringValue(PAYMENT_STATE_KEY, null, { ...readOpts, area: "local" }) ||
+          readExpiringValue(PAYMENT_STATE_KEY, null, { ...readOpts, area: "session" });
+        if (legacy) {
+          try {
+            writeExpiringValue(scopedPaymentStateKey, legacy, { ...readOpts, area: "local" });
+          } catch {
+            // Ignore migration failures.
+          }
+          forEachStorageArea((area) => removeStoredKey(PAYMENT_STATE_KEY, area));
+          removeStoredKey(scopedPaymentStateKey, "session");
+          data = legacy;
+        }
+      }
       if (!data || data[PAYMENT_STATE_FIELDS.publicId] !== publicId) return null;
       return data;
     } catch {
       return null;
     }
-  }, [publicId]);
+  }, [publicId, scopedPaymentStateKey]);
 
   // Timer state persistence helpers
   const saveTimerState = useCallback((expiresAt) => {
-    writeExpiringValue(PAYMENT_TIMER_KEY, expiresAt, {
+    writeExpiringValue(scopedPaymentTimerKey, expiresAt, {
+      area: "local",
       schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
       ttlMs: PAYMENT_STATE_TTL_MS,
     });
-  }, []);
+    removeStoredKey(PAYMENT_TIMER_KEY, "session");
+    removeStoredKey(PAYMENT_TIMER_KEY, "local");
+  }, [scopedPaymentTimerKey]);
 
   const clearTimerState = useCallback(() => {
-    removeStoredKey(PAYMENT_TIMER_KEY);
-  }, []);
+    forEachStorageArea((area) => {
+      removeStoredKey(PAYMENT_TIMER_KEY, area);
+      removeStoredKey(scopedPaymentTimerKey, area);
+    });
+  }, [scopedPaymentTimerKey]);
 
   const getTimerState = useCallback(() => {
-    const value = readExpiringValue(PAYMENT_TIMER_KEY, null, {
-      schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
-      ttlMs: PAYMENT_STATE_TTL_MS,
-    });
+    const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
+    let value = readExpiringValue(scopedPaymentTimerKey, null, { ...readOpts, area: "local" });
+    if (!value) {
+      const legacy = readExpiringValue(scopedPaymentTimerKey, null, { ...readOpts, area: "session" }) ||
+        readExpiringValue(PAYMENT_TIMER_KEY, null, { ...readOpts, area: "local" }) ||
+        readExpiringValue(PAYMENT_TIMER_KEY, null, { ...readOpts, area: "session" });
+      if (legacy) {
+        try {
+          writeExpiringValue(scopedPaymentTimerKey, legacy, { ...readOpts, area: "local" });
+        } catch {
+          // Ignore migration failures.
+        }
+        forEachStorageArea((area) => removeStoredKey(PAYMENT_TIMER_KEY, area));
+        removeStoredKey(scopedPaymentTimerKey, "session");
+        value = legacy;
+      }
+    }
     return typeof value === "string" ? value : null;
-  }, []);
+  }, [scopedPaymentTimerKey]);
 
   const stopTimer = useCallback((clearPersisted = false) => {
     if (timerIntervalRef.current) {
@@ -392,10 +439,13 @@ export function usePaymentLinkPage({
   const handleExpiry = useCallback(() => {
     setPaymentStatus(PAYMENT_STATUS.expired);
     showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.sessionExpired));
-    removeStoredKey(PAYMENT_ID_KEY);
+    forEachStorageArea((area) => {
+      removeStoredKey(PAYMENT_ID_KEY, area);
+      removeStoredKey(scopedPaymentIdKey, area);
+    });
     stopTimer(true);
     clearPaymentViewState();
-  }, [clearPaymentViewState, showRetryHintError, stopTimer]);
+  }, [clearPaymentViewState, scopedPaymentIdKey, showRetryHintError, stopTimer]);
 
   // Start the countdown timer
   const startTimer = useCallback((expiresAt) => {
@@ -480,7 +530,7 @@ export function usePaymentLinkPage({
     }
     if (!isOnline) {
       setError(uiText("payment.offlineCreate"));
-      setPendingFlag(PAYMENT_PENDING_CREATE_KEY);
+      setPendingFlag(scopedPendingCreateKey);
       return;
     }
 
@@ -504,10 +554,13 @@ export function usePaymentLinkPage({
       }
       const data = await endpoints.createPayment(publicId, { signal: controller.signal });
       if (!isOperationCurrent(operationId)) return;
-      writeExpiringValue(PAYMENT_ID_KEY, getPaymentField(data, PAYMENT_API_FIELDS.id), {
+      writeExpiringValue(scopedPaymentIdKey, getPaymentField(data, PAYMENT_API_FIELDS.id), {
+        area: "local",
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
         ttlMs: PAYMENT_STATE_TTL_MS,
       });
+      removeStoredKey(PAYMENT_ID_KEY, "session");
+      removeStoredKey(PAYMENT_ID_KEY, "local");
 
       const expiresAt = new Date(getPaymentField(data, PAYMENT_API_FIELDS.expiresAt));
       const now = new Date();
@@ -544,7 +597,10 @@ export function usePaymentLinkPage({
           ? (err.message || getErrorMessage(err.code))
           : err.message || getErrorMessage(PAYMENT_ERROR_CODES.systemCreate);
       showRetryHintError(errorMessage);
-      removeStoredKey(PAYMENT_ID_KEY);
+      forEachStorageArea((area) => {
+        removeStoredKey(PAYMENT_ID_KEY, area);
+        removeStoredKey(scopedPaymentIdKey, area);
+      });
       savePaymentViewState({
         [PAYMENT_STATE_FIELDS.publicId]: publicId,
         [PAYMENT_STATE_FIELDS.paymentData]: null,
@@ -561,7 +617,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, publicId, requestStartTimer, savePaymentViewState, showRetryHintError]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, publicId, requestStartTimer, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
 
   useEffect(() => {
     return () => {
@@ -844,7 +900,7 @@ export function usePaymentLinkPage({
   const restartPayment = async () => {
     if (!isOnline) {
       setError(uiText("payment.offlineRestart"));
-      setPendingFlag(PAYMENT_PENDING_CREATE_KEY);
+      setPendingFlag(scopedPendingCreateKey);
       return;
     }
     opVersionRef.current += 1;
@@ -853,8 +909,10 @@ export function usePaymentLinkPage({
     if (verifyAbortRef.current) verifyAbortRef.current.abort();
     if (qrAbortRef.current) qrAbortRef.current.abort();
     stopTimer(true);
-    removeStoredKey(PAYMENT_ID_KEY);
-    removeStoredKey(PAYMENT_TIMER_KEY);
+    forEachStorageArea((area) => {
+      removeStoredKey(PAYMENT_ID_KEY, area);
+      removeStoredKey(scopedPaymentIdKey, area);
+    });
     clearPaymentViewState();
     setPaymentData(null);
     setPaymentStatus(PAYMENT_STATUS.pending);
@@ -874,7 +932,7 @@ export function usePaymentLinkPage({
   const handleUploadAndFinalize = useCallback(async () => {
     if (!isOnline) {
       showRetryHintError(uiText("payment.offlineVerify"));
-      setPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
+      setPendingFlag(scopedPendingVerifyKey);
       return;
     }
     const operationId = beginOperation();
@@ -952,7 +1010,10 @@ export function usePaymentLinkPage({
       }
       if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) === PAYMENT_STATUS.success) {
         setPaymentStatus(PAYMENT_STATUS.success);
-        removeStoredKey(PAYMENT_ID_KEY);
+        forEachStorageArea((area) => {
+          removeStoredKey(PAYMENT_ID_KEY, area);
+          removeStoredKey(scopedPaymentIdKey, area);
+        });
         clearTimerState();
         clearPaymentViewState();
         onNext?.({ skipVerification: true });
@@ -1102,7 +1163,10 @@ export function usePaymentLinkPage({
 
       if (verification?.verified && verification.status === PAYMENT_STATUS.success) {
         setPaymentStatus(PAYMENT_STATUS.success);
-        removeStoredKey(PAYMENT_ID_KEY);
+        forEachStorageArea((area) => {
+          removeStoredKey(PAYMENT_ID_KEY, area);
+          removeStoredKey(scopedPaymentIdKey, area);
+        });
         clearTimerState();
         clearPaymentViewState();
         onNext?.({ skipVerification: true });
@@ -1144,7 +1208,10 @@ export function usePaymentLinkPage({
 
       if (getPaymentField(statusData, PAYMENT_API_FIELDS.status) === PAYMENT_STATUS.success) {
         setPaymentStatus(PAYMENT_STATUS.success);
-        removeStoredKey(PAYMENT_ID_KEY);
+        forEachStorageArea((area) => {
+          removeStoredKey(PAYMENT_ID_KEY, area);
+          removeStoredKey(scopedPaymentIdKey, area);
+        });
         clearTimerState();
         clearPaymentViewState();
         onNext?.({ skipVerification: true });
@@ -1226,6 +1293,8 @@ export function usePaymentLinkPage({
     createPayment,
     notifySessionExpired,
     sessionId,
+    scopedPaymentIdKey,
+    scopedPendingVerifyKey,
   ]);
 
   const markQrVisible = useCallback(() => {
@@ -1235,15 +1304,15 @@ export function usePaymentLinkPage({
   useEffect(() => {
     const autoRetryOnReconnect = async () => {
       if (!isOnline || isCriticalAction) return;
-      const pendingCreate = getPendingFlag(PAYMENT_PENDING_CREATE_KEY);
-      const pendingVerify = getPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
+      const pendingCreate = getPendingFlag(scopedPendingCreateKey);
+      const pendingVerify = getPendingFlag(scopedPendingVerifyKey);
       if (pendingCreate) {
-        clearPendingFlag(PAYMENT_PENDING_CREATE_KEY);
+        clearPendingFlag(scopedPendingCreateKey);
         await createPayment();
         return;
       }
       if (pendingVerify && uploadFile) {
-        clearPendingFlag(PAYMENT_PENDING_VERIFY_KEY);
+        clearPendingFlag(scopedPendingVerifyKey);
         await handleUploadAndFinalize();
         return;
       }
@@ -1292,6 +1361,8 @@ export function usePaymentLinkPage({
     clearPaymentViewState,
     notifySessionExpired,
     onNext,
+    scopedPendingCreateKey,
+    scopedPendingVerifyKey,
   ]);
 
   useEffect(() => {

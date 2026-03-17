@@ -10,7 +10,6 @@ from app.config import (
 )
 from app.constants.event_constants import DOMAIN_EVENT_PRIORITY_QUALIFIED, DOMAIN_EVENT_REWARD_SELECTED
 from app.constants.participant_constants import PARTICIPANT_PAYMENT_STATUS_PAID
-from app.constants.response_keys import RESPONSE_KEY_DETAILS, RESPONSE_KEY_PARTICIPANT_ID, RESPONSE_KEY_REASON
 from app.constants.reward_constants import (
     REWARD_REASON_PRIORITY_LAYER_TWO_PASSED,
     REWARD_STATUS_CANCELLED,
