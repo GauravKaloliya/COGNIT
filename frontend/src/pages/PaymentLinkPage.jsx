@@ -76,7 +76,7 @@ export default function PaymentLinkPage({
           disabled={offlineDisabled}
         />
         <div className="payment-next-steps">
-          <p><strong>Next steps:</strong></p>
+          <p><strong>{uiText("payment.nextStepsTitle")}</strong></p>
           <ul>
             {getPaymentRecoverySteps(failureReasons).map((step, idx) => (
               <li key={`err-step-${idx}`}>{step}</li>
@@ -146,7 +146,7 @@ export default function PaymentLinkPage({
           </div>
         )}
         <div className="payment-next-steps">
-          <p><strong>How to fix:</strong></p>
+          <p><strong>{uiText("payment.howToFixTitle")}</strong></p>
           <ul>
             {getPaymentRecoverySteps(failureReasons).map((step, idx) => (
               <li key={`fraud-step-${idx}`}>{step}</li>
@@ -301,7 +301,7 @@ export default function PaymentLinkPage({
         )}
         {error && (
           <div className="payment-next-steps">
-            <p><strong>Next steps:</strong></p>
+            <p><strong>{uiText("payment.nextStepsTitle")}</strong></p>
             <ul>
               {getPaymentRecoverySteps(failureReasons).map((step, idx) => (
                 <li key={`live-step-${idx}`}>{step}</li>
