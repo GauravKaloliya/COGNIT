@@ -1090,7 +1090,6 @@ body.dark .banner.error {
 }
 .consent-body {
   position: relative;
-  padding-bottom: var(--space-6);
 }
 .consent-body.collapsed {
   max-height: 420px;
@@ -1977,6 +1976,8 @@ textarea {
   position: absolute;
   bottom: var(--space-2);
   right: var(--space-2);
+  width: auto;
+  max-width: fit-content;
   background: var(--panel);
   color: var(--primary);
   border: 1px solid var(--border);

@@ -10,7 +10,6 @@ import DSButton from "../components/design/DSButton.jsx";
 
 export default function PaymentLinkPage({
   onNext,
-  onBack,
   publicId,
   sessionId,
   addToast,
@@ -32,7 +31,6 @@ export default function PaymentLinkPage({
     fileInputRef,
     timeRemaining,
     isMobile,
-    backDisabled,
     offlineDisabled,
     retryBlocked,
     retryInSeconds,
@@ -48,11 +46,9 @@ export default function PaymentLinkPage({
     clearSelectedFile,
     restartPayment,
     handleUploadAndFinalize,
-    handleBackClick,
     markQrVisible,
   } = usePaymentLinkPage({
     onNext,
-    onBack,
     publicId,
     sessionId,
     addToast,
@@ -71,13 +67,6 @@ export default function PaymentLinkPage({
   if (error && !paymentData) {
     return (
       <div className="panel payment-panel">
-        <div className="page-top-actions">
-          {onBack && (
-            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
-              ← Back
-            </DSButton>
-          )}
-        </div>
         <PanelState
           variant="error"
           title={uiText("payment.panelUnavailableTitle")}
@@ -112,13 +101,6 @@ export default function PaymentLinkPage({
   if (paymentStatus === "expired") {
     return (
       <div className="panel payment-panel">
-        <div className="page-top-actions">
-          {onBack && (
-            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
-              ← Back
-            </DSButton>
-          )}
-        </div>
         <div className="payment-header">
           <div className="icon-badge" aria-hidden="true">⏳</div>
           <h2 className="payment-title">{uiText("payment.expiredTitle")}</h2>
@@ -145,13 +127,6 @@ export default function PaymentLinkPage({
   if (paymentStatus === "rejected_fraud") {
     return (
       <div className="panel payment-panel">
-        <div className="page-top-actions">
-          {onBack && (
-            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
-              ← Back
-            </DSButton>
-          )}
-        </div>
         <div className="payment-header">
           <div className="icon-badge" aria-hidden="true">❌</div>
           <h2 className="payment-title">{uiText("payment.verifyTitle")}</h2>
@@ -196,13 +171,6 @@ export default function PaymentLinkPage({
   if (!paymentData && paymentStatus === "pending") {
     return (
       <div className="panel payment-panel">
-        <div className="page-top-actions">
-          {onBack && (
-            <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
-              ← Back
-            </DSButton>
-          )}
-        </div>
         <div className="status-panel">
           <PanelState
             variant="warning"
@@ -219,13 +187,6 @@ export default function PaymentLinkPage({
 
   return (
     <div className="panel payment-panel">
-      <div className="page-top-actions">
-        {onBack && (
-          <DSButton variant="ghost" className="back-button" onClick={handleBackClick} disabled={backDisabled}>
-            ← Back
-          </DSButton>
-        )}
-      </div>
       {!isOnline && (
         <div className="banner warning">
           <span>{uiText("payment.offlineBanner")}</span>

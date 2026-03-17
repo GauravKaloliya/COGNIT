@@ -5,7 +5,7 @@ import DSButton from "../components/design/DSButton.jsx";
 import { usePaymentContentPage } from "../hooks/usePaymentContentPage";
 import { uiText } from "../utils/uiText";
 
-export default function PaymentContentPage({ onNext, onBack }) {
+export default function PaymentContentPage({ onNext }) {
   const {
     continuing,
     isOnline,
@@ -28,13 +28,6 @@ export default function PaymentContentPage({ onNext, onBack }) {
 
   return (
     <div className="panel payment-panel">
-      <div className="page-top-actions">
-        {onBack && (
-          <DSButton variant="ghost" className="back-button" onClick={onBack}>
-            ← Back
-          </DSButton>
-        )}
-      </div>
       {!isOnline && (
         <div className="banner warning">
           <span>{uiText("payment.offlineCreate")}</span>
