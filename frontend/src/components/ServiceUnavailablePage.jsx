@@ -24,7 +24,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
       <div className="app">
         <header className="header">
           <div className="brand">
-            <h1>C.O.G.N.I.T.</h1>
+            <h1>{uiText("app.brand")}</h1>
             <p className="subtitle">{uiText("app.subtitle")}</p>
           </div>
           <div className="header-actions">
@@ -63,7 +63,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
     <div className="app">
       <header className="header">
         <div className="brand">
-          <h1>C.O.G.N.I.T.</h1>
+          <h1>{uiText("app.brand")}</h1>
           <p className="subtitle">{uiText("app.subtitle")}</p>
         </div>
         <div className="header-actions">
@@ -96,7 +96,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
 
           <div className="service-unavailable-card">
             <p className="service-unavailable-card-title">
-              What you can try:
+              {uiText("service.tipsTitle")}
             </p>
             <ul className="service-unavailable-list">
               <li>{uiText("service.tipCheckConnection")}</li>

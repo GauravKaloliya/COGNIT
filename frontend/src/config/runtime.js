@@ -13,6 +13,14 @@ const toBool = (value, fallback = false) => {
   return String(value).toLowerCase() === "true";
 };
 
+const toList = (value, fallback = []) => {
+  if (value === undefined || value === null) return fallback;
+  const raw = String(value).trim();
+  if (!raw) return fallback;
+  const parts = raw.split(/[|,]/g).map((p) => p.trim()).filter(Boolean);
+  return parts.length ? parts : fallback;
+};
+
 export const runtimeConfig = {
   msPerSecond: 1000,
   countdownTickMs: 1000,
@@ -45,6 +53,25 @@ export const runtimeConfig = {
   emailOtpLength: 6,
   emailOtpExpirySeconds: 300,
   emailOtpResendCooldownSeconds: 30,
+  otpStatus: {
+    idle: "idle",
+    sending: "sending",
+    sent: "sent",
+    sendFailed: "send_failed",
+    verifying: "verifying",
+    verifyFailed: "verify_failed",
+    verified: "verified",
+  },
+  emailPlaceholderRotateMs: toInt(import.meta.env.VITE_EMAIL_PLACEHOLDER_ROTATE_MS, 1800),
+  focusAdvanceDelayMs: toInt(import.meta.env.VITE_FOCUS_ADVANCE_DELAY_MS, 0),
+  allowedEmailDomains: toList(import.meta.env.VITE_ALLOWED_EMAIL_DOMAINS, [
+    "gmail.com",
+    "outlook.com",
+    "hotmail.com",
+    "icloud.com",
+    "me.com",
+    "mac.com",
+  ]),
   storageKeys: {
     activeTabLock: "cognit_active_tab_lock_v1",
     darkMode: "darkMode",
@@ -104,6 +131,7 @@ export const runtimeConfig = {
   maxFeedbackLength: toInt(import.meta.env.VITE_MAX_FEEDBACK_LENGTH, 2000),
   priorityDescWordTarget: 120,
   priorityFeedbackTarget: 60,
+  priorityMinRounds: toInt(import.meta.env.VITE_PRIORITY_MIN_ROUNDS, 3),
   surveyUiTotalSteps: 2,
   submitUnlockDelayMs: 900,
   submitUnlockInvalidDelayMs: 500,

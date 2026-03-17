@@ -106,7 +106,7 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
     <div className="app error-page-centered">
       <header className="header">
         <div className="brand">
-          <h1>C.O.G.N.I.T.</h1>
+          <h1>{uiText("app.brand")}</h1>
           <p className="subtitle">{uiText("app.subtitle")}</p>
         </div>
         <div className="header-actions">
