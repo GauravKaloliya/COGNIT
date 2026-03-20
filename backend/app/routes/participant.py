@@ -330,7 +330,7 @@ def record_consent():
     except Exception as e:
         try:
             db.rollback()
-        except:
+        except Exception:
             pass
         logger.error(LOG_CONSENT_FAILED, e, getattr(g, "request_id", None))
         return create_error_response("INTERNAL_ERROR")

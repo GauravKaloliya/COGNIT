@@ -339,10 +339,11 @@ export function useUserDetailsPage({
   ), []);
 
   const sanitizeLocationValue = useCallback((value) => {
-    const text = String(value ?? "").trim();
-    if (!text) return "";
-    const coordinateOnly = /^\s*[-+]?\d+(\.\d+)?\s*,\s*[-+]?\d+(\.\d+)?(\s*,\s*[-+]?\d+(\.\d+)?)?\s*$/.test(text);
-    return coordinateOnly ? "" : text;
+    const raw = String(value ?? "");
+    if (!raw.trim()) return "";
+    const trimmed = raw.trim();
+    const coordinateOnly = /^\s*[-+]?\d+(\.\d+)?\s*,\s*[-+]?\d+(\.\d+)?(\s*,\s*[-+]?\d+(\.\d+)?)?\s*$/.test(trimmed);
+    return coordinateOnly ? "" : raw;
   }, []);
 
   const setDetectedLocation = useCallback((value) => {

@@ -26,7 +26,6 @@ from app.config import (
 )
 from app.constants.error_codes import DETAIL_REASONS, ERROR_MESSAGE_TEMPLATES
 from app.constants.log_messages import LOG_HEALTH_CHECK_FAILED
-from app.constants.observability_constants import OBS_EVENT_DB_SESSION_INIT_FAILED, OBS_EVENT_DEVICE_FINGERPRINT_COMMIT_FAILED, OBS_EVENT_DEVICE_FINGERPRINT_INIT_FAILED, OBS_EVENT_DEVICE_FINGERPRINT_ROLLBACK_FAILED, OBS_EVENT_SECURITY_HEADERS_APPLY_FAILED
 from app.database import engine, get_db
 from app.extensions import app
 from app.utils.helpers import create_error_response, success_response
@@ -98,7 +97,7 @@ def _commit_device_fingerprint_if_needed(response, logger: logging.Logger):
                 log_event(logger, OBS_EVENT_DEVICE_FINGERPRINT_ROLLBACK_FAILED, level=logging.WARNING)
 
 
-def _apply_security_headers(response):
+def _apply_security_headers(response, logger: logging.Logger):
     try:
         if SECURITY_CONTENT_TYPE_OPTIONS:
             response.headers.setdefault("X-Content-Type-Options", SECURITY_CONTENT_TYPE_OPTIONS)
@@ -154,7 +153,7 @@ def finalize_response(response, logger: logging.Logger):
                 slo_ms=API_LATENCY_SLO_MS,
             )
 
-    return _apply_security_headers(response)
+    return _apply_security_headers(response, logger)
 
 
 def handle_payload_too_large(app):

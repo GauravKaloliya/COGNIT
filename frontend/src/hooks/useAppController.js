@@ -7,7 +7,7 @@ import { usePaymentFlow } from "./usePaymentFlow";
 import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
-import { ALL_STORAGE_AREAS, getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
+import { getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
 import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
 import { ACTIVE_TAB_LOCK_FIELDS } from "../constants/fields";
 import { BROWSER_EVENTS } from "../constants/browser";
@@ -23,10 +23,6 @@ const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
 const MIN_SURVEYS_BEFORE_FINISH = 1;
 const CORE_STATE_STORAGE_AREA = "local";
 const CORE_STATE_STORAGE_AREA_SESSION = "session";
-const STORAGE_PREFIX_KEYS = [
-  runtimeConfig.storageKeys.surveyDraftPrefix,
-  runtimeConfig.storageKeys.surveyDraftActivePrefix,
-];
 const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
@@ -163,25 +159,6 @@ const deriveMaxAllowedStage = ({
   // Only permit Finished when the user explicitly navigates there (e.g. via SurveyFeedPage "Finish").
   if (currentStage === APP_FLOW.stages.finished) return APP_FLOW.stages.finished;
   return APP_FLOW.stages.survey;
-};
-
-const clearAppStorage = (scopes = []) => {
-  const scopeIds = scopes.filter(Boolean);
-  const allKeys = Object.values(runtimeConfig.storageKeys);
-  ALL_STORAGE_AREAS.forEach((area) => {
-    const storage = area === CORE_STATE_STORAGE_AREA ? localStorage : sessionStorage;
-    allKeys.forEach((key) => {
-      removeStoredKey(key, area);
-      scopeIds.forEach((scope) => removeStoredKey(makeScopedKey(key, scope), area));
-    });
-    for (let i = storage.length - 1; i >= 0; i -= 1) {
-      const k = storage.key(i);
-      if (!k) continue;
-      if (STORAGE_PREFIX_KEYS.some((prefix) => k.startsWith(prefix))) {
-        storage.removeItem(k);
-      }
-    }
-  });
 };
 
 export function useAppController() {
@@ -601,15 +578,7 @@ export function useAppController() {
     userDetailsSubmitted,
   ]);
 
-  useEffect(() => {
-    const handleExit = () => clearAppStorage([publicId, CORE_SCOPE_ANON]);
-    window.addEventListener("beforeunload", handleExit);
-    window.addEventListener("pagehide", handleExit);
-    return () => {
-      window.removeEventListener("beforeunload", handleExit);
-      window.removeEventListener("pagehide", handleExit);
-    };
-  }, [publicId]);
+  // Intentionally do not clear storage on refresh/unload to preserve drafts.
 
   useEffect(() => {
     const verifyStagePrerequisites = async () => {
