@@ -187,7 +187,7 @@ def submit():
         rating = int(d[REQUEST_KEY_RATING])
         if not MIN_RATING <= rating <= MAX_RATING:
             raise ValueError
-    except:
+    except Exception:
         return create_error_response("RATING_INVALID")
 
     word_count = count_words(description)

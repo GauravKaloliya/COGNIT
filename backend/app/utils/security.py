@@ -44,12 +44,21 @@ def generate_payment_signature(public_id: str, amount: str, expires_at: str) -> 
 # UPI Link Generation
 # ────────────────────────────────────────────────
 
-def generate_upi_link(amount: float) -> str:
+def _make_upi_tid(payment_ref: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", payment_ref or "")
+    if not cleaned:
+        return ""
+    suffix = cleaned[-12:]
+    return f"T{suffix}"
+
+
+def generate_upi_link(amount: float, *, payment_ref: Optional[str] = None) -> str:
     """
     Generate UPI payment link for mobile apps.
     
     Args:
         amount: Payment amount in INR
+        payment_ref: Optional payment reference to improve app compatibility
     Returns:
         UPI payment URI string
     """
@@ -78,6 +87,12 @@ def generate_upi_link(amount: float) -> str:
         # Keep a stable note so payment intent is explicit for user and audit.
         "tn": "COGNIT",
     }
+    ref = str(payment_ref or "").strip()
+    if ref:
+        params["tr"] = ref
+        tid = _make_upi_tid(ref)
+        if tid:
+            params["tid"] = tid
     return "upi://pay?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
 
 

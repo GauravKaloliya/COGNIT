@@ -3,10 +3,6 @@ C.O.G.N.I.T. Backend - Main Application Entry Point
 Flask application factory and route registration.
 """
 
-# Initialize logging first, before any other imports
-from app.logging_config import configure_logging
-configure_logging()
-
 import logging
 
 from flask import request, g
@@ -58,6 +54,10 @@ from app.config import (
     IDEMPOTENCY_TTL_SECONDS,
 )
 from app.services import cleanup_idempotency_keys
+from app.logging_config import configure_logging
+
+# Initialize logging after imports are available.
+configure_logging()
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
