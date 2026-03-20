@@ -291,6 +291,7 @@ const TEXT = {
     "user.priorExperiencePlaceholder": "Select prior experience",
     "user.checking": "Checking...",
     "finish.offlineBanner": "You're offline. Reward updates may not load until you reconnect.",
+    "finish.offlineFinishMessage": "Connect to the internet to finish.",
     "finish.documentTitle": "Thank You - C.O.G.N.I.T.",
     "finish.loadingTitle": "Finalizing your session",
     "finish.loadingSubtitle": "Wrapping up rewards and completion state",
