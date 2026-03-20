@@ -119,6 +119,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     handlePaymentComplete,
     handlePaymentContentToLink,
     handleAppError,
+    clearUserStorage,
+    handleParticipantNotFound,
   } = useAppController();
   const isMobile = useIsMobile();
   const [showBackToTop, setShowBackToTop] = React.useState(false);
@@ -181,6 +183,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
             publicId={publicId}
             sessionId={sessionId}
             addToast={addToast}
+            onParticipantNotFound={handleParticipantNotFound}
           />
         );
       case "survey":
@@ -206,7 +209,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           />
         );
       case "finished":
-        return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} />;
+        return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} clearUserStorage={clearUserStorage} />;
       default:
         return <ConsentPage publicId={publicId} onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
     }

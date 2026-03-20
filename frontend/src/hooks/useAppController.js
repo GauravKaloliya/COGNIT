@@ -7,7 +7,7 @@ import { usePaymentFlow } from "./usePaymentFlow";
 import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
-import { ALL_STORAGE_AREAS, getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
+import { ALL_STORAGE_AREAS, forEachStorageArea, getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
 import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
 import { ACTIVE_TAB_LOCK_FIELDS } from "../constants/fields";
 import { BROWSER_EVENTS } from "../constants/browser";
@@ -224,6 +224,95 @@ export function useAppController() {
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
+  const clearUserStorage = useCallback((scopeOverride = null) => {
+    let darkMode = null;
+    darkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
+      area: "local",
+      schemaVersion: runtimeConfig.uiStateSchemaVersion,
+      ttlMs: runtimeConfig.uiStateTtlMs,
+    });
+    if (typeof darkMode !== "boolean") {
+      darkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
+        area: "session",
+        schemaVersion: runtimeConfig.uiStateSchemaVersion,
+        ttlMs: runtimeConfig.uiStateTtlMs,
+      });
+    }
+
+    const scope = String(scopeOverride || publicId || "").trim() || CORE_SCOPE_ANON;
+    const keysToClear = [
+      runtimeConfig.storageKeys.publicId,
+      runtimeConfig.storageKeys.stage,
+      runtimeConfig.storageKeys.paymentSubStage,
+      runtimeConfig.storageKeys.consentGiven,
+      runtimeConfig.storageKeys.userDetailsSubmitted,
+      runtimeConfig.storageKeys.emailVerified,
+      runtimeConfig.storageKeys.paymentVerified,
+      runtimeConfig.storageKeys.demographics,
+      runtimeConfig.storageKeys.survey,
+      runtimeConfig.storageKeys.surveyCompleted,
+      runtimeConfig.storageKeys.surveyFeedbackReady,
+      runtimeConfig.storageKeys.lastSubmissionSucceeded,
+      runtimeConfig.storageKeys.shownImages,
+      runtimeConfig.storageKeys.sessionId,
+      runtimeConfig.storageKeys.emailOtpState,
+      runtimeConfig.storageKeys.paymentId,
+      runtimeConfig.storageKeys.paymentTimerExpires,
+      runtimeConfig.storageKeys.paymentState,
+      runtimeConfig.storageKeys.paymentPendingCreate,
+      runtimeConfig.storageKeys.paymentPendingVerify,
+      runtimeConfig.storageKeys.consentDraft,
+      runtimeConfig.storageKeys.consentPending,
+      runtimeConfig.storageKeys.userDetailsPending,
+      runtimeConfig.storageKeys.surveyPendingSubmit,
+      runtimeConfig.storageKeys.surveyFeedPendingContinue,
+      runtimeConfig.storageKeys.surveyFeedPendingFinish,
+    ];
+    keysToClear.forEach((key) => {
+      forEachStorageArea((area) => {
+        removeStoredKey(key, area);
+        removeStoredKey(makeScopedKey(key, scope), area);
+        removeStoredKey(makeScopedKey(key, CORE_SCOPE_ANON), area);
+      });
+    });
+
+    if (typeof darkMode === "boolean") {
+      writeExpiringValue(runtimeConfig.storageKeys.darkMode, darkMode, {
+        area: "local",
+        schemaVersion: runtimeConfig.uiStateSchemaVersion,
+        ttlMs: runtimeConfig.uiStateTtlMs,
+      });
+    }
+  }, [publicId]);
+
+  const handleParticipantNotFound = useCallback(() => {
+    const scope = String(publicId || "").trim() || CORE_SCOPE_ANON;
+    const keysToClear = [
+      runtimeConfig.storageKeys.publicId,
+      runtimeConfig.storageKeys.sessionId,
+      runtimeConfig.storageKeys.userDetailsSubmitted,
+      runtimeConfig.storageKeys.emailVerified,
+      runtimeConfig.storageKeys.paymentVerified,
+      runtimeConfig.storageKeys.paymentSubStage,
+      runtimeConfig.storageKeys.stage,
+    ];
+    keysToClear.forEach((key) => {
+      forEachStorageArea((area) => {
+        removeStoredKey(key, area);
+        removeStoredKey(makeScopedKey(key, scope), area);
+        removeStoredKey(makeScopedKey(key, CORE_SCOPE_ANON), area);
+      });
+    });
+
+    setPublicId("");
+    setSessionId("");
+    setUserDetailsSubmitted(false);
+    setEmailVerified(false);
+    setPaymentVerified(false);
+    setPaymentSubStage(APP_FLOW.paymentSubStages.content);
+    setStage(APP_FLOW.stages.userDetails);
+    addToast(getErrorMessage("ERR_PARTICIPANT_NOT_FOUND"), "warning");
+  }, [addToast, publicId]);
 
   useEffect(() => {
     if (stage === "email-verify") {
@@ -814,5 +903,7 @@ export function useAppController() {
     handlePaymentComplete,
     handlePaymentContentToLink,
     handleAppError,
+    clearUserStorage,
+    handleParticipantNotFound,
   };
 }
