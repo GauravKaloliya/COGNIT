@@ -31,6 +31,13 @@ const normalizeApiBase = (baseValue) => {
 const isLocalHostName = (hostname) =>
   hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 
+const resolveDefaultApiBase = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return "";
+};
+
 const resolveConfiguredBase = () => {
   // In dev, always use the Vite proxy path for local API calls.
   if (import.meta.env.DEV) {
@@ -67,13 +74,6 @@ const resolveConfiguredBase = () => {
   }
 
   return normalized;
-};
-
-const resolveDefaultApiBase = () => {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return "";
 };
 
 export const API_BASE = resolveConfiguredBase();

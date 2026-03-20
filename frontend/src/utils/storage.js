@@ -89,22 +89,6 @@ export function removeStoredKey(key, area = STORAGE_AREAS.session) {
   }
 }
 
-export function getStoredValue(key, fallback, options = {}) {
-  return readExpiringValue(key, fallback, {
-    ...options,
-    schemaVersion: options.schemaVersion !== undefined ? options.schemaVersion : UI_STATE_SCHEMA_VERSION,
-    ttlMs: options.ttlMs !== undefined ? options.ttlMs : UI_STATE_TTL_MS,
-  });
-}
-
-export function saveStoredValue(key, value, options = {}) {
-  writeExpiringValue(key, value, {
-    ...options,
-    schemaVersion: options.schemaVersion !== undefined ? options.schemaVersion : UI_STATE_SCHEMA_VERSION,
-    ttlMs: options.ttlMs !== undefined ? options.ttlMs : UI_STATE_TTL_MS,
-  });
-}
-
 export function readExpiringValue(key, fallback, options = {}) {
   const {
     area = "session",
@@ -152,6 +136,22 @@ export function writeExpiringValue(key, value, options = {}) {
   } catch {
     // Ignore storage failures.
   }
+}
+
+export function getStoredValue(key, fallback, options = {}) {
+  return readExpiringValue(key, fallback, {
+    ...options,
+    schemaVersion: options.schemaVersion !== undefined ? options.schemaVersion : UI_STATE_SCHEMA_VERSION,
+    ttlMs: options.ttlMs !== undefined ? options.ttlMs : UI_STATE_TTL_MS,
+  });
+}
+
+export function saveStoredValue(key, value, options = {}) {
+  writeExpiringValue(key, value, {
+    ...options,
+    schemaVersion: options.schemaVersion !== undefined ? options.schemaVersion : UI_STATE_SCHEMA_VERSION,
+    ttlMs: options.ttlMs !== undefined ? options.ttlMs : UI_STATE_TTL_MS,
+  });
 }
 
 export function getPendingFlag(key, area = STORAGE_AREAS.session) {

@@ -224,6 +224,21 @@ export function useAppController() {
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
+  const addToast = useCallback((message, type = TOAST_VARIANTS.info, action) => {
+    const dedupeKey = `${type}:${message}`;
+    const now = Date.now();
+    const lastShownAt = toastRef.current.get(dedupeKey) || 0;
+    if (now - lastShownAt < runtimeConfig.toastDedupeWindowMs) {
+      return;
+    }
+    toastRef.current.set(dedupeKey, now);
+    const id = createId();
+    setToasts((prev) => [...prev, { id, message, type, action }]);
+    scheduleTimeout(
+      () => setToasts((prev) => prev.filter((toast) => toast.id !== id)),
+      runtimeConfig.toastAutoDismissMs
+    );
+  }, []);
   const clearUserStorage = useCallback((scopeOverride = null) => {
     let darkMode = null;
     darkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
@@ -409,22 +424,6 @@ export function useAppController() {
       releaseLockIfOwner();
     };
   }, [claimActiveTabLock]);
-
-  const addToast = useCallback((message, type = TOAST_VARIANTS.info, action) => {
-    const dedupeKey = `${type}:${message}`;
-    const now = Date.now();
-    const lastShownAt = toastRef.current.get(dedupeKey) || 0;
-    if (now - lastShownAt < runtimeConfig.toastDedupeWindowMs) {
-      return;
-    }
-    toastRef.current.set(dedupeKey, now);
-    const id = createId();
-    setToasts((prev) => [...prev, { id, message, type, action }]);
-    scheduleTimeout(
-      () => setToasts((prev) => prev.filter((toast) => toast.id !== id)),
-      runtimeConfig.toastAutoDismissMs
-    );
-  }, []);
 
   const dismissToast = useCallback((id) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
