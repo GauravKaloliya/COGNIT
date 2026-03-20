@@ -12,6 +12,7 @@ export function useSurveyFeedPage({
   setSurveyFeedbackReady,
   setStage,
   fetchNextSurvey,
+  clearUserStorage,
 }) {
   const [loadingNext, setLoadingNext] = useState(false);
   const [continueError, setContinueError] = useState("");
@@ -29,6 +30,7 @@ export function useSurveyFeedPage({
       setPendingContinue(true);
       return;
     }
+    clearUserStorage?.();
     setLoadingNext(true);
     setContinueError("");
     setSurveyFeedbackReady(false);
@@ -38,7 +40,7 @@ export function useSurveyFeedPage({
       setContinueError(uiText("survey.feedLoadFailed"));
     }
     setLoadingNext(false);
-  }, [fetchNextSurvey, isOnline, loadingNext, setSurveyFeedbackReady]);
+  }, [clearUserStorage, fetchNextSurvey, isOnline, loadingNext, setSurveyFeedbackReady]);
 
   const handleSurveyFinish = useCallback(() => {
     if (!isOnline) {
@@ -46,9 +48,10 @@ export function useSurveyFeedPage({
       setPendingFinish(true);
       return;
     }
+    clearUserStorage?.();
     setSurveyFeedbackReady(false);
     setStage("finished");
-  }, [isOnline, setStage, setSurveyFeedbackReady]);
+  }, [clearUserStorage, isOnline, setStage, setSurveyFeedbackReady]);
 
   useEffect(() => {
     if (!isOnline || loadingNext) return;
