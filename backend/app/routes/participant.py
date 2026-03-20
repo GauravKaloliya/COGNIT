@@ -94,6 +94,7 @@ from app.services import (
     save_idempotent_response,
     set_participant_cookies,
     build_email_otp_payload,
+    EmailOtpSendError,
     email_in_use_by_other,
     fetch_latest_email_otp,
     fetch_participant_by_public_email,
@@ -459,7 +460,28 @@ def request_email_otp():
         mark_existing_otps_used(db, public_id=public_id, email=stored_email)
         otp_id = insert_email_otp(db, public_id=public_id, email=stored_email, otp_hash=otp_hash, expires_at=expires_at)
         try:
-            send_email_otp(build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id))
+            send_email_otp(
+                build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
+                request_id=getattr(g, "request_id", None),
+            )
+        except EmailOtpSendError as exc:
+            error_key = "AUTH_EMAIL_OTP_SEND_FAILED"
+            if exc.kind == "timeout":
+                error_key = "AUTH_EMAIL_OTP_SEND_TIMEOUT"
+            elif exc.kind == "http_error":
+                error_key = "AUTH_EMAIL_OTP_SEND_HTTP_ERROR"
+            logger.warning(
+                "email_otp_send_failed",
+                extra={
+                    "event": "email_otp_send_failed",
+                    "kind": exc.kind,
+                    "status_code": exc.status_code,
+                    "request_id": getattr(g, "request_id", None),
+                },
+            )
+            mark_email_otp_used(db, otp_id=otp_id)
+            db.commit()
+            return create_error_response(error_key)
         except Exception:
             mark_email_otp_used(db, otp_id=otp_id)
             db.commit()

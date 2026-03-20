@@ -496,8 +496,20 @@
   },
   "AUTH_EMAIL_OTP_SEND_FAILED": {
     "code": "AUTH_003_0005",
-    "message": "Failed to send verification code. Please try again.",
-    "status": 502,
+    "message": "Email service is temporarily unavailable. Please try again in a minute.",
+    "status": 503,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_OTP_SEND_TIMEOUT": {
+    "code": "AUTH_003_0009",
+    "message": "Email service took too long to respond. Please try again.",
+    "status": 504,
+    "category": "AUTH"
+  },
+  "AUTH_EMAIL_OTP_SEND_HTTP_ERROR": {
+    "code": "AUTH_003_0010",
+    "message": "Email service returned an error. Please try again.",
+    "status": 503,
     "category": "AUTH"
   },
   "AUTH_EMAIL_MISMATCH": {

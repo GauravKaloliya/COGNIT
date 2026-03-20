@@ -9,10 +9,12 @@ import base64
 import json
 import time
 import re
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
+from requests import exceptions as requests_exceptions
 
 from app.config import (
     EMAIL_OTP_EXPIRY_SECONDS,
@@ -42,6 +44,16 @@ from app.services.email_otp_query_service import (
 
 
 OTP_DIGITS = "0123456789"
+logger = logging.getLogger(__name__)
+
+
+class EmailOtpSendError(RuntimeError):
+    def __init__(self, *, kind: str, status_code: int | None = None, detail: str | None = None):
+        self.kind = kind
+        self.status_code = status_code
+        self.detail = detail
+        message = detail or f"email otp send failed: {kind}"
+        super().__init__(message)
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -143,16 +155,76 @@ def build_email_otp_payload(*, email: str, otp: str, public_id: str) -> dict:
     }
 
 
-def send_email_otp(payload: dict) -> None:
+def send_email_otp(payload: dict, *, request_id: str | None = None) -> None:
     token = _build_jwt()
     headers = {"Authorization": f"Bearer {token}"}
-    response = requests.post(
-        EMAIL_OTP_WEBHOOK_URL,
-        json=payload,
-        headers=headers,
-        timeout=EMAIL_OTP_WEBHOOK_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
+    start = time.monotonic()
+    try:
+        response = requests.post(
+            EMAIL_OTP_WEBHOOK_URL,
+            json=payload,
+            headers=headers,
+            timeout=EMAIL_OTP_WEBHOOK_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        logger.info(
+            "email_otp_webhook_ok",
+            extra={
+                "event": "email_otp_webhook_ok",
+                "status_code": response.status_code,
+                "latency_ms": elapsed_ms,
+                "request_id": request_id,
+            },
+        )
+        return
+    except requests_exceptions.Timeout as exc:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        logger.warning(
+            "email_otp_webhook_timeout",
+            extra={
+                "event": "email_otp_webhook_timeout",
+                "latency_ms": elapsed_ms,
+                "timeout_s": EMAIL_OTP_WEBHOOK_TIMEOUT_SECONDS,
+                "request_id": request_id,
+            },
+        )
+        raise EmailOtpSendError(kind="timeout", detail=str(exc)) from exc
+    except requests_exceptions.HTTPError as exc:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        status_code = exc.response.status_code if exc.response is not None else None
+        logger.warning(
+            "email_otp_webhook_http_error",
+            extra={
+                "event": "email_otp_webhook_http_error",
+                "status_code": status_code,
+                "latency_ms": elapsed_ms,
+                "request_id": request_id,
+            },
+        )
+        raise EmailOtpSendError(kind="http_error", status_code=status_code, detail=str(exc)) from exc
+    except requests_exceptions.ConnectionError as exc:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        logger.warning(
+            "email_otp_webhook_connection_error",
+            extra={
+                "event": "email_otp_webhook_connection_error",
+                "latency_ms": elapsed_ms,
+                "request_id": request_id,
+            },
+        )
+        raise EmailOtpSendError(kind="connection_error", detail=str(exc)) from exc
+    except requests_exceptions.RequestException as exc:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        logger.warning(
+            "email_otp_webhook_request_error",
+            extra={
+                "event": "email_otp_webhook_request_error",
+                "latency_ms": elapsed_ms,
+                "request_id": request_id,
+            },
+        )
+        raise EmailOtpSendError(kind="request_error", detail=str(exc)) from exc
 
 
 def otp_is_expired(expires_at: datetime) -> bool:
