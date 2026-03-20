@@ -120,6 +120,7 @@ export function useUserDetailsPage({
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
+  const [locationPermissionState, setLocationPermissionState] = useState("unknown");
   const [manualLocationAllowed, setManualLocationAllowed] = useState(false);
   const autoLocationAttemptsRef = useRef(0);
   const autoDetectStartedRef = useRef(false);
@@ -410,6 +411,7 @@ export function useUserDetailsPage({
             maximumAge: 0,
           });
         }
+        setLocationPermissionState("granted");
 
         const { latitude, longitude } = position.coords;
         let detectedLocation = "";
@@ -499,6 +501,7 @@ export function useUserDetailsPage({
         }
       } catch (error) {
         const denied = error?.code === GEOLOCATION_ERROR_CODES.permissionDenied;
+        setLocationPermissionState(denied ? "denied" : "unknown");
         setLocationPermissionDenied(denied);
         setManualLocationAllowed(true);
         setLocationStatus(denied ? uiText("user.locationPermissionDenied") : uiText("user.locationFallback"));
@@ -526,16 +529,42 @@ export function useUserDetailsPage({
   useEffect(() => {
     if (autoDetectStartedRef.current) return;
     autoDetectStartedRef.current = true;
-    try {
-      const lastPromptAt = Number(sessionStorage.getItem(AUTO_LOCATION_PROMPT_KEY) || "0");
-      const now = Date.now();
-      if (now - lastPromptAt < AUTO_LOCATION_PROMPT_DEDUPE_MS) return;
-      sessionStorage.setItem(AUTO_LOCATION_PROMPT_KEY, String(now));
-    } catch {
-      // Ignore storage failures; continue with normal behavior.
-    }
-    detectLocation(GEOLOCATION_MODES.auto);
-  }, [detectLocation]);
+
+    const maybeAutoDetect = async () => {
+      try {
+        const lastPromptAt = Number(localStorage.getItem(AUTO_LOCATION_PROMPT_KEY) || "0");
+        const now = Date.now();
+        if (now - lastPromptAt < AUTO_LOCATION_PROMPT_DEDUPE_MS) return;
+
+        if (navigator.permissions?.query) {
+          try {
+            const permission = await navigator.permissions.query({ name: "geolocation" });
+            setLocationPermissionState(permission.state || "unknown");
+            if (permission.state === "denied") {
+              setLocationPermissionDenied(true);
+              setManualLocationAllowed(true);
+              setLocationStatus(uiText("user.locationPermissionDenied"));
+              return;
+            }
+            if (permission.state === "prompt") {
+              setManualLocationAllowed(true);
+              setLocationStatus(uiText("user.locationFallback"));
+              return;
+            }
+          } catch {
+            // Ignore permissions API failures and fall through.
+          }
+        }
+
+        localStorage.setItem(AUTO_LOCATION_PROMPT_KEY, String(now));
+      } catch {
+        // Ignore storage failures; continue with normal behavior.
+      }
+      detectLocation(GEOLOCATION_MODES.auto);
+    };
+
+    void maybeAutoDetect();
+  }, [detectLocation, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
 
   useEffect(() => {
     const sanitized = sanitizeLocationValue(demographics.location);
@@ -1088,6 +1117,7 @@ export function useUserDetailsPage({
     locating,
     locationStatus,
     locationPermissionDenied,
+    locationPermissionState,
     manualLocationAllowed,
     userEditedLocationRef,
     isFormComplete,
