@@ -104,13 +104,13 @@ export function useSystemHealth({
     let cancelled = false;
     let timeoutId = null;
 
-    const scheduleNext = (baseMs) => {
+    function scheduleNext(callback, baseMs) {
       const jitter = Math.floor(Math.random() * 1000);
       const delay = Math.max(2000, baseMs + jitter);
-      timeoutId = scheduleTimeout(checkHealth, delay);
-    };
+      timeoutId = scheduleTimeout(callback, delay);
+    }
 
-    const checkHealth = async () => {
+    async function checkHealth() {
       setSystemChecking(true);
       try {
         if (healthAbortRef.current) {
@@ -154,10 +154,10 @@ export function useSystemHealth({
         healthAbortRef.current = null;
         if (!cancelled) setSystemChecking(false);
         if (!cancelled) {
-          scheduleNext(runtimeConfig.healthCheckIntervalMs * healthBackoffRef.current);
+          scheduleNext(checkHealth, runtimeConfig.healthCheckIntervalMs * healthBackoffRef.current);
         }
       }
-    };
+    }
 
     checkHealth();
     return () => {

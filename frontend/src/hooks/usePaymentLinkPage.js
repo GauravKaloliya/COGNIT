@@ -962,6 +962,11 @@ export function usePaymentLinkPage({
     setRetryInSeconds(0);
 
     try {
+      // Server-authoritative pre-check before upload/verify.
+      if (statusAbortRef.current) statusAbortRef.current.abort();
+      const precheckController = new AbortController();
+      statusAbortRef.current = precheckController;
+
       const ensurePaymentToken = async () => {
         const existing = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
         if (existing) return existing;
@@ -980,11 +985,6 @@ export function usePaymentLinkPage({
         }
         return token;
       };
-
-      // Server-authoritative pre-check before upload/verify.
-      if (statusAbortRef.current) statusAbortRef.current.abort();
-      const precheckController = new AbortController();
-      statusAbortRef.current = precheckController;
       let precheckStatus;
       try {
         precheckStatus = await endpoints.getPaymentStatus(
