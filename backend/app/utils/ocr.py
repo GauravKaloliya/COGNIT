@@ -265,7 +265,7 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
         month = MONTH_FULL[m.group(2).lower()]
         year = int(m.group(3))
     elif app == APP_PAYTM:
-        # Examples: 03 Jan 2026, 3 jan 26, Jan 03 2026
+        # Examples: 03 Jan 2026, 3 jan 26, Jan 03 2026, 20 Mar 07:54 PM
         m = REGEX_PAYTM_DATE_DAY_FIRST.search(lower)
         if not m:
             m = REGEX_PAYTM_DATE_MONTH_FIRST.search(lower)
@@ -273,11 +273,13 @@ def _extract_timestamp(text: str, app: str) -> Optional[datetime]:
                 return None
             month = MONTH_SHORT[m.group(1).lower()]
             day = int(m.group(2))
-            year = int(m.group(3))
+            year_str = m.group(3)
+            year = int(year_str) if year_str else datetime.now(local_tz).year
         else:
             day = int(m.group(1))
             month = MONTH_SHORT[m.group(2).lower()]
-            year = int(m.group(3))
+            year_str = m.group(3)
+            year = int(year_str) if year_str else datetime.now(local_tz).year
         if year < 100:
             year += 2000
     else:  # bhim
