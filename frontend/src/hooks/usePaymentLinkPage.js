@@ -574,6 +574,7 @@ export function usePaymentLinkPage({
         serverRemainingMs || Math.max(0, expiresAt.getTime() - now.getTime())
       );
       setPaymentData(data);
+      setPaymentStatus(PAYMENT_STATUS.pending);
       setQrVisible(false);
       requestStartTimer(getPaymentField(data, PAYMENT_API_FIELDS.expiresAt));
       savePaymentViewState({
@@ -608,6 +609,7 @@ export function usePaymentLinkPage({
         [PAYMENT_STATE_FIELDS.failureReasons]: [],
         [PAYMENT_STATE_FIELDS.error]: errorMessage,
       });
+      setPaymentStatus(PAYMENT_STATUS.failed);
     } finally {
       createAbortRef.current = null;
       if (timeoutId) {
