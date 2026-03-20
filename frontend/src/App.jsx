@@ -120,6 +120,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     handlePaymentContentToLink,
     handleAppError,
     clearUserStorage,
+    handleParticipantNotFound,
   } = useAppController();
   const isMobile = useIsMobile();
   const [showBackToTop, setShowBackToTop] = React.useState(false);
@@ -182,6 +183,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
             publicId={publicId}
             sessionId={sessionId}
             addToast={addToast}
+            onParticipantNotFound={handleParticipantNotFound}
           />
         );
       case "survey":
