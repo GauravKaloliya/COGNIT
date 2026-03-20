@@ -36,13 +36,13 @@ REGEX_GPAY_DATE = re.compile(
 REGEX_PAYTM_DATE_DAY_FIRST = re.compile(
     r"\b(0?[1-9]|[12][0-9]|3[01])\s+"
     r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
-    r"(\d{2}|\d{4})\b",
+    r"(\d{2}|\d{4})?\b",
     re.IGNORECASE,
 )
 REGEX_PAYTM_DATE_MONTH_FIRST = re.compile(
     r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+"
     r"(0?[1-9]|[12][0-9]|3[01]),?\s+"
-    r"(\d{2}|\d{4})\b",
+    r"(\d{2}|\d{4})?\b",
     re.IGNORECASE,
 )
 REGEX_BHIM_DATE = re.compile(
