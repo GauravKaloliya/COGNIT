@@ -180,10 +180,15 @@ IDEMPOTENCY_TTL_SECONDS = 86400
 
 LOG_LEVEL = "INFO"
 LOGGING_AUTO_CONFIG = True
-VERCEL_ENV = "development"
+VERCEL_ENV = _str_env("VERCEL_ENV", "development")
 WEBSITE_URL = _required_env("WEBSITE_URL")
-SESSION_COOKIE_SECURE = False
-SESSION_COOKIE_SAMESITE = "Lax"
+_default_cookie_secure = bool(WEBSITE_URL.lower().startswith("https://"))
+SESSION_COOKIE_SECURE = _bool_env("SESSION_COOKIE_SECURE", _default_cookie_secure)
+SESSION_COOKIE_SAMESITE = _str_env(
+    "SESSION_COOKIE_SAMESITE",
+    "None" if SESSION_COOKIE_SECURE else "Lax",
+    choices={"Lax", "Strict", "None"},
+)
 PARTICIPANT_SESSION_COOKIE_NAME = "cognit_session"
 PARTICIPANT_PUBLIC_COOKIE_NAME = "cognit_public_id"
 
