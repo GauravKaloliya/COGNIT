@@ -389,6 +389,9 @@ export default function UserDetailsPage({
             </DSButton>
           )}
           {locationStatus && <span className="checking-text">{locationStatus}</span>}
+          {locationPermissionDenied && (
+            <span className="helper-text warning">{uiText("user.locationPermissionHelp")}</span>
+          )}
           {errors.location && <span className="error-text">{errors.location}</span>}
           {!locationOk && (
             <span className="helper-text warning">{uiText("user.locationHint", { min: LOCATION_MIN })}</span>
