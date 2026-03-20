@@ -30,6 +30,7 @@ export default function UserDetailsPage({
     locating,
     locationStatus,
     locationPermissionDenied,
+    locationPermissionState,
     manualLocationAllowed,
     userEditedLocationRef,
     isFormComplete,
@@ -376,7 +377,7 @@ export default function UserDetailsPage({
               handleFieldBlur("location", e.target.value);
             }}
           />
-          {locationPermissionDenied && !locating && (
+          {locationPermissionState !== "granted" && !locating && (
             <DSButton
               type="button"
               variant="ghost"
