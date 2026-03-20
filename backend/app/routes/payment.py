@@ -4,6 +4,7 @@ Handles payment creation, screenshot upload, verification, and status.
 """
 
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from flask import request, g
@@ -243,7 +244,7 @@ def create_payment():
     except Exception as e:
         try:
             db.rollback()
-        except:
+        except Exception:
             pass
         # Handle concurrent duplicate create calls (e.g., frontend double-invoke)
         # by returning the existing active payment instead of failing with 500.
@@ -322,7 +323,7 @@ def get_payment_qr(payment_public_id):
         if status in PAYMENT_QR_BLOCKED_STATUSES:
             return create_error_response("PAYMENT_INVALID_STATE")
 
-        upi_link = generate_upi_link(float(amount))
+        upi_link = generate_upi_link(float(amount), payment_ref=str(payment_public_id))
         return success_response({
             RESPONSE_KEY_PAYMENT_ID: payment_public_id,
             RESPONSE_KEY_QR_BASE64: build_qr_base64(upi_link),
