@@ -30,7 +30,6 @@ export function useSurveyFeedPage({
       setPendingContinue(true);
       return;
     }
-    clearUserStorage?.();
     setLoadingNext(true);
     setContinueError("");
     setSurveyFeedbackReady(false);
@@ -40,7 +39,7 @@ export function useSurveyFeedPage({
       setContinueError(uiText("survey.feedLoadFailed"));
     }
     setLoadingNext(false);
-  }, [clearUserStorage, fetchNextSurvey, isOnline, loadingNext, setSurveyFeedbackReady]);
+  }, [fetchNextSurvey, isOnline, loadingNext, setSurveyFeedbackReady]);
 
   const handleSurveyFinish = useCallback(() => {
     if (!isOnline) {
