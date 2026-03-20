@@ -10,6 +10,7 @@ export default function SurveyFeedPage({
   setSurveyFeedbackReady,
   setStage,
   fetchNextSurvey,
+  clearUserStorage,
 }) {
   const {
     minWords: MIN_WORDS,
@@ -26,6 +27,7 @@ export default function SurveyFeedPage({
     setSurveyFeedbackReady,
     setStage,
     fetchNextSurvey,
+    clearUserStorage,
   });
 
   if (loadingNext) {
