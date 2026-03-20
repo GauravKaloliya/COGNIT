@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: "dist",
-      sourcemap: mode === "development",
+      sourcemap: true,
       minify: "terser",
       cssMinify: true,
       rollupOptions: {
