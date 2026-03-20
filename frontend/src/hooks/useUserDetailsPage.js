@@ -120,6 +120,7 @@ export function useUserDetailsPage({
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
+  const [locationPermissionState, setLocationPermissionState] = useState("unknown");
   const [manualLocationAllowed, setManualLocationAllowed] = useState(false);
   const autoLocationAttemptsRef = useRef(0);
   const autoDetectStartedRef = useRef(false);
@@ -410,6 +411,7 @@ export function useUserDetailsPage({
             maximumAge: 0,
           });
         }
+        setLocationPermissionState("granted");
 
         const { latitude, longitude } = position.coords;
         let detectedLocation = "";
@@ -499,6 +501,7 @@ export function useUserDetailsPage({
         }
       } catch (error) {
         const denied = error?.code === GEOLOCATION_ERROR_CODES.permissionDenied;
+        setLocationPermissionState(denied ? "denied" : "unknown");
         setLocationPermissionDenied(denied);
         setManualLocationAllowed(true);
         setLocationStatus(denied ? uiText("user.locationPermissionDenied") : uiText("user.locationFallback"));
@@ -536,6 +539,7 @@ export function useUserDetailsPage({
         if (navigator.permissions?.query) {
           try {
             const permission = await navigator.permissions.query({ name: "geolocation" });
+            setLocationPermissionState(permission.state || "unknown");
             if (permission.state === "denied") {
               setLocationPermissionDenied(true);
               setManualLocationAllowed(true);
@@ -1113,6 +1117,7 @@ export function useUserDetailsPage({
     locating,
     locationStatus,
     locationPermissionDenied,
+    locationPermissionState,
     manualLocationAllowed,
     userEditedLocationRef,
     isFormComplete,
