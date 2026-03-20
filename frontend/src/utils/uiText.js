@@ -283,6 +283,7 @@ const TEXT = {
     "user.locationRetrying": "Retrying location with higher accuracy...",
     "user.locationDetected": "Location detected.",
     "user.locationPermissionDenied": "Location permission denied. Enter manually.",
+    "user.locationPermissionHelp": "Enable location in your browser/app settings, then tap Enable Location again.",
     "user.enableLocation": "Enable Location Permission",
     "user.language": "Native Language",
     "user.languagePlaceholder": "Select native language",
