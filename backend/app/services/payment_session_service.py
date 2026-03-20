@@ -244,7 +244,7 @@ def build_payment_response_payload(
     session_id: str = "",
     time_remaining_seconds: int = PAYMENT_EXPIRY_SECONDS,
 ):
-    upi_link = generate_upi_link(amount)
+    upi_link = generate_upi_link(amount, payment_ref=str(payment_public_id))
     return {
         RESPONSE_KEY_PAYMENT_ID: str(payment_public_id),
         RESPONSE_KEY_AMOUNT: amount,
