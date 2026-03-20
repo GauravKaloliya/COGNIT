@@ -270,6 +270,13 @@ export const ERROR_CATEGORIES = {
 };
 
 /**
+ * Check if error code exists
+ */
+export function hasErrorCode(errorCode) {
+  return !!TRANSLATIONS.en[errorCode];
+}
+
+/**
  * Get error message for a code
  */
 export function getErrorMessage(errorCode, lang = DEFAULT_LANGUAGE, params = {}) {
@@ -379,13 +386,6 @@ export function getErrorCodesByCategory() {
   });
   
   return codes;
-}
-
-/**
- * Check if error code exists
- */
-export function hasErrorCode(errorCode) {
-  return !!TRANSLATIONS.en[errorCode];
 }
 
 /**
