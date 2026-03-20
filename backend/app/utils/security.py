@@ -44,12 +44,23 @@ def generate_payment_signature(public_id: str, amount: str, expires_at: str) -> 
 # UPI Link Generation
 # ────────────────────────────────────────────────
 
-def _make_upi_tid(payment_ref: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9]", "", payment_ref or "")
+def _normalize_upi_ref(value: str, max_len: int) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", value or "")
     if not cleaned:
         return ""
-    suffix = cleaned[-12:]
-    return f"T{suffix}"
+    return cleaned[:max_len]
+
+
+def _make_upi_tid(payment_ref: str) -> str:
+    # Some apps expect a short numeric TID. Derive a stable 12-digit value.
+    ref = payment_ref or ""
+    if not ref:
+        return ""
+    digest = hashlib.sha256(ref.encode("utf-8")).hexdigest()
+    digits = "".join(ch for ch in digest if ch.isdigit())
+    if len(digits) < 12:
+        digits = (digits + "0" * 12)[:12]
+    return digits[:12]
 
 
 def generate_upi_link(amount: float, *, payment_ref: Optional[str] = None) -> str:
@@ -89,7 +100,9 @@ def generate_upi_link(amount: float, *, payment_ref: Optional[str] = None) -> st
     }
     ref = str(payment_ref or "").strip()
     if ref:
-        params["tr"] = ref
+        tr = _normalize_upi_ref(ref, 35)
+        if tr:
+            params["tr"] = tr
         tid = _make_upi_tid(ref)
         if tid:
             params["tid"] = tid
