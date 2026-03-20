@@ -12,7 +12,6 @@ export function useSurveyFeedPage({
   setSurveyFeedbackReady,
   setStage,
   fetchNextSurvey,
-  clearUserStorage,
 }) {
   const [loadingNext, setLoadingNext] = useState(false);
   const [continueError, setContinueError] = useState("");
@@ -47,10 +46,9 @@ export function useSurveyFeedPage({
       setPendingFinish(true);
       return;
     }
-    clearUserStorage?.();
     setSurveyFeedbackReady(false);
     setStage("finished");
-  }, [clearUserStorage, isOnline, setStage, setSurveyFeedbackReady]);
+  }, [isOnline, setStage, setSurveyFeedbackReady]);
 
   useEffect(() => {
     if (!isOnline || loadingNext) return;

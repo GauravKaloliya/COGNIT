@@ -194,7 +194,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
               setSurveyFeedbackReady={setSurveyFeedbackReady}
               setStage={setStage}
               fetchNextSurvey={fetchImage}
-              clearUserStorage={clearUserStorage}
             />
           );
         }

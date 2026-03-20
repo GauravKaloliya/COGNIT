@@ -4,8 +4,8 @@ import { useFinishedPage } from "../hooks/useFinishedPage";
 import { uiText } from "../utils/uiText";
 import DSButton from "../components/design/DSButton.jsx";
 
-export default function FinishedPage({ surveyCompleted, publicId }) {
-  const { isOnline, rewardAmountLabel, handleFinish } = useFinishedPage({ publicId });
+export default function FinishedPage({ surveyCompleted, publicId, clearUserStorage }) {
+  const { isOnline, rewardAmountLabel, handleFinish } = useFinishedPage({ publicId, clearUserStorage });
 
   return (
     <div className="panel finish-panel">
@@ -45,9 +45,14 @@ export default function FinishedPage({ surveyCompleted, publicId }) {
         <p className="debrief">{uiText("finish.debrief")}</p>
 
         <div className="page-actions sticky-mobile-actions inline-actions">
-          <DSButton variant="primary" onClick={handleFinish}>
+          <DSButton variant="primary" onClick={handleFinish} disabled={!isOnline}>
             {uiText("finish.finishButton")}
           </DSButton>
+          {!isOnline && (
+            <div className="banner warning">
+              <span>{uiText("finish.offlineFinishMessage")}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

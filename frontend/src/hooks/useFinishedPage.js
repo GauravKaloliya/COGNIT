@@ -13,9 +13,10 @@ export function useFinishedPage({ publicId, clearUserStorage }) {
   }, [publicId]);
 
   const handleFinish = useCallback(() => {
+    if (!isOnline) return;
     clearUserStorage?.(publicId);
     window.location.href = APP_ROUTES.home;
-  }, [clearUserStorage, publicId]);
+  }, [clearUserStorage, isOnline, publicId]);
 
   return {
     isOnline,
