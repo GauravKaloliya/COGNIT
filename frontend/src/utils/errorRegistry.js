@@ -99,9 +99,11 @@ const TRANSLATIONS = {
     'AUTH_003_0002': 'Verification code expired. Request a new one.',
     'AUTH_003_0003': 'Too many attempts. Request a new verification code.',
     'AUTH_003_0004': 'No verification code found. Please request a new one.',
-    'AUTH_003_0005': 'Failed to send verification code. Please try again.',
+    'AUTH_003_0005': 'Email service is temporarily unavailable. Please try again in a minute.',
     'AUTH_003_0006': 'Email does not match your registration details.',
     'AUTH_003_0007': 'Please enter a different email address to update.',
+    'AUTH_003_0009': 'Email service took too long to respond. Please try again.',
+    'AUTH_003_0010': 'Email service returned an error. Please try again.',
     'BOT_001_0001': 'Human verification failed. Please retry.',
     
     // =====================================================================
