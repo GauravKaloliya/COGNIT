@@ -53,7 +53,7 @@ from app.config import (
     PORT,
     IDEMPOTENCY_TTL_SECONDS,
 )
-from app.services import cleanup_idempotency_keys
+from app.services.idempotency_service import cleanup_idempotency_keys
 from app.logging_config import configure_logging
 
 # Initialize logging after imports are available.
