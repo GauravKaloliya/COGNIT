@@ -52,6 +52,7 @@ from .participant_service import (
 )
 from .email_otp_service import (
     build_email_otp_payload,
+    EmailOtpSendError,
     fetch_latest_email_otp,
     fetch_participant_by_public_email,
     fetch_participant_by_public_id,
@@ -138,6 +139,7 @@ __all__ = [
     "is_valid_public_id",
     "set_participant_cookies",
     "build_email_otp_payload",
+    "EmailOtpSendError",
     "fetch_latest_email_otp",
     "fetch_participant_by_public_email",
     "fetch_participant_by_public_id",
