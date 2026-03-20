@@ -109,6 +109,8 @@ export const runtimeConfig = {
     surveyFeedPendingFinish: "survey_feed_pending_finish_v1",
     telemetry: "client_telemetry_v1",
     telemetryBlocked: "client_telemetry_blocked_v1",
+    clearOnClose: "clear_on_close_v1",
+    sessionAlive: "session_alive_v1",
   },
   maxUploadMb: toFloat(import.meta.env.VITE_MAX_UPLOAD_MB, 8),
   paymentUploadMaxMb: toFloat(
