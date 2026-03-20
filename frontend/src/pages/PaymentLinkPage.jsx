@@ -13,6 +13,7 @@ export default function PaymentLinkPage({
   publicId,
   sessionId,
   addToast,
+  onParticipantNotFound,
 }) {
   const {
     MAX_UPLOAD_MB,
@@ -52,6 +53,7 @@ export default function PaymentLinkPage({
     publicId,
     sessionId,
     addToast,
+    onParticipantNotFound,
   });
 
   if (isLoading) {

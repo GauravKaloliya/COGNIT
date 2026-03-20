@@ -285,6 +285,35 @@ export function useAppController() {
     }
   }, [publicId]);
 
+  const handleParticipantNotFound = useCallback(() => {
+    const scope = String(publicId || "").trim() || CORE_SCOPE_ANON;
+    const keysToClear = [
+      runtimeConfig.storageKeys.publicId,
+      runtimeConfig.storageKeys.sessionId,
+      runtimeConfig.storageKeys.userDetailsSubmitted,
+      runtimeConfig.storageKeys.emailVerified,
+      runtimeConfig.storageKeys.paymentVerified,
+      runtimeConfig.storageKeys.paymentSubStage,
+      runtimeConfig.storageKeys.stage,
+    ];
+    keysToClear.forEach((key) => {
+      forEachStorageArea((area) => {
+        removeStoredKey(key, area);
+        removeStoredKey(makeScopedKey(key, scope), area);
+        removeStoredKey(makeScopedKey(key, CORE_SCOPE_ANON), area);
+      });
+    });
+
+    setPublicId("");
+    setSessionId("");
+    setUserDetailsSubmitted(false);
+    setEmailVerified(false);
+    setPaymentVerified(false);
+    setPaymentSubStage(APP_FLOW.paymentSubStages.content);
+    setStage(APP_FLOW.stages.userDetails);
+    addToast(getErrorMessage("ERR_PARTICIPANT_NOT_FOUND"), "warning");
+  }, [addToast, publicId]);
+
   useEffect(() => {
     if (stage === "email-verify") {
       setStage(APP_FLOW.stages.userDetails);
@@ -875,5 +904,6 @@ export function useAppController() {
     handlePaymentContentToLink,
     handleAppError,
     clearUserStorage,
+    handleParticipantNotFound,
   };
 }

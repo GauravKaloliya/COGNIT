@@ -41,7 +41,8 @@ export function usePaymentLinkPage({
   onNext, 
   publicId,
   sessionId,
-  addToast
+  addToast,
+  onParticipantNotFound,
 }) {
   const [paymentData, setPaymentData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -592,6 +593,10 @@ export function usePaymentLinkPage({
         return;
       }
       if (!isOperationCurrent(operationId)) return;
+      if (err?.code === "NF_001_0001" || err?.status === 404) {
+        onParticipantNotFound?.();
+        return;
+      }
       const errorMessage = timedOut
         ? uiText("payment.createTimeout")
         : err.code
@@ -619,7 +624,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, publicId, requestStartTimer, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, onParticipantNotFound, publicId, requestStartTimer, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
 
   useEffect(() => {
     return () => {
