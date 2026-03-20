@@ -7,7 +7,7 @@ import { usePaymentFlow } from "./usePaymentFlow";
 import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
-import { getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
+import { ALL_STORAGE_AREAS, getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
 import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
 import { ACTIVE_TAB_LOCK_FIELDS } from "../constants/fields";
 import { BROWSER_EVENTS } from "../constants/browser";
@@ -23,6 +23,8 @@ const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
 const MIN_SURVEYS_BEFORE_FINISH = 1;
 const CORE_STATE_STORAGE_AREA = "local";
 const CORE_STATE_STORAGE_AREA_SESSION = "session";
+const CLOSE_CLEAR_KEY = "cognit_clear_on_close_v1";
+const SESSION_ALIVE_KEY = "cognit_session_alive_v1";
 const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
@@ -42,6 +44,30 @@ const CORE_SCOPED_KEYS = [
   runtimeConfig.storageKeys.lastSubmissionSucceeded,
   runtimeConfig.storageKeys.shownImages,
 ];
+
+const STORAGE_PREFIX_KEYS = [
+  runtimeConfig.storageKeys.surveyDraftPrefix,
+  runtimeConfig.storageKeys.surveyDraftActivePrefix,
+];
+
+const clearAppStorage = (scopes = []) => {
+  const scopeIds = scopes.filter(Boolean);
+  const allKeys = Object.values(runtimeConfig.storageKeys);
+  ALL_STORAGE_AREAS.forEach((area) => {
+    const storage = area === CORE_STATE_STORAGE_AREA ? localStorage : sessionStorage;
+    allKeys.forEach((key) => {
+      removeStoredKey(key, area);
+      scopeIds.forEach((scope) => removeStoredKey(makeScopedKey(key, scope), area));
+    });
+    for (let i = storage.length - 1; i >= 0; i -= 1) {
+      const k = storage.key(i);
+      if (!k) continue;
+      if (STORAGE_PREFIX_KEYS.some((prefix) => k.startsWith(prefix))) {
+        storage.removeItem(k);
+      }
+    }
+  });
+};
 
 function getScopeId(publicId) {
   const value = String(publicId || "").trim();
@@ -204,6 +230,29 @@ export function useAppController() {
       setStage(APP_FLOW.stages.userDetails);
     }
   }, [stage, setStage]);
+
+  useEffect(() => {
+    let sameTab = false;
+    try {
+      sameTab = sessionStorage.getItem(SESSION_ALIVE_KEY) === "1";
+      sessionStorage.setItem(SESSION_ALIVE_KEY, "1");
+    } catch {
+      sameTab = true;
+    }
+
+    if (!sameTab) {
+      const shouldClear = localStorage.getItem(CLOSE_CLEAR_KEY) === "1";
+      if (shouldClear) {
+        clearAppStorage([CORE_SCOPE_ANON]);
+      }
+    }
+
+    try {
+      localStorage.removeItem(CLOSE_CLEAR_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
+  }, []);
 
   const claimActiveTabLock = useCallback(() => {
     const now = Date.now();
@@ -578,7 +627,21 @@ export function useAppController() {
     userDetailsSubmitted,
   ]);
 
-  // Intentionally do not clear storage on refresh/unload to preserve drafts.
+  useEffect(() => {
+    const handleExit = () => {
+      try {
+        localStorage.setItem(CLOSE_CLEAR_KEY, "1");
+      } catch {
+        // Ignore storage failures.
+      }
+    };
+    window.addEventListener("beforeunload", handleExit);
+    window.addEventListener("pagehide", handleExit);
+    return () => {
+      window.removeEventListener("beforeunload", handleExit);
+      window.removeEventListener("pagehide", handleExit);
+    };
+  }, []);
 
   useEffect(() => {
     const verifyStagePrerequisites = async () => {
