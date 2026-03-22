@@ -75,8 +75,6 @@ export default function PaymentLinkPage({
           variant="error"
           title={uiText("payment.panelUnavailableTitle")}
           message={uiText("payment.panelUnavailableMessage", { error })}
-          actionLabel={uiText("payment.reload")}
-          onAction={createPayment}
           disabled={offlineDisabled}
         />
         <div className="payment-next-steps">
@@ -86,11 +84,6 @@ export default function PaymentLinkPage({
               <li key={`err-step-${idx}`}>{step}</li>
             ))}
           </ul>
-        </div>
-        <div className="page-actions sticky-mobile-actions">
-          <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
-            {retryButtonLabel}
-          </DSButton>
         </div>
       </div>
     );
@@ -106,11 +99,6 @@ export default function PaymentLinkPage({
         </div>
         <div className="banner warning spaced">
           {error || getErrorMessage("PAY_001_0001")}
-        </div>
-        <div className="page-actions sticky-mobile-actions">
-          <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
-            {retryButtonLabel}
-          </DSButton>
         </div>
       </div>
     );
@@ -145,11 +133,6 @@ export default function PaymentLinkPage({
             ))}
           </ul>
         </div>
-        <div className="page-actions sticky-mobile-actions">
-          <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
-            {retryButtonLabel}
-          </DSButton>
-        </div>
       </div>
     );
   }
@@ -162,8 +145,6 @@ export default function PaymentLinkPage({
             variant="warning"
             title={uiText("payment.refreshTitle")}
             message={uiText("payment.refreshMessage")}
-            actionLabel={uiText("payment.reload")}
-            onAction={createPayment}
             disabled={offlineDisabled}
           />
         </div>
@@ -173,6 +154,14 @@ export default function PaymentLinkPage({
 
   return (
     <div className="panel payment-panel">
+      {offlineDisabled && (
+        <div className="payment-locked-overlay" aria-hidden="true">
+          <div className="payment-locked-card">
+            <div className="payment-locked-icon">🔒</div>
+            <p>{uiText("payment.offlineBanner")}</p>
+          </div>
+        </div>
+      )}
       {!isOnline && (
         <div className="banner warning">
           <span>{uiText("payment.offlineBanner")}</span>
@@ -222,9 +211,15 @@ export default function PaymentLinkPage({
                       href={paymentData[PAYMENT_API_FIELDS.upiLink]}
                       className="payment-upi-button"
                       onClick={(event) => {
+                        if (offlineDisabled) {
+                          event.preventDefault();
+                          return;
+                        }
                         event.preventDefault();
                         window.location.href = paymentData[PAYMENT_API_FIELDS.upiLink];
                       }}
+                      aria-disabled={offlineDisabled}
+                      tabIndex={offlineDisabled ? -1 : 0}
                       style={getButtonStyle()}
                     >
                       <span className="icon-badge" aria-hidden="true">📲</span>
@@ -330,7 +325,7 @@ export default function PaymentLinkPage({
                   }
                 }}
                 role="button"
-                tabIndex={verifying ? -1 : 0}
+                tabIndex={verifying || offlineDisabled ? -1 : 0}
                 aria-disabled={verifying || offlineDisabled}
                 onKeyDown={(event) => {
                   if (verifying || offlineDisabled) return;
