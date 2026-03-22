@@ -23,6 +23,7 @@ const MAX_UPLOAD_MB = runtimeConfig.paymentUploadMaxMb;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const PAYMENT_STATE_KEY = runtimeConfig.storageKeys.paymentState;
 const PAYMENT_TIMER_KEY = runtimeConfig.storageKeys.paymentTimerExpires;
+const PAYMENT_DEBUG_LOG_KEY = runtimeConfig.storageKeys.paymentDebugLog;
 const PAYMENT_TOKEN_KEY = runtimeConfig.storageKeys.paymentToken;
 const PAYMENT_ID_KEY = runtimeConfig.storageKeys.paymentId;
 const PAYMENT_STATE_SCHEMA_VERSION = runtimeConfig.paymentStateSchemaVersion;
@@ -59,10 +60,45 @@ export function usePaymentLinkPage({
   const [refreshNotice, setRefreshNotice] = useState("");
   const [refreshNoticeVariant, setRefreshNoticeVariant] = useState(PAYMENT_NOTICE_VARIANT.info);
   const [lastServerStatus, setLastServerStatus] = useState("");
-  const logDebug = useCallback((...args) => {
-    // eslint-disable-next-line no-console
-    console.error("[payment-link]", ...args);
+  const [debugLog, setDebugLog] = useState([]);
+  const logDebug = useCallback((message, data = null) => {
+    const entry = {
+      ts: new Date().toISOString(),
+      message: String(message || ""),
+      data: data ?? null,
+    };
+    setDebugLog((prev) => {
+      const next = [...prev, entry];
+      return next.slice(-40);
+    });
   }, []);
+
+  useEffect(() => {
+    try {
+      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
+      const stored = readExpiringValue(scopedPaymentDebugKey, null, { ...readOpts, area: "local" });
+      if (Array.isArray(stored) && stored.length) {
+        setDebugLog(stored.slice(-40));
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [scopedPaymentDebugKey]);
+
+  useEffect(() => {
+    if (!debugLog.length) return;
+    try {
+      writeExpiringValue(scopedPaymentDebugKey, debugLog, {
+        area: "local",
+        schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+        ttlMs: PAYMENT_STATE_TTL_MS,
+      });
+      removeStoredKey(PAYMENT_DEBUG_LOG_KEY, "session");
+      removeStoredKey(PAYMENT_DEBUG_LOG_KEY, "local");
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [debugLog, scopedPaymentDebugKey]);
   const isOnline = useOnlineStatus();
   const refreshNoticeShownRef = useRef(false);
   const fileInputRef = useRef(null);
@@ -88,6 +124,7 @@ export function usePaymentLinkPage({
   const paymentScope = String(publicId || "").trim() || "anon";
   const scopedPaymentStateKey = makeScopedKey(PAYMENT_STATE_KEY, paymentScope);
   const scopedPaymentTimerKey = makeScopedKey(PAYMENT_TIMER_KEY, paymentScope);
+  const scopedPaymentDebugKey = makeScopedKey(PAYMENT_DEBUG_LOG_KEY, paymentScope);
   const scopedPaymentIdKey = makeScopedKey(PAYMENT_ID_KEY, paymentScope);
   const scopedPaymentTokenKey = makeScopedKey(PAYMENT_TOKEN_KEY, paymentScope);
   const scopedPendingCreateKey = makeScopedKey(PAYMENT_PENDING_CREATE_KEY, paymentScope);
@@ -1872,6 +1909,7 @@ export function usePaymentLinkPage({
     refreshNotice,
     refreshNoticeVariant,
     lastServerStatus,
+    debugLog,
     isOnline,
     fileInputRef,
     timeRemaining,
