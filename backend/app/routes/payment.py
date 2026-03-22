@@ -154,6 +154,12 @@ def create_payment():
     ).strip()[:128]
     turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
 
+    logger.info(
+        "payment_create_request request_id=%s public_id=%s idempotency=%s",
+        getattr(g, "request_id", None),
+        str(public_id)[:12] if public_id else None,
+        bool(idempotency_key),
+    )
     if not public_id:
         return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
 
@@ -201,6 +207,13 @@ def create_payment():
             participant_id=participant_id,
             public_id=public_id,
             amount=amount,
+        )
+        logger.info(
+            "payment_create_success request_id=%s public_id=%s payment_id=%s expires_at=%s",
+            getattr(g, "request_id", None),
+            str(public_id)[:12],
+            str(payment_row[1]),
+            expires_str,
         )
         
         response_payload = build_payment_response_payload(
@@ -252,6 +265,12 @@ def create_payment():
             try:
                 existing = fetch_active_payment_for_reuse(db, participant_id)
                 if existing:
+                    logger.info(
+                        "payment_create_reuse request_id=%s public_id=%s payment_id=%s",
+                        getattr(g, "request_id", None),
+                        str(public_id)[:12],
+                        str(existing[1]),
+                    )
                     response_payload = build_reused_payment_response_payload(
                         db,
                         existing_payment_row=existing,
@@ -440,6 +459,11 @@ def verify_and_upload_payment(payment_public_id):
 @track_performance
 def get_payment_status(payment_public_id):
     """Get current payment status including expiry check."""
+    logger.info(
+        "payment_status_request request_id=%s payment_id=%s",
+        getattr(g, "request_id", None),
+        payment_public_id,
+    )
     try:
         db = get_db()
         row = fetch_payment_status_row(db, payment_public_id)
