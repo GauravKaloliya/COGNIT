@@ -51,25 +51,6 @@ const STORAGE_PREFIX_KEYS = [
   runtimeConfig.storageKeys.surveyDraftActivePrefix,
 ];
 
-const clearAppStorage = (scopes = []) => {
-  const scopeIds = scopes.filter(Boolean);
-  const allKeys = Object.values(runtimeConfig.storageKeys);
-  ALL_STORAGE_AREAS.forEach((area) => {
-    const storage = area === CORE_STATE_STORAGE_AREA ? localStorage : sessionStorage;
-    allKeys.forEach((key) => {
-      removeStoredKey(key, area);
-      scopeIds.forEach((scope) => removeStoredKey(makeScopedKey(key, scope), area));
-    });
-    for (let i = storage.length - 1; i >= 0; i -= 1) {
-      const k = storage.key(i);
-      if (!k) continue;
-      if (STORAGE_PREFIX_KEYS.some((prefix) => k.startsWith(prefix))) {
-        storage.removeItem(k);
-      }
-    }
-  });
-};
-
 function getScopeId(publicId) {
   const value = String(publicId || "").trim();
   return value || CORE_SCOPE_ANON;
@@ -363,6 +344,24 @@ export function useAppController() {
   }, [stage, setStage]);
 
   useEffect(() => {
+    let hasAlive = false;
+    try {
+      hasAlive = sessionStorage.getItem(SESSION_ALIVE_KEY) === "1";
+    } catch {
+      hasAlive = true;
+    }
+    if (!hasAlive) {
+      try {
+        const darkMode = localStorage.getItem(runtimeConfig.storageKeys.darkMode);
+        localStorage.clear();
+        sessionStorage.clear();
+        if (darkMode !== null) {
+          localStorage.setItem(runtimeConfig.storageKeys.darkMode, darkMode);
+        }
+      } catch {
+        // Ignore storage failures.
+      }
+    }
     try {
       sessionStorage.setItem(SESSION_ALIVE_KEY, "1");
     } catch {
@@ -719,22 +718,7 @@ export function useAppController() {
     userDetailsSubmitted,
   ]);
 
-  useEffect(() => {
-    const handleExit = () => {
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch {
-        // Ignore storage failures.
-      }
-    };
-    window.addEventListener("beforeunload", handleExit);
-    window.addEventListener("pagehide", handleExit);
-    return () => {
-      window.removeEventListener("beforeunload", handleExit);
-      window.removeEventListener("pagehide", handleExit);
-    };
-  }, []);
+  // Note: We no longer clear storage on unload/refresh to avoid wiping state on refresh.
 
   useEffect(() => {
     const verifyStagePrerequisites = async () => {

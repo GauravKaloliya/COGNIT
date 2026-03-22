@@ -136,6 +136,14 @@ export default function UserDetailsPage({
     return () => window.clearInterval(id);
   }, [emailDomains.length, showEmailGhost]);
 
+  React.useEffect(() => {
+    if (!showOtpField) return;
+    if (otpStatus === OTP_STATUS.sending || otpStatus === OTP_STATUS.verifying) return;
+    window.setTimeout(() => {
+      inputRefs.current[editableOtpIndex]?.focus();
+    }, runtimeConfig.focusAdvanceDelayMs);
+  }, [showOtpField, otpStatus, editableOtpIndex, OTP_STATUS.sending, OTP_STATUS.verifying]);
+
   return (
     <div className="panel panel-with-corner-status">
       <div className="page-top-actions inline">
