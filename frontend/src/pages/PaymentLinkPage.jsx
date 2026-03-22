@@ -29,7 +29,7 @@ export default function PaymentLinkPage({
     refreshNotice,
     refreshNoticeVariant,
     lastServerStatus,
-    debugLog,
+    restoreWarning,
     isOnline,
     fileInputRef,
     timeRemaining,
@@ -183,21 +183,14 @@ export default function PaymentLinkPage({
           <span>{refreshNotice}</span>
         </div>
       )}
+      {restoreWarning && (
+        <div className="banner warning">
+          <span>{restoreWarning}</span>
+        </div>
+      )}
       {lastServerStatus && (
         <div className="banner info">
           <span>Server status: {lastServerStatus}</span>
-        </div>
-      )}
-      {debugLog?.length > 0 && (
-        <div className="banner info">
-          <div className="debug-log">
-            <strong>Debug:</strong>
-            <pre className="debug-log-pre">
-              {debugLog.map((entry) => (
-                `${entry.ts} ${entry.message}${entry.data ? ` ${JSON.stringify(entry.data)}` : ""}`
-              )).join("\n")}
-            </pre>
-          </div>
         </div>
       )}
 
