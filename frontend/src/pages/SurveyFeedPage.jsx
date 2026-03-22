@@ -4,6 +4,9 @@ import PanelState from "../components/PanelState.jsx";
 import { useSurveyFeedPage } from "../hooks/useSurveyFeedPage";
 import { uiText } from "../utils/uiText";
 import DSButton from "../components/design/DSButton.jsx";
+import PageStatusBanners from "../components/PageStatusBanners.jsx";
+import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
+import PageActions from "../components/PageActions.jsx";
 
 export default function SurveyFeedPage({
   surveyCompleted = 0,
@@ -40,11 +43,10 @@ export default function SurveyFeedPage({
 
   return (
     <div className="panel survey-feed-panel">
-      {!isOnline && (
-        <div className="banner warning">
-          <span>{uiText("survey.feedOffline")}</span>
-        </div>
-      )}
+      <PageStatusBanners
+        isOnline={isOnline}
+        offlineMessage={uiText("survey.feedOffline")}
+      />
       <div className="guidance">
         <PanelState
           variant="success"
@@ -58,7 +60,7 @@ export default function SurveyFeedPage({
             Remember to write at least {MIN_WORDS} words per description.</em>
           </p>
         </div>
-        <div className="page-actions sticky-mobile-actions survey-feedback-actions inline-actions">
+        <PageActions sticky inline className="survey-feedback-actions">
           <DSButton
             className="primary"
             onClick={handleSurveyContinue}
@@ -69,12 +71,7 @@ export default function SurveyFeedPage({
               : !isOnline && pendingContinue && retryCountdownContinue > 0
                 ? uiText("survey.retryIn", { seconds: retryCountdownContinue })
                 : uiText("common.continue")}
-            {!isOnline && pendingContinue && retryCountdownContinue > 0 && (
-              <span className="button-badge">
-                <span className="button-spinner small" />
-                {retryCountdownContinue}s
-              </span>
-            )}
+            {!isOnline && pendingContinue && <ButtonRetryBadge seconds={retryCountdownContinue} />}
           </DSButton>
           <DSButton
             variant="ghost"
@@ -85,14 +82,9 @@ export default function SurveyFeedPage({
             {!isOnline && pendingFinish && retryCountdownFinish > 0
               ? uiText("survey.retryIn", { seconds: retryCountdownFinish })
               : uiText("common.finish")}
-            {!isOnline && pendingFinish && retryCountdownFinish > 0 && (
-              <span className="button-badge">
-                <span className="button-spinner small" />
-                {retryCountdownFinish}s
-              </span>
-            )}
+            {!isOnline && pendingFinish && <ButtonRetryBadge seconds={retryCountdownFinish} />}
           </DSButton>
-        </div>
+        </PageActions>
         {continueError && (
           <div className="card">
             <div className="card-header">

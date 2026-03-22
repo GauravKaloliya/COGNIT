@@ -5,6 +5,9 @@ import { useConsentPage } from "../hooks/useConsentPage";
 import { uiText } from "../utils/uiText.js";
 import { CONSENT_CONTENT } from "../content/consentContent";
 import DSButton from "../components/design/DSButton.jsx";
+import PageStatusBanners from "../components/PageStatusBanners.jsx";
+import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
+import PageActions from "../components/PageActions.jsx";
 
 export default function ConsentPage({ 
   publicId,
@@ -43,21 +46,13 @@ export default function ConsentPage({
       <div className="page-top-actions">
         <div className="page-top-banners" />
       </div>
-      {!isOnline && (
-        <div className="banner warning compact">
-          <span>{uiText("consent.offlineBanner")}</span>
-        </div>
-      )}
-      {draftRestored && (
-        <div className="banner info compact">
-          <span>{uiText("draft.restored")}</span>
-        </div>
-      )}
-      {saveError && (
-        <div className="banner warning compact">
-          <span>{saveError}</span>
-        </div>
-      )}
+      <PageStatusBanners
+        isOnline={isOnline}
+        offlineMessage={uiText("consent.offlineBanner")}
+        draftRestored={draftRestored}
+        saveError={saveError}
+        compact
+      />
       <h2 className="consent-title">{CONSENT_CONTENT.title}</h2>
       <p className="page-subtitle left no-bottom-margin">
         {CONSENT_CONTENT.subtitle}
@@ -148,24 +143,19 @@ export default function ConsentPage({
         </label>
       </div>
       
-      <div className="page-actions sticky-mobile-actions">
+      <PageActions sticky>
         <DSButton
           className="primary"
           onClick={handleSubmit}
           disabled={!systemReady || submitting || !consentChecked || !isOnline}
         >
           {submitting ? uiText("common.processing") : uiText("common.continue")}
-          {!isOnline && retryCountdown > 0 && (
-            <span className="button-badge">
-              <span className="button-spinner small" />
-              {retryCountdown}s
-            </span>
-          )}
+          {!isOnline && <ButtonRetryBadge seconds={retryCountdown} />}
         </DSButton>
         {!isOnline && retryCountdown > 0 && (
           <div className="helper-text">{uiText("survey.retryIn", { seconds: retryCountdown })}</div>
         )}
-      </div>
+      </PageActions>
     </div>
   );
 }

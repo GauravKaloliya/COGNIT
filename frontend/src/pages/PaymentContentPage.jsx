@@ -5,6 +5,9 @@ import DSButton from "../components/design/DSButton.jsx";
 import { usePaymentContentPage } from "../hooks/usePaymentContentPage";
 import { uiText } from "../utils/uiText";
 import { runtimeConfig } from "../config/runtime";
+import PageStatusBanners from "../components/PageStatusBanners.jsx";
+import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
+import PageActions from "../components/PageActions.jsx";
 
 export default function PaymentContentPage({ onNext }) {
   const {
@@ -29,11 +32,10 @@ export default function PaymentContentPage({ onNext }) {
 
   return (
     <div className="panel payment-panel">
-      {!isOnline && (
-        <div className="banner warning">
-          <span>{uiText("payment.offlineCreate")}</span>
-        </div>
-      )}
+      <PageStatusBanners
+        isOnline={isOnline}
+        offlineMessage={uiText("payment.offlineCreate")}
+      />
 
       <div className="payment-header">
         <div className="icon-badge payment-emoji" aria-hidden="true">🎁</div>
@@ -113,19 +115,14 @@ export default function PaymentContentPage({ onNext }) {
         </DSCard>
       </div>
 
-      <div className="page-actions sticky-mobile-actions">
+      <PageActions sticky>
         <DSButton variant="primary" onClick={handleContinue} disabled={!isOnline || continuing}>
           {!isOnline && pendingContinue && retryCountdown > 0
             ? uiText("survey.retryIn", { seconds: retryCountdown })
             : uiText("payment.continueToPayment")}
-          {!isOnline && pendingContinue && retryCountdown > 0 && (
-            <span className="button-badge">
-              <span className="button-spinner small" />
-              {retryCountdown}s
-            </span>
-          )}
+          {!isOnline && pendingContinue && <ButtonRetryBadge seconds={retryCountdown} />}
         </DSButton>
-      </div>
+      </PageActions>
     </div>
   );
 }
