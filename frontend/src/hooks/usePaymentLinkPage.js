@@ -536,7 +536,7 @@ export function usePaymentLinkPage({
     requestStartTimer(newExpiresAt);
     pausedTimerRef.current = null;
     saveTimerState(newExpiresAt);
-  }, [requestStartTimer, resumeTimerFromCurrentPayment]);
+  }, [requestStartTimer, resumeTimerFromCurrentPayment, saveTimerState]);
 
   const fetchPaymentQr = useCallback(async (paymentId, operationId) => {
     if (!paymentId) return;
@@ -1406,6 +1406,8 @@ export function usePaymentLinkPage({
     getServerRemainingMs,
     handleExpiry,
     resumePausedTimer,
+    calculateTimerValues,
+    saveTimerState,
     validateScreenshotQuality,
     savePaymentViewState,
     setPaymentStatus,

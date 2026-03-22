@@ -577,6 +577,7 @@ export function useUserDetailsPage({
     resolveLocation();
   }, [
     getBrowserPosition,
+    markLocationAutoSuccess,
     sanitizeLocationValue,
     setDemographics,
     setDetectedLocation,
