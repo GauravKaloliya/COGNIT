@@ -4,6 +4,9 @@ import { uiText } from "../utils/uiText";
 import { PRIOR_EXPERIENCE_GROUPS, PRIOR_EXPERIENCE_NONE } from "../content/userDetailsOptions";
 import DSButton from "../components/design/DSButton.jsx";
 import { runtimeConfig } from "../config/runtime";
+import PageStatusBanners from "../components/PageStatusBanners.jsx";
+import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
+import PageActions from "../components/PageActions.jsx";
 
 export default function UserDetailsPage({
   publicId,
@@ -12,12 +15,10 @@ export default function UserDetailsPage({
   onSubmit,
   onEmailVerified,
   addToast,
-  systemReady,
-  onBack
+  systemReady
 }) {
   const [emailFocused, setEmailFocused] = React.useState(false);
   const [emailPlaceholderIndex, setEmailPlaceholderIndex] = React.useState(0);
-  const [emailPlaceholderTick, setEmailPlaceholderTick] = React.useState(0);
   const {
     constants,
     isOnline,
@@ -131,7 +132,6 @@ export default function UserDetailsPage({
     if (emailDomains.length <= 1) return undefined;
     const id = window.setInterval(() => {
       setEmailPlaceholderIndex((prev) => (prev + 1) % emailDomains.length);
-      setEmailPlaceholderTick((prev) => prev + 1);
     }, runtimeConfig.emailPlaceholderRotateMs);
     return () => window.clearInterval(id);
   }, [emailDomains.length, showEmailGhost]);
@@ -139,30 +139,13 @@ export default function UserDetailsPage({
   return (
     <div className="panel panel-with-corner-status">
       <div className="page-top-actions inline">
-        {onBack && (
-          <DSButton
-            variant="ghost"
-            className="back-button"
-            onClick={onBack}
-          >
-            {uiText("common.backWithArrow")}
-          </DSButton>
-        )}
-        {draftRestored && (
-          <div className="banner info compact">
-            <span>{uiText("draft.restored")}</span>
-          </div>
-        )}
-        {!isOnline && (
-          <div className="banner warning compact">
-            <span>{uiText("user.offlineBanner")}</span>
-          </div>
-        )}
-        {saveError && (
-          <div className="banner warning compact">
-            <span>{saveError}</span>
-          </div>
-        )}
+        <PageStatusBanners
+          isOnline={isOnline}
+          offlineMessage={uiText("user.offlineBanner")}
+          draftRestored={draftRestored}
+          saveError={saveError}
+          compact
+        />
       </div>
       {null}
       <h2>{uiText("user.pageTitle")}</h2>
@@ -452,7 +435,7 @@ export default function UserDetailsPage({
         </div>
       </div>
 
-      <div className="page-actions sticky-mobile-actions">
+      <PageActions sticky>
         {errors.general && <span className="error-text">{errors.general}</span>}
         {!showOtpField && (
           <>
@@ -462,19 +445,14 @@ export default function UserDetailsPage({
               disabled={submitDisabled}
             >
               {submitLabel}
-              {!isOnline && retryCountdown > 0 && (
-                <span className="button-badge">
-                  <span className="button-spinner small" />
-                  {retryCountdown}s
-                </span>
-              )}
+              {!isOnline && <ButtonRetryBadge seconds={retryCountdown} />}
             </DSButton>
             {!isOnline && retryCountdown > 0 && (
               <div className="helper-text">{uiText("survey.retryIn", { seconds: retryCountdown })}</div>
             )}
           </>
         )}
-      </div>
+      </PageActions>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import PageSkeleton from "../components/PageSkeleton.jsx";
 import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import { usePaymentLinkPage } from "../hooks/usePaymentLinkPage";
 import DSButton from "../components/design/DSButton.jsx";
+import PageActions from "../components/PageActions.jsx";
 
 export default function PaymentLinkPage({
   onNext,
@@ -28,7 +29,6 @@ export default function PaymentLinkPage({
     failureReasons,
     refreshNotice,
     refreshNoticeVariant,
-    lastServerStatus,
     restoreWarning,
     isOnline,
     fileInputRef,
@@ -58,6 +58,18 @@ export default function PaymentLinkPage({
     onParticipantNotFound,
   });
 
+  const renderGlobalRetryAction = () => (
+    <PageActions>
+      <DSButton
+        variant="primary"
+        onClick={restartPayment}
+        disabled={offlineDisabled}
+      >
+        {uiText("survey.retryShort")}
+      </DSButton>
+    </PageActions>
+  );
+
   if (isLoading) {
     return (
       <PageSkeleton
@@ -85,6 +97,7 @@ export default function PaymentLinkPage({
             ))}
           </ul>
         </div>
+        {renderGlobalRetryAction()}
       </div>
     );
   }
@@ -94,19 +107,12 @@ export default function PaymentLinkPage({
       <div className="panel payment-panel">
         <div className="payment-header">
           <div className="icon-badge" aria-hidden="true">⏳</div>
+          <h2 className="payment-title">{uiText("payment.expiredHeading")}</h2>
         </div>
         <div className="banner warning spaced">
           {error || getErrorMessage("PAY_001_0001")}
         </div>
-        <div className="page-actions">
-          <DSButton
-            variant="primary"
-            onClick={restartPayment}
-            disabled={offlineDisabled}
-          >
-            {uiText("payment.startNewPayment")}
-          </DSButton>
-        </div>
+        {renderGlobalRetryAction()}
       </div>
     );
   }
@@ -140,6 +146,7 @@ export default function PaymentLinkPage({
             ))}
           </ul>
         </div>
+        {renderGlobalRetryAction()}
       </div>
     );
   }
@@ -167,11 +174,6 @@ export default function PaymentLinkPage({
       {restoreWarning && (
         <div className="banner warning">
           <span>{restoreWarning}</span>
-        </div>
-      )}
-      {lastServerStatus && (
-        <div className="banner info">
-          <span>Server status: {lastServerStatus}</span>
         </div>
       )}
 
@@ -370,7 +372,7 @@ export default function PaymentLinkPage({
                   {uiText("payment.keepTabOpen")}
                 </div>
 
-                <div className="page-actions sticky-mobile-actions payment-upload-actions">
+                <PageActions sticky className="payment-upload-actions">
                   <DSButton
                     variant="ghost"
                     className={uploadFile ? "danger" : ""}
@@ -398,7 +400,7 @@ export default function PaymentLinkPage({
                         ? retryButtonLabel
                         : uiText("payment.confirmPayment")}
                   </DSButton>
-                </div>
+                </PageActions>
 
               </div>
 
