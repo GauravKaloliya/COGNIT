@@ -36,6 +36,7 @@ export default function PaymentLinkPage({
     offlineDisabled,
     retryBlocked,
     retryButtonLabel,
+    retryInSeconds,
     formatTime,
     getTimerColor,
     getButtonStyle,
@@ -55,17 +56,21 @@ export default function PaymentLinkPage({
     onParticipantNotFound,
   });
 
-  const renderGlobalRetryAction = () => (
-    <PageActions>
-      <DSButton
-        variant="primary"
-        onClick={restartPayment}
-        disabled={offlineDisabled}
-      >
-        {uiText("survey.retryShort")}
-      </DSButton>
-    </PageActions>
-  );
+  const renderGlobalRetryAction = () => {
+    const isCoolingDown = retryInSeconds > 0;
+    if (!isCoolingDown) return null;
+    return (
+      <PageActions>
+        <DSButton
+          variant="primary"
+          onClick={restartPayment}
+          disabled
+        >
+          {uiText("common.tryAgainIn", { seconds: retryInSeconds })}
+        </DSButton>
+      </PageActions>
+    );
+  };
 
   if (isLoading) {
     return (
