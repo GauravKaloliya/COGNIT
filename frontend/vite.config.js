@@ -30,8 +30,9 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
       sourcemap: true,
-      minify: "terser",
-      cssMinify: true,
+      // Temporary debug build: disable minification in production to get usable stacks.
+      minify: mode === "production" ? false : "terser",
+      cssMinify: mode === "production" ? false : true,
       rollupOptions: {
         output: {
           manualChunks: {
