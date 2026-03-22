@@ -27,7 +27,7 @@ const TEXT = {
     "app.anotherTabTitle": "This session is open in another tab",
     "app.anotherTabMessage": "Looks like C.O.G.N.I.T. is already open in another tab or window. To keep your progress safe, this tab is read-only. Switch to the other tab, or close it and then return here to continue.",
     "app.reclaimTab": "Use This Tab Instead",
-    "app.footerCredit": "Created by Gaurav Kaloliya",
+    "app.footerCredit": "Created by C.O.G.N.I.T.",
     "toast.dismiss": "Dismiss",
     "common.tryAgainIn": "Try again in {seconds}s.",
     "common.continue": "Continue",
