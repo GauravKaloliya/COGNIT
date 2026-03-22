@@ -18,6 +18,7 @@ import {
   PAYMENT_VERIFICATION_REASON_CODES,
 } from "../constants/payment";
 import { PAYMENT_API_FIELDS } from "../constants/fields";
+import { requirePublicId } from "../utils/publicId";
 const MAX_UPLOAD_MB = runtimeConfig.paymentUploadMaxMb;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const PAYMENT_STATE_KEY = runtimeConfig.storageKeys.paymentState;
@@ -68,6 +69,7 @@ export function usePaymentLinkPage({
   const tokenRefreshAttemptedRef = useRef(false);
   const verifyAbortRef = useRef(null);
   const qrAbortRef = useRef(null);
+  const lastRejectedShaRef = useRef("");
 
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState(0);
@@ -76,6 +78,7 @@ export function usePaymentLinkPage({
   const timerTotalMsRef = useRef(runtimeConfig.paymentTimerDurationMs);
   const pendingTimerExpiresAtRef = useRef(null);
   const [qrVisible, setQrVisible] = useState(false);
+  const pausedTimerRef = useRef(null);
 
   const paymentScope = String(publicId || "").trim() || "anon";
   const scopedPaymentStateKey = makeScopedKey(PAYMENT_STATE_KEY, paymentScope);
@@ -320,8 +323,14 @@ export function usePaymentLinkPage({
   }, [publicId, scopedPaymentStateKey]);
 
   // Timer state persistence helpers
-  const saveTimerState = useCallback((expiresAt) => {
-    writeExpiringValue(scopedPaymentTimerKey, expiresAt, {
+  const saveTimerState = useCallback((expiresAt, paused = null) => {
+    const payload = {
+      expiresAt,
+      totalDurationMs: Math.max(1000, timerTotalMsRef.current || 1000),
+      pausedRemainingMs: paused?.remainingMs ?? null,
+      pausedAt: paused?.pausedAt ?? null,
+    };
+    writeExpiringValue(scopedPaymentTimerKey, payload, {
       area: "local",
       schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
       ttlMs: PAYMENT_STATE_TTL_MS,
@@ -355,7 +364,24 @@ export function usePaymentLinkPage({
         value = legacy;
       }
     }
-    return typeof value === "string" ? value : null;
+    if (typeof value === "string") {
+      return { expiresAt: value, totalDurationMs: null, pausedRemainingMs: null, pausedAt: null };
+    }
+    if (value && typeof value === "object") {
+      return {
+        expiresAt: value.expiresAt || null,
+        totalDurationMs: Number.isFinite(Number(value.totalDurationMs))
+          ? Number(value.totalDurationMs)
+          : null,
+        pausedRemainingMs: Number.isFinite(Number(value.pausedRemainingMs))
+          ? Number(value.pausedRemainingMs)
+          : null,
+        pausedAt: Number.isFinite(Number(value.pausedAt))
+          ? Number(value.pausedAt)
+          : null,
+      };
+    }
+    return null;
   }, [scopedPaymentTimerKey]);
 
   const stopTimer = useCallback((clearPersisted = false) => {
@@ -499,6 +525,19 @@ export function usePaymentLinkPage({
     handleExpiry();
   }, [paymentData, calculateTimerValues, requestStartTimer, handleExpiry]);
 
+  const resumePausedTimer = useCallback(() => {
+    const paused = pausedTimerRef.current;
+    if (!paused || !paused.remainingMs || paused.remainingMs <= 0) {
+      resumeTimerFromCurrentPayment();
+      return;
+    }
+    timerTotalMsRef.current = Math.max(1000, paused.totalDurationMs || timerTotalMsRef.current);
+    const newExpiresAt = new Date(Date.now() + paused.remainingMs).toISOString();
+    requestStartTimer(newExpiresAt);
+    pausedTimerRef.current = null;
+    saveTimerState(newExpiresAt);
+  }, [requestStartTimer, resumeTimerFromCurrentPayment]);
+
   const fetchPaymentQr = useCallback(async (paymentId, operationId) => {
     if (!paymentId) return;
     try {
@@ -524,8 +563,8 @@ export function usePaymentLinkPage({
 
   const createPayment = useCallback(async () => {
     const operationId = beginOperation();
-
-    if (!publicId) {
+    const effectivePublicId = requirePublicId(publicId);
+    if (!effectivePublicId) {
       setError(getErrorMessage(PAYMENT_ERROR_CODES.paymentUnavailable));
       return;
     }
@@ -553,7 +592,7 @@ export function usePaymentLinkPage({
           controller.abort();
         }, timeoutMs);
       }
-      const data = await endpoints.createPayment(publicId, { signal: controller.signal });
+      const data = await endpoints.createPayment(effectivePublicId, { signal: controller.signal });
       if (!isOperationCurrent(operationId)) return;
       writeExpiringValue(scopedPaymentIdKey, getPaymentField(data, PAYMENT_API_FIELDS.id), {
         area: "local",
@@ -579,7 +618,7 @@ export function usePaymentLinkPage({
       setQrVisible(false);
       requestStartTimer(getPaymentField(data, PAYMENT_API_FIELDS.expiresAt));
       savePaymentViewState({
-        [PAYMENT_STATE_FIELDS.publicId]: publicId,
+        [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
         [PAYMENT_STATE_FIELDS.paymentData]: data,
         [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.pending,
         [PAYMENT_STATE_FIELDS.failureReasons]: [],
@@ -608,7 +647,7 @@ export function usePaymentLinkPage({
         removeStoredKey(scopedPaymentIdKey, area);
       });
       savePaymentViewState({
-        [PAYMENT_STATE_FIELDS.publicId]: publicId,
+        [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
         [PAYMENT_STATE_FIELDS.paymentData]: null,
         [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.failed,
         [PAYMENT_STATE_FIELDS.failureReasons]: [],
@@ -651,6 +690,7 @@ export function usePaymentLinkPage({
   }, [detectMobileClient]);
 
   useEffect(() => {
+    if (verifying) return;
     if (!isOnline) {
       stopTimer();
       return;
@@ -658,20 +698,32 @@ export function usePaymentLinkPage({
     if (getPaymentField(paymentData, PAYMENT_API_FIELDS.expiresAt)) {
       resumeTimerFromCurrentPayment();
     }
-  }, [isOnline, paymentData, resumeTimerFromCurrentPayment, stopTimer]);
+  }, [isOnline, paymentData, resumeTimerFromCurrentPayment, stopTimer, verifying]);
 
   useEffect(() => {
     document.title = uiText("payment.documentTitle");
     let cancelled = false;
 
     const initialize = async () => {
-      if (!publicId) return;
-      if (createOnceRef.current && lastInitPublicIdRef.current === publicId) return;
+      const effectivePublicId = requirePublicId(publicId);
+      if (!effectivePublicId) return;
+      if (createOnceRef.current && lastInitPublicIdRef.current === effectivePublicId) return;
       createOnceRef.current = true;
-      lastInitPublicIdRef.current = publicId;
+      lastInitPublicIdRef.current = effectivePublicId;
       const restored = loadPaymentViewState();
       const restoredPaymentData = restored?.[PAYMENT_STATE_FIELDS.paymentData];
       const restoredStatus = restored?.[PAYMENT_STATE_FIELDS.paymentStatus] || PAYMENT_STATUS.pending;
+      const storedTimer = getTimerState();
+      if (storedTimer?.totalDurationMs) {
+        timerTotalMsRef.current = Math.max(1000, storedTimer.totalDurationMs);
+      }
+      if (storedTimer?.pausedRemainingMs && storedTimer?.pausedRemainingMs > 0) {
+        pausedTimerRef.current = {
+          remainingMs: storedTimer.pausedRemainingMs,
+          totalDurationMs: storedTimer.totalDurationMs || timerTotalMsRef.current,
+          pausedAt: storedTimer.pausedAt || Date.now(),
+        };
+      }
 
       if (getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id) && getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.expiresAt)) {
         if (isPaymentAmountMismatch(restoredPaymentData)) {
@@ -680,18 +732,18 @@ export function usePaymentLinkPage({
           if (!cancelled) await createPayment();
           return;
         }
-        if (!publicId) {
+        if (!effectivePublicId) {
           return;
         }
         if (statusAbortRef.current) statusAbortRef.current.abort();
         const statusController = new AbortController();
         statusAbortRef.current = statusController;
-        if (!getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token) && publicId) {
+        if (!getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token) && effectivePublicId) {
           notifySessionRefreshing();
           try {
             const minted = await endpoints.mintPaymentToken(
               getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id),
-              publicId,
+              effectivePublicId,
               sessionId,
               { signal: statusController.signal }
             );
@@ -750,7 +802,9 @@ export function usePaymentLinkPage({
               [PAYMENT_API_FIELDS.timeRemainingSeconds]: getPaymentField(statusData, PAYMENT_API_FIELDS.timeRemainingSeconds) ?? getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.timeRemainingSeconds),
             };
             const serverRemainingMs = getServerRemainingMs(statusData || mergedPaymentData);
-            timerTotalMsRef.current = Math.max(1000, serverRemainingMs || timerTotalMsRef.current);
+            if (!storedTimer?.totalDurationMs) {
+              timerTotalMsRef.current = Math.max(1000, serverRemainingMs || timerTotalMsRef.current);
+            }
             const { remaining, progress } = calculateTimerValues(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
             if (remaining > 0 && restoredStatus !== PAYMENT_STATUS.success) {
               if (cancelled) return;
@@ -771,7 +825,28 @@ export function usePaymentLinkPage({
             }
           }
         } catch {
-          // If status check fails, fall through and create a new payment.
+            const expiresAt = getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.expiresAt);
+            if (expiresAt) {
+              if (storedTimer?.totalDurationMs) {
+                timerTotalMsRef.current = Math.max(1000, storedTimer.totalDurationMs);
+              }
+              const { remaining, progress } = calculateTimerValues(expiresAt);
+              if (remaining > 0) {
+                if (cancelled) return;
+              setPaymentData(restoredPaymentData);
+              setPaymentStatus(restoredStatus);
+              setFailureReasons(Array.isArray(restored?.[PAYMENT_STATE_FIELDS.failureReasons]) ? restored[PAYMENT_STATE_FIELDS.failureReasons] : []);
+              setError(restored?.[PAYMENT_STATE_FIELDS.error] || null);
+              setTimeRemaining(remaining);
+              setTimerProgress(progress);
+              requestStartTimer(expiresAt);
+              if (!isMobile && !getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.qrBase64)) {
+                fetchPaymentQr(getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id), opVersionRef.current);
+              }
+              return;
+            }
+          }
+          // If status check fails and restore is not usable, fall through and create a new payment.
         } finally {
           statusAbortRef.current = null;
         }
@@ -794,6 +869,7 @@ export function usePaymentLinkPage({
     fetchPaymentQr,
     getServerRemainingMs,
     getVerificationErrorMessage,
+    getTimerState,
     handleExpiry,
     isMobile,
     isPaymentAmountMismatch,
@@ -811,9 +887,24 @@ export function usePaymentLinkPage({
 
   // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
+    if (verifying) return;
     if (!paymentData || timerIntervalRef.current) return;
 
-    const expiresAt = getTimerState();
+    const timerState = getTimerState();
+    const expiresAt = timerState?.expiresAt;
+    if (timerState?.totalDurationMs) {
+      timerTotalMsRef.current = Math.max(1000, timerState.totalDurationMs);
+    }
+    if (timerState?.pausedRemainingMs && timerState?.pausedRemainingMs > 0) {
+      pausedTimerRef.current = {
+        remainingMs: timerState.pausedRemainingMs,
+        totalDurationMs: timerState.totalDurationMs || timerTotalMsRef.current,
+        pausedAt: timerState.pausedAt || Date.now(),
+      };
+      setTimeRemaining(timerState.pausedRemainingMs);
+      setTimerProgress(Math.max(0, (timerState.pausedRemainingMs / Math.max(1000, timerTotalMsRef.current)) * 100));
+      return;
+    }
     if (expiresAt) {
       const { remaining } = calculateTimerValues(expiresAt);
       if (remaining > 0) {
@@ -827,7 +918,7 @@ export function usePaymentLinkPage({
     return () => {
       stopTimer();
     };
-  }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, startTimer, handleExpiry, stopTimer]);
+  }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, startTimer, handleExpiry, stopTimer, verifying]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -937,6 +1028,11 @@ export function usePaymentLinkPage({
   };
 
   const handleUploadAndFinalize = useCallback(async () => {
+    const effectivePublicId = requirePublicId(publicId);
+    if (!effectivePublicId) {
+      showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.paymentUnavailable));
+      return;
+    }
     if (!isOnline) {
       showRetryHintError(uiText("payment.offlineVerify"));
       setPendingFlag(scopedPendingVerifyKey);
@@ -956,12 +1052,24 @@ export function usePaymentLinkPage({
     }
 
     // Pause timer while verification is running; keep persisted expiry to resume on errors.
+    const currentExpiresAt = getPaymentField(paymentData, PAYMENT_API_FIELDS.expiresAt);
+    if (currentExpiresAt) {
+      const { remaining } = calculateTimerValues(currentExpiresAt);
+      pausedTimerRef.current = {
+        remainingMs: remaining,
+        totalDurationMs: timerTotalMsRef.current,
+        pausedAt: Date.now(),
+      };
+      setTimeRemaining(remaining);
+      saveTimerState(currentExpiresAt, pausedTimerRef.current);
+    }
     stopTimer();
     setVerifying(true);
     setError(null);
     setRetryInSeconds(0);
 
     try {
+      const selectedFileHash = await calculateSha256(selectedFile);
       // Server-authoritative pre-check before upload/verify.
       if (statusAbortRef.current) statusAbortRef.current.abort();
       const precheckController = new AbortController();
@@ -970,12 +1078,12 @@ export function usePaymentLinkPage({
       const ensurePaymentToken = async () => {
         const existing = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
         if (existing) return existing;
-        if (!publicId) return "";
+        if (!effectivePublicId) return "";
         if (tokenRefreshAttemptedRef.current) return "";
         tokenRefreshAttemptedRef.current = true;
         const minted = await endpoints.mintPaymentToken(
           getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
-          publicId,
+          effectivePublicId,
           sessionId,
           { signal: precheckController.signal }
         );
@@ -1027,23 +1135,31 @@ export function usePaymentLinkPage({
         return;
       }
       if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) === PAYMENT_STATUS.rejectedFraud) {
-        const reasons = getFailureReasons(precheckStatus);
-        const specificError = getVerificationErrorMessage(reasons);
-        setPaymentStatus(PAYMENT_STATUS.rejectedFraud);
-        setFailureReasons(reasons);
-        showRetryHintError(specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
-        savePaymentViewState({
-          [PAYMENT_STATE_FIELDS.publicId]: publicId,
-          [PAYMENT_STATE_FIELDS.paymentData]: paymentData,
-          [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.rejectedFraud,
-          [PAYMENT_STATE_FIELDS.failureReasons]: reasons,
-          [PAYMENT_STATE_FIELDS.error]: specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected),
-        });
-        return;
+        if (selectedFileHash && lastRejectedShaRef.current && selectedFileHash !== lastRejectedShaRef.current) {
+          setFailureReasons([]);
+          setPaymentStatus(PAYMENT_STATUS.pending);
+          setError(null);
+          // Allow re-verify on the same payment with a new screenshot.
+        } else {
+          const reasons = getFailureReasons(precheckStatus);
+          const specificError = getVerificationErrorMessage(reasons);
+          setPaymentStatus(PAYMENT_STATUS.rejectedFraud);
+          setFailureReasons(reasons);
+          showRetryHintError(specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
+          lastRejectedShaRef.current = selectedFileHash || lastRejectedShaRef.current;
+          savePaymentViewState({
+            [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
+            [PAYMENT_STATE_FIELDS.paymentData]: paymentData,
+            [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.rejectedFraud,
+            [PAYMENT_STATE_FIELDS.failureReasons]: reasons,
+            [PAYMENT_STATE_FIELDS.error]: specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected),
+          });
+          return;
+        }
       }
       if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) !== PAYMENT_STATUS.pending && getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) !== PAYMENT_STATUS.processing) {
         showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.invalidState));
-        resumeTimerFromCurrentPayment();
+        resumePausedTimer();
         return;
       }
       const serverRemainingMs = getServerRemainingMs(precheckStatus);
@@ -1064,14 +1180,14 @@ export function usePaymentLinkPage({
       if (!isOperationCurrent(operationId)) return;
       if (!qualityCheck.ok) {
         showRetryHintError(qualityCheck.message || getErrorMessage(PAYMENT_ERROR_CODES.invalidImage));
-        resumeTimerFromCurrentPayment();
+        resumePausedTimer();
         setVerifying(false);
         return;
       }
 
       // Extract file extension from uploaded file
       const fileExtension = selectedFile.name.split(".").pop().toLowerCase();
-      const sha256 = await calculateSha256(selectedFile);
+      const sha256 = selectedFileHash;
       if (!isOperationCurrent(operationId)) return;
 
       let paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || "";
@@ -1139,8 +1255,9 @@ export function usePaymentLinkPage({
         } else if (err?.status === 409) {
           // Known conflict errors (e.g., reused/rejected screenshot). Show UI message and stop.
           showRetryHintError(err?.message || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
+          lastRejectedShaRef.current = selectedFileHash || lastRejectedShaRef.current;
           setVerifying(false);
-          resumeTimerFromCurrentPayment();
+          resumePausedTimer();
           return;
         } else {
           throw err;
@@ -1158,18 +1275,21 @@ export function usePaymentLinkPage({
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
         showRetryHintError(specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
+        lastRejectedShaRef.current = selectedFileHash || lastRejectedShaRef.current;
         savePaymentViewState({
-          [PAYMENT_STATE_FIELDS.publicId]: publicId,
+          [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
           [PAYMENT_STATE_FIELDS.paymentData]: paymentData,
           [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.rejectedFraud,
           [PAYMENT_STATE_FIELDS.failureReasons]: reasons,
           [PAYMENT_STATE_FIELDS.error]: specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected),
         });
+        resumePausedTimer();
         return;
       }
 
       if (verification?.verified && verification.status === PAYMENT_STATUS.success) {
         setPaymentStatus(PAYMENT_STATUS.success);
+        pausedTimerRef.current = null;
         forEachStorageArea((area) => {
           removeStoredKey(PAYMENT_ID_KEY, area);
           removeStoredKey(scopedPaymentIdKey, area);
@@ -1199,7 +1319,7 @@ export function usePaymentLinkPage({
         const specificError = getVerificationErrorMessage(reasons);
         showRetryHintError(specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
         savePaymentViewState({
-          [PAYMENT_STATE_FIELDS.publicId]: publicId,
+          [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
           [PAYMENT_STATE_FIELDS.paymentData]: paymentData,
           [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.rejectedFraud,
           [PAYMENT_STATE_FIELDS.failureReasons]: reasons,
@@ -1228,13 +1348,13 @@ export function usePaymentLinkPage({
       if (verification?.status === PAYMENT_STATUS.error) {
         setVerifying(false);
         showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.verificationFailed));
-        resumeTimerFromCurrentPayment();
+        resumePausedTimer();
         return;
       }
 
       setVerifying(false);
       showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.verificationUnknown));
-      resumeTimerFromCurrentPayment();
+      resumePausedTimer();
     } catch (err) {
       if (err?.code === REQUEST_CODES.aborted) {
         return;
@@ -1264,7 +1384,7 @@ export function usePaymentLinkPage({
       } else {
         showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.verificationUnknown));
       }
-      resumeTimerFromCurrentPayment();
+      resumePausedTimer();
 
     } finally {
       verifyAbortRef.current = null;
@@ -1285,7 +1405,7 @@ export function usePaymentLinkPage({
     getVerificationErrorMessage,
     getServerRemainingMs,
     handleExpiry,
-    resumeTimerFromCurrentPayment,
+    resumePausedTimer,
     validateScreenshotQuality,
     savePaymentViewState,
     setPaymentStatus,
@@ -1373,8 +1493,10 @@ export function usePaymentLinkPage({
   ]);
 
   useEffect(() => {
+    const effectivePublicId = requirePublicId(publicId);
+    if (!effectivePublicId) return;
     savePaymentViewState({
-      [PAYMENT_STATE_FIELDS.publicId]: publicId,
+      [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
       [PAYMENT_STATE_FIELDS.paymentData]: paymentData,
       [PAYMENT_STATE_FIELDS.paymentStatus]: paymentStatus,
       [PAYMENT_STATE_FIELDS.failureReasons]: failureReasons,

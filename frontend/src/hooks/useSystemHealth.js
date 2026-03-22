@@ -8,6 +8,7 @@ import { APP_FLOW } from "../config/appFlow";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { API_ROUTES } from "../constants/routes";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
+import { requirePublicId } from "../utils/publicId";
 
 export function useSystemHealth({
   publicId,
@@ -173,13 +174,15 @@ export function useSystemHealth({
   useEffect(() => {
     const verifyPaymentForSurvey = async () => {
       if (stage === APP_FLOW.stages.survey && !paymentVerified && systemReady && !pauseSurveyPaymentGuard) {
+        const effectivePublicId = requirePublicId(publicId);
+        if (!effectivePublicId) return;
         try {
           if (paymentStatusAbortRef.current) {
             paymentStatusAbortRef.current.abort();
           }
           const controller = new AbortController();
           paymentStatusAbortRef.current = controller;
-          const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId, { signal: controller.signal });
+          const paymentStatus = await endpoints.getParticipantPaymentStatus(effectivePublicId, { signal: controller.signal });
           if (pauseSurveyPaymentGuard) return;
           if (paymentStatus.is_verified) {
             setPaymentVerified(true);

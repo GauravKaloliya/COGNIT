@@ -32,6 +32,7 @@ export default function UserDetailsPage({
     locationPermissionDenied,
     locationPermissionState,
     manualLocationAllowed,
+    locationAutoSucceeded,
     userEditedLocationRef,
     isFormComplete,
     detectLocation,
@@ -40,6 +41,7 @@ export default function UserDetailsPage({
     showOtpField,
     otpStatus,
     otpError,
+    otpExpirySeconds,
     resendSeconds,
     emailInputDisabled,
     inputsLocked,
@@ -113,6 +115,16 @@ export default function UserDetailsPage({
   );
   const firstEmptyOtpIndex = otpDigits.findIndex((digit) => !digit);
   const editableOtpIndex = firstEmptyOtpIndex === -1 ? otpLength - 1 : firstEmptyOtpIndex;
+  const formatOtpTimer = (seconds) => {
+    const clamped = Math.max(0, Number(seconds || 0));
+    const mins = Math.floor(clamped / 60);
+    const secs = Math.floor(clamped % 60);
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  };
+  const showOtpExpiry = showOtpField && otpStatus !== OTP_STATUS.sending;
+  const otpExpiryMessage = otpExpirySeconds > 0
+    ? uiText("email.otpExpiresIn", { time: formatOtpTimer(otpExpirySeconds) })
+    : uiText("email.otpExpired");
 
   React.useEffect(() => {
     if (!showEmailGhost) return undefined;
@@ -298,6 +310,7 @@ export default function UserDetailsPage({
               ))}
             </div>
             {otpError && <span className="error-text">{otpError}</span>}
+            {showOtpExpiry && <span className="helper-text warning">{otpExpiryMessage}</span>}
             <div className="inline-actions">
               <DSButton
                 variant="ghost"
@@ -377,7 +390,7 @@ export default function UserDetailsPage({
               handleFieldBlur("location", e.target.value);
             }}
           />
-          {locationPermissionState !== "granted" && !locating && (
+          {locationPermissionState !== "granted" && !locating && !locationAutoSucceeded && (
             <DSButton
               type="button"
               variant="ghost"
@@ -388,8 +401,8 @@ export default function UserDetailsPage({
               {uiText("user.enableLocation")}
             </DSButton>
           )}
-          {locationStatus && <span className="checking-text">{locationStatus}</span>}
-          {locationPermissionDenied && (
+          {locationStatus && !locationAutoSucceeded && <span className="checking-text">{locationStatus}</span>}
+          {locationPermissionDenied && !locationAutoSucceeded && (
             <span className="helper-text warning">{uiText("user.locationPermissionHelp")}</span>
           )}
           {errors.location && <span className="error-text">{errors.location}</span>}
@@ -441,21 +454,25 @@ export default function UserDetailsPage({
 
       <div className="page-actions sticky-mobile-actions">
         {errors.general && <span className="error-text">{errors.general}</span>}
-        <DSButton
-          variant="primary"
-          onClick={handleSubmit}
-          disabled={submitDisabled}
-        >
-          {submitLabel}
-          {!isOnline && retryCountdown > 0 && (
-            <span className="button-badge">
-              <span className="button-spinner small" />
-              {retryCountdown}s
-            </span>
-          )}
-        </DSButton>
-        {!isOnline && retryCountdown > 0 && (
-          <div className="helper-text">{uiText("survey.retryIn", { seconds: retryCountdown })}</div>
+        {!showOtpField && (
+          <>
+            <DSButton
+              variant="primary"
+              onClick={handleSubmit}
+              disabled={submitDisabled}
+            >
+              {submitLabel}
+              {!isOnline && retryCountdown > 0 && (
+                <span className="button-badge">
+                  <span className="button-spinner small" />
+                  {retryCountdown}s
+                </span>
+              )}
+            </DSButton>
+            {!isOnline && retryCountdown > 0 && (
+              <div className="helper-text">{uiText("survey.retryIn", { seconds: retryCountdown })}</div>
+            )}
+          </>
         )}
       </div>
     </div>
