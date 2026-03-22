@@ -26,8 +26,8 @@ export const runtimeConfig = {
   countdownTickMs: 1000,
   uiStateSchemaVersion: 1,
   uiStateTtlMs: 3600000,
-  // Shorter TTL for personally-identifiable fields persisted in local state.
-  piiStateTtlMs: 900000,
+  // Auto-clean all stored state after 1 hour.
+  piiStateTtlMs: 3600000,
   activeTabLockSchemaVersion: 1,
   activeTabHeartbeatMs: 4000,
   activeTabStaleMs: 15000,
@@ -44,7 +44,7 @@ export const runtimeConfig = {
   turnstileEnabled: false,
   turnstileSiteKey: "",
   paymentStateSchemaVersion: 1,
-  paymentStateTtlMs: 900000,
+  paymentStateTtlMs: 3600000,
   paymentCreateTimeoutMs: 15000,
   paymentTimerDurationMs: 300000,
   paymentTimerTickMs: 1000,
@@ -123,10 +123,10 @@ export const runtimeConfig = {
   minScreenshotHeight: 640,
   minLaplacianVariance: 22,
   surveyDraftSchemaVersion: 1,
-  // Drafts are cleared on successful submit/finish, not by TTL.
-  surveyDraftTtlMs: null,
+  // Drafts auto-expire after 1 hour.
+  surveyDraftTtlMs: 3600000,
   consentDraftSchemaVersion: 1,
-  consentDraftTtlMs: 900000,
+  consentDraftTtlMs: 3600000,
   disableCopyPaste: toBool(import.meta.env.VITE_DISABLE_COPY_PASTE, true),
   minWords: toInt(import.meta.env.VITE_MIN_WORDS, 60),
   minDescriptionLength: toInt(import.meta.env.VITE_MIN_DESCRIPTION_LENGTH, 60),
