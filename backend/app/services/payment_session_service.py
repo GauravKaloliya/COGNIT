@@ -212,6 +212,9 @@ def create_payment_record(
     participant_id: int,
     public_id: str,
     amount: float,
+    upi_account_id: int | None = None,
+    upi_vpa: str | None = None,
+    upi_name: str | None = None,
 ):
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)
     expires_str = expires_at.isoformat()
@@ -220,6 +223,9 @@ def create_payment_record(
     payment_row = db.execute(QUERY_INSERT_PAYMENT_RECORD, {
         "pid": participant_id,
         "pub_id": payment_public_id,
+        "upi_account_id": upi_account_id,
+        "upi_vpa": upi_vpa,
+        "upi_name": upi_name,
         "amt": amount,
         "sig": signature,
         "exp": expires_at,
@@ -240,11 +246,18 @@ def build_payment_response_payload(
     expires_at,
     expires_str: str,
     signature: str,
+    upi_vpa: str | None = None,
+    upi_name: str | None = None,
     device_fingerprint: str = "",
     session_id: str = "",
     time_remaining_seconds: int = PAYMENT_EXPIRY_SECONDS,
 ):
-    upi_link = generate_upi_link(amount, payment_ref=str(payment_public_id))
+    upi_link = generate_upi_link(
+        amount,
+        payment_ref=str(payment_public_id),
+        upi_vpa=upi_vpa,
+        upi_name=upi_name,
+    )
     return {
         RESPONSE_KEY_PAYMENT_ID: str(payment_public_id),
         RESPONSE_KEY_AMOUNT: amount,
@@ -283,7 +296,16 @@ def build_reused_payment_response_payload(
     participant_session_id: str,
     device_fingerprint: str,
 ):
-    existing_payment_row_id, existing_payment_id, existing_amount, existing_expires_at, existing_signature = existing_payment_row
+    (
+        existing_payment_row_id,
+        existing_payment_id,
+        existing_amount,
+        existing_expires_at,
+        existing_signature,
+        existing_upi_account_id,
+        existing_upi_vpa,
+        existing_upi_name,
+    ) = existing_payment_row
     remaining_seconds = max(
         0,
         int((existing_expires_at - datetime.now(timezone.utc)).total_seconds())
@@ -298,6 +320,8 @@ def build_reused_payment_response_payload(
         expires_at=existing_expires_at or (datetime.now(timezone.utc) + timedelta(seconds=PAYMENT_EXPIRY_SECONDS)),
         expires_str=existing_expires_at.isoformat() if existing_expires_at else None,
         signature=existing_signature,
+        upi_vpa=existing_upi_vpa,
+        upi_name=existing_upi_name,
         device_fingerprint=device_fingerprint,
         session_id=participant_session_id or "",
         time_remaining_seconds=remaining_seconds,

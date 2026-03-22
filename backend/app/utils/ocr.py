@@ -18,6 +18,7 @@ from PIL import Image
 from app.config import (
     MIN_OCR_CONFIDENCE,
     ALLOWED_APPS,
+    FAILURE_KEYWORDS,
     S3_BUCKET_NAME,
     AWS_REGION,
     AWS_ACCESS_KEY_ID,
@@ -25,6 +26,7 @@ from app.config import (
     PAYMENT_SCREENSHOT_TIMEZONE,
     PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS,
     PAYMENT_VERIFICATION_TIME_GRACE_SECONDS,
+    SUCCESS_KEYWORDS,
 )
 from app.constants.ocr_constants import (
     APP_BHIM,
@@ -38,9 +40,11 @@ from app.constants.ocr_constants import (
     FAILURE_INVALID_DATETIME_BHIM,
     FAILURE_INVALID_DATETIME_GPAY,
     FAILURE_INVALID_DATETIME_PAYTM,
+    FAILURE_FAILURE_INDICATOR,
     FAILURE_MISSING_BHIM_LABEL,
     FAILURE_MISSING_PAID_BHIM,
     FAILURE_MISSING_PAID_TO_COGNIT,
+    FAILURE_MISSING_SUCCESS,
     FAILURE_MISSING_PAYTM_LABEL,
     FAILURE_TIME_OUT_OF_RANGE,
     FAILURE_UNRECOGNIZED_APP,
@@ -419,6 +423,14 @@ def verify_payment_screenshot(
     # Rule 2: Amount must be exactly ₹1 / Rs.1 / rs 1 (optionally 1.00).
     if REGEX_AMOUNT.search(lower) is None:
         failures.append(FAILURE_INVALID_AMOUNT)
+
+    # Rule 3: Payment should show a successful state and not a failure state.
+    has_success = any(keyword in lower for keyword in (SUCCESS_KEYWORDS or []))
+    has_failure = any(keyword in lower for keyword in (FAILURE_KEYWORDS or []))
+    if has_failure:
+        failures.append(FAILURE_FAILURE_INDICATOR)
+    if not has_success:
+        failures.append(FAILURE_MISSING_SUCCESS)
 
     # Rule 3: app-specific date+time must be parsable/unambiguous and within
     # either the payment session window (preferred) or fallback absolute diff window.

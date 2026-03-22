@@ -33,16 +33,18 @@ QUERY_MARK_EXISTING_ACTIVE_PAYMENTS_FAILED = text("""
 
 QUERY_INSERT_PAYMENT_RECORD = text("""
     INSERT INTO payments (
-        participant_id, public_id, amount, signature, expires_at, timer_activated_at, detected_app, metadata
+        participant_id, public_id, upi_account_id, upi_vpa, upi_name,
+        amount, signature, expires_at, timer_activated_at, detected_app, metadata
     ) VALUES (
-        :pid, :pub_id, :amt, :sig, :exp, :timer_time, :detected_app,
+        :pid, :pub_id, :upi_account_id, :upi_vpa, :upi_name,
+        :amt, :sig, :exp, :timer_time, :detected_app,
         '{}'::jsonb
     )
     RETURNING id, public_id
 """)
 
 QUERY_FETCH_ACTIVE_PAYMENT_FOR_REUSE = text("""
-    SELECT id, public_id, amount, expires_at, signature
+    SELECT id, public_id, amount, expires_at, signature, upi_account_id, upi_vpa, upi_name
     FROM payments
     WHERE participant_id = :pid
       AND status IN (:pending_status, :processing_status)

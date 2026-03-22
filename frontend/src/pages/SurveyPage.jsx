@@ -20,7 +20,6 @@ export default function SurveyPage({
   surveyCompleted = 0,
   onSubmit,
   fetchError = null,
-  onRetry,
   isFetchingImage = false,
 }) {
   const {
@@ -64,7 +63,6 @@ export default function SurveyPage({
     imageSrc,
     cacheBustedSrc,
     hasUsableSurveyImage,
-    handleRetryImage,
     handleSubmit,
     handleImageLoad,
     handleImageError,

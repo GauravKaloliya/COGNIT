@@ -19,6 +19,8 @@ from app.config import (
     MIN_WORD_COUNT,
     TOO_FAST_SECONDS,
     ATTENTION_HARD_FLAG_CONSEC_FAILS,
+    ATTENTION_FLAG_MIN_CHECKS,
+    ATTENTION_FLAG_THRESHOLD,
     ATTENTION_MIN_DISTINCT_WORDS,
     ATTENTION_MIN_CHAR_LENGTH,
     PRIORITY_WORD_THRESHOLD,
@@ -387,6 +389,7 @@ def submit():
         consecutive_failures = 0
         recent_attention_score = None
         hard_flag_triggered = False
+        soft_flag_triggered = False
 
         if is_attention:
             monitor = participant_meta.get(PARTICIPANT_META_KEY_ATTENTION_MONITOR, {})
@@ -403,6 +406,10 @@ def submit():
 
             recent_attention_score = round(sum(1 for x in recent_results if x) / len(recent_results), 4)
             hard_flag_triggered = consecutive_failures >= ATTENTION_HARD_FLAG_CONSEC_FAILS
+            soft_flag_triggered = (
+                len(recent_results) >= ATTENTION_FLAG_MIN_CHECKS
+                and recent_attention_score < float(ATTENTION_FLAG_THRESHOLD)
+            )
 
             participant_meta[PARTICIPANT_META_KEY_ATTENTION_MONITOR] = {
                 PARTICIPANT_META_KEY_RECENT_RESULTS: recent_results,
@@ -426,7 +433,12 @@ def submit():
                 distinct_word_count=distinct_word_count,
                 description_fingerprint=description_fingerprint,
             )
-            update_participant_attention_flag(db, participant_id=participant_id, hard_flag_triggered=hard_flag_triggered)
+            update_participant_attention_flag(
+                db,
+                participant_id=participant_id,
+                hard_flag_triggered=hard_flag_triggered,
+                soft_flag_triggered=soft_flag_triggered,
+            )
 
         upsert_participant_activity_stats(
             db,

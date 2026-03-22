@@ -92,6 +92,7 @@ export default function PaymentContentPage({ onNext }) {
             <ul className="payment-checklist">
               <li><span aria-hidden="true">✅</span> {uiText("payment.contentChecklist1", { words: runtimeConfig.priorityDescWordTarget })}</li>
               <li><span aria-hidden="true">✅</span> {uiText("payment.contentChecklist2", { rounds: runtimeConfig.priorityMinRounds })}</li>
+              <li><span aria-hidden="true">✅</span> {uiText("payment.contentChecklist3", { submissions: runtimeConfig.priorityMinSubmissions })}</li>
             </ul>
             <p className="payment-note">{uiText("payment.priorityOutcome")}</p>
           </div>

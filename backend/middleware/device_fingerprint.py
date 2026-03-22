@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from flask import request, g
 from sqlalchemy import text
 
-from app.config import DEVICE_FINGERPRINT_SALTS
+from app.config import DEVICE_FINGERPRINT_SALTS, ENABLE_DEVICE_FINGERPRINTING
 
 _FINGERPRINT_HISTORY_CACHE = {}
 _FINGERPRINT_HISTORY_CACHE_TTL_SECONDS = 300
@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 def _should_run_fingerprinting() -> bool:
+    if not ENABLE_DEVICE_FINGERPRINTING:
+        return False
     path = (request.path or "").lower()
     # Restrict expensive fingerprint DB work to fraud-sensitive write flows.
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:

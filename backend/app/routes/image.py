@@ -2,7 +2,7 @@
 
 import time
 
-from flask import request, g, current_app
+from flask import request, g
 from sqlalchemy import text
 
 from app.constants.log_messages import LOG_RANDOM_IMAGE_FAILED
@@ -11,7 +11,7 @@ from app.database import get_db
 from app.utils.helpers import create_error_response, success_response
 from app.utils.decorators import track_performance
 from app.utils.runtime_cache import resolve_participant_id
-from app.config import ATTENTION_INTERVAL
+from app.config import ATTENTION_INTERVAL, FORCE_ATTENTION_IMAGES
 from app.services.image_service import (
     select_random_image_for_participant,
 )
@@ -59,8 +59,8 @@ def random_image():
                 """), {"pid": participant_id}).scalar() or 0
                 should_prioritize_attention = ((total_submissions + 1) % ATTENTION_INTERVAL) == 0
 
-        # Dev-only escape hatch to force attention images for testing.
-        if force_attention_requested and (current_app.debug or current_app.testing):
+        # Safe override to force attention images (gated by env).
+        if force_attention_requested and FORCE_ATTENTION_IMAGES:
             force_attention = True
 
         row = select_random_image_for_participant(
