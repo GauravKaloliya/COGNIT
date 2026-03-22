@@ -191,7 +191,7 @@ export default function UserDetailsPage({
             {showEmailGhost && (
               <span className="ghost-placeholder simple">
                 <span className="ghost-prefix">{uiText("user.emailGhostPrefix")}</span>
-                <span key={emailPlaceholderTick} className="ghost-domain simple-animate">{emailPlaceholderDomain}</span>
+              <span key={emailPlaceholderIndex} className="ghost-domain simple-animate">{emailPlaceholderDomain}</span>
               </span>
             )}
           </div>

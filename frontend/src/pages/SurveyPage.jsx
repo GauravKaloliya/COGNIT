@@ -356,7 +356,7 @@ export default function SurveyPage({
             </>
           ) : submitLocked ? uiText("survey.submitLocked") : uiText("survey.submit")}
         </DSButton>
-      </div>
+      </PageActions>
     </div>
   );
 }

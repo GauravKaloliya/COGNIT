@@ -418,15 +418,6 @@ export function useUserDetailsPage({
     setLocationStatus("");
   }, [setLocationPermissionDenied, setManualLocationAllowed, setLocationStatus]);
 
-  const clearLocationAutoSuccess = useCallback(() => {
-    try {
-      localStorage.removeItem(AUTO_LOCATION_SUCCESS_KEY);
-    } catch {
-      // Ignore storage failures.
-    }
-    setLocationAutoSucceeded(false);
-  }, []);
-
   const getBrowserPosition = useCallback((options) => (
     new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, options);
