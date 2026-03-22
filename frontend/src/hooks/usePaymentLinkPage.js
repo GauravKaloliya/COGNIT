@@ -23,6 +23,7 @@ const MAX_UPLOAD_MB = runtimeConfig.paymentUploadMaxMb;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const PAYMENT_STATE_KEY = runtimeConfig.storageKeys.paymentState;
 const PAYMENT_TIMER_KEY = runtimeConfig.storageKeys.paymentTimerExpires;
+const PAYMENT_TOKEN_KEY = runtimeConfig.storageKeys.paymentToken;
 const PAYMENT_ID_KEY = runtimeConfig.storageKeys.paymentId;
 const PAYMENT_STATE_SCHEMA_VERSION = runtimeConfig.paymentStateSchemaVersion;
 const PAYMENT_STATE_TTL_MS = runtimeConfig.paymentStateTtlMs;
@@ -73,7 +74,6 @@ export function usePaymentLinkPage({
   const createAbortRef = useRef(null);
   const createOnceRef = useRef(false);
   const lastInitPublicIdRef = useRef(null);
-  const tokenRefreshAttemptedRef = useRef(false);
   const verifyAbortRef = useRef(null);
   const qrAbortRef = useRef(null);
   const lastRejectedShaRef = useRef("");
@@ -91,6 +91,7 @@ export function usePaymentLinkPage({
   const scopedPaymentStateKey = makeScopedKey(PAYMENT_STATE_KEY, paymentScope);
   const scopedPaymentTimerKey = makeScopedKey(PAYMENT_TIMER_KEY, paymentScope);
   const scopedPaymentIdKey = makeScopedKey(PAYMENT_ID_KEY, paymentScope);
+  const scopedPaymentTokenKey = makeScopedKey(PAYMENT_TOKEN_KEY, paymentScope);
   const scopedPendingCreateKey = makeScopedKey(PAYMENT_PENDING_CREATE_KEY, paymentScope);
   const scopedPendingVerifyKey = makeScopedKey(PAYMENT_PENDING_VERIFY_KEY, paymentScope);
 
@@ -299,9 +300,75 @@ export function usePaymentLinkPage({
     forEachStorageArea((area) => {
       removeStoredKey(PAYMENT_STATE_KEY, area);
       removeStoredKey(scopedPaymentStateKey, area);
+      removeStoredKey(PAYMENT_TOKEN_KEY, area);
+      removeStoredKey(scopedPaymentTokenKey, area);
     });
-    tokenRefreshAttemptedRef.current = false;
-  }, [scopedPaymentStateKey]);
+  }, [scopedPaymentStateKey, scopedPaymentTokenKey]);
+
+  const savePaymentToken = useCallback((token, paymentId = null) => {
+    if (!token) return;
+    try {
+      const payload = {
+        token,
+        paymentId: paymentId || null,
+        mintedAt: Date.now(),
+      };
+      writeExpiringValue(scopedPaymentTokenKey, payload, {
+        area: "local",
+        schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+        ttlMs: PAYMENT_STATE_TTL_MS,
+      });
+      removeStoredKey(PAYMENT_TOKEN_KEY, "session");
+      removeStoredKey(PAYMENT_TOKEN_KEY, "local");
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [scopedPaymentTokenKey]);
+
+  const loadPaymentToken = useCallback((expectedPaymentId = null) => {
+    try {
+      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
+      const scopedLocal = readExpiringValue(scopedPaymentTokenKey, null, { ...readOpts, area: "local" });
+      const normalize = (value) => {
+        if (!value) return null;
+        if (typeof value === "string") return { token: value, paymentId: null };
+        if (typeof value === "object" && value.token) return value;
+        return null;
+      };
+      const isMatch = (value) => !expectedPaymentId || !value?.paymentId || value.paymentId === expectedPaymentId;
+      const normalizedLocal = normalize(scopedLocal);
+      if (normalizedLocal && isMatch(normalizedLocal)) return normalizedLocal.token;
+      const scopedSession = readExpiringValue(scopedPaymentTokenKey, null, { ...readOpts, area: "session" });
+      const normalizedSession = normalize(scopedSession);
+      if (normalizedSession && isMatch(normalizedSession)) {
+        try {
+          writeExpiringValue(scopedPaymentTokenKey, normalizedSession, { ...readOpts, area: "local" });
+        } catch {
+          // Ignore migration failures.
+        }
+        removeStoredKey(scopedPaymentTokenKey, "session");
+        return normalizedSession.token;
+      }
+      const legacy =
+        readExpiringValue(PAYMENT_TOKEN_KEY, null, { ...readOpts, area: "local" }) ||
+        readExpiringValue(PAYMENT_TOKEN_KEY, null, { ...readOpts, area: "session" });
+      const normalizedLegacy = normalize(legacy);
+      if (normalizedLegacy && isMatch(normalizedLegacy)) {
+        try {
+          writeExpiringValue(scopedPaymentTokenKey, normalizedLegacy, { ...readOpts, area: "local" });
+        } catch {
+          // Ignore migration failures.
+        }
+        removeStoredKey(PAYMENT_TOKEN_KEY, "local");
+        removeStoredKey(PAYMENT_TOKEN_KEY, "session");
+        removeStoredKey(scopedPaymentTokenKey, "session");
+        return normalizedLegacy.token;
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+    return null;
+  }, [scopedPaymentTokenKey]);
 
   const loadPaymentViewState = useCallback(() => {
     try {
@@ -641,6 +708,11 @@ export function usePaymentLinkPage({
         paymentId: getPaymentField(data, PAYMENT_API_FIELDS.id),
         expiresAt: getPaymentField(data, PAYMENT_API_FIELDS.expiresAt),
       });
+      const createdToken = getPaymentField(data, PAYMENT_API_FIELDS.token);
+      const createdPaymentId = getPaymentField(data, PAYMENT_API_FIELDS.id);
+      if (createdToken) {
+        savePaymentToken(createdToken, createdPaymentId);
+      }
       writeExpiringValue(scopedPaymentIdKey, getPaymentField(data, PAYMENT_API_FIELDS.id), {
         area: "local",
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
@@ -711,7 +783,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, logDebug, onParticipantNotFound, publicId, requestStartTimer, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, logDebug, onParticipantNotFound, publicId, requestStartTimer, savePaymentToken, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
 
   useEffect(() => {
     return () => {
@@ -795,7 +867,9 @@ export function usePaymentLinkPage({
         if (statusAbortRef.current) statusAbortRef.current.abort();
         const statusController = new AbortController();
         statusAbortRef.current = statusController;
-        if (!getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token) && effectivePublicId) {
+        const restoredPaymentId = getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id);
+        let storedToken = getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token) || loadPaymentToken(restoredPaymentId);
+        if (!storedToken && effectivePublicId) {
           notifySessionRefreshing();
           try {
             const minted = await endpoints.mintPaymentToken(
@@ -804,7 +878,9 @@ export function usePaymentLinkPage({
               sessionId,
               { signal: statusController.signal }
             );
-            restoredPaymentData[PAYMENT_API_FIELDS.token] = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+            storedToken = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+            restoredPaymentData[PAYMENT_API_FIELDS.token] = storedToken;
+            if (storedToken) savePaymentToken(storedToken, restoredPaymentId);
             setRefreshNotice("");
           } catch {
             clearPaymentViewState();
@@ -813,18 +889,44 @@ export function usePaymentLinkPage({
             return;
           }
         }
-        if (!getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token)) {
+        if (!storedToken) {
           clearPaymentViewState();
           notifySessionExpired();
           await createPayment("restore_token_missing");
           return;
         }
         try {
-          const statusData = await endpoints.getPaymentStatus(
-            getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id),
-            { signal: statusController.signal },
-            getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token)
-          );
+          let statusData;
+          try {
+            statusData = await endpoints.getPaymentStatus(
+              getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id),
+              { signal: statusController.signal },
+              storedToken
+            );
+          } catch (err) {
+            if (err?.status === 403 || err?.code === "AUTH_002_0002") {
+              const minted = await endpoints.mintPaymentToken(
+                getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id),
+                effectivePublicId,
+                sessionId,
+                { signal: statusController.signal }
+              );
+              storedToken = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+              if (storedToken) {
+                restoredPaymentData[PAYMENT_API_FIELDS.token] = storedToken;
+                savePaymentToken(storedToken, restoredPaymentId);
+                statusData = await endpoints.getPaymentStatus(
+                  getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id),
+                  { signal: statusController.signal },
+                  storedToken
+                );
+              } else {
+                throw err;
+              }
+            } else {
+              throw err;
+            }
+          }
           const serverStatus = getPaymentField(statusData, PAYMENT_API_FIELDS.status);
           logDebug("initialize:restore:status", { paymentId: getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id), serverStatus });
 
@@ -919,13 +1021,17 @@ export function usePaymentLinkPage({
         statusAbortRef.current = statusController;
         notifySessionRefreshing();
         try {
-          const minted = await endpoints.mintPaymentToken(
-            storedPaymentId,
-            effectivePublicId,
-            sessionId,
-            { signal: statusController.signal }
-          );
-          const token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+          let token = loadPaymentToken(storedPaymentId);
+          if (!token) {
+            const minted = await endpoints.mintPaymentToken(
+              storedPaymentId,
+              effectivePublicId,
+              sessionId,
+              { signal: statusController.signal }
+            );
+            token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+            if (token) savePaymentToken(token, storedPaymentId);
+          }
           if (!token) {
             forEachStorageArea((area) => {
               removeStoredKey(PAYMENT_ID_KEY, area);
@@ -937,11 +1043,32 @@ export function usePaymentLinkPage({
             return;
           }
 
-          const statusData = await endpoints.getPaymentStatus(
-            storedPaymentId,
-            { signal: statusController.signal },
-            token
-          );
+          let statusData;
+          try {
+            statusData = await endpoints.getPaymentStatus(
+              storedPaymentId,
+              { signal: statusController.signal },
+              token
+            );
+          } catch (err) {
+            if (err?.status === 403 || err?.code === "AUTH_002_0002") {
+              const minted = await endpoints.mintPaymentToken(
+                storedPaymentId,
+                effectivePublicId,
+                sessionId,
+                { signal: statusController.signal }
+              );
+              token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+              if (token) savePaymentToken(token, storedPaymentId);
+              statusData = await endpoints.getPaymentStatus(
+                storedPaymentId,
+                { signal: statusController.signal },
+                token
+              );
+            } else {
+              throw err;
+            }
+          }
           const serverStatus = getPaymentField(statusData, PAYMENT_API_FIELDS.status);
           logDebug("initialize:stored:status", { storedPaymentId, serverStatus });
 
@@ -1053,6 +1180,7 @@ export function usePaymentLinkPage({
     isPaymentAmountMismatch,
     loadStoredPaymentId,
     loadPaymentViewState,
+    loadPaymentToken,
     logDebug,
     notifySessionExpired,
     notifySessionRefreshing,
@@ -1064,6 +1192,7 @@ export function usePaymentLinkPage({
     publicId,
     scopedPaymentIdKey,
     sessionId,
+    savePaymentToken,
   ]);
 
   // Restore timer state from sessionStorage on page refresh
@@ -1256,14 +1385,17 @@ export function usePaymentLinkPage({
       const precheckController = new AbortController();
       statusAbortRef.current = precheckController;
 
-      const ensurePaymentToken = async () => {
-        const existing = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
-        if (existing) return existing;
+      const precheckPaymentId = getPaymentField(paymentData, PAYMENT_API_FIELDS.id);
+      const ensurePaymentToken = async (forceRefresh = false) => {
+        if (!forceRefresh) {
+          const existing = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
+          if (existing) return existing;
+          const stored = loadPaymentToken(precheckPaymentId);
+          if (stored) return stored;
+        }
         if (!effectivePublicId) return "";
-        if (tokenRefreshAttemptedRef.current) return "";
-        tokenRefreshAttemptedRef.current = true;
         const minted = await endpoints.mintPaymentToken(
-          getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
+          precheckPaymentId,
           effectivePublicId,
           sessionId,
           { signal: precheckController.signal }
@@ -1271,19 +1403,24 @@ export function usePaymentLinkPage({
         const token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
         if (token) {
           setPaymentData((prev) => (prev ? { ...prev, [PAYMENT_API_FIELDS.token]: token } : prev));
+          savePaymentToken(token, precheckPaymentId);
         }
         return token;
       };
       let precheckStatus;
+      const precheckToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || loadPaymentToken(precheckPaymentId);
+      if (precheckToken && !getPaymentField(paymentData, PAYMENT_API_FIELDS.token)) {
+        setPaymentData((prev) => (prev ? { ...prev, [PAYMENT_API_FIELDS.token]: precheckToken } : prev));
+      }
       try {
         precheckStatus = await endpoints.getPaymentStatus(
           getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
           { signal: precheckController.signal },
-          getPaymentField(paymentData, PAYMENT_API_FIELDS.token)
+          precheckToken || getPaymentField(paymentData, PAYMENT_API_FIELDS.token)
         );
       } catch (err) {
         if (err?.status === 403 || err?.code === "AUTH_002_0002") {
-          const freshToken = await ensurePaymentToken();
+          const freshToken = await ensurePaymentToken(true);
           if (!freshToken) {
             notifySessionExpired();
             await createPayment();
@@ -1377,7 +1514,7 @@ export function usePaymentLinkPage({
       const sha256 = selectedFileHash;
       if (!isOperationCurrent(operationId)) return;
 
-      let paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || "";
+      let paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || loadPaymentToken(getPaymentField(paymentData, PAYMENT_API_FIELDS.id)) || "";
       if (!paymentWriteToken) {
         paymentWriteToken = await ensurePaymentToken();
         if (!paymentWriteToken) {
@@ -1491,10 +1628,11 @@ export function usePaymentLinkPage({
       if (statusAbortRef.current) statusAbortRef.current.abort();
       const statusController = new AbortController();
       statusAbortRef.current = statusController;
+      const statusToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || loadPaymentToken(getPaymentField(paymentData, PAYMENT_API_FIELDS.id));
       const statusData = await endpoints.getPaymentStatus(
         getPaymentField(paymentData, PAYMENT_API_FIELDS.id),
         { signal: statusController.signal },
-        getPaymentField(paymentData, PAYMENT_API_FIELDS.token)
+        statusToken
       );
       if (!isOperationCurrent(operationId)) return;
 
@@ -1596,6 +1734,8 @@ export function usePaymentLinkPage({
     calculateTimerValues,
     saveTimerState,
     validateScreenshotQuality,
+    loadPaymentToken,
+    savePaymentToken,
     savePaymentViewState,
     setPaymentStatus,
     setFailureReasons,
@@ -1639,7 +1779,7 @@ export function usePaymentLinkPage({
       if (getPaymentField(paymentData, PAYMENT_API_FIELDS.id) && !isMobile && !getPaymentField(paymentData, PAYMENT_API_FIELDS.qrBase64)) {
         fetchPaymentQr(getPaymentField(paymentData, PAYMENT_API_FIELDS.id), opVersionRef.current);
       }
-      const paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token);
+      const paymentWriteToken = getPaymentField(paymentData, PAYMENT_API_FIELDS.token) || loadPaymentToken(getPaymentField(paymentData, PAYMENT_API_FIELDS.id));
       if (getPaymentField(paymentData, PAYMENT_API_FIELDS.id) && paymentWriteToken) {
         try {
           const statusData = await endpoints.getPaymentStatus(
@@ -1677,6 +1817,7 @@ export function usePaymentLinkPage({
     clearPaymentViewState,
     notifySessionExpired,
     onNext,
+    loadPaymentToken,
     scopedPendingCreateKey,
     scopedPendingVerifyKey,
   ]);
