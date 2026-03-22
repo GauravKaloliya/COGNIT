@@ -32,6 +32,10 @@ export async function apiFetch(endpoint, options = {}) {
   if (/^\/payments\/[^/]+\/token\/?$/.test(String(endpoint || "")) && method !== REQUEST_METHODS.post) {
     method = REQUEST_METHODS.post;
   }
+  // Safety: verify-upload endpoint is POST-only.
+  if (/^\/payments\/[^/]+\/verify-upload\/?$/.test(String(endpoint || "")) && method !== REQUEST_METHODS.post) {
+    method = REQUEST_METHODS.post;
+  }
   const requestId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;

@@ -57,6 +57,7 @@ export function usePaymentLinkPage({
   const [failureReasons, setFailureReasons] = useState([]);
   const [refreshNotice, setRefreshNotice] = useState("");
   const [refreshNoticeVariant, setRefreshNoticeVariant] = useState(PAYMENT_NOTICE_VARIANT.info);
+  const [lastServerStatus, setLastServerStatus] = useState("");
   const isOnline = useOnlineStatus();
   const refreshNoticeShownRef = useRef(false);
   const fileInputRef = useRef(null);
@@ -321,6 +322,41 @@ export function usePaymentLinkPage({
       return null;
     }
   }, [publicId, scopedPaymentStateKey]);
+
+  const loadStoredPaymentId = useCallback(() => {
+    try {
+      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
+      const scopedLocal = readExpiringValue(scopedPaymentIdKey, null, { ...readOpts, area: "local" });
+      if (scopedLocal) return scopedLocal;
+      const scopedSession = readExpiringValue(scopedPaymentIdKey, null, { ...readOpts, area: "session" });
+      if (scopedSession) {
+        try {
+          writeExpiringValue(scopedPaymentIdKey, scopedSession, { ...readOpts, area: "local" });
+        } catch {
+          // Ignore migration failures.
+        }
+        removeStoredKey(scopedPaymentIdKey, "session");
+        return scopedSession;
+      }
+      const legacy =
+        readExpiringValue(PAYMENT_ID_KEY, null, { ...readOpts, area: "local" }) ||
+        readExpiringValue(PAYMENT_ID_KEY, null, { ...readOpts, area: "session" });
+      if (legacy) {
+        try {
+          writeExpiringValue(scopedPaymentIdKey, legacy, { ...readOpts, area: "local" });
+        } catch {
+          // Ignore migration failures.
+        }
+        removeStoredKey(PAYMENT_ID_KEY, "local");
+        removeStoredKey(PAYMENT_ID_KEY, "session");
+        removeStoredKey(scopedPaymentIdKey, "session");
+        return legacy;
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+    return null;
+  }, [scopedPaymentIdKey]);
 
   // Timer state persistence helpers
   const saveTimerState = useCallback((expiresAt, paused = null) => {
@@ -852,6 +888,122 @@ export function usePaymentLinkPage({
         }
       }
 
+      const storedPaymentId = loadStoredPaymentId();
+      if (storedPaymentId) {
+        if (statusAbortRef.current) statusAbortRef.current.abort();
+        const statusController = new AbortController();
+        statusAbortRef.current = statusController;
+        notifySessionRefreshing();
+        try {
+          const minted = await endpoints.mintPaymentToken(
+            storedPaymentId,
+            effectivePublicId,
+            sessionId,
+            { signal: statusController.signal }
+          );
+          const token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+          if (!token) {
+            forEachStorageArea((area) => {
+              removeStoredKey(PAYMENT_ID_KEY, area);
+              removeStoredKey(scopedPaymentIdKey, area);
+            });
+            clearPaymentViewState();
+            notifySessionExpired();
+            await createPayment();
+            return;
+          }
+
+          const statusData = await endpoints.getPaymentStatus(
+            storedPaymentId,
+            { signal: statusController.signal },
+            token
+          );
+          const serverStatus = getPaymentField(statusData, PAYMENT_API_FIELDS.status);
+
+          if (serverStatus === PAYMENT_STATUS.success) {
+            clearPaymentViewState();
+            forEachStorageArea((area) => {
+              removeStoredKey(PAYMENT_ID_KEY, area);
+              removeStoredKey(scopedPaymentIdKey, area);
+            });
+            if (!cancelled) onNext?.({ skipVerification: true });
+            return;
+          }
+
+          if (serverStatus === PAYMENT_STATUS.expired) {
+            clearPaymentViewState();
+            forEachStorageArea((area) => {
+              removeStoredKey(PAYMENT_ID_KEY, area);
+              removeStoredKey(scopedPaymentIdKey, area);
+            });
+            notifySessionExpired();
+            if (!cancelled) await createPayment();
+            return;
+          }
+
+          const mergedPaymentData = {
+            ...statusData,
+            [PAYMENT_API_FIELDS.id]: storedPaymentId,
+            [PAYMENT_API_FIELDS.token]: token,
+          };
+
+          if (serverStatus === PAYMENT_STATUS.rejectedFraud) {
+            if (!cancelled) {
+              const reasons = getFailureReasons(statusData) || [];
+              const specificError = getVerificationErrorMessage(reasons);
+              setPaymentData(mergedPaymentData);
+              setPaymentStatus(PAYMENT_STATUS.rejectedFraud);
+              setFailureReasons(reasons);
+              setError(specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
+              savePaymentViewState({
+                [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
+                [PAYMENT_STATE_FIELDS.paymentData]: mergedPaymentData,
+                [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.rejectedFraud,
+                [PAYMENT_STATE_FIELDS.failureReasons]: reasons,
+                [PAYMENT_STATE_FIELDS.error]: specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected),
+              });
+            }
+            return;
+          }
+
+          if (serverStatus === PAYMENT_STATUS.pending || serverStatus === PAYMENT_STATUS.processing) {
+            const serverRemainingMs = getServerRemainingMs(statusData || mergedPaymentData);
+            if (!storedTimer?.totalDurationMs) {
+              timerTotalMsRef.current = Math.max(1000, serverRemainingMs || timerTotalMsRef.current);
+            }
+            const { remaining, progress } = calculateTimerValues(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
+            if (remaining > 0) {
+              if (cancelled) return;
+              setPaymentData(mergedPaymentData);
+              setPaymentStatus(PAYMENT_STATUS.pending);
+              setFailureReasons([]);
+              setError(null);
+              setTimeRemaining(remaining);
+              setTimerProgress(progress);
+              requestStartTimer(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
+              savePaymentViewState({
+                [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
+                [PAYMENT_STATE_FIELDS.paymentData]: mergedPaymentData,
+                [PAYMENT_STATE_FIELDS.paymentStatus]: PAYMENT_STATUS.pending,
+                [PAYMENT_STATE_FIELDS.failureReasons]: [],
+                [PAYMENT_STATE_FIELDS.error]: null,
+              });
+              if (!isMobile && !getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.qrBase64)) {
+                fetchPaymentQr(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.id), opVersionRef.current);
+              }
+              if (refreshNoticeVariant === PAYMENT_NOTICE_VARIANT.info) {
+                setRefreshNotice("");
+              }
+              return;
+            }
+          }
+        } catch {
+          // Fall through to create a new payment if status check fails.
+        } finally {
+          statusAbortRef.current = null;
+        }
+      }
+
       if (!cancelled) {
         await createPayment();
       }
@@ -873,6 +1025,7 @@ export function usePaymentLinkPage({
     handleExpiry,
     isMobile,
     isPaymentAmountMismatch,
+    loadStoredPaymentId,
     loadPaymentViewState,
     notifySessionExpired,
     notifySessionRefreshing,
@@ -882,6 +1035,7 @@ export function usePaymentLinkPage({
     requestStartTimer,
     stopTimer,
     publicId,
+    scopedPaymentIdKey,
     sessionId,
   ]);
 
@@ -1119,11 +1273,16 @@ export function usePaymentLinkPage({
       }
       if (!isOperationCurrent(operationId)) return;
 
-      if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) === PAYMENT_STATUS.expired || getPaymentField(precheckStatus, PAYMENT_API_FIELDS.isExpired)) {
-        handleExpiry();
+      const precheckState = getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status);
+      if (precheckState) {
+        setLastServerStatus(String(precheckState));
+      }
+      if (precheckState === PAYMENT_STATUS.expired || getPaymentField(precheckStatus, PAYMENT_API_FIELDS.isExpired)) {
+        notifySessionExpired();
+        await createPayment();
         return;
       }
-      if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) === PAYMENT_STATUS.success) {
+      if (precheckState === PAYMENT_STATUS.success) {
         setPaymentStatus(PAYMENT_STATUS.success);
         forEachStorageArea((area) => {
           removeStoredKey(PAYMENT_ID_KEY, area);
@@ -1134,7 +1293,7 @@ export function usePaymentLinkPage({
         onNext?.({ skipVerification: true });
         return;
       }
-      if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) === PAYMENT_STATUS.rejectedFraud) {
+      if (precheckState === PAYMENT_STATUS.rejectedFraud) {
         if (selectedFileHash && lastRejectedShaRef.current && selectedFileHash !== lastRejectedShaRef.current) {
           setFailureReasons([]);
           setPaymentStatus(PAYMENT_STATUS.pending);
@@ -1157,8 +1316,9 @@ export function usePaymentLinkPage({
           return;
         }
       }
-      if (getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) !== PAYMENT_STATUS.pending && getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status) !== PAYMENT_STATUS.processing) {
-        showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.invalidState));
+      if (precheckState !== PAYMENT_STATUS.pending && precheckState !== PAYMENT_STATUS.processing) {
+        const stateLabel = precheckState || "unknown";
+        showRetryHintError(`${getErrorMessage(PAYMENT_ERROR_CODES.invalidState)} (${stateLabel})`);
         resumePausedTimer();
         return;
       }
@@ -1545,6 +1705,7 @@ export function usePaymentLinkPage({
     failureReasons,
     refreshNotice,
     refreshNoticeVariant,
+    lastServerStatus,
     isOnline,
     fileInputRef,
     timeRemaining,
