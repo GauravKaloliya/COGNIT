@@ -100,6 +100,7 @@ export const runtimeConfig = {
     paymentContentPending: "payment_content_pending_continue_v1",
     paymentState: "payment_link_state_v1",
     paymentTimerExpires: "payment_timer_expires_at",
+    paymentToken: "payment_token",
     paymentId: "payment_id",
     paymentPendingCreate: "payment_pending_create_v1",
     paymentPendingVerify: "payment_pending_verify_v1",
