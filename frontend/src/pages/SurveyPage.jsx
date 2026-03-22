@@ -109,13 +109,11 @@ export default function SurveyPage({
             message={fetchError || uiText("survey.imageRestoreFailed")}
             actionLabel={
               retryDisabled && retryCountdown > 0
-                ? uiText("survey.retryIn", { seconds: retryCountdown })
-                : isFetchingImage
-                  ? uiText("survey.retrying")
-                  : uiText("survey.retry")
+                ? uiText("common.tryAgainIn", { seconds: retryCountdown })
+                : null
             }
-            onAction={onRetry ? () => handleRetryImage(onRetry, isFetchingImage) : null}
-            disabled={retryDisabled || isFetchingImage}
+            onAction={null}
+            disabled
           />
         ) : (
           <PageSkeleton
@@ -153,14 +151,15 @@ export default function SurveyPage({
         ) : (
           <div className="image-error">
             <p>{getErrorMessage('SYS_002_0005')}</p>
-            <DSButton
-              variant="primary"
-              className="small button-top"
-              onClick={() => handleRetryImage(onRetry, isFetchingImage)}
-              disabled={retryDisabled || isFetchingImage}
-            >
-              {isFetchingImage ? uiText("survey.retryingShort") : uiText("survey.retryShort")}
-            </DSButton>
+            {retryCountdown > 0 && (
+              <DSButton
+                variant="primary"
+                className="small button-top"
+                disabled
+              >
+                {uiText("common.tryAgainIn", { seconds: retryCountdown })}
+              </DSButton>
+            )}
           </div>
         )}
         {!imageLoaded && !imageError && (

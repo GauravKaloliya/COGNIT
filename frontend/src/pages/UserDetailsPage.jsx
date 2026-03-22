@@ -448,7 +448,7 @@ export default function UserDetailsPage({
               {!isOnline && <ButtonRetryBadge seconds={retryCountdown} />}
             </DSButton>
             {!isOnline && retryCountdown > 0 && (
-              <div className="helper-text">{uiText("survey.retryIn", { seconds: retryCountdown })}</div>
+              <div className="helper-text">{uiText("common.tryAgainIn", { seconds: retryCountdown })}</div>
             )}
           </>
         )}

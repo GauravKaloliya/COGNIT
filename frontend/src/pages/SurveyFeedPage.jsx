@@ -69,7 +69,7 @@ export default function SurveyFeedPage({
             {loadingNext
               ? uiText("survey.loading")
               : !isOnline && pendingContinue && retryCountdownContinue > 0
-                ? uiText("survey.retryIn", { seconds: retryCountdownContinue })
+                ? uiText("common.tryAgainIn", { seconds: retryCountdownContinue })
                 : uiText("common.continue")}
             {!isOnline && pendingContinue && <ButtonRetryBadge seconds={retryCountdownContinue} />}
           </DSButton>
@@ -80,7 +80,7 @@ export default function SurveyFeedPage({
             disabled={loadingNext || !isOnline}
           >
             {!isOnline && pendingFinish && retryCountdownFinish > 0
-              ? uiText("survey.retryIn", { seconds: retryCountdownFinish })
+              ? uiText("common.tryAgainIn", { seconds: retryCountdownFinish })
               : uiText("common.finish")}
             {!isOnline && pendingFinish && <ButtonRetryBadge seconds={retryCountdownFinish} />}
           </DSButton>
@@ -92,9 +92,11 @@ export default function SurveyFeedPage({
                 variant="warning"
                 title={uiText("survey.unableLoadNext")}
                 message={uiText("survey.feedLoadFailedWithHint", { error: continueError })}
-                actionLabel={uiText("survey.retryShort")}
-                onAction={handleSurveyContinue}
-                disabled={loadingNext}
+                actionLabel={retryCountdownContinue > 0
+                  ? uiText("common.tryAgainIn", { seconds: retryCountdownContinue })
+                  : null}
+                onAction={null}
+                disabled
               />
             </div>
             <div className="card-body">
