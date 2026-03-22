@@ -61,6 +61,7 @@ const TEXT = {
     "payment.refreshTitle": "Payment session needs refresh",
     "payment.refreshMessage": "No active payment data was found. Reload to create a fresh payment session.",
     "payment.reload": "Reload Payment",
+    "payment.restoreFailed": "Existing payment could not be restored. Tap Retry to continue.",
     "payment.previousExpired": "Payment session has expired. Tap Retry to create a new payment session.",
     "payment.expiredShort": "Expired",
     "payment.verifyTitle": "Payment Verification Failed",
