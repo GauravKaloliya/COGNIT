@@ -2710,6 +2710,34 @@ body.dark .toast.warning {
   gap: var(--space-2);
 }
 
+.payment-locked-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 10, 12, 0.55);
+  backdrop-filter: blur(2px);
+  border-radius: var(--radius-lg);
+}
+
+.payment-locked-card {
+  background: #111418;
+  color: #f5f7fa;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  max-width: 280px;
+}
+
+.payment-locked-icon {
+  font-size: 28px;
+  margin-bottom: var(--space-2);
+}
+
+
 @media (min-width: 768px) {
   .payment-panel {
     border: 1px solid var(--border);

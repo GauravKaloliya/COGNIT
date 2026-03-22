@@ -24,7 +24,6 @@ const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const PAYMENT_STATE_KEY = runtimeConfig.storageKeys.paymentState;
 const PAYMENT_TIMER_KEY = runtimeConfig.storageKeys.paymentTimerExpires;
 const PAYMENT_TOKEN_KEY = runtimeConfig.storageKeys.paymentToken;
-const PAYMENT_CREATED_KEY = runtimeConfig.storageKeys.paymentCreated;
 const PAYMENT_ID_KEY = runtimeConfig.storageKeys.paymentId;
 const PAYMENT_STATE_SCHEMA_VERSION = runtimeConfig.paymentStateSchemaVersion;
 const PAYMENT_STATE_TTL_MS = runtimeConfig.paymentStateTtlMs;
@@ -87,7 +86,6 @@ export function usePaymentLinkPage({
   const scopedPaymentStateKey = makeScopedKey(PAYMENT_STATE_KEY, paymentScope);
   const scopedPaymentTimerKey = makeScopedKey(PAYMENT_TIMER_KEY, paymentScope);
   const scopedPaymentIdKey = makeScopedKey(PAYMENT_ID_KEY, paymentScope);
-  const scopedPaymentCreatedKey = makeScopedKey(PAYMENT_CREATED_KEY, paymentScope);
   const scopedPaymentTokenKey = makeScopedKey(PAYMENT_TOKEN_KEY, paymentScope);
   const scopedPendingCreateKey = makeScopedKey(PAYMENT_PENDING_CREATE_KEY, paymentScope);
   const scopedPendingVerifyKey = makeScopedKey(PAYMENT_PENDING_VERIFY_KEY, paymentScope);
@@ -299,62 +297,8 @@ export function usePaymentLinkPage({
       removeStoredKey(scopedPaymentStateKey, area);
       removeStoredKey(PAYMENT_TOKEN_KEY, area);
       removeStoredKey(scopedPaymentTokenKey, area);
-      removeStoredKey(PAYMENT_CREATED_KEY, area);
-      removeStoredKey(scopedPaymentCreatedKey, area);
     });
-  }, [scopedPaymentCreatedKey, scopedPaymentStateKey, scopedPaymentTokenKey]);
-
-  const markPaymentCreated = useCallback(() => {
-    try {
-      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
-      const already = readExpiringValue(scopedPaymentCreatedKey, null, { ...readOpts, area: "local" });
-      if (already === true) return;
-      writeExpiringValue(scopedPaymentCreatedKey, true, {
-        area: "local",
-        schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
-        ttlMs: PAYMENT_STATE_TTL_MS,
-      });
-      removeStoredKey(PAYMENT_CREATED_KEY, "session");
-      removeStoredKey(PAYMENT_CREATED_KEY, "local");
-    } catch {
-      // Ignore storage failures.
-    }
-  }, [scopedPaymentCreatedKey]);
-
-  const wasPaymentCreated = useCallback(() => {
-    try {
-      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
-      const scopedLocal = readExpiringValue(scopedPaymentCreatedKey, null, { ...readOpts, area: "local" });
-      if (scopedLocal === true) return true;
-      const scopedSession = readExpiringValue(scopedPaymentCreatedKey, null, { ...readOpts, area: "session" });
-      if (scopedSession === true) {
-        try {
-          writeExpiringValue(scopedPaymentCreatedKey, true, { ...readOpts, area: "local" });
-        } catch {
-          // Ignore migration failures.
-        }
-        removeStoredKey(scopedPaymentCreatedKey, "session");
-        return true;
-      }
-      const legacy =
-        readExpiringValue(PAYMENT_CREATED_KEY, null, { ...readOpts, area: "local" }) ||
-        readExpiringValue(PAYMENT_CREATED_KEY, null, { ...readOpts, area: "session" });
-      if (legacy === true) {
-        try {
-          writeExpiringValue(scopedPaymentCreatedKey, true, { ...readOpts, area: "local" });
-        } catch {
-          // Ignore migration failures.
-        }
-        removeStoredKey(PAYMENT_CREATED_KEY, "local");
-        removeStoredKey(PAYMENT_CREATED_KEY, "session");
-        removeStoredKey(scopedPaymentCreatedKey, "session");
-        return true;
-      }
-    } catch {
-      // Ignore storage failures.
-    }
-    return false;
-  }, [scopedPaymentCreatedKey]);
+  }, [scopedPaymentStateKey, scopedPaymentTokenKey]);
 
   const savePaymentToken = useCallback((token, paymentId = null) => {
     if (!token) return;
@@ -759,7 +703,6 @@ export function usePaymentLinkPage({
       if (createdToken) {
         savePaymentToken(createdToken, createdPaymentId);
       }
-      markPaymentCreated();
       writeExpiringValue(scopedPaymentIdKey, getPaymentField(data, PAYMENT_API_FIELDS.id), {
         area: "local",
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
@@ -829,7 +772,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, markPaymentCreated, onParticipantNotFound, publicId, requestStartTimer, savePaymentToken, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, onParticipantNotFound, publicId, requestStartTimer, savePaymentToken, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
 
   useEffect(() => {
     return () => {
@@ -1190,11 +1133,7 @@ export function usePaymentLinkPage({
       }
 
       if (!cancelled) {
-        if (!wasPaymentCreated()) {
-          await createPayment("no_restore_state");
-        } else {
-          setRestoreWarning(uiText("payment.restoreFailed"));
-        }
+        await createPayment("no_restore_state");
       }
     };
 
@@ -1228,7 +1167,6 @@ export function usePaymentLinkPage({
     scopedPaymentIdKey,
     sessionId,
     savePaymentToken,
-    wasPaymentCreated,
   ]);
 
   useEffect(() => {
@@ -1817,7 +1755,7 @@ export function usePaymentLinkPage({
       if (!paymentData && paymentStatus === PAYMENT_STATUS.pending) {
         const hasStoredPaymentId = Boolean(loadStoredPaymentId());
         const hasStoredView = Boolean(loadPaymentViewState());
-        if (!wasPaymentCreated() && !hasStoredPaymentId && !hasStoredView) {
+        if (!hasStoredPaymentId && !hasStoredView) {
           await createPayment("auto_reconnect_no_state");
         }
         return;
@@ -1866,7 +1804,6 @@ export function usePaymentLinkPage({
     loadPaymentToken,
     loadPaymentViewState,
     loadStoredPaymentId,
-    wasPaymentCreated,
     scopedPendingCreateKey,
     scopedPendingVerifyKey,
   ]);
