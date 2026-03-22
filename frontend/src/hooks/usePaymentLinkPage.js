@@ -108,6 +108,7 @@ export function usePaymentLinkPage({
   const createAbortRef = useRef(null);
   const createOnceRef = useRef(false);
   const lastInitPublicIdRef = useRef(null);
+  const autoCreateAttemptRef = useRef(false);
   const verifyAbortRef = useRef(null);
   const qrAbortRef = useRef(null);
   const lastRejectedShaRef = useRef("");
@@ -1229,6 +1230,17 @@ export function usePaymentLinkPage({
     sessionId,
     savePaymentToken,
   ]);
+
+  useEffect(() => {
+    if (paymentData) {
+      autoCreateAttemptRef.current = false;
+      return;
+    }
+    if (!isOnline || !error) return;
+    if (autoCreateAttemptRef.current) return;
+    autoCreateAttemptRef.current = true;
+    createPayment("auto_retry_missing_data");
+  }, [createPayment, error, isOnline, paymentData]);
 
   // Restore timer state from sessionStorage on page refresh
   useEffect(() => {
