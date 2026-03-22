@@ -3,6 +3,7 @@ import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
+import { requirePublicId } from "../utils/publicId";
 import { PAYMENT_API_FIELDS, SURVEY_API_FIELDS } from "../constants/fields";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
@@ -59,8 +60,21 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       setSurvey(null);
     }
 
+    if (!publicId) {
+      const errorMessage = getErrorMessage("NF_001_0001");
+      addToast(errorMessage, "warning");
+      setImageError(errorMessage);
+      setSurvey(null);
+      return null;
+    }
+
+    const effectivePublicId = requirePublicId(publicId, () => {
+      addToast(getErrorMessage("NF_001_0001"), "warning");
+    });
+    if (!effectivePublicId) return null;
+
     try {
-      const data = await endpoints.getRandomImage(shownImages, publicId, { signal: controller.signal });
+      const data = await endpoints.getRandomImage(shownImages, effectivePublicId, { signal: controller.signal });
       const normalizedData = normalizeSurveyPayload(data);
       if (!normalizedData?.[SURVEY_API_FIELDS.imageId]) {
         throw new Error(getErrorMessage("SYS_002_0016"));
@@ -91,6 +105,15 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
 
   const handleSubmit = useCallback(async (formData) => {
     const engagementData = formData.engagementData || {};
+    const effectivePublicId = requirePublicId(publicId, () => {
+      addToast(getErrorMessage("NF_001_0001"), "warning");
+    });
+    if (!effectivePublicId) throw new Error(getErrorMessage("NF_001_0001"));
+    if (!publicId) {
+      const errorMessage = getErrorMessage("NF_001_0001");
+      addToast(errorMessage, TOAST_VARIANTS.warning);
+      throw new Error(errorMessage);
+    }
     if (submitAbortRef.current) {
       submitAbortRef.current.abort();
     }
@@ -99,7 +122,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
 
     try {
       const result = await endpoints.submitDescription({
-        [SURVEY_API_FIELDS.publicId]: publicId,
+        [SURVEY_API_FIELDS.publicId]: effectivePublicId,
         [SURVEY_API_FIELDS.imageId]: survey[SURVEY_API_FIELDS.imageId],
         description: formData.description,
         rating: formData.rating,

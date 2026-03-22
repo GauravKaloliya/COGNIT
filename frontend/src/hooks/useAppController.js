@@ -7,7 +7,7 @@ import { usePaymentFlow } from "./usePaymentFlow";
 import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
-import { ALL_STORAGE_AREAS, forEachStorageArea, getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
+import { ALL_STORAGE_AREAS, forEachStorageArea, getStoredValue, makeScopedKey, readExpiringValue, readJsonValue, readStoredMeta, removeStoredKey, saveStoredValue, writeExpiringValue, writeJsonValue } from "../utils/storage";
 import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
 import { ACTIVE_TAB_LOCK_FIELDS } from "../constants/fields";
 import { BROWSER_EVENTS } from "../constants/browser";
@@ -44,6 +44,8 @@ const CORE_SCOPED_KEYS = [
   runtimeConfig.storageKeys.lastSubmissionSucceeded,
   runtimeConfig.storageKeys.shownImages,
 ];
+
+const EXPIRED_STORAGE_PREFIXES = Object.values(runtimeConfig.storageKeys);
 
 const STORAGE_PREFIX_KEYS = [
   runtimeConfig.storageKeys.surveyDraftPrefix,
@@ -224,6 +226,7 @@ export function useAppController() {
   const toastRef = useRef(new Map());
   const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
+  const expiryNoticeShownRef = useRef(false);
   const addToast = useCallback((message, type = TOAST_VARIANTS.info, action) => {
     const dedupeKey = `${type}:${message}`;
     const now = Date.now();
@@ -239,6 +242,31 @@ export function useAppController() {
       runtimeConfig.toastAutoDismissMs
     );
   }, []);
+
+  useEffect(() => {
+    if (expiryNoticeShownRef.current) return;
+    const now = Date.now();
+    let expiredFound = false;
+    const matchesPrefix = (key) => EXPIRED_STORAGE_PREFIXES.some((prefix) =>
+      key === prefix || key.startsWith(`${prefix}:`) || key.startsWith(`${prefix}_`)
+    );
+    ALL_STORAGE_AREAS.forEach((area) => {
+      const storage = area === CORE_STATE_STORAGE_AREA ? localStorage : sessionStorage;
+      for (let i = storage.length - 1; i >= 0; i -= 1) {
+        const key = storage.key(i);
+        if (!key || !matchesPrefix(key)) continue;
+        const meta = readStoredMeta(key, area);
+        if (!meta || typeof meta.expiresAt !== "number") continue;
+        if (now <= meta.expiresAt) continue;
+        removeStoredKey(key, area);
+        expiredFound = true;
+      }
+    });
+    if (expiredFound) {
+      expiryNoticeShownRef.current = true;
+      addToast(uiText("app.sessionExpired"), TOAST_VARIANTS.warning);
+    }
+  }, [addToast]);
   const clearUserStorage = useCallback((scopeOverride = null) => {
     let darkMode = null;
     darkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
@@ -734,6 +762,7 @@ export function useAppController() {
   useEffect(() => {
     const verifyStagePrerequisites = async () => {
       if (!systemReady || !isActiveTabOwner) return;
+      if (!sessionHydrated || !publicId) return;
       if (![APP_FLOW.stages.survey, APP_FLOW.stages.finished].includes(stage)) return;
       if (participantStatusAbortRef.current) {
         participantStatusAbortRef.current.abort();
@@ -751,11 +780,19 @@ export function useAppController() {
         }
       } catch (error) {
         if (error?.code === "REQ_ABORTED" || controller.signal.aborted) return;
-        setStage(APP_FLOW.stages.userDetails);
-        setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-        setPaymentVerified(false);
         if (error?.status === 404 || error?.code === "NF_001_0001") {
+          setStage(APP_FLOW.stages.userDetails);
+          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
+          setPaymentVerified(false);
           addToast(getErrorMessage("NF_001_0001"), "warning");
+        } else if (error?.code === "NF_001_0003" || error?.code === "ERR_PAYMENT_NOT_FOUND") {
+          setStage(APP_FLOW.stages.payment);
+          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
+          setPaymentVerified(false);
+          addToast(getErrorMessage("NF_001_0003"), "warning");
+        } else {
+          // Keep the current stage on transient status-check failures.
+          addToast(getErrorMessage("SYS_002_0001"), "warning");
         }
       } finally {
         if (participantStatusAbortRef.current === controller) {
@@ -770,7 +807,7 @@ export function useAppController() {
         participantStatusAbortRef.current = null;
       }
     };
-  }, [addToast, emailVerified, isActiveTabOwner, publicId, stage, systemReady, userDetailsSubmitted]);
+  }, [addToast, emailVerified, isActiveTabOwner, publicId, sessionHydrated, stage, systemReady, userDetailsSubmitted]);
 
   useEffect(() => () => {
     cancelInFlightRequests?.();
@@ -825,6 +862,9 @@ export function useAppController() {
     submitFlowAbortRef.current = controller;
     try {
       const consentPublicId = publicIdOverride || publicId;
+      if (!consentPublicId) {
+        throw new Error(getErrorMessage("NF_001_0001"));
+      }
       return await endpoints.recordConsent(consentPublicId, { signal: controller.signal });
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
@@ -875,6 +915,7 @@ export function useAppController() {
     demographics,
     setDemographics,
     setStage,
+    consentGiven,
     emailVerified,
     toasts,
     addToast,

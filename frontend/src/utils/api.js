@@ -1,6 +1,7 @@
 import { getApiUrl } from './apiBase';
 import { parseErrorResponse, getErrorMessage } from './errorRegistry';
 import { getTurnstileToken } from './turnstile';
+import { assertPublicId } from './publicId';
 import {
   ERROR_NAMES,
   REQUEST_ACTIONS,
@@ -199,12 +200,20 @@ export const endpoints = {
   getParticipantOptions: (options = {}) => api.get(API_ROUTES.participantOptions, options),
   
   // Consent
-  recordConsent: (publicId, options = {}) => api.post(API_ROUTES.consent, { public_id: publicId }, options),
+  recordConsent: (publicId, options = {}) => {
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
+    return api.post(API_ROUTES.consent, { public_id: safePublicId }, options);
+  },
 
   // Email OTP verification
-  requestEmailOtp: (publicId, email, emailUpdate = false, options = {}) =>
-    api.post(API_ROUTES.emailOtpRequest, { public_id: publicId, email, email_update: emailUpdate }, options),
-  verifyEmailOtp: (publicId, email, otp, options = {}) => api.post(API_ROUTES.emailOtpVerify, { public_id: publicId, email, otp }, options),
+  requestEmailOtp: (publicId, email, emailUpdate = false, options = {}) => {
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
+    return api.post(API_ROUTES.emailOtpRequest, { public_id: safePublicId, email, email_update: emailUpdate }, options);
+  },
+  verifyEmailOtp: (publicId, email, otp, options = {}) => {
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
+    return api.post(API_ROUTES.emailOtpVerify, { public_id: safePublicId, email, otp }, options);
+  },
   
   // Images
   getRandomImage: (exclude = [], publicId = null, options = {}) => {
@@ -225,8 +234,10 @@ export const endpoints = {
   // Submissions
   submitDescription: async (data, options = {}) => {
     const turnstileToken = await getTurnstileToken("submission_submit");
+    const safePublicId = assertPublicId(data?.public_id, null, { message: getErrorMessage("NF_001_0001") });
     return api.post(API_ROUTES.submit, {
       ...data,
+      public_id: safePublicId,
       turnstile_token: turnstileToken || undefined,
     }, options);
   },
@@ -234,8 +245,9 @@ export const endpoints = {
   // Payment
   createPayment: async (publicId, options = {}) => {
     const turnstileToken = await getTurnstileToken("payment_create");
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
     return api.post(API_ROUTES.createPayment, {
-      public_id: publicId,
+      public_id: safePublicId,
       turnstile_token: turnstileToken || undefined,
     }, options);
   },
@@ -248,11 +260,15 @@ export const endpoints = {
     return api.get(API_ROUTES.paymentStatus(paymentId), { ...options, headers });
   },
   mintPaymentToken: (paymentId, publicId, sessionId, options = {}) => {
-    const payload = { public_id: publicId };
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
+    const payload = { public_id: safePublicId };
     if (sessionId) payload.session_id = sessionId;
     return api.post(API_ROUTES.paymentToken(paymentId), payload, options);
   },
-  getParticipantPaymentStatus: (publicId, options = {}) => api.get(API_ROUTES.participantPaymentStatus(publicId), options),
+  getParticipantPaymentStatus: (publicId, options = {}) => {
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
+    return api.get(API_ROUTES.participantPaymentStatus(safePublicId), options);
+  },
   getParticipantSession: (options = {}) => api.get(API_ROUTES.participantSession, options),
   verifyUpload: async (paymentId, payloadOrImageBase64, fileExtension, sha256, extra = {}, options = {}) => {
     const turnstileToken = await getTurnstileToken("payment_verify");
