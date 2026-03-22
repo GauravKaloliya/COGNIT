@@ -105,6 +105,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     surveyCompleted,
     surveyFeedbackReady,
     setSurveyFeedbackReady,
+    consentGiven,
     imageError,
     isFetchingImage,
     showConfetti,
