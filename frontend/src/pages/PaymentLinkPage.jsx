@@ -94,11 +94,18 @@ export default function PaymentLinkPage({
       <div className="panel payment-panel">
         <div className="payment-header">
           <div className="icon-badge" aria-hidden="true">⏳</div>
-          <h2 className="payment-title">{uiText("payment.expiredTitle")}</h2>
-          <p className="payment-subtitle">{uiText("payment.expiredSubtitle")}</p>
         </div>
         <div className="banner warning spaced">
           {error || getErrorMessage("PAY_001_0001")}
+        </div>
+        <div className="page-actions">
+          <DSButton
+            variant="primary"
+            onClick={restartPayment}
+            disabled={offlineDisabled}
+          >
+            {uiText("payment.startNewPayment")}
+          </DSButton>
         </div>
       </div>
     );
@@ -132,21 +139,6 @@ export default function PaymentLinkPage({
               <li key={`fraud-step-${idx}`}>{step}</li>
             ))}
           </ul>
-        </div>
-      </div>
-    );
-  }
-
-  if (!paymentData && paymentStatus === "pending") {
-    return (
-      <div className="panel payment-panel">
-        <div className="status-panel">
-          <PanelState
-            variant="warning"
-            title={uiText("payment.refreshTitle")}
-            message={uiText("payment.refreshMessage")}
-            disabled={offlineDisabled}
-          />
         </div>
       </div>
     );
