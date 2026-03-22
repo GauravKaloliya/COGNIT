@@ -897,7 +897,6 @@ export function useAppController() {
     addToast(uiText("consent.saved"), "success");
   }, [addToast]);
 
-  const handleUserDetailsBack = useCallback(() => setStageManual(APP_FLOW.stages.consent), [setStageManual]);
   const handleEmailVerified = useCallback(() => {
     setEmailVerified(true);
     if (validateStageTransition(APP_FLOW.stages.userDetails, APP_FLOW.stages.payment)) {
@@ -939,7 +938,6 @@ export function useAppController() {
     dismissToast,
     handleConsentGiven,
     handleUserDetailsSubmit,
-    handleUserDetailsBack,
     handleEmailVerified,
     handlePaymentComplete,
     handlePaymentContentToLink,

@@ -3,17 +3,18 @@ import PanelState from "../components/PanelState.jsx";
 import { useFinishedPage } from "../hooks/useFinishedPage";
 import { uiText } from "../utils/uiText";
 import DSButton from "../components/design/DSButton.jsx";
+import PageStatusBanners from "../components/PageStatusBanners.jsx";
+import PageActions from "../components/PageActions.jsx";
 
 export default function FinishedPage({ surveyCompleted, publicId, clearUserStorage }) {
   const { isOnline, rewardAmountLabel, handleFinish } = useFinishedPage({ publicId, clearUserStorage });
 
   return (
     <div className="panel finish-panel">
-      {!isOnline && (
-        <div className="banner warning">
-          <span>{uiText("finish.offlineBanner")}</span>
-        </div>
-      )}
+      <PageStatusBanners
+        isOnline={isOnline}
+        offlineMessage={uiText("finish.offlineBanner")}
+      />
       <div className="finish-wrapper">
         <h2>{uiText("finish.thankYouTitle")}</h2>
         <p className="page-subtitle">
@@ -44,7 +45,7 @@ export default function FinishedPage({ surveyCompleted, publicId, clearUserStora
 
         <p className="debrief">{uiText("finish.debrief")}</p>
 
-        <div className="page-actions sticky-mobile-actions inline-actions">
+        <PageActions sticky inline>
           <DSButton variant="primary" onClick={handleFinish} disabled={!isOnline}>
             {uiText("finish.finishButton")}
           </DSButton>
@@ -53,7 +54,7 @@ export default function FinishedPage({ surveyCompleted, publicId, clearUserStora
               <span>{uiText("finish.offlineFinishMessage")}</span>
             </div>
           )}
-        </div>
+        </PageActions>
       </div>
     </div>
   );
