@@ -47,9 +47,11 @@ const writeConsentDraft = (scope, checked) => {
   });
 };
 
-export function useConsentPage({ publicId, onConsentGiven, systemReady }) {
+export function useConsentPage({ publicId, consentGiven = false, onConsentGiven, systemReady }) {
   const scope = String(publicId || "").trim() || "anon";
-  const [consentChecked, setConsentChecked] = useState(() => readConsentDraft(scope));
+  const [consentChecked, setConsentChecked] = useState(() => (
+    consentGiven || readConsentDraft(scope)
+  ));
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [draftRestored] = useState(() => readConsentDraft(scope));
@@ -68,6 +70,12 @@ export function useConsentPage({ publicId, onConsentGiven, systemReady }) {
   useEffect(() => {
     document.title = uiText("consent.documentTitle");
   }, []);
+
+  useEffect(() => {
+    if (consentGiven) {
+      setConsentChecked(true);
+    }
+  }, [consentGiven]);
 
   useEffect(() => {
     if (!isOnline) return;

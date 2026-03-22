@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { uiText } from "../utils/uiText";
+import { requirePublicId } from "../utils/publicId";
 import { APP_FLOW } from "../config/appFlow";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
@@ -30,13 +31,17 @@ export function usePaymentFlow({
       return;
     }
 
+    const effectivePublicId = requirePublicId(publicId, () => {
+      addToast(getErrorMessage("NF_001_0001"), TOAST_VARIANTS.warning);
+    });
+    if (!effectivePublicId) return;
     try {
       if (verifyAbortRef.current) {
         verifyAbortRef.current.abort();
       }
       const controller = new AbortController();
       verifyAbortRef.current = controller;
-      const paymentStatus = await endpoints.getParticipantPaymentStatus(publicId, { signal: controller.signal });
+      const paymentStatus = await endpoints.getParticipantPaymentStatus(effectivePublicId, { signal: controller.signal });
       if (paymentStatus.is_verified) {
         const switched = await transitionToSurvey();
         if (switched) {

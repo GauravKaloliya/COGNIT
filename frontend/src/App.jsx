@@ -160,7 +160,14 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
 
       switch (stage) {
         case "consent":
-        return <ConsentPage publicId={publicId} onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
+        return (
+          <ConsentPage
+            publicId={publicId}
+            consentGiven={consentGiven}
+            onConsentGiven={handleConsentGiven}
+            systemReady={systemReady}
+          />
+        );
       case "user-details":
         return (
           <UserDetailsPage
@@ -211,7 +218,14 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
       case "finished":
         return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} clearUserStorage={clearUserStorage} />;
       default:
-        return <ConsentPage publicId={publicId} onConsentGiven={handleConsentGiven} systemReady={systemReady} />;
+        return (
+          <ConsentPage
+            publicId={publicId}
+            consentGiven={consentGiven}
+            onConsentGiven={handleConsentGiven}
+            systemReady={systemReady}
+          />
+        );
     }
   };
 
