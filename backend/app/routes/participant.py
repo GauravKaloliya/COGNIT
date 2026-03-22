@@ -13,7 +13,6 @@ from app.constants.event_constants import (
 )
 from app.constants.log_messages import (
     LOG_CHECK_EMAIL_FAILED,
-    LOG_CHECK_PHONE_FAILED,
     LOG_CHECK_USERNAME_FAILED,
     LOG_CONSENT_FAILED,
     LOG_PARTICIPANT_CREATE_FAILED,
@@ -25,7 +24,6 @@ from app.constants.audit_details import AUDIT_DETAIL_PARTICIPANT_CREATED
 from app.constants.observability_constants import OBS_EVENT_PARTICIPANT_CREATE_ROLLBACK_FAILED
 from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
-    PARTICIPANT_FIELD_PHONE,
     PARTICIPANT_FIELD_USERNAME,
     PARTICIPANT_PAYMENT_STATUS_PAID,
     PARTICIPANT_STATUS_CONSENT_RECORDED,
@@ -37,7 +35,6 @@ from app.constants.request_keys import (
     REQUEST_KEY_EMAIL_UPDATE,
     REQUEST_KEY_IDEMPOTENCY_KEY,
     REQUEST_KEY_OTP,
-    REQUEST_KEY_PHONE,
     REQUEST_KEY_PUBLIC_ID,
     REQUEST_KEY_TURNSTILE_TOKEN,
     REQUEST_KEY_USERNAME,
@@ -58,7 +55,6 @@ from app.constants.response_keys import (
 )
 from app.constants.route_constants import (
     CHECK_EMAIL_ROUTE,
-    CHECK_PHONE_ROUTE,
     CHECK_USERNAME_ROUTE,
     CONSENT_ROUTE,
     EMAIL_OTP_REQUEST_ROUTE,
@@ -166,13 +162,10 @@ def create_participant():
 
         username = str(data[REQUEST_KEY_USERNAME]).strip()[:50]
         email = str(data[REQUEST_KEY_EMAIL]).strip().lower()[:255]
-        phone = str(data[REQUEST_KEY_PHONE]).strip()[:20]
-
         conflict_error_key = find_existing_participant_conflict(
             db,
             username=username,
             email=email,
-            phone=phone,
         )
         if conflict_error_key:
             return create_error_response(conflict_error_key)
@@ -253,22 +246,6 @@ def check_email():
         return success_response({RESPONSE_KEY_AVAILABLE: is_participant_field_available(db, field_name=PARTICIPANT_FIELD_EMAIL, value=email)})
     except Exception as e:
         logger.error(LOG_CHECK_EMAIL_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("DATABASE_ERROR")
-
-
-@participant_bp.route(CHECK_PHONE_ROUTE)
-@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
-@track_performance
-def check_phone():
-    """Check if phone number is already registered."""
-    phone = request.args.get("phone", "").strip()
-    if not phone:
-        return create_error_response("MISSING_FIELDS", {"fields": ["phone"]})
-    try:
-        db = get_db()
-        return success_response({RESPONSE_KEY_AVAILABLE: is_participant_field_available(db, field_name=PARTICIPANT_FIELD_PHONE, value=phone)})
-    except Exception as e:
-        logger.error(LOG_CHECK_PHONE_FAILED, e, getattr(g, "request_id", None))
         return create_error_response("DATABASE_ERROR")
 
 

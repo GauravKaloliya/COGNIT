@@ -34,7 +34,6 @@ const TRANSLATIONS = {
     // User detail validation
     'VAL_001_0001': 'Username must be at least 2 characters and contain only letters, numbers, and underscores',
     'VAL_001_0002': 'Please enter a valid email address from Gmail, Outlook, Hotmail, or iCloud',
-    'VAL_001_0003': 'Please enter a valid 10-digit Indian mobile number',
     'VAL_001_0004': 'Age must be between 13 and 100',
     'VAL_001_0005': 'Please select a gender',
     'VAL_001_0006': 'Please enter your location',
@@ -46,7 +45,6 @@ const TRANSLATIONS = {
     'VAL_001_0013': 'Please enter a valid email address',
     'VAL_001_0014': 'Only Gmail, Outlook, Hotmail, and iCloud email addresses are allowed',
     'VAL_001_0015': 'Phone number is required',
-    'VAL_001_0016': 'Please enter a valid 10-digit Indian mobile number',
     'VAL_001_0017': 'Gender is required',
     'VAL_001_0018': 'Age is required',
     'VAL_001_0019': 'Age must be between {min} and {max}',
@@ -74,7 +72,6 @@ const TRANSLATIONS = {
     // User registration duplicates
     'DUP_001_0001': 'This username is already taken',
     'DUP_001_0002': 'This email is already registered',
-    'DUP_001_0003': 'This phone number is already registered',
     'DUP_001_0004': 'You have already registered',
     
     // Submission duplicates
@@ -210,7 +207,7 @@ const TRANSLATIONS = {
     'ERR_INVALID_FORMAT': 'The data format is incorrect. Please check your input.',
     'ERR_INVALID_UUID': 'Invalid identifier format. Please refresh the page and try again.',
     'ERR_PARTICIPANT_NOT_FOUND': 'We couldn\'t find your registration. Please complete the registration form first.',
-    'ERR_PARTICIPANT_EXISTS': 'Username, email, or phone number is already registered. Please use different details.',
+    'ERR_PARTICIPANT_EXISTS': 'Username or email is already registered. Please use different details.',
     'ERR_CONSENT_REQUIRED': 'Consent is required to continue. Please complete the consent process.',
     'ERR_FLAGGED_ACCOUNT': 'Your account has been flagged due to low attention scores.',
     'ERR_DESC_LENGTH': 'Description must be between 60 and 10,000 characters.',

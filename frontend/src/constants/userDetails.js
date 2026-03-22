@@ -1,7 +1,6 @@
 export const USER_DETAIL_FIELDS = {
   username: "username",
   email: "email",
-  phone: "phone",
   genderCode: "gender_code",
   age: "age",
   location: "location",
@@ -13,14 +12,12 @@ export const USER_DETAIL_FIELDS = {
 export const USER_DETAILS_DUPLICATE_ERROR_CODES = {
   username: "DUP_001_0001",
   email: "DUP_001_0002",
-  phone: "DUP_001_0003",
   fallback: "DUP_001_0004",
 };
 
 export const USER_DETAILS_ERROR_CODE_TO_FIELD = {
   DUP_001_0001: USER_DETAIL_FIELDS.username,
   DUP_001_0002: USER_DETAIL_FIELDS.email,
-  DUP_001_0003: USER_DETAIL_FIELDS.phone,
 };
 
 export const GEOLOCATION_MODES = {

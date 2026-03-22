@@ -56,12 +56,6 @@ const EMAIL_OTP_TTL_MS = Math.max(
 
 export const sanitizeUsername = (value) => value.replace(/[^a-zA-Z0-9_]/g, "");
 
-const normalizePhoneForApi = (rawPhone) => {
-  const digits = String(rawPhone ?? "").replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith(STRING_PREFIXES.countryCode91)) return digits.slice(2);
-  return digits;
-};
-
 export function useUserDetailsPage({
   publicId,
   demographics,
@@ -120,7 +114,7 @@ export function useUserDetailsPage({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [pendingSubmit, setPendingSubmit] = useState(false);
-  const [checking, setChecking] = useState({ username: false, email: false, phone: false });
+  const [checking, setChecking] = useState({ username: false, email: false });
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
@@ -146,9 +140,9 @@ export function useUserDetailsPage({
   const userEditedLocationRef = useRef(false);
   const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
   const resendSeconds = useRetryCountdown(resendCountdownActive, resendInitialSeconds);
-  const debounceTimerRef = useRef({ username: null, email: null, phone: null });
+  const debounceTimerRef = useRef({ username: null, email: null });
   const reverseGeocodeAbortRef = useRef(null);
-  const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
+  const availabilityAbortRef = useRef({ username: null, email: null });
   const suppressAvailabilityRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const draftSaveTimeoutRef = useRef(null);
@@ -343,15 +337,6 @@ export function useUserDetailsPage({
     if (!REGEX_PATTERNS.email.test(value)) return getErrorMessage("VAL_001_0013");
     const domain = value.split("@")[1];
     if (!runtimeConfig.allowedEmailDomains.includes(domain)) return getErrorMessage("VAL_001_0014");
-    return "";
-  }, []);
-
-  const validatePhoneInput = useCallback((rawPhone) => {
-    const phoneDigits = String(rawPhone ?? "").replace(/\D/g, "");
-    if (!phoneDigits) return getErrorMessage("VAL_001_0015");
-    const isValidIndian = REGEX_PATTERNS.indianPhone.test(phoneDigits)
-      || (phoneDigits.length === 12 && phoneDigits.startsWith(STRING_PREFIXES.countryCode91) && REGEX_PATTERNS.indianPhone.test(phoneDigits.slice(2)));
-    if (!isValidIndian) return getErrorMessage("VAL_001_0016");
     return "";
   }, []);
 
@@ -695,8 +680,6 @@ export function useUserDetailsPage({
     if (usernameError) newErrors.username = usernameError;
     const emailError = validateEmailInput(demographics.email);
     if (emailError) newErrors.email = emailError;
-    const phoneError = validatePhoneInput(demographics.phone);
-    if (phoneError) newErrors.phone = phoneError;
     const genderError = validateGenderInput(demographics.gender_code);
     if (genderError) newErrors.gender_code = genderError;
     const ageError = validateAgeInput(demographics.age);
@@ -720,7 +703,6 @@ export function useUserDetailsPage({
     validateGenderInput,
     validateLanguageInput,
     validateLocationInput,
-    validatePhoneInput,
     validatePriorExperienceInput,
     validateUsernameInput,
   ]);
@@ -757,21 +739,17 @@ export function useUserDetailsPage({
       }
     });
     setSubmitting(true);
-    setChecking({ username: true, email: true, phone: true });
+    setChecking({ username: true, email: true });
 
     try {
       const normalizedUsername = String(demographics.username || "").trim();
       const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
-      const phoneDigits = normalizePhoneForApi(demographics.phone);
-
       let usernameCheck;
       let emailCheck;
-      let phoneCheck;
       try {
-        [usernameCheck, emailCheck, phoneCheck] = await Promise.all([
+        [usernameCheck, emailCheck] = await Promise.all([
           endpoints.checkUsername(normalizedUsername),
           endpoints.checkEmail(normalizedEmail),
-          endpoints.checkPhone(phoneDigits),
         ]);
       } catch (error) {
         if (error?.code === REQUEST_CODES.aborted) return;
@@ -785,7 +763,6 @@ export function useUserDetailsPage({
       const results = [
         { field: "username", available: usernameCheck?.available !== false },
         { field: "email", available: emailCheck?.available !== false },
-        { field: "phone", available: phoneCheck?.available !== false },
       ];
       const newErrors = {};
       results.forEach((result) => {
@@ -846,21 +823,17 @@ export function useUserDetailsPage({
       }
       if (error?.status === 409) {
         try {
-          const [u, e, p] = await Promise.all([
+          const [u, e] = await Promise.all([
             demographics.username?.trim()
               ? endpoints.checkUsername(demographics.username.trim()).catch(() => ({ available: true }))
               : Promise.resolve({ available: true }),
             demographics.email?.trim()
               ? endpoints.checkEmail(demographics.email.trim()).catch(() => ({ available: true }))
               : Promise.resolve({ available: true }),
-            demographics.phone
-              ? endpoints.checkPhone(normalizePhoneForApi(demographics.phone)).catch(() => ({ available: true }))
-              : Promise.resolve({ available: true }),
           ]);
           const conflictErrors = {};
           if (u?.available === false) conflictErrors[USER_DETAIL_FIELDS.username] = getErrorMessage(USER_DETAILS_DUPLICATE_ERROR_CODES.username);
           if (e?.available === false) conflictErrors[USER_DETAIL_FIELDS.email] = getErrorMessage(USER_DETAILS_DUPLICATE_ERROR_CODES.email);
-          if (p?.available === false) conflictErrors[USER_DETAIL_FIELDS.phone] = getErrorMessage(USER_DETAILS_DUPLICATE_ERROR_CODES.phone);
           if (Object.keys(conflictErrors).length > 0) {
             setErrors((prev) => ({ ...prev, ...conflictErrors }));
             return;
@@ -875,7 +848,7 @@ export function useUserDetailsPage({
       }));
     } finally {
       setSubmitting(false);
-      setChecking({ username: false, email: false, phone: false });
+      setChecking({ username: false, email: false });
       suppressAvailabilityRef.current = false;
     }
   }, [addToast, demographics, isOnline, onSubmit, otpLength, publicId, scopedUserDetailsPendingKey, validateForm]);
@@ -1131,8 +1104,6 @@ export function useUserDetailsPage({
         return validateUsernameInput(value);
       case "email":
         return validateEmailInput(value);
-      case "phone":
-        return validatePhoneInput(value);
       case "gender_code":
         return validateGenderInput(value);
       case "age":
@@ -1152,7 +1123,6 @@ export function useUserDetailsPage({
     validateGenderInput,
     validateLanguageInput,
     validateLocationInput,
-    validatePhoneInput,
     validatePriorExperienceInput,
     validateUsernameInput,
   ]);
@@ -1163,12 +1133,6 @@ export function useUserDetailsPage({
     if (field === "username" && value.trim().length < USERNAME_MIN_LENGTH) return;
     if (field === "email") {
       if (!REGEX_PATTERNS.email.test(value.trim())) return;
-    }
-    if (field === "phone") {
-      const phoneDigits = normalizePhoneForApi(value);
-      const isValidIndian = REGEX_PATTERNS.indianPhone.test(phoneDigits)
-        || (phoneDigits.length === 12 && phoneDigits.startsWith(STRING_PREFIXES.countryCode91) && REGEX_PATTERNS.indianPhone.test(phoneDigits.slice(2)));
-      if (!isValidIndian) return;
     }
 
     setChecking((prev) => ({ ...prev, [field]: true }));
@@ -1182,7 +1146,8 @@ export function useUserDetailsPage({
         ? endpoints.checkUsername(value.trim(), { signal: controller.signal })
         : field === "email"
           ? endpoints.checkEmail(value.trim(), { signal: controller.signal })
-          : endpoints.checkPhone(normalizePhoneForApi(value), { signal: controller.signal });
+          : null;
+      if (!request) return;
       const data = await request;
 
       if (!data.available) {
@@ -1229,7 +1194,6 @@ export function useUserDetailsPage({
   const requiredFields = [
     "username",
     "email",
-    "phone",
     "gender_code",
     "age",
     "location",

@@ -84,12 +84,6 @@ function createId() {
   return createFallbackUuid();
 }
 
-function normalizePhoneForApi(rawPhone) {
-  const digits = String(rawPhone ?? "").replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith(STRING_PREFIXES.countryCode91)) return digits.slice(2);
-  return digits;
-}
-
 const validateStageTransition = (currentStage, targetStage, paymentVerified = false) => {
   const currentIndex = APP_STAGE_ORDER.indexOf(currentStage);
   const targetIndex = APP_STAGE_ORDER.indexOf(targetStage);
@@ -111,7 +105,6 @@ const validateStageTransition = (currentStage, targetStage, paymentVerified = fa
 const isDemographicsComplete = (demographics) => {
   const username = String(demographics?.username || "").trim();
   const email = String(demographics?.email || "").trim().toLowerCase();
-  const phoneDigits = String(demographics?.phone || "").replace(/\D/g, "");
   const gender = String(demographics?.gender_code || "").trim();
   const ageRaw = String(demographics?.age || "").trim();
   const location = String(demographics?.location || "").trim();
@@ -119,15 +112,10 @@ const isDemographicsComplete = (demographics) => {
   const prior = String(demographics?.prior_experience || "").trim();
   const usernameOk = username.length >= runtimeConfig.usernameMinLength;
   const emailOk = REGEX_PATTERNS.email.test(email);
-  const phoneOk = REGEX_PATTERNS.indianPhone.test(phoneDigits) || (
-    phoneDigits.length === 12 &&
-    phoneDigits.startsWith(STRING_PREFIXES.countryCode91) &&
-    REGEX_PATTERNS.indianPhone.test(phoneDigits.slice(2))
-  );
   const ageNum = Number(ageRaw);
   const ageOk = Number.isFinite(ageNum) && ageNum >= runtimeConfig.ageMin && ageNum <= runtimeConfig.ageMax;
   const locationOk = location.length >= runtimeConfig.locationMinLength;
-  return usernameOk && emailOk && phoneOk && gender && ageOk && locationOk && language && prior;
+  return usernameOk && emailOk && gender && ageOk && locationOk && language && prior;
 };
 
 const hasAnyDemographicsValue = (demographics) => {
@@ -135,7 +123,6 @@ const hasAnyDemographicsValue = (demographics) => {
   const fields = [
     demographics.username,
     demographics.email,
-    demographics.phone,
     demographics.gender_code,
     demographics.age,
     demographics.location,
@@ -192,7 +179,6 @@ export function useAppController() {
     readCoreValue(runtimeConfig.storageKeys.demographics, {
       username: "",
       email: "",
-      phone: "",
       gender_code: "",
       age: "",
       location: "",
@@ -652,7 +638,6 @@ export function useAppController() {
     const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
       username: "",
       email: "",
-      phone: "",
       gender_code: "",
       age: "",
       location: "",
@@ -794,7 +779,6 @@ export function useAppController() {
       const participant = await endpoints.createParticipant({
         username: demographics.username,
         email: demographics.email,
-        phone: normalizePhoneForApi(demographics.phone),
         gender_code: demographics.gender_code,
         age: parseInt(demographics.age),
         location: demographics.location,
