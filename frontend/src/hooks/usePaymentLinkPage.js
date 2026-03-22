@@ -1815,7 +1815,11 @@ export function usePaymentLinkPage({
         return;
       }
       if (!paymentData && paymentStatus === PAYMENT_STATUS.pending) {
-        await createPayment();
+        const hasStoredPaymentId = Boolean(loadStoredPaymentId());
+        const hasStoredView = Boolean(loadPaymentViewState());
+        if (!wasPaymentCreated() && !hasStoredPaymentId && !hasStoredView) {
+          await createPayment("auto_reconnect_no_state");
+        }
         return;
       }
       if (getPaymentField(paymentData, PAYMENT_API_FIELDS.id) && !isMobile && !getPaymentField(paymentData, PAYMENT_API_FIELDS.qrBase64)) {
@@ -1860,6 +1864,9 @@ export function usePaymentLinkPage({
     notifySessionExpired,
     onNext,
     loadPaymentToken,
+    loadPaymentViewState,
+    loadStoredPaymentId,
+    wasPaymentCreated,
     scopedPendingCreateKey,
     scopedPendingVerifyKey,
   ]);
