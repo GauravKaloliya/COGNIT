@@ -5,6 +5,8 @@ import PageSkeleton from "../components/PageSkeleton.jsx";
 import SectionSkeleton from "../components/SectionSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import DSButton from "../components/design/DSButton.jsx";
+import PageStatusBanners from "../components/PageStatusBanners.jsx";
+import PageActions from "../components/PageActions.jsx";
 import {
   DESCRIPTION_NOTES,
   FEEDBACK_NOTES,
@@ -128,21 +130,12 @@ export default function SurveyPage({
 
   return (
     <div className="panel survey-page-panel">
-      {!isOnline && (
-        <div className="banner warning">
-          <span>{uiText("survey.offlineBanner")}</span>
-        </div>
-      )}
-      {draftRestored && (
-        <div className="banner info">
-          <span>{uiText("draft.restored")}</span>
-        </div>
-      )}
-      {saveError && (
-        <div className="banner warning">
-          <span>{saveError}</span>
-        </div>
-      )}
+      <PageStatusBanners
+        isOnline={isOnline}
+        offlineMessage={uiText("survey.offlineBanner")}
+        draftRestored={draftRestored}
+        saveError={saveError}
+      />
       <div className="meta meta-step-top">
         <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: Math.min(UI_TOTAL_STEPS, currentStep) })}</span>
       </div>
@@ -346,7 +339,7 @@ export default function SurveyPage({
 
       {submitError && <div className="banner warning">{submitError}</div>}
 
-      <div className="actions page-actions survey-submit-actions survey-sticky-footer sticky-mobile-actions">
+      <PageActions sticky className="actions survey-submit-actions survey-sticky-footer">
         <div className="submit-info-box">
           <p className="submit-shortcut-hint">{uiText("survey.submitShortcut")}</p>
         </div>
@@ -363,7 +356,7 @@ export default function SurveyPage({
             </>
           ) : submitLocked ? uiText("survey.submitLocked") : uiText("survey.submit")}
         </DSButton>
-      </div>
+      </PageActions>
     </div>
   );
 }

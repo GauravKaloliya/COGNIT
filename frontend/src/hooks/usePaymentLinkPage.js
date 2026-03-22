@@ -58,8 +58,6 @@ export function usePaymentLinkPage({
   const [failureReasons, setFailureReasons] = useState([]);
   const [refreshNotice, setRefreshNotice] = useState("");
   const [refreshNoticeVariant, setRefreshNoticeVariant] = useState(PAYMENT_NOTICE_VARIANT.info);
-  const [lastServerStatus, setLastServerStatus] = useState("");
-  const [restoreWarning, setRestoreWarning] = useState("");
   const isOnline = useOnlineStatus();
   const refreshNoticeShownRef = useRef(false);
   const fileInputRef = useRef(null);
@@ -103,7 +101,7 @@ export function usePaymentLinkPage({
   const offlineDisabled = !isOnline;
   const retryBlocked = retryInSeconds > 0;
   const retryButtonLabel = retryBlocked
-    ? uiText("payment.tryAgainIn", { seconds: retryInSeconds })
+    ? uiText("common.tryAgainIn", { seconds: retryInSeconds })
     : uiText("survey.retryShort");
   const notifySessionExpired = useCallback(() => {
     if (typeof addToast === "function") {
@@ -159,7 +157,7 @@ export function usePaymentLinkPage({
       }
     }
     throw new Error("payment_status_retry_exhausted");
-  }, []);
+  }, [loadPaymentToken, savePaymentToken]);
 
   const beginOperation = useCallback(() => {
     opVersionRef.current += 1;
@@ -704,7 +702,7 @@ export function usePaymentLinkPage({
     }
   }, [isOperationCurrent]);
 
-  const createPayment = useCallback(async (reason = "") => {
+  const createPayment = useCallback(async (_reason = "") => {
     const operationId = beginOperation();
     const effectivePublicId = requirePublicId(publicId);
     if (!effectivePublicId) {
@@ -716,6 +714,14 @@ export function usePaymentLinkPage({
       setPendingFlag(scopedPendingCreateKey);
       return;
     }
+
+    // Reset any previous timer state before creating a new payment.
+    stopTimer(true);
+    pendingTimerExpiresAtRef.current = null;
+    pausedTimerRef.current = null;
+    timerTotalMsRef.current = runtimeConfig.paymentTimerDurationMs;
+    setTimeRemaining(0);
+    setTimerProgress(100);
 
     const timeoutMs = Math.max(0, runtimeConfig.paymentCreateTimeoutMs || 0);
     let timedOut = false;
@@ -811,7 +817,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, onParticipantNotFound, publicId, requestStartTimer, savePaymentToken, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, onParticipantNotFound, publicId, requestStartTimer, savePaymentToken, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError, stopTimer]);
 
   useEffect(() => {
     return () => {
@@ -1120,6 +1126,7 @@ export function usePaymentLinkPage({
     loadStoredPaymentId,
     loadPaymentViewState,
     loadPaymentToken,
+    getPaymentStatusWithRetry,
     notifySessionExpired,
     notifySessionRefreshing,
     onNext,
@@ -1131,6 +1138,7 @@ export function usePaymentLinkPage({
     scopedPaymentIdKey,
     sessionId,
     savePaymentToken,
+    savePaymentViewState,
   ]);
 
   useEffect(() => {
@@ -1382,9 +1390,6 @@ export function usePaymentLinkPage({
       if (!isOperationCurrent(operationId)) return;
 
       const precheckState = getPaymentField(precheckStatus, PAYMENT_API_FIELDS.status);
-      if (precheckState) {
-        setLastServerStatus(String(precheckState));
-      }
       if (precheckState === PAYMENT_STATUS.expired || getPaymentField(precheckStatus, PAYMENT_API_FIELDS.isExpired)) {
         notifySessionExpired();
         await createPayment();
@@ -1823,8 +1828,6 @@ export function usePaymentLinkPage({
     failureReasons,
     refreshNotice,
     refreshNoticeVariant,
-    lastServerStatus,
-    restoreWarning,
     isOnline,
     fileInputRef,
     timeRemaining,

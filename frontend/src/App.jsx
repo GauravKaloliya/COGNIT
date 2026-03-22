@@ -115,7 +115,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     dismissToast,
     handleConsentGiven,
     handleUserDetailsSubmit,
-    handleUserDetailsBack,
     handleEmailVerified,
     handlePaymentComplete,
     handlePaymentContentToLink,
@@ -178,7 +177,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
             onSubmit={handleUserDetailsSubmit}
             onEmailVerified={handleEmailVerified}
             addToast={addToast}
-            onBack={handleUserDetailsBack}
             systemReady={systemReady}
           />
         );

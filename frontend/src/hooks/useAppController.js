@@ -190,7 +190,6 @@ const deriveMaxAllowedStage = ({
 };
 
 export function useAppController() {
-  const manualStageRef = useRef(null);
   const tabIdRef = useRef(createId());
   const demographicsSaveTimeoutRef = useRef(null);
   const isOnline = useOnlineStatus();
@@ -521,10 +520,6 @@ export function useAppController() {
     }
   }, [fetchImage]);
 
-  const setStageManual = useCallback((nextStage) => {
-    manualStageRef.current = nextStage;
-    setStage(nextStage);
-  }, [setStage]);
 
   const paymentFlow = usePaymentFlow({
     publicId,
@@ -686,10 +681,6 @@ export function useAppController() {
 
   useEffect(() => {
     if (!sessionHydrated) return;
-    if (manualStageRef.current && stage === manualStageRef.current) {
-      manualStageRef.current = null;
-      return;
-    }
     const maxAllowedStage = deriveMaxAllowedStage({
       currentStage: stage,
       consentGiven,
@@ -897,7 +888,6 @@ export function useAppController() {
     addToast(uiText("consent.saved"), "success");
   }, [addToast]);
 
-  const handleUserDetailsBack = useCallback(() => setStageManual(APP_FLOW.stages.consent), [setStageManual]);
   const handleEmailVerified = useCallback(() => {
     setEmailVerified(true);
     if (validateStageTransition(APP_FLOW.stages.userDetails, APP_FLOW.stages.payment)) {
@@ -939,7 +929,6 @@ export function useAppController() {
     dismissToast,
     handleConsentGiven,
     handleUserDetailsSubmit,
-    handleUserDetailsBack,
     handleEmailVerified,
     handlePaymentComplete,
     handlePaymentContentToLink,
