@@ -11,6 +11,8 @@ function readDarkMode() {
 export function useMainAppController() {
   const [darkMode, setDarkMode] = useState(() => readDarkMode());
   const [error, setError] = useState(null);
+  const [rateLimitError, setRateLimitError] = useState(null);
+  const [maintenanceError, setMaintenanceError] = useState(null);
   const [storageOk] = useState(() => isStorageAvailable("local"));
 
   useEffect(() => {
@@ -46,12 +48,30 @@ export function useMainAppController() {
       });
     };
 
+    const handleRateLimit = (event) => {
+      const detail = event?.detail || null;
+      deferSetError(null);
+      setMaintenanceError(null);
+      setRateLimitError(detail || { message: "Too many requests. Please slow down and try again." });
+    };
+
+    const handleMaintenance = (event) => {
+      const detail = event?.detail || null;
+      deferSetError(null);
+      setRateLimitError(null);
+      setMaintenanceError(detail || { message: "Website is under maintenance. Please try again later." });
+    };
+
     const teardownReporter = initErrorReporter();
     window.addEventListener(BROWSER_EVENTS.error, handleError);
     window.addEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
+    window.addEventListener("cognit:rate-limit", handleRateLimit);
+    window.addEventListener("cognit:maintenance", handleMaintenance);
     return () => {
       window.removeEventListener(BROWSER_EVENTS.error, handleError);
       window.removeEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
+      window.removeEventListener("cognit:rate-limit", handleRateLimit);
+      window.removeEventListener("cognit:maintenance", handleMaintenance);
       teardownReporter();
     };
   }, []);
@@ -61,6 +81,10 @@ export function useMainAppController() {
     storageOk,
     error,
     resetError: () => setError(null),
+    rateLimitError,
+    resetRateLimit: () => setRateLimitError(null),
+    maintenanceError,
+    resetMaintenance: () => setMaintenanceError(null),
     toggleDarkMode: () => setDarkMode((prev) => !prev),
   };
 }

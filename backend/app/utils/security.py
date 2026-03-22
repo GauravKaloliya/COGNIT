@@ -13,7 +13,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.config import PAYMENT_SECRET, UPI_VPA, UPI_NAME
+from app.config import PAYMENT_SECRET, UPI_NAME
 
 
 # ────────────────────────────────────────────────
@@ -63,7 +63,13 @@ def _make_upi_tid(payment_ref: str) -> str:
     return digits[:12]
 
 
-def generate_upi_link(amount: float, *, payment_ref: Optional[str] = None) -> str:
+def generate_upi_link(
+    amount: float,
+    *,
+    payment_ref: Optional[str] = None,
+    upi_vpa: Optional[str] = None,
+    upi_name: Optional[str] = None,
+) -> str:
     """
     Generate UPI payment link for mobile apps.
     
@@ -73,8 +79,8 @@ def generate_upi_link(amount: float, *, payment_ref: Optional[str] = None) -> st
     Returns:
         UPI payment URI string
     """
-    upi_vpa = str(UPI_VPA or "").strip()
-    upi_name = str(UPI_NAME or "").strip()
+    upi_vpa = str(upi_vpa or "").strip()
+    upi_name = str(upi_name or UPI_NAME or "").strip()
 
     if not upi_vpa:
         raise ValueError("UPI_VPA is missing")

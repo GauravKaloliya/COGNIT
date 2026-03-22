@@ -574,10 +574,89 @@ CREATE INDEX IF NOT EXISTS idx_priority_participants_eligible
 -- =====================================================================
 -- PAYMENTS & FRAUD
 -- =====================================================================
+CREATE TABLE IF NOT EXISTS upi_accounts (
+    id         BIGSERIAL PRIMARY KEY,
+    vpa        VARCHAR(256) NOT NULL UNIQUE,
+    name       VARCHAR(120) NOT NULL,
+    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_upi_accounts_updated_at
+    BEFORE UPDATE ON upi_accounts
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE IF NOT EXISTS upi_daily_stats (
+    id                   BIGSERIAL PRIMARY KEY,
+    upi_id               BIGINT NOT NULL REFERENCES upi_accounts(id) ON DELETE CASCADE,
+    stats_date           DATE NOT NULL,
+    attempts_today       INTEGER NOT NULL DEFAULT 0 CHECK (attempts_today >= 0),
+    failures_today       INTEGER NOT NULL DEFAULT 0 CHECK (failures_today >= 0),
+    recent_failures      INTEGER NOT NULL DEFAULT 0 CHECK (recent_failures >= 0),
+    consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+    last_failure_time    TIMESTAMPTZ,
+    last_1min_attempts   INTEGER NOT NULL DEFAULT 0 CHECK (last_1min_attempts >= 0),
+    last_burst_reset     TIMESTAMPTZ,
+    cooldown_until       TIMESTAMPTZ,
+    status               VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+        CHECK (status IN ('ACTIVE','COOLDOWN','DISABLED')),
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (upi_id, stats_date)
+);
+
+CREATE TRIGGER trg_upi_daily_stats_updated_at
+    BEFORE UPDATE ON upi_daily_stats
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_upi_daily_stats_date ON upi_daily_stats (stats_date);
+CREATE INDEX IF NOT EXISTS idx_upi_daily_stats_status ON upi_daily_stats (status);
+
+CREATE TABLE IF NOT EXISTS upi_global_daily (
+    stats_date      DATE PRIMARY KEY,
+    attempts_today  INTEGER NOT NULL DEFAULT 0 CHECK (attempts_today >= 0),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_upi_global_daily_updated_at
+    BEFORE UPDATE ON upi_global_daily
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE IF NOT EXISTS upi_user_daily_attempts (
+    stats_date  DATE NOT NULL,
+    user_key    VARCHAR(128) NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (stats_date, user_key)
+);
+
+CREATE TRIGGER trg_upi_user_daily_attempts_updated_at
+    BEFORE UPDATE ON upi_user_daily_attempts
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE IF NOT EXISTS upi_session_daily_attempts (
+    stats_date  DATE NOT NULL,
+    session_id  VARCHAR(128) NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (stats_date, session_id)
+);
+
+CREATE TRIGGER trg_upi_session_daily_attempts_updated_at
+    BEFORE UPDATE ON upi_session_daily_attempts
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 CREATE TABLE IF NOT EXISTS payments (
     id                   BIGSERIAL PRIMARY KEY,
     participant_id       BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
     public_id            UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    upi_account_id       BIGINT REFERENCES upi_accounts(id) ON DELETE SET NULL,
+    upi_vpa              VARCHAR(256),
+    upi_name             VARCHAR(120),
     
     amount               NUMERIC(12,2) NOT NULL CHECK (amount > 0),
     currency             VARCHAR(10) NOT NULL DEFAULT 'INR',
@@ -629,6 +708,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_expired_pending ON payments (expires_at)
 CREATE INDEX IF NOT EXISTS idx_payments_participant ON payments (participant_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status     ON payments (status);
 CREATE INDEX IF NOT EXISTS idx_payments_status_uploaded_sha256 ON payments (status, uploaded_sha256);
+CREATE INDEX IF NOT EXISTS idx_payments_upi_account ON payments (upi_account_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_write_nonce_unique
     ON payments ((metadata->>'payment_write_nonce'))
     WHERE (metadata ? 'payment_write_nonce');

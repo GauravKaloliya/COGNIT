@@ -26,6 +26,8 @@ export const PAYMENT_VERIFICATION_REASON_CODES = {
   missing_bhim_label: "FRAUD_002_0005",
   ocr_unavailable: "SYS_001_0004",
   missing_paid_bhim: "FRAUD_002_0005",
+  missing_success: "FRAUD_002_0004",
+  failure_indicator: "FRAUD_002_0005",
   ocr_signature_replay_self: "FRAUD_003_0004",
   ocr_signature_replay_other: "FRAUD_003_0001",
   max_attempts_exceeded: "PAY_001_0008",

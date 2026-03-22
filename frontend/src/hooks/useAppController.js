@@ -12,7 +12,7 @@ import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
 import { ACTIVE_TAB_LOCK_FIELDS } from "../constants/fields";
 import { BROWSER_EVENTS } from "../constants/browser";
 import { TOAST_VARIANTS } from "../constants/ui";
-import { REGEX_PATTERNS, STORAGE_EVENTS, STRING_PREFIXES } from "../constants/patterns";
+import { REGEX_PATTERNS, STORAGE_EVENTS } from "../constants/patterns";
 import { createFallbackUuid } from "../constants/ids";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 
@@ -45,11 +45,6 @@ const CORE_SCOPED_KEYS = [
 ];
 
 const EXPIRED_STORAGE_PREFIXES = Object.values(runtimeConfig.storageKeys);
-
-const STORAGE_PREFIX_KEYS = [
-  runtimeConfig.storageKeys.surveyDraftPrefix,
-  runtimeConfig.storageKeys.surveyDraftActivePrefix,
-];
 
 function getScopeId(publicId) {
   const value = String(publicId || "").trim();

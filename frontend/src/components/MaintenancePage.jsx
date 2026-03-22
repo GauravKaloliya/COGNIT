@@ -1,0 +1,115 @@
+import React from "react";
+import { getErrorMessage } from "../utils/errorRegistry.js";
+import PageSkeleton from "./PageSkeleton.jsx";
+import PanelState from "./PanelState.jsx";
+import ThemeToggleIcon from "./ThemeToggleIcon.jsx";
+import DSButton from "./design/DSButton.jsx";
+import { useIsMobile } from "../hooks/useIsMobile.js";
+import { uiText } from "../utils/uiText";
+import { NOT_FOUND_ILLUSTRATION } from "../content/notFoundIllustration.js";
+import { DOM_ROLES } from "../constants/dom.js";
+import { runtimeConfig } from "../config/runtime";
+
+export default function MaintenancePage({
+  error,
+  onRetry,
+  darkMode = false,
+  onToggleDarkMode,
+  autoRetrySeconds = runtimeConfig.serviceRetrySeconds,
+}) {
+  const isMobile = useIsMobile();
+  const [reloading, setReloading] = React.useState(false);
+  const [retryIn, setRetryIn] = React.useState(Math.max(0, Number(autoRetrySeconds) || 0));
+
+  React.useEffect(() => {
+    const initial = Math.max(0, Number(autoRetrySeconds) || 0);
+    setRetryIn(initial);
+  }, [autoRetrySeconds]);
+
+  React.useEffect(() => {
+    if (reloading || retryIn <= 0) return;
+    const timer = setInterval(() => {
+      setRetryIn((prev) => Math.max(0, prev - 1));
+    }, runtimeConfig.countdownTickMs);
+    return () => clearInterval(timer);
+  }, [reloading, retryIn]);
+
+  React.useEffect(() => {
+    if (reloading || retryIn > 0) return;
+    if (autoRetrySeconds > 0 && onRetry) {
+      setReloading(true);
+      onRetry();
+    }
+  }, [autoRetrySeconds, onRetry, reloading, retryIn]);
+
+  const handleRetry = () => {
+    setReloading(true);
+    if (onRetry) onRetry();
+  };
+
+  if (reloading) {
+    return (
+      <div className="app error-page-centered">
+        <div className="panel">
+          <PageSkeleton
+            title={uiText("maintenance.recoveringTitle")}
+            subtitle={uiText("maintenance.recoveringSubtitle")}
+            variant="warning"
+            compact
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app error-page-centered">
+      <header className="header">
+        <div className="brand">
+          <h1>{uiText("app.brand")}</h1>
+          {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
+        </div>
+        <div className="header-actions">
+          <DSButton
+            variant="ghost"
+            className="dark-mode-toggle"
+            onClick={onToggleDarkMode}
+            title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
+          >
+            <ThemeToggleIcon darkMode={darkMode} />
+          </DSButton>
+        </div>
+      </header>
+      <div className="panel">
+        <div className="page-hero">
+          <div className="not-found-dog">
+            <svg viewBox={NOT_FOUND_ILLUSTRATION.viewBox} role={DOM_ROLES.image} aria-label={NOT_FOUND_ILLUSTRATION.ariaLabel}>
+              <defs>
+                {NOT_FOUND_ILLUSTRATION.gradients.map((gradient) => (
+                  <linearGradient key={gradient.id} id={gradient.id} x1={gradient.x1} y1={gradient.y1} x2={gradient.x2} y2={gradient.y2}>
+                    {gradient.stops.map((stop, index) => (
+                      <stop key={`${gradient.id}-${index}`} offset={stop.offset} stopColor={stop.stopColor} />
+                    ))}
+                  </linearGradient>
+                ))}
+              </defs>
+              {NOT_FOUND_ILLUSTRATION.shapes.map((shape, index) => React.createElement(shape.type, {
+                key: `${shape.type}-${index}`,
+                ...shape.props,
+              }))}
+            </svg>
+          </div>
+          <PanelState
+            variant="warning"
+            icon="!"
+            title={uiText("maintenance.title")}
+            message={error?.message || getErrorMessage("SYS_002_0021")}
+            actionLabel={retryIn > 0 ? uiText("common.tryAgainIn", { seconds: retryIn }) : uiText("maintenance.action")}
+            onAction={handleRetry}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+

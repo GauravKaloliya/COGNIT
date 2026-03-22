@@ -14,10 +14,13 @@ from app.config import (
     UPI_NAME,
     PAYMENT_MAX_IMAGE_MB,
     PAYMENT_AMOUNT,
+    MIN_IMAGE_WIDTH,
     FRAUD_SCORE_WEIGHTS,
     FRAUD_UNKNOWN_REASON_WEIGHT,
     FRAUD_REJECT_THRESHOLD,
+    MAX_FRAUD_SCORE,
     PAYMENT_VERIFY_MAX_ATTEMPTS,
+    ENABLE_DUPLICATE_DETECTION,
 )
 from app.constants.event_constants import (
     AUDIT_EVENT_PAYMENT_OCR_UNAVAILABLE,
@@ -131,6 +134,7 @@ from app.services.payment_query_service import (
     set_payment_status,
     set_payment_verification_outcome,
 )
+from app.services import record_upi_result
 from app.utils.observability import log_event
 
 logger = logging.getLogger(__name__)
@@ -156,7 +160,8 @@ def _calculate_fraud_score(failures, confidence=None) -> float:
         except Exception:
             log_event(logger, OBS_EVENT_FRAUD_SCORE_CONFIDENCE_PARSE_FAILED, level=logging.WARNING)
 
-    return min(100.0, max(0.0, score))
+    capped = min(float(MAX_FRAUD_SCORE), float(score))
+    return min(100.0, max(0.0, capped))
 
 
 def _is_ocr_unavailable(error: Exception) -> bool:
@@ -192,6 +197,7 @@ def _reject_for_ocr_unavailable(db, payment_id: int, participant_id: int, sha256
         fraud_score=fraud_score,
         verification_details=verification_details,
     )
+    record_upi_result(db, payment_id=payment_id, result_status="FAILURE")
     insert_payment_fraud_signals(db, payment_id=payment_id, failures=failures, score=100)
 
     log_audit(
@@ -290,6 +296,8 @@ def process_verify_upload(
             return create_error_response("PAY_INVALID_SHA256")
 
         image = Image.open(BytesIO(image_bytes))
+        if int(getattr(image, "width", 0) or 0) < int(MIN_IMAGE_WIDTH):
+            return create_error_response("FRAUD_LOW_RESOLUTION")
     except Exception:
         source_field = UPLOAD_SOURCE_FIELD_OBJECT_KEY if upload_object_key else UPLOAD_SOURCE_FIELD_IMAGE_BASE64
         return create_error_response(
@@ -432,95 +440,26 @@ def process_verify_upload(
 
     increment_verification_attempts(db, payment_id)
 
-    is_duplicate, existing_payment_id, is_same_participant = check_duplicate_screenshot(
-        db, sha256_hash, participant_id=participant_id
-    )
-    if is_duplicate:
-        existing_owner_participant_id = fetch_payment_owner_participant_id(db, existing_payment_id)
-        same_person_fingerprint = is_same_person_by_fingerprint(
-            db,
-            participant_id=participant_id,
-            other_participant_id=existing_owner_participant_id,
-            current_fingerprint=device_fingerprint,
-            current_fingerprint_variants=device_fingerprint_variants,
+    if ENABLE_DUPLICATE_DETECTION:
+        is_duplicate, existing_payment_id, is_same_participant = check_duplicate_screenshot(
+            db, sha256_hash, participant_id=participant_id
         )
-        if is_same_participant or same_person_fingerprint:
-            fraud_score = _reject_payment_for_fraud([FRAUD_REASON_DUPLICATE_HASH_SELF])
-            _finalize_attempt(
-                VERIFY_ATTEMPT_STATUS_DUPLICATE,
-                detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
-                failures=[FRAUD_REASON_DUPLICATE_HASH_SELF],
-                fraud_score=fraud_score,
-            )
-            db.commit()
-            return create_error_response("DUPLICATE_IMAGE_SELF")
-
-        if payment_audit_logger:
-            payment_audit_logger(
-                db,
-                AUDIT_EVENT_PAYMENT_VERIFY_DUPLICATE_OTHER_USER,
-                payment_id=payment_id,
-                participant_id=participant_id,
-                details=AUDIT_DETAIL_DUPLICATE_HASH_MATCH.format(payment_id=existing_payment_id),
-                fraud_signals={"duplicate_hash": True},
-            )
-        fraud_score = _reject_payment_for_fraud([FRAUD_REASON_DUPLICATE_HASH_OTHER])
-        _finalize_attempt(
-            VERIFY_ATTEMPT_STATUS_DUPLICATE,
-            detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
-            failures=[FRAUD_REASON_DUPLICATE_HASH_OTHER],
-            fraud_score=fraud_score,
-        )
-        db.commit()
-        return create_error_response("DUPLICATE_IMAGE")
-
-    if check_rejected_screenshot(db, sha256_hash):
-        if payment_audit_logger:
-            payment_audit_logger(
-                db,
-                AUDIT_EVENT_PAYMENT_VERIFY_REJECTED_REUSE,
-                payment_id=payment_id,
-                participant_id=participant_id,
-                details=AUDIT_DETAIL_REUSE_REJECTED_SCREENSHOT,
-                fraud_signals={"rejected_reuse": True},
-            )
-        fraud_score = _reject_payment_for_fraud([FRAUD_REASON_REJECTED_REUSE])
-        _finalize_attempt(
-            VERIFY_ATTEMPT_STATUS_REJECTED,
-            detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
-            failures=[FRAUD_REASON_REJECTED_REUSE],
-            fraud_score=fraud_score,
-        )
-        db.commit()
-        return create_error_response("REJECTED_REUSE")
-
-    try:
-        is_near_duplicate, near_payment_id, near_distance, near_same_participant = check_near_duplicate_screenshot(
-            db,
-            image_hash,
-            participant_id=participant_id,
-            threshold=6,
-        )
-        if is_near_duplicate:
-            near_owner_participant_id = fetch_payment_owner_participant_id(db, near_payment_id)
-            near_same_person_fingerprint = is_same_person_by_fingerprint(
+        if is_duplicate:
+            existing_owner_participant_id = fetch_payment_owner_participant_id(db, existing_payment_id)
+            same_person_fingerprint = is_same_person_by_fingerprint(
                 db,
                 participant_id=participant_id,
-                other_participant_id=near_owner_participant_id,
+                other_participant_id=existing_owner_participant_id,
                 current_fingerprint=device_fingerprint,
                 current_fingerprint_variants=device_fingerprint_variants,
             )
-            if near_same_participant or near_same_person_fingerprint:
-                fraud_score = _reject_payment_for_fraud(
-                    [FRAUD_REASON_NEAR_DUPLICATE_SELF],
-                    details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
-                )
+            if is_same_participant or same_person_fingerprint:
+                fraud_score = _reject_payment_for_fraud([FRAUD_REASON_DUPLICATE_HASH_SELF])
                 _finalize_attempt(
                     VERIFY_ATTEMPT_STATUS_DUPLICATE,
                     detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
-                    failures=[FRAUD_REASON_NEAR_DUPLICATE_SELF],
+                    failures=[FRAUD_REASON_DUPLICATE_HASH_SELF],
                     fraud_score=fraud_score,
-                    details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
                 )
                 db.commit()
                 return create_error_response("DUPLICATE_IMAGE_SELF")
@@ -528,30 +467,100 @@ def process_verify_upload(
             if payment_audit_logger:
                 payment_audit_logger(
                     db,
-                    AUDIT_EVENT_PAYMENT_VERIFY_NEAR_DUPLICATE_OTHER_USER,
+                    AUDIT_EVENT_PAYMENT_VERIFY_DUPLICATE_OTHER_USER,
                     payment_id=payment_id,
                     participant_id=participant_id,
-                    details=AUDIT_DETAIL_NEAR_DUPLICATE_MATCH.format(
-                        payment_id=near_payment_id,
-                        distance=near_distance,
-                    ),
-                    fraud_signals={"near_duplicate": True, "distance": near_distance},
-            )
-            fraud_score = _reject_payment_for_fraud(
-                [FRAUD_REASON_NEAR_DUPLICATE_OTHER],
-                details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
-            )
+                    details=AUDIT_DETAIL_DUPLICATE_HASH_MATCH.format(payment_id=existing_payment_id),
+                    fraud_signals={"duplicate_hash": True},
+                )
+            fraud_score = _reject_payment_for_fraud([FRAUD_REASON_DUPLICATE_HASH_OTHER])
             _finalize_attempt(
                 VERIFY_ATTEMPT_STATUS_DUPLICATE,
                 detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
-                failures=[FRAUD_REASON_NEAR_DUPLICATE_OTHER],
+                failures=[FRAUD_REASON_DUPLICATE_HASH_OTHER],
                 fraud_score=fraud_score,
-                details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
             )
             db.commit()
             return create_error_response("DUPLICATE_IMAGE")
-    except Exception:
-        log_event(logger, OBS_EVENT_PAYMENT_NEAR_DUPLICATE_CHECK_FAILED, level=logging.WARNING)
+
+        if check_rejected_screenshot(db, sha256_hash):
+            if payment_audit_logger:
+                payment_audit_logger(
+                    db,
+                    AUDIT_EVENT_PAYMENT_VERIFY_REJECTED_REUSE,
+                    payment_id=payment_id,
+                    participant_id=participant_id,
+                    details=AUDIT_DETAIL_REUSE_REJECTED_SCREENSHOT,
+                    fraud_signals={"rejected_reuse": True},
+                )
+            fraud_score = _reject_payment_for_fraud([FRAUD_REASON_REJECTED_REUSE])
+            _finalize_attempt(
+                VERIFY_ATTEMPT_STATUS_REJECTED,
+                detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+                failures=[FRAUD_REASON_REJECTED_REUSE],
+                fraud_score=fraud_score,
+            )
+            db.commit()
+            return create_error_response("REJECTED_REUSE")
+
+        try:
+            is_near_duplicate, near_payment_id, near_distance, near_same_participant = check_near_duplicate_screenshot(
+                db,
+                image_hash,
+                participant_id=participant_id,
+                threshold=6,
+            )
+            if is_near_duplicate:
+                near_owner_participant_id = fetch_payment_owner_participant_id(db, near_payment_id)
+                near_same_person_fingerprint = is_same_person_by_fingerprint(
+                    db,
+                    participant_id=participant_id,
+                    other_participant_id=near_owner_participant_id,
+                    current_fingerprint=device_fingerprint,
+                    current_fingerprint_variants=device_fingerprint_variants,
+                )
+                if near_same_participant or near_same_person_fingerprint:
+                    fraud_score = _reject_payment_for_fraud(
+                        [FRAUD_REASON_NEAR_DUPLICATE_SELF],
+                        details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
+                    )
+                    _finalize_attempt(
+                        VERIFY_ATTEMPT_STATUS_DUPLICATE,
+                        detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+                        failures=[FRAUD_REASON_NEAR_DUPLICATE_SELF],
+                        fraud_score=fraud_score,
+                        details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
+                    )
+                    db.commit()
+                    return create_error_response("DUPLICATE_IMAGE_SELF")
+
+                if payment_audit_logger:
+                    payment_audit_logger(
+                        db,
+                        AUDIT_EVENT_PAYMENT_VERIFY_NEAR_DUPLICATE_OTHER_USER,
+                        payment_id=payment_id,
+                        participant_id=participant_id,
+                        details=AUDIT_DETAIL_NEAR_DUPLICATE_MATCH.format(
+                            payment_id=near_payment_id,
+                            distance=near_distance,
+                        ),
+                        fraud_signals={"near_duplicate": True, "distance": near_distance},
+                )
+                fraud_score = _reject_payment_for_fraud(
+                    [FRAUD_REASON_NEAR_DUPLICATE_OTHER],
+                    details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
+                )
+                _finalize_attempt(
+                    VERIFY_ATTEMPT_STATUS_DUPLICATE,
+                    detected_app=PAYMENT_DETECTED_APP_UNKNOWN,
+                    failures=[FRAUD_REASON_NEAR_DUPLICATE_OTHER],
+                    fraud_score=fraud_score,
+                    details={VERIFY_DETAIL_KEY_DISTANCE: near_distance},
+                )
+                db.commit()
+                return create_error_response("DUPLICATE_IMAGE")
+        except Exception:
+            log_event(logger, OBS_EVENT_PAYMENT_NEAR_DUPLICATE_CHECK_FAILED, level=logging.WARNING)
         image_hash = sha256_hash
 
     verification_result = {RESPONSE_KEY_STATUS: PAYMENT_STATUS_PROCESSING, RESPONSE_KEY_VERIFIED: False}
@@ -578,7 +587,7 @@ def process_verify_upload(
         detected_app = detected_app or PAYMENT_DETECTED_APP_UNKNOWN
         filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)
         ocr_signature = compute_ocr_signature(extracted_text, detected_app)
-        if ocr_signature:
+        if ENABLE_DUPLICATE_DETECTION and ocr_signature:
             is_replay, replay_payment_id, replay_same_participant = check_ocr_signature_replay(
                 db,
                 ocr_signature,
@@ -672,6 +681,7 @@ def process_verify_upload(
                 verification_details=verification_details,
                 auto_rejected=False,
             )
+            record_upi_result(db, payment_id=payment_id, result_status="SUCCESS")
 
             verification_result = {
                 RESPONSE_KEY_STATUS: PAYMENT_STATUS_SUCCESS,
@@ -710,6 +720,7 @@ def process_verify_upload(
                 verification_details=verification_details,
                 auto_rejected=True,
             )
+            record_upi_result(db, payment_id=payment_id, result_status="FAILURE")
             insert_payment_fraud_signals(
                 db,
                 payment_id=payment_id,
@@ -839,6 +850,7 @@ def process_internal_verify(
         verification_details=verification_details,
         auto_rejected=(target_status == PAYMENT_STATUS_REJECTED_FRAUD),
     )
+    record_upi_result(db, payment_id=payment_id, result_status="SUCCESS" if is_valid else "FAILURE")
     insert_payment_fraud_signals(db, payment_id=payment_id, failures=failures, score=100, confidence=confidence)
 
     db.commit()

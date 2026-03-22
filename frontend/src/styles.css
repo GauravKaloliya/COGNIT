@@ -274,12 +274,10 @@ textarea {
   flex-wrap: wrap;
   background: var(--panel);
   padding: var(--space-3) var(--mobile-padding);
-  border-bottom: 1px solid var(--border-light);
   flex-shrink: 0;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: var(--shadow-sm);
   width: 100%;
 }
 
@@ -287,10 +285,8 @@ textarea {
   .header {
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-lg);
-    border: 1px solid var(--border-light);
     position: relative;
     top: auto;
-    box-shadow: var(--shadow-sm);
   }
 }
 
@@ -539,10 +535,8 @@ body.dark .status-dot.offline {
 @media (min-width: 768px) {
   .panel {
     background: var(--panel);
-    border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     padding: var(--space-5) var(--space-6);
-    box-shadow: var(--shadow-md);
     margin-bottom: var(--space-3);
     max-width: var(--container-max);
   }

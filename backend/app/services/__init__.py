@@ -89,6 +89,11 @@ from .payment_session_service import (
     normalize_payment_amount,
     create_payment_record,
 )
+from .upi_pool_service import (
+    select_upi_for_payment,
+    fetch_used_upis_for_participant,
+    record_upi_result,
+)
 from .state_machine_service import (
     ensure_payment_status_transition,
     transition_payment_status,
@@ -173,6 +178,9 @@ __all__ = [
     "mark_existing_active_payments_failed",
     "normalize_payment_amount",
     "create_payment_record",
+    "select_upi_for_payment",
+    "fetch_used_upis_for_participant",
+    "record_upi_result",
     "ensure_payment_status_transition",
     "transition_payment_status",
     "ensure_submission_workflow_state",

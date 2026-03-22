@@ -198,6 +198,11 @@ const TRANSLATIONS = {
     
     'RATE_001_0001': 'Too many attempts. Please wait a moment.',
     'RATE_001_0002': 'Rate limit exceeded. Please slow down.',
+
+    // UPI pool capacity / limits (payment allocator)
+    'PAY_001_0009': 'Daily UPI limit reached. Please try again after 24 hours.',
+    'PAY_001_0010': 'Too many payment attempts from your device. Please try again later.',
+    'PAY_001_0011': 'Too many payment attempts in this session. Please try again later.',
     
     // =====================================================================
     // LEGACY ERROR MAPPINGS (for backward compatibility)

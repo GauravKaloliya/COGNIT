@@ -5,6 +5,24 @@
     "status": 500,
     "category": "SYS"
   },
+  "PAY_UPI_MAINTENANCE": {
+    "code": "PAY_001_0009",
+    "message": "Daily UPI limit reached. Please try again after 24 hours.",
+    "status": 429,
+    "category": "PAY"
+  },
+  "PAY_UPI_USER_LIMIT": {
+    "code": "PAY_001_0010",
+    "message": "Too many payment attempts from your device. Please try again later.",
+    "status": 429,
+    "category": "PAY"
+  },
+  "PAY_UPI_SESSION_LIMIT": {
+    "code": "PAY_001_0011",
+    "message": "Too many payment attempts in this session. Please try again later.",
+    "status": 429,
+    "category": "PAY"
+  },
   "SYS_DATABASE_ERROR": {
     "code": "SYS_001_0002",
     "message": "Database error occurred. Please try again later.",
