@@ -5,7 +5,8 @@ import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
-import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
+import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout, SECOND_MS } from "../utils/timing";
+import { requirePublicId } from "../utils/publicId";
 import {
   forEachStorageArea,
   getPendingFlag,
@@ -36,6 +37,7 @@ const LOCATION_MIN_LENGTH = runtimeConfig.locationMinLength;
 const OTP_STATUS = runtimeConfig.otpStatus;
 const MAX_AUTO_LOCATION_ATTEMPTS = 2;
 const AUTO_LOCATION_PROMPT_KEY = runtimeConfig.storageKeys.autoLocationPrompt;
+const AUTO_LOCATION_SUCCESS_KEY = runtimeConfig.storageKeys.autoLocationSuccess;
 const AUTO_LOCATION_PROMPT_DEDUPE_MS = 2000;
 const REVERSE_GEOCODE_STATE_KEY = runtimeConfig.storageKeys.reverseGeocodeState;
 const REVERSE_GEOCODE_MIN_INTERVAL_MS = 10000;
@@ -122,6 +124,14 @@ export function useUserDetailsPage({
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [locationPermissionState, setLocationPermissionState] = useState("unknown");
   const [manualLocationAllowed, setManualLocationAllowed] = useState(false);
+  const locationAttemptedRef = useRef(false);
+  const [locationAutoSucceeded, setLocationAutoSucceeded] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_LOCATION_SUCCESS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const autoLocationAttemptsRef = useRef(0);
   const autoDetectStartedRef = useRef(false);
   const participantOptionsLoadedRef = useRef(optionLists.genders.length > 0 && optionLists.languages.length > 0);
@@ -131,6 +141,7 @@ export function useUserDetailsPage({
   const debounceTimerRef = useRef({ username: null, email: null, phone: null });
   const reverseGeocodeAbortRef = useRef(null);
   const availabilityAbortRef = useRef({ username: null, email: null, phone: null });
+  const suppressAvailabilityRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const draftSaveTimeoutRef = useRef(null);
   const lastSavedAtRef = useRef(null);
@@ -138,8 +149,11 @@ export function useUserDetailsPage({
   const submittedEmailRef = useRef("");
   const autoVerifyRef = useRef("");
   const resendEndsAtRef = useRef(null);
+  const otpExpiresAtRef = useRef(null);
 
   const [otpStatus, setOtpStatus] = useState(OTP_STATUS.idle);
+  const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+  const [otpExpirySeconds, setOtpExpirySeconds] = useState(0);
   const otpValue = otpDigits.join("");
   const showOtpField = [
     OTP_STATUS.sending,
@@ -223,7 +237,29 @@ export function useUserDetailsPage({
         setResendCountdownActive(true);
       }
     }
+    if (storedOtp.otpExpiresAt && typeof storedOtp.otpExpiresAt === "number") {
+      const remaining = Math.max(0, Math.ceil((storedOtp.otpExpiresAt - Date.now()) / 1000));
+      if (remaining > 0) {
+        otpExpiresAtRef.current = storedOtp.otpExpiresAt;
+        setOtpExpiresAt(storedOtp.otpExpiresAt);
+        setOtpExpirySeconds(remaining);
+      }
+    }
   }, [otpLength, scopedOtpKey]);
+
+  useEffect(() => {
+    if (!otpExpiresAt || otpStatus === OTP_STATUS.verified || otpStatus === OTP_STATUS.idle) {
+      setOtpExpirySeconds(0);
+      return undefined;
+    }
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000));
+      setOtpExpirySeconds(remaining);
+    };
+    tick();
+    const interval = scheduleInterval(tick, SECOND_MS);
+    return () => clearScheduledInterval(interval);
+  }, [otpExpiresAt, otpStatus]);
 
   useEffect(() => {
     if (participantOptionsLoadedRef.current) {
@@ -361,6 +397,27 @@ export function useUserDetailsPage({
     });
   }, [sanitizeLocationValue, setDemographics]);
 
+  const markLocationAutoSuccess = useCallback(() => {
+    try {
+      localStorage.setItem(AUTO_LOCATION_SUCCESS_KEY, "1");
+    } catch {
+      // Ignore storage failures.
+    }
+    setLocationAutoSucceeded(true);
+    setLocationPermissionDenied(false);
+    setManualLocationAllowed(true);
+    setLocationStatus("");
+  }, [setLocationPermissionDenied, setManualLocationAllowed, setLocationStatus]);
+
+  const clearLocationAutoSuccess = useCallback(() => {
+    try {
+      localStorage.removeItem(AUTO_LOCATION_SUCCESS_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
+    setLocationAutoSucceeded(false);
+  }, []);
+
   const getBrowserPosition = useCallback((options) => (
     new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, options);
@@ -368,6 +425,7 @@ export function useUserDetailsPage({
   ), []);
 
   const detectLocation = useCallback((mode = GEOLOCATION_MODES.manual) => {
+    locationAttemptedRef.current = true;
     if (mode === GEOLOCATION_MODES.auto) {
       if (autoLocationAttemptsRef.current >= MAX_AUTO_LOCATION_ATTEMPTS) return;
       autoLocationAttemptsRef.current += 1;
@@ -439,7 +497,7 @@ export function useUserDetailsPage({
           }
           if (now < reverseState[REVERSE_GEOCODE_FIELDS.nextAllowedAt]) {
             setManualLocationAllowed(true);
-            setLocationStatus(uiText("user.locationFallback"));
+            if (locationAttemptedRef.current) setLocationStatus(uiText("user.locationFallback"));
             return;
           }
           if (reverseGeocodeAbortRef.current) {
@@ -494,10 +552,11 @@ export function useUserDetailsPage({
         setDemographics((prev) => ({ ...prev, location: "" }));
         setDetectedLocation(detectedLocation);
         if (sanitizeLocationValue(detectedLocation)) {
+          markLocationAutoSuccess();
           setLocationStatus(uiText("user.locationDetected"));
         } else {
           setManualLocationAllowed(true);
-          setLocationStatus(uiText("user.locationFallback"));
+          if (locationAttemptedRef.current) setLocationStatus(uiText("user.locationFallback"));
         }
       } catch (error) {
         const denied = error?.code === GEOLOCATION_ERROR_CODES.permissionDenied;
@@ -531,6 +590,7 @@ export function useUserDetailsPage({
     autoDetectStartedRef.current = true;
 
     const maybeAutoDetect = async () => {
+      if (locationAutoSucceeded) return;
       try {
         const lastPromptAt = Number(localStorage.getItem(AUTO_LOCATION_PROMPT_KEY) || "0");
         const now = Date.now();
@@ -548,7 +608,7 @@ export function useUserDetailsPage({
             }
             if (permission.state === "prompt") {
               setManualLocationAllowed(true);
-              setLocationStatus(uiText("user.locationFallback"));
+              setLocationStatus("");
               return;
             }
           } catch {
@@ -564,7 +624,14 @@ export function useUserDetailsPage({
     };
 
     void maybeAutoDetect();
-  }, [detectLocation, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
+  }, [detectLocation, locationAutoSucceeded, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
+
+  useEffect(() => {
+    if (!locationAutoSucceeded) return;
+    setLocationPermissionDenied(false);
+    setManualLocationAllowed(true);
+    setLocationStatus("");
+  }, [locationAutoSucceeded, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
 
   useEffect(() => {
     const sanitized = sanitizeLocationValue(demographics.location);
@@ -644,6 +711,19 @@ export function useUserDetailsPage({
       delete next.general;
       return next;
     });
+    suppressAvailabilityRef.current = true;
+    Object.keys(debounceTimerRef.current).forEach((key) => {
+      if (debounceTimerRef.current[key]) {
+        clearScheduledTimeout(debounceTimerRef.current[key]);
+        debounceTimerRef.current[key] = null;
+      }
+    });
+    Object.keys(availabilityAbortRef.current).forEach((key) => {
+      if (availabilityAbortRef.current[key]) {
+        availabilityAbortRef.current[key].abort();
+        availabilityAbortRef.current[key] = null;
+      }
+    });
     setSubmitting(true);
     setChecking({ username: true, email: true, phone: true });
 
@@ -688,10 +768,11 @@ export function useUserDetailsPage({
       }
 
       const participant = await onSubmit();
-      const effectivePublicId = participant?.public_id || publicId;
-      if (effectivePublicId) {
-        submittedPublicIdRef.current = effectivePublicId;
-      }
+      const effectivePublicId = requirePublicId(participant?.public_id || publicId, () => {
+        addToast?.(getErrorMessage("NF_001_0001"), "warning");
+      });
+      if (!effectivePublicId) throw new Error(getErrorMessage("NF_001_0001"));
+      submittedPublicIdRef.current = effectivePublicId;
       submittedEmailRef.current = normalizedEmail;
       setEmailEditable(false);
       setOtpError("");
@@ -703,6 +784,10 @@ export function useUserDetailsPage({
         setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
         resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
         setResendCountdownActive(true);
+        const expiresAt = Date.now() + runtimeConfig.emailOtpExpirySeconds * 1000;
+        otpExpiresAtRef.current = expiresAt;
+        setOtpExpiresAt(expiresAt);
+        setOtpExpirySeconds(runtimeConfig.emailOtpExpirySeconds);
         addToast?.(uiText("email.sentToast"), "success");
       } catch (err) {
         if (err?.code === REQUEST_CODES.aborted) return;
@@ -754,6 +839,7 @@ export function useUserDetailsPage({
     } finally {
       setSubmitting(false);
       setChecking({ username: false, email: false, phone: false });
+      suppressAvailabilityRef.current = false;
     }
   }, [addToast, demographics, isOnline, onSubmit, otpLength, publicId, scopedUserDetailsPendingKey, validateForm]);
 
@@ -811,6 +897,9 @@ export function useUserDetailsPage({
 
   const updateField = useCallback((field, value) => {
     setDemographics((prev) => ({ ...prev, [field]: value }));
+    if (field === USER_DETAIL_FIELDS.location && locationAutoSucceeded) {
+      clearLocationAutoSuccess();
+    }
     if (errors[field]) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -818,7 +907,7 @@ export function useUserDetailsPage({
         return next;
       });
     }
-  }, [errors, setDemographics]);
+  }, [clearLocationAutoSuccess, errors, locationAutoSucceeded, setDemographics]);
 
   const setOtpDigit = useCallback((index, value) => {
     const digitsOnly = String(value || "").replace(/\D/g, "");
@@ -847,7 +936,7 @@ export function useUserDetailsPage({
   }, [otpLength]);
 
   const verifyOtp = useCallback(async () => {
-    const effectivePublicId = submittedPublicIdRef.current || publicId;
+    const effectivePublicId = requirePublicId(submittedPublicIdRef.current || publicId);
     const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
     const normalizedOtp = String(otpValue || "").replace(/\D/g, "");
     if (!effectivePublicId || !normalizedEmail) {
@@ -892,7 +981,7 @@ export function useUserDetailsPage({
   }, [otpLength, otpStatus, otpValue, verifyOtp]);
 
   const handleResend = useCallback(async () => {
-    const effectivePublicId = submittedPublicIdRef.current || publicId;
+    const effectivePublicId = requirePublicId(submittedPublicIdRef.current || publicId);
     const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
     if (!effectivePublicId || !normalizedEmail) {
       setOtpError(getErrorMessage("VAL_003_0001"));
@@ -914,6 +1003,10 @@ export function useUserDetailsPage({
       setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
       resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
       setResendCountdownActive(true);
+      const expiresAt = Date.now() + runtimeConfig.emailOtpExpirySeconds * 1000;
+      otpExpiresAtRef.current = expiresAt;
+      setOtpExpiresAt(expiresAt);
+      setOtpExpirySeconds(runtimeConfig.emailOtpExpirySeconds);
       addToast?.(uiText("email.sentToast"), "success");
     } catch (err) {
       if (err?.code === REQUEST_CODES.aborted) return;
@@ -933,6 +1026,14 @@ export function useUserDetailsPage({
   }, [resendCountdownActive, resendSeconds]);
 
   useEffect(() => {
+    if (!resendCountdownActive) return;
+    if (otpExpirySeconds > 0) return;
+    if (![OTP_STATUS.sent, OTP_STATUS.verifyFailed].includes(otpStatus)) return;
+    setResendCountdownActive(false);
+    resendEndsAtRef.current = null;
+  }, [otpExpirySeconds, otpStatus, resendCountdownActive]);
+
+  useEffect(() => {
     if (!submittedEmailRef.current) return;
     const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
     if (normalizedEmail !== submittedEmailRef.current && otpStatus !== OTP_STATUS.verified) {
@@ -948,6 +1049,9 @@ export function useUserDetailsPage({
         removeStoredKey(EMAIL_OTP_STATE_KEY, area);
         removeStoredKey(scopedOtpKey, area);
       });
+      otpExpiresAtRef.current = null;
+      setOtpExpiresAt(null);
+      setOtpExpirySeconds(0);
       return;
     }
     if (resendCountdownActive && !resendEndsAtRef.current) {
@@ -959,6 +1063,7 @@ export function useUserDetailsPage({
       submittedEmail: submittedEmailRef.current,
       otpStatus,
       resendEndsAt: resendEndsAtRef.current,
+      otpExpiresAt: otpExpiresAtRef.current || otpExpiresAt,
       emailEditable,
     };
     writeExpiringValue(scopedOtpKey, payload, {
@@ -973,6 +1078,7 @@ export function useUserDetailsPage({
     demographics.email,
     emailEditable,
     otpDigits,
+    otpExpiresAt,
     otpStatus,
     publicId,
     resendCountdownActive,
@@ -1013,6 +1119,7 @@ export function useUserDetailsPage({
   ]);
 
   const checkAvailability = useCallback(async (field, value) => {
+    if (suppressAvailabilityRef.current) return;
     if (!value || value.trim().length === 0) return;
     if (field === "username" && value.trim().length < USERNAME_MIN_LENGTH) return;
     if (field === "email") {
@@ -1055,6 +1162,7 @@ export function useUserDetailsPage({
   }, []);
 
   const debouncedCheck = useCallback((field, value) => {
+    if (suppressAvailabilityRef.current) return;
     if (debounceTimerRef.current[field]) {
       clearScheduledTimeout(debounceTimerRef.current[field]);
     }
@@ -1119,6 +1227,7 @@ export function useUserDetailsPage({
     locationPermissionDenied,
     locationPermissionState,
     manualLocationAllowed,
+    locationAutoSucceeded,
     userEditedLocationRef,
     isFormComplete,
     detectLocation,
@@ -1136,6 +1245,7 @@ export function useUserDetailsPage({
     showOtpField,
     otpStatus,
     otpError,
+    otpExpirySeconds,
     resendSeconds,
     emailInputDisabled,
     inputsLocked,

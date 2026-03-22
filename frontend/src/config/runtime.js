@@ -95,6 +95,7 @@ export const runtimeConfig = {
     emailOtpState: "email_otp_state_v1",
     participantOptions: "participant_options_v1",
     autoLocationPrompt: "location_auto_prompt_v1",
+    autoLocationSuccess: "location_auto_success_v1",
     reverseGeocodeState: "reverse_geocode_state_v1",
     paymentContentPending: "payment_content_pending_continue_v1",
     paymentState: "payment_link_state_v1",
