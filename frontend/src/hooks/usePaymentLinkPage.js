@@ -60,10 +60,8 @@ export function usePaymentLinkPage({
   const [refreshNoticeVariant, setRefreshNoticeVariant] = useState(PAYMENT_NOTICE_VARIANT.info);
   const [lastServerStatus, setLastServerStatus] = useState("");
   const logDebug = useCallback((...args) => {
-    if (import.meta?.env?.DEV) {
-      // eslint-disable-next-line no-console
-      console.info("[payment-link]", ...args);
-    }
+    // eslint-disable-next-line no-console
+    console.info("[payment-link]", ...args);
   }, []);
   const isOnline = useOnlineStatus();
   const refreshNoticeShownRef = useRef(false);
