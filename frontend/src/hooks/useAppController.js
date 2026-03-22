@@ -23,7 +23,6 @@ const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
 const MIN_SURVEYS_BEFORE_FINISH = 1;
 const CORE_STATE_STORAGE_AREA = "local";
 const CORE_STATE_STORAGE_AREA_SESSION = "session";
-const CLOSE_CLEAR_KEY = runtimeConfig.storageKeys.clearOnClose;
 const SESSION_ALIVE_KEY = runtimeConfig.storageKeys.sessionAlive;
 const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
@@ -364,23 +363,8 @@ export function useAppController() {
   }, [stage, setStage]);
 
   useEffect(() => {
-    let sameTab = false;
     try {
-      sameTab = sessionStorage.getItem(SESSION_ALIVE_KEY) === "1";
       sessionStorage.setItem(SESSION_ALIVE_KEY, "1");
-    } catch {
-      sameTab = true;
-    }
-
-    if (!sameTab) {
-      const shouldClear = localStorage.getItem(CLOSE_CLEAR_KEY) === "1";
-      if (shouldClear) {
-        clearAppStorage([CORE_SCOPE_ANON]);
-      }
-    }
-
-    try {
-      localStorage.removeItem(CLOSE_CLEAR_KEY);
     } catch {
       // Ignore storage failures.
     }
@@ -738,7 +722,8 @@ export function useAppController() {
   useEffect(() => {
     const handleExit = () => {
       try {
-        localStorage.setItem(CLOSE_CLEAR_KEY, "1");
+        localStorage.clear();
+        sessionStorage.clear();
       } catch {
         // Ignore storage failures.
       }

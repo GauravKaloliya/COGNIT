@@ -19,7 +19,7 @@ import { useIsMobile } from "./hooks/useIsMobile.js";
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError() {
@@ -27,6 +27,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error) {
+    this.setState({ error });
     this.props.onError?.(error);
   }
 
@@ -36,6 +37,12 @@ class ErrorBoundary extends React.Component {
         <div className="panel">
           <h1>{getErrorMessage("SYS_001_0001")}</h1>
           <p>{getErrorMessage("SYS_002_0023")}</p>
+          {this.state.error?.message && (
+            <p className="error-text">{this.state.error.message}</p>
+          )}
+          {this.state.error?.stack && (
+            <pre className="error-details-pre">{this.state.error.stack}</pre>
+          )}
         </div>
       );
     }
