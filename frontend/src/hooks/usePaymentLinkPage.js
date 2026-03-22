@@ -306,6 +306,9 @@ export function usePaymentLinkPage({
 
   const markPaymentCreated = useCallback(() => {
     try {
+      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
+      const already = readExpiringValue(scopedPaymentCreatedKey, null, { ...readOpts, area: "local" });
+      if (already === true) return;
       writeExpiringValue(scopedPaymentCreatedKey, true, {
         area: "local",
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
