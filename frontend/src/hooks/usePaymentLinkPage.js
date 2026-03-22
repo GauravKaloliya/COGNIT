@@ -61,7 +61,7 @@ export function usePaymentLinkPage({
   const [lastServerStatus, setLastServerStatus] = useState("");
   const logDebug = useCallback((...args) => {
     // eslint-disable-next-line no-console
-    console.info("[payment-link]", ...args);
+    console.error("[payment-link]", ...args);
   }, []);
   const isOnline = useOnlineStatus();
   const refreshNoticeShownRef = useRef(false);
