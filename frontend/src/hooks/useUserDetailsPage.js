@@ -39,6 +39,7 @@ const MAX_AUTO_LOCATION_ATTEMPTS = 2;
 const AUTO_LOCATION_PROMPT_KEY = runtimeConfig.storageKeys.autoLocationPrompt;
 const AUTO_LOCATION_SUCCESS_KEY = runtimeConfig.storageKeys.autoLocationSuccess;
 const AUTO_LOCATION_PROMPT_DEDUPE_MS = 2000;
+const AUTO_LOCATION_SESSION_PROMPT_KEY = `${AUTO_LOCATION_SUCCESS_KEY}_prompted_session`;
 const REVERSE_GEOCODE_STATE_KEY = runtimeConfig.storageKeys.reverseGeocodeState;
 const REVERSE_GEOCODE_MIN_INTERVAL_MS = 10000;
 const REVERSE_GEOCODE_MAX_BACKOFF_MS = 60000;
@@ -610,7 +611,13 @@ export function useUserDetailsPage({
             if (permission.state === "prompt") {
               setManualLocationAllowed(true);
               setLocationStatus("");
-              return;
+              try {
+                const prompted = sessionStorage.getItem(AUTO_LOCATION_SESSION_PROMPT_KEY) === "1";
+                if (prompted) return;
+                sessionStorage.setItem(AUTO_LOCATION_SESSION_PROMPT_KEY, "1");
+              } catch {
+                // Ignore sessionStorage failures; continue prompting once.
+              }
             }
           } catch {
             // Ignore permissions API failures and fall through.

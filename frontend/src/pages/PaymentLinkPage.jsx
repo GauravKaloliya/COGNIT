@@ -28,6 +28,7 @@ export default function PaymentLinkPage({
     failureReasons,
     refreshNotice,
     refreshNoticeVariant,
+    lastServerStatus,
     isOnline,
     fileInputRef,
     timeRemaining,
@@ -88,12 +89,6 @@ export default function PaymentLinkPage({
         <div className="page-actions sticky-mobile-actions">
           <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
             {retryButtonLabel}
-            {retryBlocked && (
-              <span className="button-badge">
-                <span className="button-spinner small" />
-                {retryInSeconds}s
-              </span>
-            )}
           </DSButton>
         </div>
       </div>
@@ -114,12 +109,6 @@ export default function PaymentLinkPage({
         <div className="page-actions sticky-mobile-actions">
           <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
             {retryButtonLabel}
-            {retryBlocked && (
-              <span className="button-badge">
-                <span className="button-spinner small" />
-                {retryInSeconds}s
-              </span>
-            )}
           </DSButton>
         </div>
       </div>
@@ -158,12 +147,6 @@ export default function PaymentLinkPage({
         <div className="page-actions sticky-mobile-actions">
           <DSButton variant="primary" onClick={restartPayment} disabled={retryBlocked || offlineDisabled}>
             {retryButtonLabel}
-            {retryBlocked && (
-              <span className="button-badge">
-                <span className="button-spinner small" />
-                {retryInSeconds}s
-              </span>
-            )}
           </DSButton>
         </div>
       </div>
@@ -197,6 +180,11 @@ export default function PaymentLinkPage({
       {refreshNotice && (
         <div className={`banner ${refreshNoticeVariant}`}>
           <span>{refreshNotice}</span>
+        </div>
+      )}
+      {lastServerStatus && (
+        <div className="banner info">
+          <span>Server status: {lastServerStatus}</span>
         </div>
       )}
 
@@ -416,12 +404,6 @@ export default function PaymentLinkPage({
                       : retryBlocked
                         ? retryButtonLabel
                         : uiText("payment.confirmPayment")}
-                    {retryBlocked && (
-                      <span className="button-badge">
-                        <span className="button-spinner small" />
-                        {retryInSeconds}s
-                      </span>
-                    )}
                   </DSButton>
                 </div>
 
