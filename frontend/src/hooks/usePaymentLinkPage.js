@@ -120,45 +120,6 @@ export function usePaymentLinkPage({
     setRefreshNoticeVariant(PAYMENT_NOTICE_VARIANT.info);
   }, []);
 
-  const getPaymentStatusWithRetry = useCallback(async ({
-    paymentId,
-    effectivePublicId,
-    sessionId,
-    signal,
-    initialToken,
-  }) => {
-    let token = initialToken || loadPaymentToken(paymentId);
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        if (!token) {
-          const minted = await endpoints.mintPaymentToken(
-            paymentId,
-            effectivePublicId,
-            sessionId,
-            { signal }
-          );
-          token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
-          if (token) savePaymentToken(token, paymentId);
-        }
-        if (!token) throw new Error("missing_payment_token");
-        const statusData = await endpoints.getPaymentStatus(
-          paymentId,
-          { signal },
-          token
-        );
-        return { statusData, token };
-      } catch (err) {
-        const isAuthError = err?.status === 403 || err?.code === "AUTH_002_0002";
-        if (!isAuthError || attempt === maxAttempts) {
-          throw err;
-        }
-        token = "";
-      }
-    }
-    throw new Error("payment_status_retry_exhausted");
-  }, [loadPaymentToken, savePaymentToken]);
-
   const beginOperation = useCallback(() => {
     opVersionRef.current += 1;
     return opVersionRef.current;
@@ -401,6 +362,45 @@ export function usePaymentLinkPage({
     }
     return null;
   }, [scopedPaymentTokenKey]);
+
+  const getPaymentStatusWithRetry = useCallback(async ({
+    paymentId,
+    effectivePublicId,
+    sessionId,
+    signal,
+    initialToken,
+  }) => {
+    let token = initialToken || loadPaymentToken(paymentId);
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        if (!token) {
+          const minted = await endpoints.mintPaymentToken(
+            paymentId,
+            effectivePublicId,
+            sessionId,
+            { signal }
+          );
+          token = getPaymentField(minted, PAYMENT_API_FIELDS.token) || "";
+          if (token) savePaymentToken(token, paymentId);
+        }
+        if (!token) throw new Error("missing_payment_token");
+        const statusData = await endpoints.getPaymentStatus(
+          paymentId,
+          { signal },
+          token
+        );
+        return { statusData, token };
+      } catch (err) {
+        const isAuthError = err?.status === 403 || err?.code === "AUTH_002_0002";
+        if (!isAuthError || attempt === maxAttempts) {
+          throw err;
+        }
+        token = "";
+      }
+    }
+    throw new Error("payment_status_retry_exhausted");
+  }, [loadPaymentToken, savePaymentToken]);
 
   const loadPaymentViewState = useCallback(() => {
     try {
