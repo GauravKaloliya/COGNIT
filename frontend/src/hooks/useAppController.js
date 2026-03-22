@@ -300,6 +300,7 @@ export function useAppController() {
       runtimeConfig.storageKeys.sessionId,
       runtimeConfig.storageKeys.emailOtpState,
       runtimeConfig.storageKeys.paymentId,
+      runtimeConfig.storageKeys.paymentToken,
       runtimeConfig.storageKeys.paymentTimerExpires,
       runtimeConfig.storageKeys.paymentState,
       runtimeConfig.storageKeys.paymentPendingCreate,
