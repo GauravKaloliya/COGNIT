@@ -40,6 +40,7 @@ const AUTO_LOCATION_PROMPT_KEY = runtimeConfig.storageKeys.autoLocationPrompt;
 const AUTO_LOCATION_SUCCESS_KEY = runtimeConfig.storageKeys.autoLocationSuccess;
 const AUTO_LOCATION_PROMPT_DEDUPE_MS = 2000;
 const AUTO_LOCATION_SESSION_PROMPT_KEY = `${AUTO_LOCATION_SUCCESS_KEY}_prompted_session`;
+const LOCATION_PERMISSION_GRANTED_KEY = `${AUTO_LOCATION_SUCCESS_KEY}_permission_granted`;
 const REVERSE_GEOCODE_STATE_KEY = runtimeConfig.storageKeys.reverseGeocodeState;
 const REVERSE_GEOCODE_MIN_INTERVAL_MS = 10000;
 const REVERSE_GEOCODE_MAX_BACKOFF_MS = 60000;
@@ -123,7 +124,13 @@ export function useUserDetailsPage({
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
-  const [locationPermissionState, setLocationPermissionState] = useState("unknown");
+  const [locationPermissionState, setLocationPermissionState] = useState(() => {
+    try {
+      return localStorage.getItem(LOCATION_PERMISSION_GRANTED_KEY) === "1" ? "granted" : "unknown";
+    } catch {
+      return "unknown";
+    }
+  });
   const [manualLocationAllowed, setManualLocationAllowed] = useState(false);
   const locationAttemptedRef = useRef(false);
   const [locationAutoSucceeded, setLocationAutoSucceeded] = useState(() => {
@@ -401,6 +408,7 @@ export function useUserDetailsPage({
   const markLocationAutoSuccess = useCallback(() => {
     try {
       localStorage.setItem(AUTO_LOCATION_SUCCESS_KEY, "1");
+      localStorage.setItem(LOCATION_PERMISSION_GRANTED_KEY, "1");
     } catch {
       // Ignore storage failures.
     }
@@ -471,6 +479,11 @@ export function useUserDetailsPage({
           });
         }
         setLocationPermissionState("granted");
+        try {
+          localStorage.setItem(LOCATION_PERMISSION_GRANTED_KEY, "1");
+        } catch {
+          // Ignore storage failures.
+        }
 
         const { latitude, longitude } = position.coords;
         let detectedLocation = "";
@@ -563,6 +576,13 @@ export function useUserDetailsPage({
         const denied = error?.code === GEOLOCATION_ERROR_CODES.permissionDenied;
         setLocationPermissionState(denied ? "denied" : "unknown");
         setLocationPermissionDenied(denied);
+        if (denied) {
+          try {
+            localStorage.removeItem(LOCATION_PERMISSION_GRANTED_KEY);
+          } catch {
+            // Ignore storage failures.
+          }
+        }
         setManualLocationAllowed(true);
         setLocationStatus(denied ? uiText("user.locationPermissionDenied") : uiText("user.locationFallback"));
         setErrors((prev) => {
@@ -602,6 +622,13 @@ export function useUserDetailsPage({
           try {
             const permission = await navigator.permissions.query({ name: "geolocation" });
             setLocationPermissionState(permission.state || "unknown");
+            if (permission.state === "granted") {
+              try {
+                localStorage.setItem(LOCATION_PERMISSION_GRANTED_KEY, "1");
+              } catch {
+                // Ignore storage failures.
+              }
+            }
             if (permission.state === "denied") {
               setLocationPermissionDenied(true);
               setManualLocationAllowed(true);
@@ -640,6 +667,12 @@ export function useUserDetailsPage({
     setManualLocationAllowed(true);
     setLocationStatus("");
   }, [locationAutoSucceeded, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
+
+  useEffect(() => {
+    if (locationPermissionState !== "granted" || locating) return;
+    setLocationPermissionDenied(false);
+    setManualLocationAllowed(true);
+  }, [locationPermissionState, locating, setLocationPermissionDenied, setManualLocationAllowed]);
 
   useEffect(() => {
     const sanitized = sanitizeLocationValue(demographics.location);
@@ -787,15 +820,20 @@ export function useUserDetailsPage({
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
       setOtpStatus(OTP_STATUS.sending);
       try {
-        await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, false);
+        const response = await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, false);
         setOtpStatus(OTP_STATUS.sent);
         setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
         resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
         setResendCountdownActive(true);
-        const expiresAt = Date.now() + runtimeConfig.emailOtpExpirySeconds * 1000;
+        const expiresAtValue = response?.expires_at || response?.expiresAt;
+        const parsedExpiry = expiresAtValue ? Date.parse(expiresAtValue) : NaN;
+        const expiresAt = Number.isFinite(parsedExpiry)
+          ? parsedExpiry
+          : Date.now() + runtimeConfig.emailOtpExpirySeconds * 1000;
+        const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
         otpExpiresAtRef.current = expiresAt;
         setOtpExpiresAt(expiresAt);
-        setOtpExpirySeconds(runtimeConfig.emailOtpExpirySeconds);
+        setOtpExpirySeconds(remaining);
         addToast?.(uiText("email.sentToast"), "success");
       } catch (err) {
         if (err?.code === REQUEST_CODES.aborted) return;
@@ -905,9 +943,6 @@ export function useUserDetailsPage({
 
   const updateField = useCallback((field, value) => {
     setDemographics((prev) => ({ ...prev, [field]: value }));
-    if (field === USER_DETAIL_FIELDS.location && locationAutoSucceeded) {
-      clearLocationAutoSuccess();
-    }
     if (errors[field]) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -915,7 +950,7 @@ export function useUserDetailsPage({
         return next;
       });
     }
-  }, [clearLocationAutoSuccess, errors, locationAutoSucceeded, setDemographics]);
+  }, [errors, setDemographics]);
 
   const setOtpDigit = useCallback((index, value) => {
     const digitsOnly = String(value || "").replace(/\D/g, "");
@@ -1004,17 +1039,22 @@ export function useUserDetailsPage({
     setOtpStatus(OTP_STATUS.sending);
     setOtpError("");
     try {
-      await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, emailUpdate);
+      const response = await endpoints.requestEmailOtp(effectivePublicId, normalizedEmail, emailUpdate);
       submittedEmailRef.current = normalizedEmail;
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
       setOtpStatus(OTP_STATUS.sent);
       setResendInitialSeconds(runtimeConfig.emailOtpResendCooldownSeconds);
       resendEndsAtRef.current = Date.now() + runtimeConfig.emailOtpResendCooldownSeconds * 1000;
       setResendCountdownActive(true);
-      const expiresAt = Date.now() + runtimeConfig.emailOtpExpirySeconds * 1000;
+      const expiresAtValue = response?.expires_at || response?.expiresAt;
+      const parsedExpiry = expiresAtValue ? Date.parse(expiresAtValue) : NaN;
+      const expiresAt = Number.isFinite(parsedExpiry)
+        ? parsedExpiry
+        : Date.now() + runtimeConfig.emailOtpExpirySeconds * 1000;
+      const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
       otpExpiresAtRef.current = expiresAt;
       setOtpExpiresAt(expiresAt);
-      setOtpExpirySeconds(runtimeConfig.emailOtpExpirySeconds);
+      setOtpExpirySeconds(remaining);
       addToast?.(uiText("email.sentToast"), "success");
     } catch (err) {
       if (err?.code === REQUEST_CODES.aborted) return;

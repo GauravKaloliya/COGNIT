@@ -58,6 +58,12 @@ export function usePaymentLinkPage({
   const [refreshNotice, setRefreshNotice] = useState("");
   const [refreshNoticeVariant, setRefreshNoticeVariant] = useState(PAYMENT_NOTICE_VARIANT.info);
   const [lastServerStatus, setLastServerStatus] = useState("");
+  const logDebug = useCallback((...args) => {
+    if (import.meta?.env?.DEV) {
+      // eslint-disable-next-line no-console
+      console.info("[payment-link]", ...args);
+    }
+  }, []);
   const isOnline = useOnlineStatus();
   const refreshNoticeShownRef = useRef(false);
   const fileInputRef = useRef(null);
@@ -597,9 +603,10 @@ export function usePaymentLinkPage({
     }
   }, [isOperationCurrent]);
 
-  const createPayment = useCallback(async () => {
+  const createPayment = useCallback(async (reason = "") => {
     const operationId = beginOperation();
     const effectivePublicId = requirePublicId(publicId);
+    logDebug("createPayment:start", { reason, publicId: effectivePublicId });
     if (!effectivePublicId) {
       setError(getErrorMessage(PAYMENT_ERROR_CODES.paymentUnavailable));
       return;
@@ -630,6 +637,10 @@ export function usePaymentLinkPage({
       }
       const data = await endpoints.createPayment(effectivePublicId, { signal: controller.signal });
       if (!isOperationCurrent(operationId)) return;
+      logDebug("createPayment:success", {
+        paymentId: getPaymentField(data, PAYMENT_API_FIELDS.id),
+        expiresAt: getPaymentField(data, PAYMENT_API_FIELDS.expiresAt),
+      });
       writeExpiringValue(scopedPaymentIdKey, getPaymentField(data, PAYMENT_API_FIELDS.id), {
         area: "local",
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
@@ -667,6 +678,7 @@ export function usePaymentLinkPage({
       if (err?.code === REQUEST_CODES.aborted && !timedOut) {
         return;
       }
+      logDebug("createPayment:error", { reason, code: err?.code, status: err?.status, message: err?.message });
       if (!isOperationCurrent(operationId)) return;
       if (err?.code === "NF_001_0001" || err?.status === 404) {
         onParticipantNotFound?.();
@@ -699,7 +711,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, onParticipantNotFound, publicId, requestStartTimer, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, logDebug, onParticipantNotFound, publicId, requestStartTimer, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError]);
 
   useEffect(() => {
     return () => {
@@ -742,11 +754,16 @@ export function usePaymentLinkPage({
 
     const initialize = async () => {
       const effectivePublicId = requirePublicId(publicId);
+      logDebug("initialize:start", { publicId: effectivePublicId });
       if (!effectivePublicId) return;
       if (createOnceRef.current && lastInitPublicIdRef.current === effectivePublicId) return;
       createOnceRef.current = true;
       lastInitPublicIdRef.current = effectivePublicId;
       const restored = loadPaymentViewState();
+      logDebug("initialize:restoredState", {
+        hasRestored: Boolean(restored),
+        restoredPaymentId: getPaymentField(restored?.[PAYMENT_STATE_FIELDS.paymentData], PAYMENT_API_FIELDS.id),
+      });
       const restoredPaymentData = restored?.[PAYMENT_STATE_FIELDS.paymentData];
       const restoredStatus = restored?.[PAYMENT_STATE_FIELDS.paymentStatus] || PAYMENT_STATUS.pending;
       const storedTimer = getTimerState();
@@ -762,10 +779,14 @@ export function usePaymentLinkPage({
       }
 
       if (getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id) && getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.expiresAt)) {
+        logDebug("initialize:restore:attempt", {
+          paymentId: getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id),
+          status: restoredStatus,
+        });
         if (isPaymentAmountMismatch(restoredPaymentData)) {
           clearPaymentViewState();
           notifySessionExpired();
-          if (!cancelled) await createPayment();
+          if (!cancelled) await createPayment("restore_amount_mismatch");
           return;
         }
         if (!effectivePublicId) {
@@ -788,14 +809,14 @@ export function usePaymentLinkPage({
           } catch {
             clearPaymentViewState();
             notifySessionExpired();
-            await createPayment();
+            await createPayment("restore_mint_failed");
             return;
           }
         }
         if (!getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token)) {
           clearPaymentViewState();
           notifySessionExpired();
-          await createPayment();
+          await createPayment("restore_token_missing");
           return;
         }
         try {
@@ -805,6 +826,7 @@ export function usePaymentLinkPage({
             getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.token)
           );
           const serverStatus = getPaymentField(statusData, PAYMENT_API_FIELDS.status);
+          logDebug("initialize:restore:status", { paymentId: getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.id), serverStatus });
 
           if (serverStatus === PAYMENT_STATUS.success) {
             clearPaymentViewState();
@@ -815,7 +837,7 @@ export function usePaymentLinkPage({
         if (serverStatus === PAYMENT_STATUS.expired) {
           clearPaymentViewState();
           notifySessionExpired();
-          if (!cancelled) await createPayment();
+          if (!cancelled) await createPayment("restore_expired");
           return;
         }
 
@@ -860,7 +882,8 @@ export function usePaymentLinkPage({
               return;
             }
           }
-        } catch {
+        } catch (err) {
+            logDebug("initialize:restore:status_error", { message: err?.message });
             const expiresAt = getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.expiresAt);
             if (expiresAt) {
               if (storedTimer?.totalDurationMs) {
@@ -889,6 +912,7 @@ export function usePaymentLinkPage({
       }
 
       const storedPaymentId = loadStoredPaymentId();
+      logDebug("initialize:storedPaymentId", { storedPaymentId });
       if (storedPaymentId) {
         if (statusAbortRef.current) statusAbortRef.current.abort();
         const statusController = new AbortController();
@@ -909,7 +933,7 @@ export function usePaymentLinkPage({
             });
             clearPaymentViewState();
             notifySessionExpired();
-            await createPayment();
+            await createPayment("stored_token_missing");
             return;
           }
 
@@ -919,6 +943,7 @@ export function usePaymentLinkPage({
             token
           );
           const serverStatus = getPaymentField(statusData, PAYMENT_API_FIELDS.status);
+          logDebug("initialize:stored:status", { storedPaymentId, serverStatus });
 
           if (serverStatus === PAYMENT_STATUS.success) {
             clearPaymentViewState();
@@ -937,7 +962,7 @@ export function usePaymentLinkPage({
               removeStoredKey(scopedPaymentIdKey, area);
             });
             notifySessionExpired();
-            if (!cancelled) await createPayment();
+            if (!cancelled) await createPayment("stored_expired");
             return;
           }
 
@@ -997,7 +1022,8 @@ export function usePaymentLinkPage({
               return;
             }
           }
-        } catch {
+        } catch (err) {
+          logDebug("initialize:stored:status_error", { message: err?.message });
           // Fall through to create a new payment if status check fails.
         } finally {
           statusAbortRef.current = null;
@@ -1005,7 +1031,7 @@ export function usePaymentLinkPage({
       }
 
       if (!cancelled) {
-        await createPayment();
+        await createPayment("no_restore_state");
       }
     };
 
@@ -1027,6 +1053,7 @@ export function usePaymentLinkPage({
     isPaymentAmountMismatch,
     loadStoredPaymentId,
     loadPaymentViewState,
+    logDebug,
     notifySessionExpired,
     notifySessionRefreshing,
     onNext,
