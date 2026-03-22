@@ -29,14 +29,12 @@ export default function PaymentLinkPage({
     failureReasons,
     refreshNotice,
     refreshNoticeVariant,
-    restoreWarning,
     isOnline,
     fileInputRef,
     timeRemaining,
     isMobile,
     offlineDisabled,
     retryBlocked,
-    retryInSeconds,
     retryButtonLabel,
     formatTime,
     getTimerColor,
@@ -44,7 +42,6 @@ export default function PaymentLinkPage({
     getQrContainerStyle,
     getVerificationErrorMessage,
     getPaymentRecoverySteps,
-    createPayment,
     handleFileChange,
     clearSelectedFile,
     restartPayment,
@@ -169,11 +166,6 @@ export default function PaymentLinkPage({
       {refreshNotice && (
         <div className={`banner ${refreshNoticeVariant}`}>
           <span>{refreshNotice}</span>
-        </div>
-      )}
-      {restoreWarning && (
-        <div className="banner warning">
-          <span>{restoreWarning}</span>
         </div>
       )}
 
