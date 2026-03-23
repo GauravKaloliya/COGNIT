@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getApiUrl } from "../utils/apiBase";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import { runtimeConfig } from "../config/runtime";
-import { clearPendingFlag, getPendingFlag, readJsonValue, removeStoredKey, setPendingFlag, writeJsonValue } from "../utils/storage";
+import { clearPendingFlag, getPendingFlag, setPendingFlag } from "../utils/storage";
 import { uiText } from "../utils/uiText";
 import { useNavigationBlocker } from "./useNavigationBlocker";
 import { useOnlineStatus } from "./useOnlineStatus";
+import { useSurveyDraftPersistence } from "./useSurveyDraftPersistence";
+import { useSurveyEngagement } from "./useSurveyEngagement";
+import { buildSurveyImageState, getSubmitTooltip } from "../utils/surveyPageHelpers";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
+
+export { sanitizeAlphaNumericSpace } from "../utils/surveyPageHelpers";
 
 const MIN_WORDS = runtimeConfig.minWords;
 const PRIORITY_WORD_TARGET = runtimeConfig.priorityDescWordTarget;
@@ -17,79 +22,10 @@ const MAX_FEEDBACK_LENGTH = runtimeConfig.maxFeedbackLength;
 const PRIORITY_FEEDBACK_TARGET = runtimeConfig.priorityFeedbackTarget;
 const UI_TOTAL_STEPS = runtimeConfig.surveyUiTotalSteps;
 const COPY_PASTE_DISABLED = runtimeConfig.disableCopyPaste;
-const SURVEY_DRAFT_SCHEMA_VERSION = runtimeConfig.surveyDraftSchemaVersion;
 const SURVEY_PENDING_SUBMIT_KEY = runtimeConfig.storageKeys.surveyPendingSubmit;
 
-export const DESCRIPTION_NOTES = [
-  "Strong start. Add one more concrete visual detail.",
-  "Nice momentum. Expand with color, position, and context.",
-  "Good flow. Mention object relationships to boost clarity.",
-  "Great effort. Add scene depth and small visible cues.",
-  "You are building quality. Add sequence or action details.",
-  "High-value response. Add what stands out most and why.",
-  "Excellent pace. Add contrast, count, or spatial references.",
-  "Almost priority-ready. Add richer context and precision.",
-  "Very close to priority tier. Add one strong final paragraph.",
-  "Priority target reached. Keep this detail level for top quality.",
-];
-export const FEEDBACK_NOTES = [
-  "Start with one clear thought about the task.",
-  "Good start. Add what felt easy or difficult.",
-  "Add a practical suggestion to improve the prompt.",
-  "Great. Mention whether image quality affected your response.",
-  "Helpful feedback. Add one specific improvement idea.",
-  "Strong direction. Explain what increased your confidence.",
-  "Useful signal. Add an example to make feedback actionable.",
-  "Almost priority-ready. Add one concise final insight.",
-  "Very close. Add what would make this task smoother.",
-  "Priority feedback reached. Clear, detailed, and actionable.",
-];
-
-export const sanitizeAlphaNumericSpace = (value) =>
-  value.replace(/[\t\r\n]+/g, " ").replace(/[^a-zA-Z0-9 ]+/g, "");
-
-const getDraftKey = (publicId, imageId) => {
-  const prefix = runtimeConfig.storageKeys.surveyDraftPrefix;
-  return imageId ? `${prefix}_${publicId || "anon"}_${imageId}` : null;
-};
-const getActiveDraftKey = (publicId) => {
-  const prefix = runtimeConfig.storageKeys.surveyDraftActivePrefix;
-  return `${prefix}_${publicId || "anon"}`;
-};
-
-const readSurveyDraft = (key) => {
-  if (!key) return null;
-  const unwrap = (value) => {
-    if (!value || typeof value !== "object") return null;
-    if ("__schema_version" in value && "expires_at" in value && "data" in value) return value.data || null;
-    return value;
-  };
-
-  // New: localStorage (no TTL)
-  const local = unwrap(readJsonValue(key, null, "local"));
-  if (local) return local;
-
-  // Backward compatible: old expiring drafts were stored in sessionStorage.
-  const session = unwrap(readJsonValue(key, null, "session"));
-  if (session) {
-    try {
-      writeJsonValue(key, session, "local");
-      removeStoredKey(key, "session");
-    } catch {
-      // Ignore migration failures.
-    }
-  }
-  return session || null;
-};
-
-const writeSurveyDraft = (key, data) => {
-  if (!key) return;
-  writeJsonValue(key, {
-    __schema_version: SURVEY_DRAFT_SCHEMA_VERSION,
-    saved_at: Date.now(),
-    data,
-  }, "local");
-};
+export const DESCRIPTION_NOTES = uiText("survey.descriptionNotes").split("|");
+export const FEEDBACK_NOTES = uiText("survey.feedbackNotes").split("|");
 
 export function useSurveyPage({
   survey,
@@ -106,30 +42,25 @@ export function useSurveyPage({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [showValidationErrors, setShowValidationErrors] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [retryDisabled, setRetryDisabled] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
-  const [draftRestored, setDraftRestored] = useState(false);
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [timerActive, setTimerActive] = useState(false);
   const [submitLocked, setSubmitLocked] = useState(false);
-  const [engagementData, setEngagementData] = useState({
-    tabSwitchCount: 0,
-    pageCloseAttempts: 0,
-    networkDisconnects: 0,
-  });
-
-  const surveyStartTime = useRef(Date.now());
-  const timerIntervalRef = useRef(null);
   const submitUnlockTimeoutRef = useRef(null);
-  const saveTimeoutRef = useRef(null);
-  const lastSavedAtRef = useRef(null);
-  const descriptionRef = useRef(null);
-  const commentsRef = useRef(null);
+  const {
+    engagementData,
+    setEngagementData,
+    elapsed,
+    setElapsed,
+    setTimerActive,
+    descriptionRef,
+    commentsRef,
+    surveyStartTime,
+    preventCopyPaste,
+    preventClipboardShortcuts,
+    resetEngagement,
+  } = useSurveyEngagement({ copyPasteDisabled: COPY_PASTE_DISABLED });
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
   const charCount = description.length;
   const feedbackCount = comments.trim().length;
@@ -148,16 +79,10 @@ export function useSurveyPage({
   const currentStep = Math.max(1, surveyCompleted + 1);
   const minimumMet = wordCount >= MIN_WORDS && comments.trim().length >= MIN_FEEDBACK_LENGTH && rating > 0;
   const priorityMet = descriptionPriorityReady && feedbackPriorityReady;
-  const draftKey = getDraftKey(publicId, survey?.image_id);
-  const activeDraftKey = getActiveDraftKey(publicId);
-  const resolvedImageUrl = survey?.url || survey?.image_url || survey?.imageUrl || "";
-  const imageSrc = resolvedImageUrl
-    ? (resolvedImageUrl.startsWith("http") ? resolvedImageUrl : getApiUrl(resolvedImageUrl))
-    : "";
-  const cacheBustedSrc = imageSrc
-    ? `${imageSrc}${imageSrc.includes("?") ? "&" : "?"}v=${encodeURIComponent(survey?.image_id || "")}`
-    : "";
-  const hasUsableSurveyImage = Boolean(survey?.image_id && imageSrc);
+  const { imageSrc, cacheBustedSrc, hasUsableSurveyImage } = useMemo(
+    () => buildSurveyImageState(survey),
+    [survey]
+  );
 
   const unlockSubmit = useCallback((delayMs = runtimeConfig.submitUnlockDelayMs) => {
     if (submitUnlockTimeoutRef.current) {
@@ -168,80 +93,6 @@ export function useSurveyPage({
       submitUnlockTimeoutRef.current = null;
     }, delayMs);
   }, []);
-
-  useEffect(() => {
-    const handleOnline = () => {};
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        setEngagementData((prev) => ({ ...prev, tabSwitchCount: prev.tabSwitchCount + 1 }));
-      }
-    };
-    const handleBeforeUnload = (e) => {
-      setEngagementData((prev) => ({ ...prev, pageCloseAttempts: prev.pageCloseAttempts + 1 }));
-      delete e.returnValue;
-    };
-    const handleOffline = () => {
-      setEngagementData((prev) => ({ ...prev, networkDisconnects: prev.networkDisconnects + 1 }));
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
-
-  const preventCopyPaste = useCallback((e) => {
-    if (!COPY_PASTE_DISABLED) return;
-    e.preventDefault();
-    return false;
-  }, []);
-
-  const preventClipboardShortcuts = useCallback((e) => {
-    if (!COPY_PASTE_DISABLED) return;
-    if ((e.ctrlKey || e.metaKey) && ["c", "x", "v", "insert"].includes(e.key.toLowerCase())) {
-      e.preventDefault();
-    }
-    if (e.shiftKey && e.key === "Insert") {
-      e.preventDefault();
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!COPY_PASTE_DISABLED) return;
-    const descTextarea = descriptionRef.current;
-    const commentsTextarea = commentsRef.current;
-    if (descTextarea) {
-      descTextarea.addEventListener("copy", preventCopyPaste);
-      descTextarea.addEventListener("cut", preventCopyPaste);
-      descTextarea.addEventListener("paste", preventCopyPaste);
-      descTextarea.addEventListener("contextmenu", preventCopyPaste);
-    }
-    if (commentsTextarea) {
-      commentsTextarea.addEventListener("copy", preventCopyPaste);
-      commentsTextarea.addEventListener("cut", preventCopyPaste);
-      commentsTextarea.addEventListener("paste", preventCopyPaste);
-      commentsTextarea.addEventListener("contextmenu", preventCopyPaste);
-    }
-    return () => {
-      if (descTextarea) {
-        descTextarea.removeEventListener("copy", preventCopyPaste);
-        descTextarea.removeEventListener("cut", preventCopyPaste);
-        descTextarea.removeEventListener("paste", preventCopyPaste);
-        descTextarea.removeEventListener("contextmenu", preventCopyPaste);
-      }
-      if (commentsTextarea) {
-        commentsTextarea.removeEventListener("copy", preventCopyPaste);
-        commentsTextarea.removeEventListener("cut", preventCopyPaste);
-        commentsTextarea.removeEventListener("paste", preventCopyPaste);
-        commentsTextarea.removeEventListener("contextmenu", preventCopyPaste);
-      }
-    };
-  }, [preventCopyPaste]);
 
   useEffect(() => () => {
     if (submitUnlockTimeoutRef.current) {
@@ -257,7 +108,7 @@ export function useSurveyPage({
     setImageLoaded(false);
     setTimerActive(false);
     onRetry({ clearCurrent: true });
-  }, [retryDisabled]);
+  }, [retryDisabled, setRetryCountdown, setTimerActive]);
 
   useEffect(() => {
     if (!retryDisabled || runtimeConfig.serviceRetrySeconds <= 0) {
@@ -282,129 +133,73 @@ export function useSurveyPage({
     }
   }, [retryCountdown, retryDisabled]);
 
-  useEffect(() => {
-    setElapsed(0);
-    setImageLoaded(false);
-    setImageError(false);
-    setIsZoomed(false);
-    setSubmitError("");
-    setShowValidationErrors(false);
-    setTimerActive(false);
-    setDescription("");
-    setRating(0);
-    setComments("");
-    setEngagementData({ tabSwitchCount: 0, pageCloseAttempts: 0, networkDisconnects: 0 });
-    surveyStartTime.current = Date.now();
-
-    if (survey?.image_id) {
-      try {
-        const saved = readSurveyDraft(getDraftKey(publicId, survey.image_id)) || readSurveyDraft(activeDraftKey);
-        if (saved) {
-          setDraftRestored(true);
-          setDescription(typeof saved.description === "string" ? saved.description : "");
-          setRating(Number.isInteger(saved.rating) ? saved.rating : 0);
-          setComments(typeof saved.comments === "string" ? saved.comments : "");
-          setElapsed(Number.isFinite(saved.elapsed) ? Math.max(0, saved.elapsed) : 0);
-          setEngagementData({
-            tabSwitchCount: Number.isFinite(saved.engagementData?.tabSwitchCount) ? Math.max(0, saved.engagementData.tabSwitchCount) : 0,
-            pageCloseAttempts: Number.isFinite(saved.engagementData?.pageCloseAttempts) ? Math.max(0, saved.engagementData.pageCloseAttempts) : 0,
-            networkDisconnects: Number.isFinite(saved.engagementData?.networkDisconnects) ? Math.max(0, saved.engagementData.networkDisconnects) : 0,
-          });
-          if (Number.isFinite(saved.startedAt)) {
-            surveyStartTime.current = saved.startedAt;
-          } else if (Number.isFinite(saved.elapsed)) {
-            surveyStartTime.current = Date.now() - Math.max(0, saved.elapsed) * runtimeConfig.msPerSecond;
-          }
-        }
-      } catch {
-        // Ignore malformed draft payload and continue with fresh inputs.
-      }
+  const restoreDraft = useCallback((saved) => {
+    setDescription(typeof saved.description === "string" ? saved.description : "");
+    setRating(Number.isInteger(saved.rating) ? saved.rating : 0);
+    setComments(typeof saved.comments === "string" ? saved.comments : "");
+    setElapsed(Number.isFinite(saved.elapsed) ? Math.max(0, saved.elapsed) : 0);
+    setEngagementData({
+      tabSwitchCount: Number.isFinite(saved.engagementData?.tabSwitchCount) ? Math.max(0, saved.engagementData.tabSwitchCount) : 0,
+      pageCloseAttempts: Number.isFinite(saved.engagementData?.pageCloseAttempts) ? Math.max(0, saved.engagementData.pageCloseAttempts) : 0,
+      networkDisconnects: Number.isFinite(saved.engagementData?.networkDisconnects) ? Math.max(0, saved.engagementData.networkDisconnects) : 0,
+    });
+    if (Number.isFinite(saved.startedAt)) {
+      surveyStartTime.current = saved.startedAt;
+    } else if (Number.isFinite(saved.elapsed)) {
+      surveyStartTime.current = Date.now() - Math.max(0, saved.elapsed) * runtimeConfig.msPerSecond;
     }
+  }, [setComments, setDescription, setElapsed, setEngagementData, setRating, surveyStartTime]);
 
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-
-    return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-    };
-  }, [activeDraftKey, publicId, survey?.image_id]);
-
-  useEffect(() => {
-    if (!isOnline) return;
-    if (!draftKey || !survey?.image_id) return;
-    setIsSaving(true);
-    setSaveError("");
-    const payload = {
-      imageId: survey.image_id,
+  const {
+    draftRestored,
+    lastSavedAt,
+    isSaving,
+    saveError,
+    clearDrafts,
+  } = useSurveyDraftPersistence({
+    publicId,
+    surveyImageId: survey?.image_id,
+    isOnline,
+    draftState: {
+      imageId: survey?.image_id,
       description,
       rating,
       comments,
       elapsed,
       startedAt: surveyStartTime.current,
       engagementData,
-    };
-    try {
-      writeSurveyDraft(draftKey, payload);
-      writeSurveyDraft(activeDraftKey, payload);
-      const now = Date.now();
-      lastSavedAtRef.current = now;
-      setLastSavedAt(now);
-    } catch {
-      setSaveError(uiText("autosave.failed"));
-      if (lastSavedAtRef.current) {
-        setLastSavedAt(lastSavedAtRef.current);
-      }
-    }
-    if (saveTimeoutRef.current) {
-      clearScheduledTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
-  }, [activeDraftKey, comments, description, draftKey, elapsed, engagementData, isOnline, rating, survey?.image_id]);
+    },
+    onRestore: restoreDraft,
+  });
 
   useEffect(() => {
-    if (!isOnline) setIsSaving(false);
-  }, [isOnline]);
+    setImageLoaded(false);
+    setImageError(false);
+    setIsZoomed(false);
+    setSubmitError("");
+    setShowValidationErrors(false);
+    setDescription("");
+    setRating(0);
+    setComments("");
+    resetEngagement();
+  }, [resetEngagement, setDescription, setRating, setComments, survey?.image_id]);
 
-  useEffect(() => () => {
-    if (saveTimeoutRef.current) clearScheduledTimeout(saveTimeoutRef.current);
-  }, []);
-
-  useEffect(() => {
-    if (timerActive) {
-      timerIntervalRef.current = scheduleInterval(() => {
-        setElapsed((prev) => prev + 1);
-      }, runtimeConfig.surveyTimerTickMs);
-    } else if (timerIntervalRef.current) {
-      clearScheduledInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-    return () => {
-      if (timerIntervalRef.current) {
-        clearScheduledInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-    };
-  }, [timerActive]);
-
-  const getSubmitTooltip = useCallback(() => {
-    if (!imageReady) return getErrorMessage("SYS_002_0018");
-    if (submitting || submitLocked) return uiText("survey.submitBusy");
-    if (wordCount < MIN_WORDS) {
-      return getErrorMessage("VAL_002_0004", "en", { min_words: MIN_WORDS, actual: wordCount });
-    }
-    if (description.length < MIN_DESCRIPTION_LENGTH) return getErrorMessage("VAL_002_0002");
-    if (description.length > MAX_DESCRIPTION_LENGTH) return getErrorMessage("VAL_002_0003");
-    if (rating === 0) return getErrorMessage("VAL_002_0008");
-    const commentsLength = comments.trim().length;
-    if (commentsLength < MIN_FEEDBACK_LENGTH) return getErrorMessage("VAL_002_0006");
-    if (commentsLength > MAX_FEEDBACK_LENGTH) return getErrorMessage("VAL_002_0007");
-    return uiText("survey.submit");
-  }, [comments, description, imageReady, rating, submitLocked, submitting, wordCount]);
+  const getSubmitTooltipText = useCallback(() => getSubmitTooltip({
+    imageReady,
+    submitting,
+    submitLocked,
+    wordCount,
+    minWords: MIN_WORDS,
+    description,
+    minDescriptionLength: MIN_DESCRIPTION_LENGTH,
+    maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
+    rating,
+    comments,
+    minFeedbackLength: MIN_FEEDBACK_LENGTH,
+    maxFeedbackLength: MAX_FEEDBACK_LENGTH,
+    getErrorMessage,
+    uiText,
+  }), [comments, description, imageReady, rating, submitLocked, submitting, wordCount]);
 
   const handleSubmit = useCallback(async () => {
     if (submitting || submitLocked) return;
@@ -417,7 +212,7 @@ export function useSurveyPage({
     setSubmitLocked(true);
     setShowValidationErrors(true);
     if (!canSubmit) {
-      setSubmitError(getSubmitTooltip());
+      setSubmitError(getSubmitTooltipText());
       unlockSubmit(runtimeConfig.submitUnlockInvalidDelayMs);
       return;
     }
@@ -440,40 +235,32 @@ export function useSurveyPage({
         timeSpentSeconds,
         engagementData,
       });
-      if (draftKey) {
-        removeStoredKey(draftKey, "session");
-        removeStoredKey(draftKey, "local");
-      }
-      removeStoredKey(activeDraftKey, "session");
-      removeStoredKey(activeDraftKey, "local");
+      clearDrafts();
       setDescription("");
       setRating(0);
       setComments("");
       setEngagementData({ tabSwitchCount: 0, pageCloseAttempts: 0, networkDisconnects: 0 });
     } catch (error) {
-      if (error?.code) {
-        setSubmitError(getErrorMessage(error.code));
-      } else {
-        setSubmitError(getErrorMessage("SYS_002_0006"));
-      }
+      setSubmitError(getDisplayErrorMessage(error, "SYS_002_0006"));
     } finally {
       setSubmitting(false);
       unlockSubmit(runtimeConfig.submitUnlockCompleteDelayMs);
     }
   }, [
-    activeDraftKey,
     canSubmit,
+    clearDrafts,
     comments,
     description,
-    draftKey,
     engagementData,
-    getSubmitTooltip,
+    getSubmitTooltipText,
     isOnline,
     onSubmit,
     rating,
+    setEngagementData,
     submitLocked,
     submitting,
     survey,
+    surveyStartTime,
     unlockSubmit,
   ]);
 
@@ -489,13 +276,13 @@ export function useSurveyPage({
     setImageLoaded(true);
     setImageError(false);
     setTimerActive(true);
-  }, []);
+  }, [setTimerActive]);
 
   const handleImageError = useCallback(() => {
     setImageError(true);
     setImageLoaded(false);
     setTimerActive(false);
-  }, []);
+  }, [setTimerActive]);
 
   useEffect(() => {
     const onKeyboardSubmit = (e) => {
@@ -530,7 +317,7 @@ export function useSurveyPage({
 
   useNavigationBlocker({
     enabled: submitting || submitLocked,
-    message: "Submission in progress. Please wait before leaving this page.",
+    message: uiText("survey.navigationBlocked"),
     onBlocked: setSubmitError,
   });
 
@@ -591,7 +378,7 @@ export function useSurveyPage({
     handleSubmit,
     handleImageLoad,
     handleImageError,
-    getSubmitTooltip,
+    getSubmitTooltip: getSubmitTooltipText,
     preventCopyPaste,
     preventClipboardShortcuts,
     draftRestored,

@@ -14,8 +14,8 @@ QUERY_FETCH_SUBMISSION_PARTICIPANT = text("""
         p.consent_given,
         p.is_deleted,
         p.extra_metadata,
-        p.payment_status,
-        p.current_stage,
+        p.participant_payment_status,
+        p.participant_stage,
         COALESCE(pas.is_flagged, false) AS is_flagged
     FROM participants p
     LEFT JOIN participant_attention_stats pas ON pas.participant_id = p.id
@@ -161,7 +161,7 @@ QUERY_LINK_PAYMENT_SUBMISSION = text("""
 QUERY_RELEASE_IMAGE_RESERVATION = text("""
     UPDATE image_reservations
     SET released_at = CURRENT_TIMESTAMP
-    WHERE image_id = :img
+    WHERE image_public_id = :img
       AND participant_id = :pid
       AND released_at IS NULL
 """)

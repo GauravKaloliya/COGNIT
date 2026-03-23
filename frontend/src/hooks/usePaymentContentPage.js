@@ -3,14 +3,15 @@ import { runtimeConfig } from "../config/runtime";
 import { clearPendingFlag, getPendingFlag, setPendingFlag } from "../utils/storage";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
+import { uiText } from "../utils/uiText";
 
 export function usePaymentContentPage({ onNext }) {
   const [continuing, setContinuing] = useState(false);
   const [pendingContinue, setPendingContinue] = useState(false);
   const isOnline = useOnlineStatus();
   const pendingKey = runtimeConfig.storageKeys.paymentContentPending;
-  const paymentAmountLabel = `₹${runtimeConfig.paymentAmount}`;
-  const rewardAmountLabel = `₹${runtimeConfig.rewardAmount}`;
+  const paymentAmountLabel = uiText("common.inrAmount", { amount: runtimeConfig.paymentAmount });
+  const rewardAmountLabel = uiText("common.inrAmount", { amount: runtimeConfig.rewardAmount });
   const retryCountdown = useRetryCountdown(!isOnline && pendingContinue, runtimeConfig.serviceRetrySeconds);
 
   const handleContinue = useCallback(async () => {

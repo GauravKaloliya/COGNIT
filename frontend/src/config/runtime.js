@@ -63,7 +63,7 @@ export const runtimeConfig = {
     verified: "verified",
   },
   emailPlaceholderRotateMs: toInt(import.meta.env.VITE_EMAIL_PLACEHOLDER_ROTATE_MS, 1800),
-  focusAdvanceDelayMs: toInt(import.meta.env.VITE_FOCUS_ADVANCE_DELAY_MS, 0),
+  focusAdvanceDelayMs: 0,
   allowedEmailDomains: toList(import.meta.env.VITE_ALLOWED_EMAIL_DOMAINS, [
     "gmail.com",
     "outlook.com",

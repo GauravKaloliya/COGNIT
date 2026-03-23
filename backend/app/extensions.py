@@ -9,9 +9,11 @@ from flask import Flask
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from redis import Redis
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import (
+    CACHE_REDIS_URL,
     SECRET_KEY,
     CORS_ORIGINS,
     CORS_SUPPORTS_CREDENTIALS,
@@ -89,3 +91,5 @@ s3 = boto3.client(
     aws_access_key_id=AWS_ACCESS_KEY_ID,
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
 )
+
+cache_redis = Redis.from_url(CACHE_REDIS_URL, decode_responses=True) if CACHE_REDIS_URL else None

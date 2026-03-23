@@ -1,6 +1,7 @@
 """Shared backend audit/domain event constants."""
 
 AUDIT_EVENT_PARTICIPANT_CREATED = "participant_created"
+AUDIT_EVENT_CONSENT_RECORDED = "consent_recorded"
 AUDIT_EVENT_SUBMISSION = "submission"
 AUDIT_EVENT_PAYMENT_OCR_UNAVAILABLE = "payment_ocr_unavailable"
 AUDIT_EVENT_PAYMENT_STATUS_TRANSITION = "payment_status_transition"
@@ -23,4 +24,4 @@ HTTP_METHOD_GET = "GET"
 HTTP_METHOD_INTERNAL = "INTERNAL"
 HTTP_REASON_ROUTE_NOT_FOUND = "route_not_found"
 HTTP_REASON_METHOD_NOT_ALLOWED = "method_not_allowed"
-PAYMENT_NOT_VERIFIED_REASON = "payment_not_verified"
+PAY_NOT_VERIFIED_REASON = "payment_not_verified"

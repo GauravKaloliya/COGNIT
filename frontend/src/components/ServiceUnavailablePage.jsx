@@ -89,7 +89,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
             message={error || getErrorMessage('SYS_001_0004')}
             actionLabel={
               isRetrying
-                ? uiText("survey.retryingShort")
+                ? uiText("common.pleaseWait")
                 : (retryInSeconds > 0 ? uiText("common.tryAgainIn", { seconds: retryInSeconds }) : uiText("common.reload"))
             }
             onAction={handleRetry}

@@ -1,37 +1,15 @@
 import json
-from typing import Dict, Set, Optional
+from typing import Optional
 
 from sqlalchemy import text
 
 from app.constants.event_constants import AUDIT_EVENT_PAYMENT_STATUS_TRANSITION
-from app.constants.participant_constants import (
-    PARTICIPANT_PAYMENT_STATUS_PAID,
-    PARTICIPANT_STAGE_FINISHED,
-    PARTICIPANT_STAGE_SURVEY,
+from app.services.payment_workflow_service import (
+    PAYMENT_STATUS_TRANSITIONS,
+    SUBMISSION_WORKFLOW_ALLOWED_STAGES_BY_PAYMENT,
 )
-from app.constants.payment_constants import (
-    PAYMENT_STATUS_EXPIRED,
-    PAYMENT_STATUS_FAILED,
-    PAYMENT_STATUS_PENDING,
-    PAYMENT_STATUS_PROCESSING,
-    PAYMENT_STATUS_REFUNDED,
-    PAYMENT_STATUS_REJECTED_FRAUD,
-    PAYMENT_STATUS_SUCCESS,
-)
-
-PAYMENT_STATUS_TRANSITIONS: Dict[str, Set[str]] = {
-    PAYMENT_STATUS_PENDING: {PAYMENT_STATUS_PROCESSING, PAYMENT_STATUS_EXPIRED, PAYMENT_STATUS_FAILED, PAYMENT_STATUS_REJECTED_FRAUD},
-    PAYMENT_STATUS_PROCESSING: {PAYMENT_STATUS_SUCCESS, PAYMENT_STATUS_REJECTED_FRAUD, PAYMENT_STATUS_FAILED},
-    PAYMENT_STATUS_SUCCESS: set(),
-    PAYMENT_STATUS_REJECTED_FRAUD: set(),
-    PAYMENT_STATUS_EXPIRED: set(),
-    PAYMENT_STATUS_FAILED: set(),
-    PAYMENT_STATUS_REFUNDED: set(),
-}
-
-SUBMISSION_WORKFLOW_ALLOWED_STAGES_BY_PAYMENT: Dict[str, Set[str]] = {
-    PARTICIPANT_PAYMENT_STATUS_PAID: {PARTICIPANT_STAGE_SURVEY, PARTICIPANT_STAGE_FINISHED},
-}
+from app.services.payment_query_service import sync_participant_from_payment_status
+from app.utils.runtime_cache import invalidate_payment_status_cache_by_id
 
 
 class StateTransitionError(ValueError):
@@ -42,13 +20,13 @@ def ensure_payment_status_transition(current_status: str, target_status: str) ->
     current = (current_status or "").strip().lower()
     target = (target_status or "").strip().lower()
 
+    if not current or not target:
+        raise StateTransitionError("Payment status transition requires both current and target status.")
     if current == target:
         return
-
     allowed = PAYMENT_STATUS_TRANSITIONS.get(current)
     if allowed is None:
         raise StateTransitionError(f"Unknown payment status: {current_status}")
-
     if target not in allowed:
         raise StateTransitionError(
             f"Invalid payment status transition from '{current_status}' to '{target_status}'"
@@ -56,19 +34,13 @@ def ensure_payment_status_transition(current_status: str, target_status: str) ->
 
 
 def ensure_submission_workflow_state(payment_status: str, current_stage: str) -> None:
-    p_status = (payment_status or "").strip().lower()
-    stage = (current_stage or "").strip().lower()
-
-    if p_status not in SUBMISSION_WORKFLOW_ALLOWED_STAGES_BY_PAYMENT:
-        raise StateTransitionError(
-            f"Submission not allowed when payment_status='{payment_status}'"
-        )
-
-    allowed_stages = SUBMISSION_WORKFLOW_ALLOWED_STAGES_BY_PAYMENT[p_status]
-    if stage not in allowed_stages:
-        raise StateTransitionError(
-            f"Submission not allowed at participant stage='{current_stage}'"
-        )
+    normalized_status = (payment_status or "").strip().lower()
+    normalized_stage = (current_stage or "").strip().lower()
+    allowed_stages = SUBMISSION_WORKFLOW_ALLOWED_STAGES_BY_PAYMENT.get(normalized_status)
+    if not allowed_stages:
+        raise StateTransitionError(f"Submission not allowed when payment_status='{payment_status}'")
+    if normalized_stage not in allowed_stages:
+        raise StateTransitionError(f"Submission not allowed at participant stage='{current_stage}'")
 
 
 def transition_payment_status(
@@ -84,7 +56,7 @@ def transition_payment_status(
     Validate and persist a payment status transition with an audit trail.
     """
     ensure_payment_status_transition(from_status, to_status)
-    db.execute(
+    result = db.execute(
         text(
             """
             UPDATE payments
@@ -99,6 +71,17 @@ def transition_payment_status(
             "from_status": str(from_status),
         },
     )
+    if int(getattr(result, "rowcount", 0) or 0) != 1:
+        raise StateTransitionError(
+            f"Payment status transition rejected by database: {from_status}->{to_status}"
+        )
+    participant_id = db.execute(
+        text("SELECT participant_id FROM payments WHERE id = :pid"),
+        {"pid": int(payment_id)},
+    ).scalar()
+    if participant_id:
+        sync_participant_from_payment_status(db, participant_id=int(participant_id), status=str(to_status))
+    invalidate_payment_status_cache_by_id(payment_id)
     db.execute(
         text(
             """

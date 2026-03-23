@@ -99,14 +99,14 @@ def map_participant_create_exception(
                         set_cookies=set_cookies,
                     )
             return create_error_response(duplicate_error)
-        return create_error_response("PARTICIPANT_EXISTS")
+        return create_error_response("DUP_PUBLIC_ID")
 
     if any(marker in error_str for marker in PARTICIPANT_FOREIGN_KEY_ERROR_MARKERS):
         mapped = _match_error_key(error_str, PARTICIPANT_FOREIGN_KEY_ERROR_MAP)
-        return create_error_response(mapped or "DATABASE_ERROR")
+        return create_error_response(mapped or "SYS_DATABASE_ERROR")
 
     if any(marker in error_str for marker in PARTICIPANT_CHECK_CONSTRAINT_MARKERS):
         mapped = _match_error_key(error_str, PARTICIPANT_CHECK_CONSTRAINT_ERROR_MAP)
-        return create_error_response(mapped or "DATABASE_ERROR")
+        return create_error_response(mapped or "SYS_DATABASE_ERROR")
 
-    return create_error_response("PARTICIPANT_EXISTS" if duplicate_error else "DATABASE_ERROR")
+    return create_error_response("DUP_PUBLIC_ID" if duplicate_error else "SYS_DATABASE_ERROR")

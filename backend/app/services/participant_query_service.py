@@ -50,3 +50,17 @@ QUERY_FETCH_LANGUAGES = text("""
     WHERE active = true
     ORDER BY name ASC
 """)
+
+QUERY_FETCH_PRIOR_EXPERIENCES = text("""
+    SELECT code, display_name, group_label
+    FROM prior_experiences
+    WHERE active = true
+    ORDER BY group_sort_order ASC, sort_order ASC, display_name ASC
+""")
+
+QUERY_CHECK_PRIOR_EXPERIENCE_EXISTS = text("""
+    SELECT 1
+    FROM prior_experiences
+    WHERE code = :code AND active = true
+    LIMIT 1
+""")

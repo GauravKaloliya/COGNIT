@@ -34,7 +34,7 @@ def evaluate_priority_and_rewards(db, participant_id: int, correlation_id: str =
     if not participant:
         return
 
-    consent_given, is_deleted, payment_status = participant
+    consent_given, is_deleted, participant_payment_status = participant
 
     metrics = db.execute(QUERY_FETCH_REWARD_METRICS, {"pid": participant_id}).fetchone()
 
@@ -57,7 +57,7 @@ def evaluate_priority_and_rewards(db, participant_id: int, correlation_id: str =
     layer_one_pass = (
         bool(consent_given)
         and not bool(is_deleted)
-        and (payment_status == PARTICIPANT_PAYMENT_STATUS_PAID)
+        and (participant_payment_status == PARTICIPANT_PAYMENT_STATUS_PAID)
         and int(total_words or 0) >= PRIORITY_QUEUE_MIN_TOTAL_WORDS
         and int(max_round or 0) >= PRIORITY_QUEUE_MIN_ROUNDS
         and int(survey_count or 0) >= PRIORITY_MIN_SUBMISSIONS

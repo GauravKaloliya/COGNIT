@@ -1,90 +1,27 @@
-import { useEffect, useState } from "react";
-import { runtimeConfig } from "../config/runtime";
-import { getStoredValue, isStorageAvailable, saveStoredValue } from "../utils/storage";
-import { BROWSER_EVENTS, BROWSER_FLAGS } from "../constants/browser";
-import { initErrorReporter, reportClientError } from "../utils/errorReporter";
-
-function readDarkMode() {
-  return getStoredValue(runtimeConfig.storageKeys.darkMode, false, { area: "local" }) === true;
-}
+import { isStorageAvailable } from "../utils/storage";
+import { useGlobalAppEvents } from "./useGlobalAppEvents";
+import { useThemePreference } from "./useThemePreference";
 
 export function useMainAppController() {
-  const [darkMode, setDarkMode] = useState(() => readDarkMode());
-  const [error, setError] = useState(null);
-  const [rateLimitError, setRateLimitError] = useState(null);
-  const [maintenanceError, setMaintenanceError] = useState(null);
-  const [storageOk] = useState(() => isStorageAvailable("local"));
-
-  useEffect(() => {
-    document.body.classList.toggle(BROWSER_FLAGS.darkModeClass, darkMode);
-    saveStoredValue(runtimeConfig.storageKeys.darkMode, darkMode === true, { area: "local" });
-  }, [darkMode]);
-
-  useEffect(() => {
-    const deferSetError = (value) => {
-      const schedule = typeof queueMicrotask === "function" ? queueMicrotask : (cb) => setTimeout(cb, 0);
-      schedule(() => setError(value));
-    };
-
-    const handleError = (event) => {
-      // No-op: suppress console noise in production.
-      deferSetError(event.error);
-      reportClientError({
-        message: event?.message || event?.error?.message,
-        stack: event?.error?.stack,
-        context: "window_error",
-        route: typeof window !== "undefined" ? window.location.pathname : "",
-      });
-    };
-
-    const handleUnhandledRejection = (event) => {
-      // No-op: suppress console noise in production.
-      deferSetError(event.reason);
-      reportClientError({
-        message: event?.reason?.message || String(event?.reason || ""),
-        stack: event?.reason?.stack,
-        context: "unhandled_rejection",
-        route: typeof window !== "undefined" ? window.location.pathname : "",
-      });
-    };
-
-    const handleRateLimit = (event) => {
-      const detail = event?.detail || null;
-      deferSetError(null);
-      setMaintenanceError(null);
-      setRateLimitError(detail || { message: "Too many requests. Please slow down and try again." });
-    };
-
-    const handleMaintenance = (event) => {
-      const detail = event?.detail || null;
-      deferSetError(null);
-      setRateLimitError(null);
-      setMaintenanceError(detail || { message: "Website is under maintenance. Please try again later." });
-    };
-
-    const teardownReporter = initErrorReporter();
-    window.addEventListener(BROWSER_EVENTS.error, handleError);
-    window.addEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
-    window.addEventListener("cognit:rate-limit", handleRateLimit);
-    window.addEventListener("cognit:maintenance", handleMaintenance);
-    return () => {
-      window.removeEventListener(BROWSER_EVENTS.error, handleError);
-      window.removeEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
-      window.removeEventListener("cognit:rate-limit", handleRateLimit);
-      window.removeEventListener("cognit:maintenance", handleMaintenance);
-      teardownReporter();
-    };
-  }, []);
+  const { darkMode, toggleDarkMode } = useThemePreference();
+  const {
+    error,
+    resetError,
+    rateLimitError,
+    resetRateLimit,
+    maintenanceError,
+    resetMaintenance,
+  } = useGlobalAppEvents();
 
   return {
     darkMode,
-    storageOk,
+    storageOk: isStorageAvailable("local"),
     error,
-    resetError: () => setError(null),
+    resetError,
     rateLimitError,
-    resetRateLimit: () => setRateLimitError(null),
+    resetRateLimit,
     maintenanceError,
-    resetMaintenance: () => setMaintenanceError(null),
-    toggleDarkMode: () => setDarkMode((prev) => !prev),
+    resetMaintenance,
+    toggleDarkMode,
   };
 }

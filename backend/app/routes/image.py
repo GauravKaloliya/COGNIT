@@ -73,7 +73,7 @@ def random_image():
         )
 
         if not row:
-            return create_error_response("NO_IMAGES") if force_attention else create_error_response("INTERNAL_ERROR")
+            return create_error_response("NF_NO_IMAGES_AVAILABLE") if force_attention else create_error_response("SYS_RANDOM_IMAGE_FALLBACK_FAILED")
 
         return success_response({
             "image_id": row[0],
@@ -85,4 +85,4 @@ def random_image():
         # Keep errors logged but avoid noisy prints in production.
         import logging
         logging.getLogger(__name__).error(LOG_RANDOM_IMAGE_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_RANDOM_IMAGE_QUERY_FAILED")
