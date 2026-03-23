@@ -1234,12 +1234,6 @@ body.dark .consent-fade {
   font-size: 16px;
 }
 
-.form-field-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
 .otp-row {
   display: flex;
   align-items: center;
@@ -1250,13 +1244,25 @@ body.dark .consent-fade {
   flex: 1;
 }
 
-.otp-resend-btn {
+.otp-resend-btn.ghost {
   min-width: var(--mobile-touch-target);
   min-height: var(--mobile-touch-target);
+  width: var(--mobile-touch-target);
+  flex: 0 0 var(--mobile-touch-target);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+}
+
+.otp-field {
+  grid-column: auto;
+}
+
+@media (min-width: 768px) {
+  .otp-field {
+    grid-column: 2;
+  }
 }
 
 .loading-spinner {
