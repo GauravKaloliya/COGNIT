@@ -1,7 +1,6 @@
 import uuid
 
-from app.config import PAYMENT_MAX_IMAGE_MB, PAYMENT_UPLOAD_URL_EXPIRY_SECONDS
-from app.constants.error_codes import ERROR_CODES_TEMPLATE
+from app.config import ERROR_CODES, PAYMENT_MAX_IMAGE_MB, PAYMENT_UPLOAD_URL_EXPIRY_SECONDS
 from app.utils.helpers import create_error_response, validate_image_extension
 
 
@@ -27,7 +26,7 @@ def build_payment_upload_url_response(*, payment_public_id: str, data: dict, s3_
             if normalized_size < 0 or normalized_size > max_bytes:
                 return None, create_error_response(
                     "VAL_FILE_TOO_LARGE",
-                    details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": ERROR_CODES_TEMPLATE["VAL_FILE_TOO_LARGE"]["reason"]},
+                    details={"max_mb": int(PAYMENT_MAX_IMAGE_MB), "reason": ERROR_CODES["VAL_FILE_TOO_LARGE"]["reason"]},
                     max_mb=int(PAYMENT_MAX_IMAGE_MB),
                 )
         except Exception:
