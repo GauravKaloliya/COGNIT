@@ -269,6 +269,13 @@ CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (sessi
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (participant_payment_status);
 
+COMMENT ON COLUMN participants.participant_payment_status IS
+    'App-owned participant payment summary state. Mirrors frontend/backend flow language, not provider-specific payment states.';
+COMMENT ON COLUMN participants.participant_stage IS
+    'App-owned participant progression stage. Kept intentionally prefixed to distinguish it from payment status fields.';
+COMMENT ON COLUMN participants.participant_stage_updated_at IS
+    'Convenience timestamp updated only when participant_stage changes.';
+
 -- Email OTPs (verification)
 CREATE TABLE IF NOT EXISTS email_otps (
     id           BIGSERIAL PRIMARY KEY,
@@ -647,6 +654,11 @@ CREATE INDEX IF NOT EXISTS idx_image_reservations_released ON image_reservations
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_object_key_unique ON payment_files (object_key);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_file_per_payment            ON payment_files (payment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_sha256_unique     ON payment_files (sha256);
+
+COMMENT ON COLUMN payment_files.payment_id IS
+    'Current schema intentionally allows one canonical stored screenshot file per payment.';
+COMMENT ON COLUMN payment_files.sha256 IS
+    'Global hash uniqueness is intentional to block screenshot reuse across payments and participants.';
 
 CREATE INDEX IF NOT EXISTS idx_payment_files_payment  ON payment_files (payment_id);
 CREATE INDEX IF NOT EXISTS idx_payment_files_sha256   ON payment_files (sha256);

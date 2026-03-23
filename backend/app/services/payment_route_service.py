@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -8,7 +7,6 @@ from app.config import (
     PARTICIPANT_PUBLIC_COOKIE_NAME,
     PARTICIPANT_SESSION_COOKIE_NAME,
 )
-from app.constants.observability_constants import OBS_EVENT_DB_LATENCY
 from app.constants.payment_constants import PAYMENT_ACTIVE_STATUSES, PAYMENT_QR_BLOCKED_STATUSES, PAYMENT_STATUS_FAILED
 from app.constants.request_keys import REQUEST_KEY_AMOUNT, REQUEST_KEY_PUBLIC_ID
 from app.constants.response_keys import (
@@ -29,21 +27,10 @@ from app.services.payment_session_service import (
 )
 from app.services.payment_query_service import sync_participant_from_payment_status
 from app.utils.helpers import create_error_response
-from app.utils.observability import log_event
 from app.utils.runtime_cache import invalidate_payment_status_cache, set_cached_payment_status
 from app.utils.security import generate_upi_link
 
 logger = logging.getLogger(__name__)
-
-
-def _log_db_latency(operation: str, started_at: float, **fields) -> None:
-    log_event(
-        logger,
-        OBS_EVENT_DB_LATENCY,
-        operation=operation,
-        latency_ms=int((time.monotonic() - started_at) * 1000),
-        **fields,
-    )
 
 
 def load_payment_create_replay(db, *, public_id: str, amount: float, endpoint: str, idempotency_key: str, build_request_hash):
@@ -53,7 +40,6 @@ def load_payment_create_replay(db, *, public_id: str, amount: float, endpoint: s
         REQUEST_KEY_PUBLIC_ID: public_id,
         REQUEST_KEY_AMOUNT: amount,
     })
-    started_at = time.monotonic()
     _idem, replay = load_idempotent_response(
         db,
         endpoint=endpoint,
@@ -61,7 +47,6 @@ def load_payment_create_replay(db, *, public_id: str, amount: float, endpoint: s
         participant_public_id=public_id,
         request_hash=request_hash,
     )
-    _log_db_latency("payment_create_replay_load", started_at, public_id=public_id)
     return request_hash, replay
 
 
@@ -76,7 +61,6 @@ def save_payment_create_replay(
 ) -> None:
     if not idempotency_key:
         return
-    started_at = time.monotonic()
     save_idempotent_response(
         db,
         endpoint=endpoint,
@@ -86,7 +70,6 @@ def save_payment_create_replay(
         response_body=response_payload,
         status_code=200,
     )
-    _log_db_latency("payment_create_replay_save", started_at, public_id=public_id)
 
 
 def payment_selection_error_response(selection: dict):
@@ -101,9 +84,7 @@ def payment_selection_error_response(selection: dict):
 
 
 def build_payment_status_payload(db, *, payment_public_id: str):
-    started_at = time.monotonic()
     row = fetch_payment_status_row(db, payment_public_id)
-    _log_db_latency("payment_status_fetch", started_at, payment_public_id=payment_public_id)
     if not row:
         return None, create_error_response("NF_PAYMENT_STATUS_NOT_FOUND")
 
@@ -153,14 +134,12 @@ def build_payment_status_payload(db, *, payment_public_id: str):
 
 
 def build_payment_qr_response(db, *, payment_public_id: str):
-    started_at = time.monotonic()
     row = db.execute(text("""
         SELECT amount, status, upi_vpa, upi_name
         FROM payments
         WHERE public_id = :pid
         LIMIT 1
     """), {"pid": payment_public_id}).fetchone()
-    _log_db_latency("payment_qr_fetch", started_at, payment_public_id=payment_public_id)
     if not row:
         return None, create_error_response("NF_PAYMENT_QR_NOT_FOUND")
 
@@ -194,14 +173,12 @@ def build_payment_token_response(db, *, payment_public_id: str, request_json: di
     if missing:
         return None, create_error_response("VAL_PAYMENT_TOKEN_FIELDS_REQUIRED", fields=missing)
 
-    started_at = time.monotonic()
     row = fetch_token_mint_row(
         db,
         payment_public_id=payment_public_id,
         public_id=public_id,
         session_id=session_id,
     )
-    _log_db_latency("payment_token_fetch", started_at, payment_public_id=payment_public_id, public_id=public_id)
     if not row:
         return None, create_error_response("AUTH_PAYMENT_TOKEN_ACCESS_DENIED")
 

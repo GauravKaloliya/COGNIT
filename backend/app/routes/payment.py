@@ -133,12 +133,6 @@ def create_payment():
     ).strip()[:128]
     turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
 
-    logger.info(
-        "payment_create_request request_id=%s public_id=%s idempotency=%s",
-        getattr(g, "request_id", None),
-        str(public_id)[:12] if public_id else None,
-        bool(idempotency_key),
-    )
     if not public_id:
         return create_error_response("VAL_PAYMENT_CREATE_PUBLIC_ID_REQUIRED")
 
@@ -201,14 +195,6 @@ def create_payment():
             upi_vpa=selection.get("upi_vpa"),
             upi_name=selection.get("upi_name"),
         )
-        logger.info(
-            "payment_create_success request_id=%s public_id=%s payment_id=%s expires_at=%s",
-            getattr(g, "request_id", None),
-            str(public_id)[:12],
-            str(payment_row[1]),
-            expires_str,
-        )
-        
         response_payload = build_payment_response_payload(
             db,
             payment_row_id=int(payment_row[0]),
@@ -258,12 +244,6 @@ def create_payment():
             try:
                 existing = fetch_active_payment_for_reuse(db, participant_id)
                 if existing:
-                    logger.info(
-                        "payment_create_reuse request_id=%s public_id=%s payment_id=%s",
-                        getattr(g, "request_id", None),
-                        str(public_id)[:12],
-                        str(existing[1]),
-                    )
                     response_payload = build_reused_payment_response_payload(
                         db,
                         existing_payment_row=existing,
@@ -397,11 +377,6 @@ def verify_and_upload_payment(payment_public_id):
 @track_performance
 def get_payment_status(payment_public_id):
     """Get current payment status including expiry check."""
-    logger.info(
-        "payment_status_request request_id=%s payment_id=%s",
-        getattr(g, "request_id", None),
-        payment_public_id,
-    )
     try:
         cached_payload = get_cached_payment_status(payment_public_id)
         if cached_payload:
@@ -426,7 +401,6 @@ def get_payment_status(payment_public_id):
 @track_performance
 def mint_payment_token(payment_public_id):
     """Mint a new payment write token for an active session."""
-    logger.info("payment_token_request request_id=%s method=%s payment_id=%s", getattr(g, "request_id", None), request.method, payment_public_id)
     try:
         db = get_db()
         payload, error_response = build_payment_token_response(

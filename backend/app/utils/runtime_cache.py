@@ -6,7 +6,6 @@ Database remains the source of truth when cache entries are absent.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any, Optional
 
 from app.config import (
@@ -17,14 +16,7 @@ from app.config import (
     PAYMENT_STATUS_CACHE_TTL_SECONDS_TERMINAL,
 )
 from app.extensions import cache_redis
-from app.constants.observability_constants import (
-    OBS_EVENT_REDIS_CACHE_HIT,
-    OBS_EVENT_REDIS_CACHE_MISS,
-)
-from app.utils.observability import log_event
 from app.utils.runtime_cache_queries import QUERY_RESOLVE_PARTICIPANT_ID
-
-logger = logging.getLogger(__name__)
 
 
 def _redis_key(*parts: object) -> str:
@@ -41,8 +33,7 @@ def _redis_get_json(key: str) -> Optional[dict[str, Any]]:
             return None
         data = json.loads(raw)
         return data if isinstance(data, dict) else None
-    except Exception as exc:
-        logger.warning("runtime_cache_redis_get_failed", extra={"key": key, "error": str(exc)})
+    except Exception:
         return None
 
 
@@ -51,8 +42,8 @@ def _redis_set_json(key: str, value: dict[str, Any], ttl_seconds: float) -> None
         return
     try:
         cache_redis.setex(key, max(1, int(ttl_seconds)), json.dumps(value))
-    except Exception as exc:
-        logger.warning("runtime_cache_redis_set_failed", extra={"key": key, "error": str(exc)})
+    except Exception:
+        return
 
 
 def _redis_delete(key: str) -> None:
@@ -60,15 +51,14 @@ def _redis_delete(key: str) -> None:
         return
     try:
         cache_redis.delete(key)
-    except Exception as exc:
-        logger.warning("runtime_cache_redis_delete_failed", extra={"key": key, "error": str(exc)})
+    except Exception:
+        return
 
 
 def get_cached_participant_id(public_id: str) -> Optional[int]:
     if not public_id:
         return None
     data = _redis_get_json(_redis_key("participant-id", public_id))
-    log_event(logger, OBS_EVENT_REDIS_CACHE_HIT if data else OBS_EVENT_REDIS_CACHE_MISS, cache_key="participant-id", public_id=public_id)
     participant_id = data.get("participant_id") if data else None
     return int(participant_id) if participant_id else None
 
@@ -95,7 +85,6 @@ def resolve_participant_id(db, public_id: str) -> Optional[int]:
 
 def get_cached_participant_options() -> Optional[dict[str, Any]]:
     data = _redis_get_json(_redis_key("participant-options"))
-    log_event(logger, OBS_EVENT_REDIS_CACHE_HIT if data else OBS_EVENT_REDIS_CACHE_MISS, cache_key="participant-options")
     payload = data.get("payload") if data else None
     return dict(payload) if isinstance(payload, dict) else None
 
@@ -114,7 +103,6 @@ def get_cached_payment_status(payment_public_id: str) -> Optional[dict[str, Any]
     if not payment_public_id:
         return None
     data = _redis_get_json(_redis_key("payment-status", payment_public_id))
-    log_event(logger, OBS_EVENT_REDIS_CACHE_HIT if data else OBS_EVENT_REDIS_CACHE_MISS, cache_key="payment-status", payment_public_id=payment_public_id)
     payload = data.get("payload") if data else None
     return dict(payload) if isinstance(payload, dict) else None
 

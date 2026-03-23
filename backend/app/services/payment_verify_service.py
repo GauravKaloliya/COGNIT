@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -65,7 +64,7 @@ from app.constants.response_keys import (
     RESPONSE_KEY_VERIFIED,
 )
 from app.constants.route_constants import PAYMENT_VERIFY_UPLOAD_ENDPOINT_TEMPLATE
-from app.constants.observability_constants import OBS_EVENT_FRAUD_SCORE_CONFIDENCE_PARSE_FAILED, OBS_EVENT_OCR_LATENCY, OBS_EVENT_PAYMENT_DHASH_FAILED, OBS_EVENT_PAYMENT_UPLOAD_CLEANUP_FAILED, OBS_EVENT_PAYMENT_VERIFY_COMMIT_FAILED, OBS_EVENT_PAYMENT_VERIFY_ROLLBACK_FAILED
+from app.constants.observability_constants import OBS_EVENT_FRAUD_SCORE_CONFIDENCE_PARSE_FAILED, OBS_EVENT_PAYMENT_DHASH_FAILED, OBS_EVENT_PAYMENT_UPLOAD_CLEANUP_FAILED, OBS_EVENT_PAYMENT_VERIFY_COMMIT_FAILED, OBS_EVENT_PAYMENT_VERIFY_ROLLBACK_FAILED
 from app.extensions import s3
 from app.utils.helpers import create_error_response, get_ip_hash
 from app.utils.ocr import (
@@ -379,14 +378,7 @@ def process_verify_upload(
             current_status=status,
         )
 
-        ocr_started_at = time.monotonic()
         extracted_text, confidence = extract_text_with_confidence(image)
-        log_event(
-            logger,
-            OBS_EVENT_OCR_LATENCY,
-            payment_public_id=payment_public_id,
-            latency_ms=int((time.monotonic() - ocr_started_at) * 1000),
-        )
         amount = amount if amount is not None else PAYMENT_AMOUNT
         is_valid, detected_app, failures = verify_payment_screenshot(
             image,

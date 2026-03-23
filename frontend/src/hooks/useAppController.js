@@ -13,20 +13,28 @@ import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
 import { ACTIVE_TAB_LOCK_FIELDS } from "../constants/fields";
 import { BROWSER_EVENTS } from "../constants/browser";
 import { TOAST_VARIANTS } from "../constants/ui";
-import { REGEX_PATTERNS, STORAGE_EVENTS } from "../constants/patterns";
-import { createFallbackUuid } from "../constants/ids";
+import { STORAGE_EVENTS } from "../constants/patterns";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
+import {
+  createClientId,
+  deriveMaxAllowedStage,
+  getScopeId,
+  hasAnyDemographicsValue,
+  isDemographicsComplete,
+  readCoreValue,
+  validateStageTransition,
+  writeCoreValue,
+} from "../utils/appControllerState";
 
 const ACTIVE_TAB_LOCK_KEY = runtimeConfig.storageKeys.activeTabLock;
 const ACTIVE_TAB_LOCK_SCHEMA_VERSION = runtimeConfig.activeTabLockSchemaVersion;
 const ACTIVE_TAB_HEARTBEAT_MS = runtimeConfig.activeTabHeartbeatMs;
 const ACTIVE_TAB_STALE_MS = runtimeConfig.activeTabStaleMs;
-const MIN_SURVEYS_BEFORE_FINISH = 1;
 const CORE_STATE_STORAGE_AREA = "local";
 const CORE_STATE_STORAGE_AREA_SESSION = "session";
-const SESSION_ALIVE_KEY = runtimeConfig.storageKeys.sessionAlive;
 const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
+const SESSION_ALIVE_KEY = runtimeConfig.storageKeys.sessionAlive;
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
 const CORE_SCOPE_ANON = "anon";
 const CORE_SCOPED_KEYS = [
@@ -47,113 +55,8 @@ const CORE_SCOPED_KEYS = [
 
 const EXPIRED_STORAGE_PREFIXES = Object.values(runtimeConfig.storageKeys);
 
-function getScopeId(publicId) {
-  const value = String(publicId || "").trim();
-  return value || CORE_SCOPE_ANON;
-}
-
-function readCoreValue(baseKey, fallback, scopeId, { ttlMs } = {}) {
-  const scopedKey = makeScopedKey(baseKey, getScopeId(scopeId));
-  const options = { schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs: ttlMs ?? CORE_STATE_TTL_MS };
-  const localScoped = readExpiringValue(scopedKey, undefined, { area: CORE_STATE_STORAGE_AREA, ...options });
-  if (localScoped !== undefined) return localScoped;
-  const sessionScoped = readExpiringValue(scopedKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, ...options });
-  if (sessionScoped !== undefined) return sessionScoped;
-  const localUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA, ...options });
-  if (localUnscoped !== undefined) return localUnscoped;
-  const sessionUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, ...options });
-  if (sessionUnscoped !== undefined) return sessionUnscoped;
-  return fallback;
-}
-
-function writeCoreValue(baseKey, value, scopeId, { ttlMs } = {}) {
-  const scopedKey = makeScopedKey(baseKey, getScopeId(scopeId));
-  writeExpiringValue(scopedKey, value, {
-    area: CORE_STATE_STORAGE_AREA,
-    schemaVersion: CORE_STATE_SCHEMA_VERSION,
-    ttlMs: ttlMs ?? CORE_STATE_TTL_MS,
-  });
-}
-
-function createId() {
-  if (crypto?.randomUUID) return crypto.randomUUID();
-  return createFallbackUuid();
-}
-
-  const validateStageTransition = (currentStage, targetStage, paymentVerified = false) => {
-  const currentIndex = APP_STAGE_ORDER.indexOf(currentStage);
-  const targetIndex = APP_STAGE_ORDER.indexOf(targetStage);
-  if (targetIndex <= currentIndex) return true;
-  switch (currentStage) {
-    case APP_FLOW.stages.consent:
-      return targetStage === APP_FLOW.stages.userDetails;
-    case APP_FLOW.stages.userDetails:
-      return targetStage === APP_FLOW.stages.payment;
-    case APP_FLOW.stages.payment:
-      return targetStage === APP_FLOW.stages.survey && paymentVerified;
-    case APP_FLOW.stages.survey:
-      return targetStage === APP_FLOW.stages.finished;
-    default:
-      return false;
-  }
-};
-
-  const isDemographicsComplete = (demographics) => {
-    const username = String(demographics?.username || "").trim();
-    const email = String(demographics?.email || "").trim().toLowerCase();
-    const gender = String(demographics?.gender_code || "").trim();
-    const ageRaw = String(demographics?.age || "").trim();
-    const location = String(demographics?.location || "").trim();
-    const language = String(demographics?.language_code || "").trim();
-    const prior = String(demographics?.prior_experience || "").trim();
-    const usernameOk = username.length >= runtimeConfig.usernameMinLength;
-    const emailOk = REGEX_PATTERNS.email.test(email);
-    const ageNum = Number(ageRaw);
-    const ageOk = Number.isFinite(ageNum) && ageNum >= runtimeConfig.ageMin && ageNum <= runtimeConfig.ageMax;
-    const locationOk = location.length >= runtimeConfig.locationMinLength;
-    return usernameOk && emailOk && gender && ageOk && locationOk && language && prior;
-  };
-
-const hasAnyDemographicsValue = (demographics) => {
-  if (!demographics) return false;
-    const fields = [
-      demographics.username,
-      demographics.email,
-      demographics.gender_code,
-      demographics.age,
-      demographics.location,
-      demographics.language_code,
-    demographics.prior_experience,
-  ];
-  return fields.some((value) => String(value || "").trim().length > 0);
-};
-
-const deriveMaxAllowedStage = ({
-  currentStage,
-  consentGiven,
-  hasParticipant,
-  userDetailsSubmitted,
-  demographicsComplete,
-  emailVerified,
-  paymentVerified,
-  surveyCompleted,
-  surveyFeedbackReady,
-  lastSubmissionSucceeded,
-}) => {
-  if (!consentGiven) return APP_FLOW.stages.consent;
-  if (!hasParticipant || !userDetailsSubmitted || !demographicsComplete) return APP_FLOW.stages.userDetails;
-  if (!emailVerified) return APP_FLOW.stages.userDetails;
-  if (!paymentVerified) return APP_FLOW.stages.payment;
-  if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;
-  if (surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
-  // Do not auto-advance to Finished; allow unlimited survey submissions.
-  // Only permit Finished when the user explicitly navigates there (e.g. via SurveyFeedPage "Finish").
-  if (currentStage === APP_FLOW.stages.finished) return APP_FLOW.stages.finished;
-  return APP_FLOW.stages.survey;
-};
-
 export function useAppController() {
-  const tabIdRef = useRef(createId());
+  const tabIdRef = useRef(createClientId());
   const demographicsSaveTimeoutRef = useRef(null);
   const isOnline = useOnlineStatus();
   const [isActiveTabOwner, setIsActiveTabOwner] = useState(true);
@@ -172,13 +75,13 @@ export function useAppController() {
   const [paymentVerified, setPaymentVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.paymentVerified, false, scopeId));
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [demographics, setDemographics] = useState(
-      readCoreValue(runtimeConfig.storageKeys.demographics, {
-        username: "",
-        email: "",
-        gender_code: "",
-        age: "",
-        location: "",
-        language_code: "",
+    readCoreValue(runtimeConfig.storageKeys.demographics, {
+      username: "",
+      email: "",
+      gender_code: "",
+      age: "",
+      location: "",
+      language_code: "",
       prior_experience: "",
     }, scopeId, { ttlMs: PII_STATE_TTL_MS })
   );
@@ -196,7 +99,7 @@ export function useAppController() {
       return;
     }
     toastRef.current.set(dedupeKey, now);
-    const id = createId();
+    const id = createClientId();
     setToasts((prev) => [...prev, { id, message, type, action }]);
     scheduleTimeout(
       () => setToasts((prev) => prev.filter((toast) => toast.id !== id)),
@@ -631,13 +534,13 @@ export function useAppController() {
     setEmailVerified((prev) => (emailStored.hasValue ? emailStored.value : prev));
     const paymentStored = readScoped(runtimeConfig.storageKeys.paymentVerified, false, CORE_STATE_TTL_MS);
     setPaymentVerified((prev) => (paymentStored.hasValue ? paymentStored.value : prev));
-      const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
-        username: "",
-        email: "",
-        gender_code: "",
-        age: "",
-        location: "",
-        language_code: "",
+    const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
+      username: "",
+      email: "",
+      gender_code: "",
+      age: "",
+      location: "",
+      language_code: "",
       prior_experience: "",
     }, publicId, { ttlMs: PII_STATE_TTL_MS });
     setDemographics((prev) => (hasAnyDemographicsValue(storedDemographics) ? storedDemographics : prev));

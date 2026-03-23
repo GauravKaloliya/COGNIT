@@ -90,6 +90,8 @@ export function usePaymentLinkPage({
   const lastInitPublicIdRef = useRef(null);
   const verifyAbortRef = useRef(null);
   const qrAbortRef = useRef(null);
+  const qrRequestPaymentIdRef = useRef("");
+  const qrRequestPromiseRef = useRef(null);
   const lastRejectedShaRef = useRef("");
 
   // Timer state
@@ -423,16 +425,33 @@ export function usePaymentLinkPage({
 
   const fetchPaymentQr = useCallback(async (paymentId, operationId) => {
     if (!paymentId) return;
+
+    const existingQrBase64 = getPaymentField(paymentData, PAYMENT_API_FIELDS.qrBase64);
+    if (existingQrBase64 && getPaymentField(paymentData, PAYMENT_API_FIELDS.id) === paymentId) {
+      return;
+    }
+
+    if (qrRequestPromiseRef.current && qrRequestPaymentIdRef.current === paymentId) {
+      await qrRequestPromiseRef.current;
+      return;
+    }
+
     try {
-      if (qrAbortRef.current) qrAbortRef.current.abort();
+      if (qrAbortRef.current && qrRequestPaymentIdRef.current && qrRequestPaymentIdRef.current !== paymentId) {
+        qrAbortRef.current.abort();
+      }
       const controller = new AbortController();
       qrAbortRef.current = controller;
-      const qrData = await endpoints.getPaymentQr(paymentId, { signal: controller.signal });
+      qrRequestPaymentIdRef.current = paymentId;
+      const requestPromise = endpoints.getPaymentQr(paymentId, { signal: controller.signal });
+      qrRequestPromiseRef.current = requestPromise;
+      const qrData = await requestPromise;
       if (!isOperationCurrent(operationId)) return;
       const qrBase64 = getPaymentField(qrData, PAYMENT_API_FIELDS.qrBase64);
       if (!qrBase64) return;
       setPaymentData((prev) => {
         if (!prev || getPaymentField(prev, PAYMENT_API_FIELDS.id) !== paymentId) return prev;
+        if (getPaymentField(prev, PAYMENT_API_FIELDS.qrBase64) === qrBase64) return prev;
         return { ...prev, [PAYMENT_API_FIELDS.qrBase64]: qrBase64 };
       });
     } catch (err) {
@@ -440,9 +459,15 @@ export function usePaymentLinkPage({
         // Keep UI functional via the fallback deep link even when QR fetch fails.
       }
     } finally {
-      qrAbortRef.current = null;
+      if (qrAbortRef.current?.signal?.aborted || qrRequestPaymentIdRef.current === paymentId) {
+        qrAbortRef.current = null;
+      }
+      if (qrRequestPaymentIdRef.current === paymentId) {
+        qrRequestPaymentIdRef.current = "";
+        qrRequestPromiseRef.current = null;
+      }
     }
-  }, [isOperationCurrent]);
+  }, [isOperationCurrent, paymentData]);
 
   const createPayment = useCallback(async (_reason = "") => {
     const operationId = beginOperation();
@@ -567,6 +592,8 @@ export function usePaymentLinkPage({
       if (createAbortRef.current) createAbortRef.current.abort();
       if (verifyAbortRef.current) verifyAbortRef.current.abort();
       if (qrAbortRef.current) qrAbortRef.current.abort();
+      qrRequestPaymentIdRef.current = "";
+      qrRequestPromiseRef.current = null;
     };
   }, []);
 
@@ -968,6 +995,8 @@ export function usePaymentLinkPage({
     if (createAbortRef.current) createAbortRef.current.abort();
     if (verifyAbortRef.current) verifyAbortRef.current.abort();
     if (qrAbortRef.current) qrAbortRef.current.abort();
+    qrRequestPaymentIdRef.current = "";
+    qrRequestPromiseRef.current = null;
     stopTimer(true);
     forEachStorageArea((area) => {
       removeStoredKey(PAYMENT_ID_KEY, area);
