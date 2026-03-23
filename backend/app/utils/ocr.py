@@ -36,14 +36,12 @@ from app.constants.ocr_constants import (
     DEFAULT_SCREENSHOT_TIMEZONE,
     DISALLOWED_APP_PATTERNS,
     FAILURE_INVALID_AMOUNT,
-    FAILURE_INVALID_BANKING_NAME,
     FAILURE_INVALID_DATETIME_BHIM,
     FAILURE_INVALID_DATETIME_GPAY,
     FAILURE_INVALID_DATETIME_PAYTM,
     FAILURE_FAILURE_INDICATOR,
     FAILURE_MISSING_BHIM_LABEL,
     FAILURE_MISSING_PAID_BHIM,
-    FAILURE_MISSING_PAID_TO_COGNIT,
     FAILURE_MISSING_SUCCESS,
     FAILURE_MISSING_PAYTM_LABEL,
     FAILURE_TIME_OUT_OF_RANGE,
@@ -331,15 +329,13 @@ def verify_payment_screenshot(
     Validate UPI payment screenshot with app-specific and global rules.
 
     App-specific rules:
-    - Google Pay: app label not required, must include a supported recipient phrase
-      such as "paid to cognit", "paid gaurav", or "paid to gaurav",
+    - Google Pay: requires a Google Pay/GPay app marker,
       full-month-name + 4-digit-year date, and HH:MM AM/PM
     - Paytm: "paytm" label required, short-month-name date, and HH:MM AM/PM
     - BHIM: "bhim" label + "paid" required, ordinal day date (st/nd/rd/th)
       with short month + 2-digit year, and HH:MM AM/PM
 
     Global rules (apply to all apps):
-    - Banking name: Must contain "gaurav" (case-insensitive)
     - Amount: Must contain "₹" and "1" (case insensitive for Rs/rs)
     - Time: Within configured window of NOW (absolute difference <= PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS)
 
@@ -348,7 +344,7 @@ def verify_payment_screenshot(
         text: OCR extracted text
         expected_amount: Expected payment amount (unused, amount must be ₹1)
         confidence: OCR confidence score (unused for validation)
-        expected_upi_name: Expected UPI recipient name from config (unused, uses "Gaurav")
+        expected_upi_name: Expected UPI recipient name from config
 
     Returns:
         Tuple of (is_valid, detected_app, failure_reasons)
@@ -360,15 +356,13 @@ def verify_payment_screenshot(
 
     has_paytm = REGEX_PAYTM_LABEL.search(lower) is not None
     has_bhim = REGEX_BHIM_LABEL.search(lower) is not None
-    has_paid_to_gaurav = re.search(r"\bpaid\s+to\s+gaurav\b", lower, re.IGNORECASE) is not None
-    has_paid_gaurav = re.search(r"\bpaid\s+gaurav\b", lower, re.IGNORECASE) is not None
-    has_gpay_recipient_phrase = has_paid_to_gaurav or has_paid_gaurav
+    has_gpay = REGEX_GPAY_APP.search(lower) is not None or REGEX_GOOGLE_PAY.search(lower) is not None
 
     if has_paytm:
         detected_app = APP_PAYTM
     elif has_bhim:
         detected_app = APP_BHIM
-    elif has_gpay_recipient_phrase:
+    elif has_gpay:
         detected_app = APP_GPAY
     else:
         detected_app = APP_UNKNOWN
@@ -391,8 +385,8 @@ def verify_payment_screenshot(
 
     # App-specific rules
     if detected_app == APP_GPAY:
-        if not has_gpay_recipient_phrase:
-            failures.append(FAILURE_MISSING_PAID_TO_COGNIT)
+        if not has_gpay:
+            failures.append(FAILURE_UNRECOGNIZED_APP)
     elif detected_app == APP_PAYTM:
         if not has_paytm:
             failures.append(FAILURE_MISSING_PAYTM_LABEL)
@@ -406,15 +400,11 @@ def verify_payment_screenshot(
     # Global Rules (apply to all apps)
     # ─────────────────────────────────────────────
 
-    # Rule 1: Banking name must contain strict token "gaurav" (case-insensitive).
-    if re.search(r"\bgaurav\b", lower, re.IGNORECASE) is None:
-        failures.append(FAILURE_INVALID_BANKING_NAME)
-
-    # Rule 2: Amount must be exactly ₹1 / Rs.1 / rs 1 (optionally 1.00).
+    # Rule 1: Amount must be exactly ₹1 / Rs.1 / rs 1 (optionally 1.00).
     if REGEX_AMOUNT.search(lower) is None:
         failures.append(FAILURE_INVALID_AMOUNT)
 
-    # Rule 3: Payment should show a successful state and not a failure state.
+    # Rule 2: Payment should show a successful state and not a failure state.
     has_success = any(keyword in lower for keyword in (SUCCESS_KEYWORDS or []))
     has_failure = any(keyword in lower for keyword in (FAILURE_KEYWORDS or []))
     if has_failure:
@@ -492,10 +482,7 @@ def sanitize_extracted_text_for_storage(
     add_match(REGEX_GOOGLE_PAY.pattern)
 
     # Core payment semantics
-    add_match(r"\bpaid\s+to\s+gaurav\b")
-    add_match(r"\bpaid\s+gaurav\b")
     add_match(REGEX_PAID.pattern)
-    add_match(r"\bgaurav\b")
     add_match(REGEX_AMOUNT.pattern)
 
     # Time
