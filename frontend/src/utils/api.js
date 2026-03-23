@@ -72,6 +72,48 @@ export async function apiFetch(endpoint, options = {}) {
     });
     
     const data = await response.json().catch(() => null);
+
+    const throwParsedError = (parsedError, fallbackStatus) => {
+      const effectiveStatus = Number(parsedError?.status) || Number(fallbackStatus) || 0;
+
+      const error = new Error(parsedError.message);
+      error.code = parsedError.code;
+      error.category = parsedError.category;
+      error.severity = parsedError.severity;
+      error.action = parsedError.action;
+      error.field = parsedError.field;
+      error.fields = parsedError.fields;
+      error.status = effectiveStatus;
+      error.details = parsedError.details;
+      error.originalMessage = parsedError.originalMessage;
+      error.requestId = parsedError.requestId || response.headers.get(REQUEST_HEADERS.requestId) || requestId;
+
+      const isMaintenance = parsedError?.code && MAINTENANCE_CODES.has(parsedError.code);
+      if (isMaintenance) {
+        try {
+          window.dispatchEvent(new CustomEvent(MAINTENANCE_EVENT, { detail: error }));
+        } catch {
+          // ignore event dispatch failures
+        }
+      }
+      if (
+        !isMaintenance
+        && (effectiveStatus === 429 || parsedError?.code === "ERR_RATE_LIMIT" || parsedError?.category === "RATE")
+      ) {
+        try {
+          window.dispatchEvent(new CustomEvent(RATE_LIMIT_EVENT, { detail: error }));
+        } catch {
+          // ignore event dispatch failures
+        }
+      }
+      throw error;
+    };
+
+    // Backend error envelope (even when HTTP 200): { success: false, error: ... }
+    if (data && typeof data === "object" && data.success === false) {
+      const parsedError = parseErrorResponse(data);
+      throwParsedError(parsedError, response.status);
+    }
     
     if (!response.ok) {
       if (!data && response.status === 413) {
@@ -85,36 +127,7 @@ export async function apiFetch(endpoint, options = {}) {
       }
 
       const parsedError = parseErrorResponse(data);
-      
-      // Create Error object with extra properties
-      const error = new Error(parsedError.message);
-      error.code = parsedError.code;
-      error.category = parsedError.category;
-      error.severity = parsedError.severity;
-      error.action = parsedError.action;
-      error.field = parsedError.field;
-      error.fields = parsedError.fields;
-      error.status = response.status;
-      error.details = parsedError.details;
-      error.originalMessage = parsedError.originalMessage;
-      error.requestId = parsedError.requestId || response.headers.get(REQUEST_HEADERS.requestId) || requestId;
-      
-      const isMaintenance = parsedError?.code && MAINTENANCE_CODES.has(parsedError.code);
-      if (isMaintenance) {
-        try {
-          window.dispatchEvent(new CustomEvent(MAINTENANCE_EVENT, { detail: error }));
-        } catch {
-          // ignore event dispatch failures
-        }
-      }
-      if (!isMaintenance && (response.status === 429 || parsedError?.code === "ERR_RATE_LIMIT" || parsedError?.category === "RATE")) {
-        try {
-          window.dispatchEvent(new CustomEvent(RATE_LIMIT_EVENT, { detail: error }));
-        } catch {
-          // ignore event dispatch failures
-        }
-      }
-      throw error;
+      throwParsedError(parsedError, response.status);
     }
     
     // Backend success envelope: { success: true, data: ... }

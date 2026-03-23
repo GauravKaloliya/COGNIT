@@ -208,7 +208,16 @@ def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
         response[RESPONSE_KEY_ERROR][RESPONSE_KEY_FIELDS] = kwargs["fields"]
     if kwargs.get("details"):
         response[RESPONSE_KEY_ERROR][RESPONSE_KEY_DETAILS] = kwargs["details"]
-    return jsonify(response), status
+    # Always return HTTP 200 to avoid browser console noise for expected business errors.
+    # Clients must use `error.http_status` (and `error.code`) to drive behavior.
+    resp = jsonify(response)
+    try:
+        resp.headers.setdefault("X-COGNIT-Error-Status", str(status))
+        resp.headers.setdefault("X-COGNIT-Error-Code", str(error_def.get("code", "")))
+        resp.headers.setdefault("X-COGNIT-Error-Category", str(category))
+    except Exception:
+        pass
+    return resp, 200
 
 
 def success_response(data: Optional[Dict] = None, message: Optional[str] = None):
