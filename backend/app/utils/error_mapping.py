@@ -6,7 +6,6 @@ from typing import Callable, Optional
 
 from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
-    PARTICIPANT_FIELD_PHONE,
     PARTICIPANT_FIELD_USERNAME,
     PARTICIPANT_STATUS_EXISTS,
 )
@@ -15,7 +14,6 @@ from app.utils.helpers import create_error_response, success_response
 PARTICIPANT_DUPLICATE_ERROR_MAP = {
     PARTICIPANT_FIELD_USERNAME: "DUP_USERNAME",
     PARTICIPANT_FIELD_EMAIL: "DUP_EMAIL",
-    PARTICIPANT_FIELD_PHONE: "DUP_PHONE",
     "public_id": "DUP_PUBLIC_ID",
 }
 PARTICIPANT_FOREIGN_KEY_ERROR_MAP = {
@@ -25,8 +23,6 @@ PARTICIPANT_FOREIGN_KEY_ERROR_MAP = {
 PARTICIPANT_CHECK_CONSTRAINT_ERROR_MAP = {
     "chk_email_format": "VAL_EMAIL_INVALID",
     PARTICIPANT_FIELD_EMAIL: "VAL_EMAIL_INVALID",
-    "chk_phone_format": "VAL_PHONE_INVALID",
-    PARTICIPANT_FIELD_PHONE: "VAL_PHONE_INVALID",
     "chk_age": "VAL_AGE_INVALID",
     "age": "VAL_AGE_INVALID",
 }

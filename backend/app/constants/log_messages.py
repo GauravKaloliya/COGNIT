@@ -28,7 +28,6 @@ LOG_PARTICIPANT_CREATED = "participant created public_id_prefix=%s request_id=%s
 LOG_PARTICIPANT_CREATE_FAILED = "create_participant failed error=%s request_id=%s"
 LOG_CHECK_USERNAME_FAILED = "check_username failed error=%s request_id=%s"
 LOG_CHECK_EMAIL_FAILED = "check_email failed error=%s request_id=%s"
-LOG_CHECK_PHONE_FAILED = "check_phone failed error=%s request_id=%s"
 LOG_CONSENT_RECORDED = "consent recorded public_id_prefix=%s request_id=%s"
 LOG_CONSENT_FAILED = "consent failed error=%s request_id=%s"
 LOG_PARTICIPANT_PAYMENT_STATUS_FAILED = "get_participant_payment_status failed error=%s request_id=%s"

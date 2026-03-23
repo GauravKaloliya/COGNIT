@@ -62,7 +62,6 @@ src/
 - `POST /participants`
 - `GET /check-username`
 - `GET /check-email`
-- `GET /check-phone`
 - `POST /consent`
 - `GET /participants/{public_id}/payment-status`
 - `POST /payments/create`

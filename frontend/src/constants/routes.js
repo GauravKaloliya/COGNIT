@@ -21,6 +21,5 @@ export const API_ROUTES = {
   clientError: "/client-errors",
   checkUsername: (username) => `/check-username?username=${encodeURIComponent(username)}`,
   checkEmail: (email) => `/check-email?email=${encodeURIComponent(email)}`,
-  checkPhone: (phone) => `/check-phone?phone=${encodeURIComponent(phone)}`,
   randomImage: (queryString = "") => `/images/random${queryString ? `?${queryString}` : ""}`,
 };

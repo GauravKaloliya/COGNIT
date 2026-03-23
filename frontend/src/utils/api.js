@@ -223,7 +223,6 @@ export const endpoints = {
   },
   checkUsername: (username, options = {}) => api.get(API_ROUTES.checkUsername(username), options),
   checkEmail: (email, options = {}) => api.get(API_ROUTES.checkEmail(email), options),
-  checkPhone: (phone, options = {}) => api.get(API_ROUTES.checkPhone(phone), options),
   getParticipantOptions: (options = {}) => api.get(API_ROUTES.participantOptions, options),
   
   // Consent
