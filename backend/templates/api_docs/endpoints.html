@@ -7,195 +7,24 @@
   </div>
 
   <div class="endpoint-list">
-    <article class="endpoint-card" data-method="get" data-path="/check-email" data-search="already check check email check-email email if is participant.check email registered.">
-      <header><span class="method get">GET</span><code>/check-email</code></header>
-      <p>Check if email is already registered.</p>
+    {% for endpoint in endpoint_docs %}
+    <article class="endpoint-card" data-method="{{ endpoint.method.lower() }}" data-path="{{ endpoint.path }}" data-search="{{ endpoint.search_text }}">
+      <header><span class="method {{ endpoint.method.lower() }}">{{ endpoint.method }}</span><code>{{ endpoint.path }}</code></header>
+      <p>{{ endpoint.summary }}</p>
       <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
+        <span>Auth: <code>{{ endpoint.auth }}</code></span>
+        <span>Idempotency: <code>{{ endpoint.idempotency }}</code></span>
+        <span>Rate limit: <code>{{ endpoint.rate_limit }}</code></span>
       </div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/check-username" data-search="available check check username check-username for if is participant.check username registration. username">
-      <header><span class="method get">GET</span><code>/check-username</code></header>
-      <p>Check if username is available for registration.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
+      {% if endpoint.query or endpoint.headers or endpoint.notes %}
+      <div class="section-note" style="margin-top:10px;">
+        {% if endpoint.query %}<div><strong>Query:</strong> {{ endpoint.query|join(', ') }}</div>{% endif %}
+        {% if endpoint.headers %}<div><strong>Headers:</strong> {{ endpoint.headers|join(', ') }}</div>{% endif %}
+        {% for note in endpoint.notes %}<div><strong>Note:</strong> {{ note }}</div>{% endfor %}
       </div>
+      {% endif %}
     </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/client-errors" data-search="(client_error) client error client-errors client_error">
-      <header><span class="method post">POST</span><code>/client-errors</code></header>
-      <p>client_error (client_error)</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/consent" data-search="agreement. consent participant participant.record consent record record consent">
-      <header><span class="method post">POST</span><code>/consent</code></header>
-      <p>Record participant consent agreement.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/email-otp/request" data-search="a be email-otp request email. otp participant.request email otp request request email otp sent to verification via">
-      <header><span class="method post">POST</span><code>/email-otp/request</code></header>
-      <p>Request a verification OTP to be sent via email.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/email-otp/verify" data-search="an and as email email-otp verify mark otp participant participant.verify email otp verified. verify verify email otp">
-      <header><span class="method post">POST</span><code>/email-otp/verify</code></header>
-      <p>Verify an email OTP and mark participant email as verified.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/images/random" data-search="a attention-check deterministic get image image.random image images random placement. random random image with">
-      <header><span class="method get">GET</span><code>/images/random</code></header>
-      <p>Get a random image with deterministic attention-check placement.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>no</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/internal/payments/{payment_public_id}/verify" data-search="(auth + endpoint for internal internal payments {payment_public_id} verify limited). payment payment.verify payment rate verification verify payment">
-      <header><span class="method post">POST</span><code>/internal/payments/{payment_public_id}/verify</code></header>
-      <p>Internal endpoint for payment verification (auth + rate limited).</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/participant-options" data-search="database. form from get participant options options participant participant-options participant.get participant options return sourced the">
-      <header><span class="method get">GET</span><code>/participant-options</code></header>
-      <p>Return participant form options sourced from the database.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/participants" data-search="a create create participant new participant participant.create participant participants registration.">
-      <header><span class="method post">POST</span><code>/participants</code></header>
-      <p>Create a new participant registration.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>required</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/participants/session" data-search="(if cookies from get participant session httponly identifiers participant participant.get participant session participants session present). return">
-      <header><span class="method get">GET</span><code>/participants/session</code></header>
-      <p>Return participant identifiers from httpOnly cookies (if present).</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/participants/{public_id}/payment-status" data-search="access control. for frontend get get participant payment status participant&#x27;s participant.get participant payment status participants {public_id} payment-status payment status">
-      <header><span class="method get">GET</span><code>/participants/{public_id}/payment-status</code></header>
-      <p>Get participant&#x27;s payment status for frontend access control.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/payments/create" data-search="a create create payment new payment payment.create payment payments create session timer. with">
-      <header><span class="method post">POST</span><code>/payments/create</code></header>
-      <p>Create a new payment session with timer.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>required</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/qr" data-search="/payments/create code get payment qr keep lazily lightweight. payment payment.get payment qr payments {payment_public_id} qr qr return to">
-      <header><span class="method get">GET</span><code>/payments/{payment_public_id}/qr</code></header>
-      <p>Return payment QR code lazily to keep /payments/create lightweight.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="get" data-path="/payments/{payment_public_id}/status" data-search="check. current expiry get get payment status including payment payment.get payment status payments {payment_public_id} status status">
-      <header><span class="method get">GET</span><code>/payments/{payment_public_id}/status</code></header>
-      <p>Get current payment status including expiry check.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>session</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/token" data-search="a active an for mint mint payment token new payment payment.mint payment token payments {payment_public_id} token session. token write">
-      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/token</code></header>
-      <p>Mint a new payment write token for an active session.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>none</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/upload-url" data-search="(get_payment_upload_url) get payment upload url payment.get payment upload url payment.get_payment_upload_url payments {payment_public_id} upload-url">
-      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/upload-url</code></header>
-      <p>payment.get_payment_upload_url (get_payment_upload_url)</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>session</code></span>
-        <span>Idempotency: <code>n/a</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/payments/{payment_public_id}/verify-upload" data-search="(verify_and_upload_payment) payment.verify and upload payment payment.verify_and_upload_payment payments {payment_public_id} verify-upload verify and upload payment">
-      <header><span class="method post">POST</span><code>/payments/{payment_public_id}/verify-upload</code></header>
-      <p>payment.verify_and_upload_payment (verify_and_upload_payment)</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>session</code></span>
-        <span>Idempotency: <code>required</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
-
-    <article class="endpoint-card" data-method="post" data-path="/submit" data-search="an description image or response. submission.submit submit survey">
-      <header><span class="method post">POST</span><code>/submit</code></header>
-      <p>Submit an image description or survey response.</p>
-      <div class="endpoint-meta">
-        <span>Auth: <code>payment-completed</code></span>
-        <span>Idempotency: <code>required</code></span>
-        <span>Rate limit: <code>yes</code></span>
-      </div>
-    </article>
+    {% endfor %}
   </div>
   <p id="endpointNoResults" class="section-note" hidden>No endpoints match your search.</p>
 </section>
