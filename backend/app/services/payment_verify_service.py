@@ -47,6 +47,7 @@ from app.constants.payment_constants import (
     VERIFY_ATTEMPT_STATUS_STARTED,
     VERIFY_ATTEMPT_STATUS_SUCCESS,
     VERIFY_DETAIL_KEY_DECISION_THRESHOLD,
+    VERIFY_DETAIL_KEY_ERROR_KEY,
     VERIFY_DETAIL_KEY_EXTRACTED_TEXT_LENGTH,
     VERIFY_DETAIL_KEY_FAILURE_REASONS,
     VERIFY_DETAIL_KEY_MAX_ATTEMPTS,
@@ -56,7 +57,11 @@ from app.constants.payment_constants import (
     VERIFY_DETAIL_KEY_UPLOADED_SHA256,
     PAYMENT_VERIFICATION_ERROR,
 )
+from app.constants.payment_verification_constants import (
+    resolve_payment_verification_error_key,
+)
 from app.constants.response_keys import (
+    RESPONSE_KEY_CODE,
     RESPONSE_KEY_DETECTED_APP,
     RESPONSE_KEY_ERROR,
     RESPONSE_KEY_STATUS,
@@ -248,8 +253,10 @@ def process_verify_upload(
 
     def _reject_payment_for_fraud(failures, confidence=None, details=None):
         score = _calculate_fraud_score(failures or [], confidence=confidence)
+        error_key = resolve_payment_verification_error_key(failures)
         verification_details = {
             VERIFY_DETAIL_KEY_FAILURE_REASONS: failures or [],
+            VERIFY_DETAIL_KEY_ERROR_KEY: error_key,
             VERIFY_DETAIL_KEY_UPLOADED_SHA256: sha256_hash,
         }
         if details:
@@ -411,9 +418,11 @@ def process_verify_upload(
             is_valid = False
             risk_score = _calculate_fraud_score(failures, confidence=confidence)
 
+        error_key = resolve_payment_verification_error_key(failures)
         verification_details = {
             VERIFY_DETAIL_KEY_OCR_CONFIDENCE: confidence,
             VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
+            VERIFY_DETAIL_KEY_ERROR_KEY: error_key,
             VERIFY_DETAIL_KEY_EXTRACTED_TEXT_LENGTH: len(extracted_text) if extracted_text else 0,
             VERIFY_DETAIL_KEY_UPLOADED_SHA256: sha256_hash,
             VERIFY_DETAIL_KEY_RISK_SCORE: risk_score,
@@ -535,6 +544,7 @@ def process_verify_upload(
             verification_result = {
                 RESPONSE_KEY_STATUS: PAYMENT_STATUS_REJECTED_FRAUD,
                 RESPONSE_KEY_VERIFIED: True,
+                RESPONSE_KEY_CODE: error_key,
                 VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
             }
             reject_details = {VERIFY_DETAIL_KEY_OCR_SIGNATURE: ocr_signature} if ocr_signature else None
@@ -550,6 +560,7 @@ def process_verify_upload(
             verification_result = {
                 RESPONSE_KEY_STATUS: PAYMENT_STATUS_REJECTED_FRAUD,
                 RESPONSE_KEY_VERIFIED: True,
+                RESPONSE_KEY_CODE: resolve_payment_verification_error_key(failures),
                 VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
             }
             _finalize_attempt(VERIFY_ATTEMPT_STATUS_REJECTED, detected_app=PAYMENT_DETECTED_APP_UNKNOWN, failures=failures, fraud_score=_calculate_fraud_score(failures, confidence=0))
@@ -632,6 +643,7 @@ def process_internal_verify(
     verification_details = {
         VERIFY_DETAIL_KEY_OCR_CONFIDENCE: confidence,
         VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
+        VERIFY_DETAIL_KEY_ERROR_KEY: resolve_payment_verification_error_key(failures),
         VERIFY_DETAIL_KEY_EXTRACTED_TEXT_LENGTH: len(extracted_text) if extracted_text else 0,
         VERIFY_DETAIL_KEY_UPLOADED_SHA256: existing_sha256,
     }
@@ -670,5 +682,6 @@ def process_internal_verify(
     return jsonify({
         RESPONSE_KEY_STATUS: PAYMENT_STATUS_REJECTED_FRAUD,
         RESPONSE_KEY_DETECTED_APP: detected_app,
+        RESPONSE_KEY_CODE: resolve_payment_verification_error_key(failures),
         VERIFY_DETAIL_KEY_FAILURE_REASONS: failures,
     })
