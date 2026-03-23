@@ -1168,6 +1168,22 @@ body.dark .consent-fade {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--space-4) var(--space-6);
   }
+
+  /* When OTP is shown under Email, pull left-column fields up to avoid dead space under Username. */
+  .form-grid.has-otp {
+    align-items: start;
+  }
+
+  .form-grid.has-otp .username-field { grid-column: 1; grid-row: 1; }
+  .form-grid.has-otp .email-field { grid-column: 2; grid-row: 1; }
+  .form-grid.has-otp .otp-field { grid-column: 2; grid-row: 2; }
+
+  .form-grid.has-otp .gender-field { grid-column: 1; grid-row: 2; }
+  .form-grid.has-otp .location-field { grid-column: 1; grid-row: 3; }
+  .form-grid.has-otp .prior-experience-field { grid-column: 1; grid-row: 4; }
+
+  .form-grid.has-otp .age-field { grid-column: 2; grid-row: 3; }
+  .form-grid.has-otp .language-field { grid-column: 2; grid-row: 4; }
 }
 
 @media (min-width: 1024px) {
@@ -1232,6 +1248,47 @@ body.dark .consent-fade {
   width: 100%;
   min-height: var(--mobile-touch-target);
   font-size: 16px;
+}
+
+.otp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.otp-row .otp-inputs {
+  flex: 1;
+}
+
+.otp-resend-btn.ghost {
+  min-width: var(--mobile-touch-target);
+  min-height: var(--mobile-touch-target);
+  width: var(--mobile-touch-target);
+  flex: 0 0 var(--mobile-touch-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.otp-field {
+  grid-column: auto;
+}
+
+@media (min-width: 768px) {
+  .otp-field {
+    grid-column: 2;
+  }
+}
+
+.loading-spinner {
+  color: var(--primary);
+  animation: spin 0.9s linear infinite;
+}
+
+.otp-resend-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .otp-inputs {
