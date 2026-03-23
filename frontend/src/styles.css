@@ -1168,6 +1168,22 @@ body.dark .consent-fade {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--space-4) var(--space-6);
   }
+
+  /* When OTP is shown under Email, pull left-column fields up to avoid dead space under Username. */
+  .form-grid.has-otp {
+    align-items: start;
+  }
+
+  .form-grid.has-otp .username-field { grid-column: 1; grid-row: 1; }
+  .form-grid.has-otp .email-field { grid-column: 2; grid-row: 1; }
+  .form-grid.has-otp .otp-field { grid-column: 2; grid-row: 2; }
+
+  .form-grid.has-otp .gender-field { grid-column: 1; grid-row: 2; }
+  .form-grid.has-otp .location-field { grid-column: 1; grid-row: 3; }
+  .form-grid.has-otp .prior-experience-field { grid-column: 1; grid-row: 4; }
+
+  .form-grid.has-otp .age-field { grid-column: 2; grid-row: 3; }
+  .form-grid.has-otp .language-field { grid-column: 2; grid-row: 4; }
 }
 
 @media (min-width: 1024px) {

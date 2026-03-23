@@ -162,8 +162,8 @@ export default function UserDetailsPage({
         {uiText("user.pageSubtitle")}
       </p>
       
-      <div className="form-grid">
-        <div className={`form-field ${errors.username ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+      <div className={`form-grid ${showOtpField ? "has-otp" : ""}`}>
+        <div className={`form-field username-field ${errors.username ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.username")} <span className="required" aria-label="required">*</span></label>
           <input
             type="text"
@@ -181,7 +181,7 @@ export default function UserDetailsPage({
           )}
         </div>
 
-        <div className={`form-field ${errors.email ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+        <div className={`form-field email-field ${errors.email ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.email")} <span className="required" aria-label="required">*</span></label>
           <div className="input-with-ghost">
             <input
@@ -302,7 +302,7 @@ export default function UserDetailsPage({
           </div>
         )}
 
-        <div className={`form-field ${errors.gender_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+        <div className={`form-field gender-field ${errors.gender_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.gender")} <span className="required" aria-label="required">*</span></label>
           <select
             className={errors.gender_code ? 'error-input' : ''}
@@ -320,7 +320,7 @@ export default function UserDetailsPage({
           {errors.gender_code && <span className="error-text">{errors.gender_code}</span>}
         </div>
 
-        <div className={`form-field ${errors.age ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+        <div className={`form-field age-field ${errors.age ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.age")} <span className="required" aria-label="required">*</span></label>
           <input
             type="number"
@@ -346,7 +346,7 @@ export default function UserDetailsPage({
           )}
         </div>
 
-        <div className={`form-field ${errors.location ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+        <div className={`form-field location-field ${errors.location ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.location")} <span className="required" aria-label="required">*</span></label>
           <input
             type="text"
@@ -388,7 +388,7 @@ export default function UserDetailsPage({
           )}
         </div>
 
-        <div className={`form-field ${errors.language_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+        <div className={`form-field language-field ${errors.language_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.language")} <span className="required" aria-label="required">*</span></label>
           <select
             className={errors.language_code ? 'error-input' : ''}
@@ -406,7 +406,7 @@ export default function UserDetailsPage({
           {errors.language_code && <span className="error-text">{errors.language_code}</span>}
         </div>
 
-        <div className={`form-field ${errors.prior_experience ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+        <div className={`form-field prior-experience-field ${errors.prior_experience ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.priorExperience")} <span className="required" aria-label="required">*</span></label>
           <select
             className={errors.prior_experience ? 'error-input' : ''}
