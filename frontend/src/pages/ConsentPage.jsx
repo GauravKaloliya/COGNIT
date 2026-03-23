@@ -149,11 +149,21 @@ export default function ConsentPage({
           onClick={handleSubmit}
           disabled={!systemReady || submitting || !consentChecked || !isOnline}
         >
-          {submitting ? uiText("common.processing") : uiText("common.continue")}
+          {submitting
+            ? uiText("common.processing")
+            : !isOnline && retryCountdown > 0
+              ? uiText("common.tryAgainIn", { seconds: retryCountdown })
+              : !isOnline
+                ? uiText("consent.offlineSubmit")
+                : uiText("common.continue")}
           {!isOnline && <ButtonRetryBadge seconds={retryCountdown} />}
         </DSButton>
-        {!isOnline && retryCountdown > 0 && (
-          <div className="helper-text">{uiText("common.tryAgainIn", { seconds: retryCountdown })}</div>
+        {!isOnline && (
+          <div className="helper-text">
+            {retryCountdown > 0
+              ? uiText("common.tryAgainIn", { seconds: retryCountdown })
+              : uiText("consent.offlineBanner")}
+          </div>
         )}
       </PageActions>
     </div>

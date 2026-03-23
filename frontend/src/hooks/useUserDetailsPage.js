@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
@@ -96,10 +97,11 @@ export function useUserDetailsPage({
     return {
       genders: Array.isArray(cached?.genders) ? cached.genders : [],
       languages: Array.isArray(cached?.languages) ? cached.languages : [],
+      priorExperiences: Array.isArray(cached?.prior_experiences) ? cached.prior_experiences : [],
     };
   });
   const [optionsLoading, setOptionsLoading] = useState(() => (
-    optionLists.genders.length === 0 || optionLists.languages.length === 0
+    optionLists.genders.length === 0 || optionLists.languages.length === 0 || optionLists.priorExperiences.length === 0
   ));
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -136,7 +138,9 @@ export function useUserDetailsPage({
   });
   const autoLocationAttemptsRef = useRef(0);
   const autoDetectStartedRef = useRef(false);
-  const participantOptionsLoadedRef = useRef(optionLists.genders.length > 0 && optionLists.languages.length > 0);
+  const participantOptionsLoadedRef = useRef(
+    optionLists.genders.length > 0 && optionLists.languages.length > 0 && optionLists.priorExperiences.length > 0
+  );
   const userEditedLocationRef = useRef(false);
   const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
   const resendSeconds = useRetryCountdown(resendCountdownActive, resendInitialSeconds);
@@ -283,8 +287,13 @@ export function useUserDetailsPage({
         const nextOptions = {
           genders: Array.isArray(data?.genders) ? data.genders : [],
           languages: prioritizeEnglish(Array.isArray(data?.languages) ? data.languages : []),
+          prior_experiences: Array.isArray(data?.prior_experiences) ? data.prior_experiences : [],
         };
-        setOptionLists(nextOptions);
+        setOptionLists({
+          genders: nextOptions.genders,
+          languages: nextOptions.languages,
+          priorExperiences: nextOptions.prior_experiences,
+        });
         writeJsonValue(PARTICIPANT_OPTIONS_KEY, nextOptions, "local");
         participantOptionsLoadedRef.current = true;
         setErrors((prev) => {
@@ -298,8 +307,13 @@ export function useUserDetailsPage({
         const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null);
         const cachedGenders = Array.isArray(cached?.genders) ? cached.genders : [];
         const cachedLanguages = prioritizeEnglish(Array.isArray(cached?.languages) ? cached.languages : []);
-        if (cachedGenders.length > 0 && cachedLanguages.length > 0) {
-          setOptionLists({ genders: cachedGenders, languages: cachedLanguages });
+        const cachedPriorExperiences = Array.isArray(cached?.prior_experiences) ? cached.prior_experiences : [];
+        if (cachedGenders.length > 0 && cachedLanguages.length > 0 && cachedPriorExperiences.length > 0) {
+          setOptionLists({
+            genders: cachedGenders,
+            languages: cachedLanguages,
+            priorExperiences: cachedPriorExperiences,
+          });
         } else {
           setErrors((prev) => ({
             ...prev,
@@ -319,6 +333,20 @@ export function useUserDetailsPage({
       cancelled = true;
     };
   }, [isOnline, prioritizeEnglish]);
+
+  useEffect(() => {
+    if (!optionLists.priorExperiences.length) return;
+    const currentValue = String(demographics.prior_experience || "").trim();
+    if (!currentValue) return;
+    const flatOptions = optionLists.priorExperiences.flatMap((group) => (
+      Array.isArray(group?.options) ? group.options : []
+    ));
+    const hasCodeMatch = flatOptions.some((option) => String(option?.value || "").trim() === currentValue);
+    if (hasCodeMatch) return;
+    const labelMatch = flatOptions.find((option) => String(option?.label || "").trim() === currentValue);
+    if (!labelMatch?.value) return;
+    setDemographics((prev) => ({ ...prev, prior_experience: String(labelMatch.value) }));
+  }, [demographics.prior_experience, optionLists.priorExperiences, setDemographics]);
 
   const validateUsernameInput = useCallback((rawUsername) => {
     const value = String(rawUsername ?? "").trim();
@@ -818,7 +846,7 @@ export function useUserDetailsPage({
       if (mappedField) {
         setErrors((prev) => ({
           ...prev,
-          [mappedField]: error.message || getErrorMessage(USER_DETAILS_DUPLICATE_ERROR_CODES[mappedField] || "SYS_001_0001"),
+          [mappedField]: getDisplayErrorMessage(error, USER_DETAILS_DUPLICATE_ERROR_CODES[mappedField] || "SYS_001_0001"),
         }));
         return;
       }
@@ -1221,6 +1249,7 @@ export function useUserDetailsPage({
     isOnline,
     genderOptions: optionLists.genders,
     languageOptions: optionLists.languages,
+    priorExperienceGroups: optionLists.priorExperiences,
     optionsLoading,
     errors,
     submitting,

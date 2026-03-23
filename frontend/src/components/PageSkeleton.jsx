@@ -1,8 +1,9 @@
 import React from "react";
+import { uiText } from "../utils/uiText.js";
 
 export default function PageSkeleton({
-  title = "Loading...",
-  subtitle = "Preparing your experience",
+  title = uiText("skeleton.defaultTitle"),
+  subtitle = uiText("skeleton.defaultSubtitle"),
   variant = "generic",
   compact = false,
 }) {

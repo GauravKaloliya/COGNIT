@@ -15,6 +15,8 @@ from app.constants.payment_constants import (
     PAYMENT_STATUS_REJECTED_FRAUD,
     PAYMENT_STATUS_SUCCESS,
 )
+from app.services.payment_workflow_service import participant_state_for_payment_status
+from app.utils.runtime_cache import invalidate_payment_status_cache_by_id
 
 QUERY_FETCH_PAYMENT_FOR_VERIFY = text("""
     SELECT id, participant_id, status, expires_at, timer_activated_at, verification_attempts, amount
@@ -95,6 +97,26 @@ QUERY_SET_PAYMENT_VERIFICATION_OUTCOME = text("""
     WHERE id = :pid
 """)
 
+QUERY_SYNC_PARTICIPANT_FROM_PAYMENT = text("""
+    UPDATE participants
+    SET participant_payment_status = :participant_payment_status,
+        participant_stage = :participant_stage,
+        participant_stage_updated_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = :participant_id
+""")
+
+def sync_participant_from_payment_status(db, *, participant_id: int, status: str) -> None:
+    participant_payment_status, participant_stage = participant_state_for_payment_status(status)
+    db.execute(
+        QUERY_SYNC_PARTICIPANT_FROM_PAYMENT,
+        {
+            "participant_id": int(participant_id),
+            "participant_payment_status": participant_payment_status,
+            "participant_stage": participant_stage,
+        },
+    )
+
 
 def fetch_payment_for_verify(db, payment_public_id: str):
     return db.execute(QUERY_FETCH_PAYMENT_FOR_VERIFY, {"pid": payment_public_id}).fetchone()
@@ -113,12 +135,16 @@ def increment_verification_attempts(db, payment_id: int):
 
 
 def set_payment_status(db, *, payment_id: int, status: str, current_status: str | None = None):
+    participant_id = fetch_payment_owner_participant_id(db, payment_id)
     params = {"pid": int(payment_id), "status": str(status)}
     if current_status is None:
-        db.execute(QUERY_SET_PAYMENT_STATUS, params)
+        result = db.execute(QUERY_SET_PAYMENT_STATUS, params)
     else:
         params["current_status"] = str(current_status)
-        db.execute(QUERY_SET_PAYMENT_STATUS_IF_CURRENT, params)
+        result = db.execute(QUERY_SET_PAYMENT_STATUS_IF_CURRENT, params)
+    if participant_id and int(getattr(result, "rowcount", 0) or 0) == 1:
+        sync_participant_from_payment_status(db, participant_id=int(participant_id), status=str(status))
+    invalidate_payment_status_cache_by_id(payment_id)
 
 
 def append_payment_verification_details(db, *, payment_id: int, details: dict):
@@ -182,6 +208,7 @@ def set_payment_ocr_unavailable(
     fraud_score: float,
     verification_details: dict,
 ):
+    participant_id = fetch_payment_owner_participant_id(db, payment_id)
     db.execute(QUERY_SET_PAYMENT_VERIFICATION_OUTCOME, {
         "pid": int(payment_id),
         "txt": "",
@@ -192,6 +219,8 @@ def set_payment_ocr_unavailable(
         "details": json.dumps(verification_details),
         "auto_rejected": True,
     })
+    if participant_id:
+        sync_participant_from_payment_status(db, participant_id=int(participant_id), status=PAYMENT_STATUS_REJECTED_FRAUD)
 
 
 def set_payment_verification_outcome(
@@ -206,6 +235,7 @@ def set_payment_verification_outcome(
     verification_details: dict,
     auto_rejected: bool,
 ):
+    participant_id = fetch_payment_owner_participant_id(db, payment_id)
     normalized_detected_app = detected_app or PAYMENT_DETECTED_APP_UNKNOWN
     if target_status == PAYMENT_STATUS_SUCCESS:
         normalized_score = min(float(FRAUD_SUCCESS_MAX_SCORE), float(fraud_score))
@@ -225,4 +255,7 @@ def set_payment_verification_outcome(
         "details": json.dumps(verification_details),
         "auto_rejected": bool(auto_rejected),
     })
+    if participant_id:
+        sync_participant_from_payment_status(db, participant_id=int(participant_id), status=target_status)
+    invalidate_payment_status_cache_by_id(payment_id)
     return normalized_score

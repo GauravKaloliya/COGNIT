@@ -14,7 +14,7 @@ QUERY_TOUCH_PARTICIPANT_REWARD_CHECK = text("""
 """)
 
 QUERY_FETCH_REWARD_PARTICIPANT = text("""
-    SELECT consent_given, is_deleted, payment_status
+    SELECT consent_given, is_deleted, participant_payment_status
     FROM participants
     WHERE id = :pid
 """)

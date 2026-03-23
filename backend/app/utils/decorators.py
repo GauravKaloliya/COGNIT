@@ -13,7 +13,6 @@ from flask import request
 from sqlalchemy import text
 
 from app.config import PERFORMANCE_LOG_SAMPLE_RATE, ENABLE_PERFORMANCE_METRICS
-from app.constants.error_codes import ERROR_MESSAGE_TEMPLATES
 from app.constants.observability_constants import OBS_EVENT_METRICS_EMIT_FAILED, OBS_EVENT_METRICS_ENQUEUE_FAILED
 from app.database import engine
 from app.utils.helpers import create_error_response
@@ -132,15 +131,13 @@ def require_idempotency_key(f):
         key = (request.headers.get("X-Idempotency-Key") or "").strip()
         if not key:
             return create_error_response(
-                "VAL_MISSING_FIELDS",
+                "VAL_IDEMPOTENCY_KEY_REQUIRED",
                 details={"fields": ["X-Idempotency-Key"]},
-                custom_message=ERROR_MESSAGE_TEMPLATES["IDEMPOTENCY_HEADER_MISSING"],
             )
         if len(key) > 128:
             return create_error_response(
-                "VAL_INVALID_FORMAT",
+                "VAL_IDEMPOTENCY_KEY_TOO_LONG",
                 details={"field": "X-Idempotency-Key"},
-                custom_message=ERROR_MESSAGE_TEMPLATES["IDEMPOTENCY_HEADER_TOO_LONG"],
             )
         return f(*args, **kwargs)
     return wrapper

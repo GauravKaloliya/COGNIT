@@ -1,15 +1,17 @@
 """Participant routes module for C.O.G.N.I.T. backend."""
 
 import logging
-from flask import request, g
+
+from flask import Blueprint, g, request
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.constants.event_constants import (
+    AUDIT_EVENT_CONSENT_RECORDED,
     AUDIT_EVENT_PARTICIPANT_CREATED,
     HTTP_METHOD_GET,
     HTTP_METHOD_POST,
-    PAYMENT_NOT_VERIFIED_REASON,
+    PAY_NOT_VERIFIED_REASON,
 )
 from app.constants.log_messages import (
     LOG_CHECK_EMAIL_FAILED,
@@ -64,69 +66,70 @@ from app.constants.route_constants import (
     PARTICIPANT_PAYMENT_STATUS_ROUTE,
     PARTICIPANT_SESSION_ROUTE,
 )
-from app.extensions import limiter
-from app.database import get_db
-from app.utils.helpers import (
-    get_ip_hash,
-    log_audit,
-    create_error_response,
-    success_response,
-)
-from app.utils.runtime_cache import set_cached_participant_id
-from app.utils.decorators import track_performance, require_idempotency_key
-from app.utils.turnstile import verify_turnstile_token
-from app.services import (
-    build_request_hash,
-    collect_missing_participant_fields,
-    fetch_participant_options,
-    find_existing_participant_conflict,
-    generate_public_id,
-    generate_session_id,
-    get_existing_session_id_for_public_id,
-    insert_participant,
-    is_participant_field_available,
-    is_valid_public_id,
-    load_idempotent_response,
-    save_idempotent_response,
-    set_participant_cookies,
-    build_email_otp_payload,
-    EmailOtpSendError,
-    email_in_use_by_other,
-    fetch_latest_email_otp,
-    fetch_participant_by_public_email,
-    fetch_participant_by_public_id,
-    generate_email_otp,
-    hash_email_otp,
-    increment_email_otp_attempts,
-    insert_email_otp,
-    mark_email_otp_used,
-    mark_existing_otps_used,
-    mark_participant_email_verified,
-    update_participant_email,
-    otp_expiry_timestamp,
-    otp_is_expired,
-    otp_is_over_attempts,
-    send_email_otp,
-)
-from app.utils.error_mapping import map_participant_create_exception
 from app.config import (
-    PARTICIPANT_CREATE_RATE_LIMIT,
-    PARTICIPANT_CHECK_RATE_LIMIT,
     CONSENT_RATE_LIMIT,
-    PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
-    PARTICIPANT_SESSION_COOKIE_NAME,
-    PARTICIPANT_PUBLIC_COOKIE_NAME,
     EMAIL_OTP_LENGTH,
     EMAIL_OTP_REQUEST_RATE_LIMIT,
     EMAIL_OTP_VERIFY_RATE_LIMIT,
+    PARTICIPANT_CHECK_RATE_LIMIT,
+    PARTICIPANT_CREATE_RATE_LIMIT,
+    PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+    PARTICIPANT_PUBLIC_COOKIE_NAME,
+    PARTICIPANT_SESSION_COOKIE_NAME,
 )
+from app.database import get_db
+from app.extensions import limiter
+from app.services import (
+    EmailOtpSendError,
+    build_email_otp_payload,
+    build_request_hash,
+    collect_missing_participant_fields,
+    email_in_use_by_other,
+    enqueue_email_otp,
+    fetch_latest_email_otp,
+    fetch_participant_by_public_email,
+    fetch_participant_by_public_id,
+    fetch_participant_options,
+    find_existing_participant_conflict,
+    generate_email_otp,
+    generate_public_id,
+    generate_session_id,
+    get_existing_session_id_for_public_id,
+    hash_email_otp,
+    increment_email_otp_attempts,
+    insert_email_otp,
+    insert_participant,
+    is_participant_field_available,
+    is_valid_prior_experience_code,
+    is_valid_public_id,
+    load_idempotent_response,
+    mark_email_otp_used,
+    mark_existing_otps_used,
+    mark_participant_email_verified,
+    otp_expiry_timestamp,
+    otp_is_expired,
+    otp_is_over_attempts,
+    save_idempotent_response,
+    set_participant_cookies,
+    send_email_otp,
+    update_participant_email,
+)
+from app.utils.decorators import require_idempotency_key, track_performance
+from app.utils.error_mapping import map_participant_create_exception
+from app.utils.helpers import (
+    create_error_response,
+    get_ip_hash,
+    log_audit,
+    success_response,
+)
+from app.utils.runtime_cache import (
+    get_cached_participant_options,
+    set_cached_participant_id,
+    set_cached_participant_options,
+)
+from app.utils.turnstile import verify_turnstile_token
 
 
-# ────────────────────────────────────────────────
-# Blueprint Setup
-# ────────────────────────────────────────────────
-
-from flask import Blueprint
 participant_bp = Blueprint('participant', __name__)
 logger = logging.getLogger(__name__)
 
@@ -144,24 +147,29 @@ def create_participant():
     turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
     missing = collect_missing_participant_fields(data)
     if missing:
-        return create_error_response("MISSING_FIELDS", {"fields": missing})
+        return create_error_response("VAL_PARTICIPANT_CREATE_FIELDS_REQUIRED", fields=missing)
 
     public_id = generate_public_id(data)
     if data.get("public_id") and not is_valid_public_id(public_id):
-        return create_error_response("INVALID_UUID", {"field": "public_id"})
+        return create_error_response("VAL_INVALID_REQUEST_ID", {"field": "public_id"})
     session_id = generate_session_id(data)
 
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
 
+    ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host, endpoint=request.path)
+    if not ok:
+        return create_error_response("BOT_PARTICIPANT_CREATE_FAILED")
+
     try:
         db = get_db()
-        ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
-        if not ok:
-            return create_error_response("BOT_CHALLENGE_FAILED")
 
         username = str(data[REQUEST_KEY_USERNAME]).strip()[:50]
         email = str(data[REQUEST_KEY_EMAIL]).strip().lower()[:255]
+        prior_experience = str(data.get("prior_experience", "")).strip()
+
+        if not is_valid_prior_experience_code(db, prior_experience):
+            return create_error_response("VAL_EXPERIENCE_REQUIRED")
 
         conflict_error_key = find_existing_participant_conflict(
             db,
@@ -223,7 +231,7 @@ def check_username():
     """Check if username is available for registration."""
     username = request.args.get("username", "").strip()
     if not username:
-        return create_error_response("MISSING_FIELDS", {"fields": ["username"]})
+        return create_error_response("VAL_USERNAME_CHECK_REQUIRED")
     if len(username) < 2:
         return success_response({RESPONSE_KEY_AVAILABLE: True})
     try:
@@ -231,7 +239,7 @@ def check_username():
         return success_response({RESPONSE_KEY_AVAILABLE: is_participant_field_available(db, field_name=PARTICIPANT_FIELD_USERNAME, value=username)})
     except Exception as e:
         logger.error(LOG_CHECK_USERNAME_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_CHECK_USERNAME_FAILED")
 
 
 @participant_bp.route(CHECK_EMAIL_ROUTE)
@@ -241,13 +249,13 @@ def check_email():
     """Check if email is already registered."""
     email = request.args.get("email", "").strip().lower()
     if not email:
-        return create_error_response("MISSING_FIELDS", {"fields": ["email"]})
+        return create_error_response("VAL_EMAIL_CHECK_REQUIRED")
     try:
         db = get_db()
         return success_response({RESPONSE_KEY_AVAILABLE: is_participant_field_available(db, field_name=PARTICIPANT_FIELD_EMAIL, value=email)})
     except Exception as e:
         logger.error(LOG_CHECK_EMAIL_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_CHECK_EMAIL_FAILED")
 
 
 @participant_bp.route(CONSENT_ROUTE, methods=[HTTP_METHOD_POST])
@@ -263,7 +271,7 @@ def record_consent():
         or ""
     ).strip()[:128]
     if not public_id:
-        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
+        return create_error_response("VAL_CONSENT_PUBLIC_ID_REQUIRED")
 
     try:
         db = get_db()
@@ -290,9 +298,9 @@ def record_consent():
             RETURNING id
         """), {"pub": public_id}).fetchone()
         if not row:
-            return create_error_response("PARTICIPANT_NOT_FOUND")
+            return create_error_response("NF_CONSENT_PARTICIPANT_NOT_FOUND")
         pid = row[0]
-        log_audit(db, "consent_recorded", participant_id=pid)
+        log_audit(db, AUDIT_EVENT_CONSENT_RECORDED, participant_id=pid)
         response_payload = {RESPONSE_KEY_STATUS: PARTICIPANT_STATUS_CONSENT_RECORDED}
         if idempotency_key:
             save_idempotent_response(
@@ -312,7 +320,7 @@ def record_consent():
         except Exception:
             pass
         logger.error(LOG_CONSENT_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("INTERNAL_ERROR")
+        return create_error_response("SYS_CONSENT_RECORD_FAILED")
 
 
 @participant_bp.route(PARTICIPANT_PAYMENT_STATUS_ROUTE)
@@ -324,24 +332,24 @@ def get_participant_payment_status(public_id):
     Returns payment verification status to prevent unauthorized survey access.
     """
     if not public_id:
-        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
+        return create_error_response("VAL_PARTICIPANT_STATUS_PUBLIC_ID_REQUIRED")
     
     try:
         db = get_db()
         
         row = db.execute(text("""
-            SELECT id, payment_status, current_stage
+            SELECT id, participant_payment_status, participant_stage
             FROM participants
             WHERE public_id = :pub AND is_deleted = false
         """), {"pub": public_id}).fetchone()
         
         if not row:
-            return create_error_response("PARTICIPANT_NOT_FOUND")
+            return create_error_response("NF_PARTICIPANT_STATUS_NOT_FOUND")
         
-        participant_id, payment_status, current_stage = row
+        participant_id, participant_payment_status, participant_stage = row
         
         # Check for successful payment
-        is_paid = payment_status == PARTICIPANT_PAYMENT_STATUS_PAID
+        is_paid = participant_payment_status == PARTICIPANT_PAYMENT_STATUS_PAID
 
         # Check for any successful payment record
         payment_row = db.execute(text("""
@@ -353,17 +361,17 @@ def get_participant_payment_status(public_id):
         """), {"pid": participant_id, "payment_success_status": PAYMENT_STATUS_SUCCESS}).fetchone()
 
         return success_response({
-            "payment_status": payment_status,
+            "payment_status": participant_payment_status,
             "is_verified": bool(is_paid and payment_row),
-            RESPONSE_KEY_CURRENT_STAGE: current_stage,
+            RESPONSE_KEY_CURRENT_STAGE: participant_stage,
             RESPONSE_KEY_PAYMENT_ID: str(payment_row[0]) if payment_row else None,
             RESPONSE_KEY_VERIFIED_AT: payment_row[2].isoformat() if payment_row and payment_row[2] else None,
             RESPONSE_KEY_DETECTED_APP: payment_row[3] if payment_row else None,
-            RESPONSE_KEY_REASON: None if is_paid else PAYMENT_NOT_VERIFIED_REASON,
+            RESPONSE_KEY_REASON: None if is_paid else PAY_NOT_VERIFIED_REASON,
         })
     except Exception as e:
         logger.error(LOG_PARTICIPANT_PAYMENT_STATUS_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_PARTICIPANT_STATUS_FAILED")
 
 
 @participant_bp.route(PARTICIPANT_SESSION_ROUTE, methods=[HTTP_METHOD_GET])
@@ -385,11 +393,16 @@ def get_participant_session():
 def get_participant_options():
     """Return participant form options sourced from the database."""
     try:
+        cached = get_cached_participant_options()
+        if cached:
+            return success_response(cached)
         db = get_db()
-        return success_response(fetch_participant_options(db))
+        payload = fetch_participant_options(db)
+        set_cached_participant_options(payload)
+        return success_response(payload)
     except Exception as e:
         logger.error(LOG_PARTICIPANT_OPTIONS_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_PARTICIPANT_OPTIONS_FAILED")
 
 
 @participant_bp.route(EMAIL_OTP_REQUEST_ROUTE, methods=[HTTP_METHOD_POST])
@@ -402,7 +415,7 @@ def request_email_otp():
     email = str(payload.get(REQUEST_KEY_EMAIL) or "").strip().lower()
     email_update = bool(payload.get(REQUEST_KEY_EMAIL_UPDATE))
     if not public_id or not email:
-        return create_error_response("VAL_MISSING_FIELDS", fields=[REQUEST_KEY_PUBLIC_ID, REQUEST_KEY_EMAIL])
+        return create_error_response("VAL_EMAIL_OTP_REQUEST_FIELDS_REQUIRED")
     if not is_valid_public_id(public_id):
         return create_error_response("VAL_INVALID_REQUEST_ID")
     try:
@@ -426,7 +439,7 @@ def request_email_otp():
                     return create_error_response("VAL_EMAIL_INVALID")
                 if "duplicate key" in err or "unique constraint" in err:
                     return create_error_response("DUP_EMAIL")
-                return create_error_response("DATABASE_ERROR")
+                return create_error_response("SYS_EMAIL_OTP_REQUEST_FAILED")
         if email_verified:
             return success_response({
                 RESPONSE_KEY_EMAIL: stored_email,
@@ -437,41 +450,48 @@ def request_email_otp():
         expires_at = otp_expiry_timestamp()
         mark_existing_otps_used(db, public_id=public_id, email=stored_email)
         otp_id = insert_email_otp(db, public_id=public_id, email=stored_email, otp_hash=otp_hash, expires_at=expires_at)
+        db.commit()
         try:
-            send_email_otp(
+            enqueue_email_otp(
                 build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
+                otp_id=otp_id,
                 request_id=getattr(g, "request_id", None),
             )
-        except EmailOtpSendError as exc:
-            error_key = "AUTH_EMAIL_OTP_SEND_FAILED"
-            if exc.kind == "timeout":
-                error_key = "AUTH_EMAIL_OTP_SEND_TIMEOUT"
-            elif exc.kind == "http_error":
-                error_key = "AUTH_EMAIL_OTP_SEND_HTTP_ERROR"
-            logger.warning(
-                "email_otp_send_failed",
-                extra={
-                    "event": "email_otp_send_failed",
-                    "kind": exc.kind,
-                    "status_code": exc.status_code,
-                    "request_id": getattr(g, "request_id", None),
-                },
-            )
-            mark_email_otp_used(db, otp_id=otp_id)
-            db.commit()
-            return create_error_response(error_key)
         except Exception:
-            mark_email_otp_used(db, otp_id=otp_id)
-            db.commit()
-            return create_error_response("AUTH_EMAIL_OTP_SEND_FAILED")
-        db.commit()
+            try:
+                send_email_otp(
+                    build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
+                    request_id=getattr(g, "request_id", None),
+                )
+            except EmailOtpSendError as exc:
+                error_key = "AUTH_EMAIL_OTP_SEND_FAILED"
+                if exc.kind == "timeout":
+                    error_key = "AUTH_EMAIL_OTP_SEND_TIMEOUT"
+                elif exc.kind == "http_error":
+                    error_key = "AUTH_EMAIL_OTP_SEND_HTTP_ERROR"
+                logger.warning(
+                    "email_otp_send_failed",
+                    extra={
+                        "event": "email_otp_send_failed",
+                        "kind": exc.kind,
+                        "status_code": exc.status_code,
+                        "request_id": getattr(g, "request_id", None),
+                    },
+                )
+                mark_email_otp_used(db, otp_id=otp_id)
+                db.commit()
+                return create_error_response(error_key)
+            except Exception:
+                mark_email_otp_used(db, otp_id=otp_id)
+                db.commit()
+                return create_error_response("AUTH_EMAIL_OTP_SEND_FAILED")
         return success_response({
             RESPONSE_KEY_EMAIL: stored_email,
             RESPONSE_KEY_EMAIL_VERIFIED: False,
             RESPONSE_KEY_EXPIRES_AT: expires_at.isoformat(),
         })
     except Exception:
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_EMAIL_OTP_REQUEST_FAILED")
 
 
 @participant_bp.route(EMAIL_OTP_VERIFY_ROUTE, methods=[HTTP_METHOD_POST])
@@ -484,7 +504,7 @@ def verify_email_otp():
     email = str(payload.get(REQUEST_KEY_EMAIL) or "").strip().lower()
     otp = str(payload.get(REQUEST_KEY_OTP) or "").strip()
     if not public_id or not email or not otp:
-        return create_error_response("VAL_MISSING_FIELDS", fields=[REQUEST_KEY_PUBLIC_ID, REQUEST_KEY_EMAIL, REQUEST_KEY_OTP])
+        return create_error_response("VAL_EMAIL_OTP_VERIFY_FIELDS_REQUIRED")
     if not is_valid_public_id(public_id):
         return create_error_response("VAL_INVALID_REQUEST_ID")
     if not (otp.isdigit() and len(otp) == int(EMAIL_OTP_LENGTH)):
@@ -523,4 +543,4 @@ def verify_email_otp():
             RESPONSE_KEY_EMAIL_VERIFIED: True,
         })
     except Exception:
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_EMAIL_OTP_VERIFY_FAILED")

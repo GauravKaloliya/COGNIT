@@ -1,11 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import { uiText } from "../utils/uiText.js";
 import { runtimeConfig } from "../config/runtime";
-import { clearPendingFlag, forEachStorageArea, getPendingFlag, makeScopedKey, readExpiringValue, removeStoredKey, setPendingFlag, writeExpiringValue } from "../utils/storage";
+import { clearPendingFlag, forEachStorageArea, getPendingFlag, makeScopedKey, removeStoredKey, setPendingFlag } from "../utils/storage";
 import { useNavigationBlocker } from "./useNavigationBlocker";
 import { useOnlineStatus } from "./useOnlineStatus";
+import { usePaymentUploadState } from "./usePaymentUploadState";
+import {
+  buildPaymentRecoverySteps,
+  buildVerificationErrorMessage,
+  calculateBlurVariance,
+  calculateTimerValues,
+  formatCountdown,
+  getFailureReasons,
+  getPaymentField,
+  getQrContainerStyle,
+  getServerRemainingMs,
+  getTimerButtonStyle,
+  getTimerColor,
+  isPaymentAmountMismatch,
+  validateScreenshotQuality as validateScreenshotQualityFile,
+} from "../utils/paymentLinkHelpers";
+import {
+  clearPaymentScopedState,
+  clearScopedTimerState,
+  getStoredTimerState,
+  loadPaymentViewState as loadStoredPaymentViewState,
+  loadScopedPaymentToken,
+  loadStoredPaymentId as loadPersistedPaymentId,
+  savePaymentViewState as persistPaymentViewState,
+  saveScopedPaymentId,
+  saveScopedPaymentToken,
+  saveTimerState as persistTimerState,
+} from "../utils/paymentLinkState";
 import { BROWSER_EVENTS } from "../constants/browser";
 import { NETWORK_ERROR_HINTS, REQUEST_CODES, REQUEST_HEADERS } from "../constants/request";
 import { TOAST_VARIANTS } from "../constants/ui";
@@ -31,13 +60,9 @@ const MIN_SCREENSHOT_WIDTH = runtimeConfig.minScreenshotWidth;
 const MIN_SCREENSHOT_HEIGHT = runtimeConfig.minScreenshotHeight;
 const MIN_LAPLACIAN_VARIANCE = runtimeConfig.minLaplacianVariance;
 const EXPECTED_PAYMENT_AMOUNT = Number(runtimeConfig.paymentAmount);
-const PAYMENT_AMOUNT_LABEL = `₹${EXPECTED_PAYMENT_AMOUNT}`;
+const PAYMENT_AMOUNT_LABEL = uiText("common.inrAmount", { amount: EXPECTED_PAYMENT_AMOUNT });
 const PAYMENT_PENDING_CREATE_KEY = runtimeConfig.storageKeys.paymentPendingCreate;
 const PAYMENT_PENDING_VERIFY_KEY = runtimeConfig.storageKeys.paymentPendingVerify;
-
-const getPaymentField = (payload, field) => payload?.[field];
-const getVerificationDetails = (payload) => payload?.[PAYMENT_API_FIELDS.verificationDetails];
-const getFailureReasons = (payload) => getVerificationDetails(payload)?.[PAYMENT_API_FIELDS.failureReasons] || [];
 
 export function usePaymentLinkPage({ 
   onNext, 
@@ -49,9 +74,6 @@ export function usePaymentLinkPage({
   const [paymentData, setPaymentData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(PAYMENT_STATUS.pending);
-  const [uploadFile, setUploadFile] = useState(null);
-  const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
-  const uploadFileRef = useRef(null);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState(null);
   const [retryInSeconds, setRetryInSeconds] = useState(0);
@@ -60,7 +82,6 @@ export function usePaymentLinkPage({
   const [refreshNoticeVariant, setRefreshNoticeVariant] = useState(PAYMENT_NOTICE_VARIANT.info);
   const isOnline = useOnlineStatus();
   const refreshNoticeShownRef = useRef(false);
-  const fileInputRef = useRef(null);
   const opVersionRef = useRef(0);
   const isMountedRef = useRef(true);
   const statusAbortRef = useRef(null);
@@ -102,7 +123,7 @@ export function usePaymentLinkPage({
   const retryBlocked = retryInSeconds > 0;
   const retryButtonLabel = retryBlocked
     ? uiText("common.tryAgainIn", { seconds: retryInSeconds })
-    : uiText("survey.retryShort");
+    : uiText("payment.confirmPayment");
   const notifySessionExpired = useCallback(() => {
     if (typeof addToast === "function") {
       addToast(uiText("payment.expiredToast"), TOAST_VARIANTS.warning);
@@ -134,239 +155,88 @@ export function usePaymentLinkPage({
     setRetryInSeconds(runtimeConfig.paymentRetrySeconds);
   }, []);
 
-  const getVerificationErrorMessage = useCallback((reasons = []) => {
-    if (!reasons.length) return "";
-    return reasons
-      .map((reason) => {
-        const errorCode = PAYMENT_VERIFICATION_REASON_CODES[reason];
-        return errorCode ? getErrorMessage(errorCode) : reason;
-      })
-      .join('. ');
-  }, []);
+  const getVerificationErrorMessage = useCallback((reasons = []) => buildVerificationErrorMessage({
+    reasons,
+    reasonCodeMap: PAYMENT_VERIFICATION_REASON_CODES,
+    getErrorMessage,
+  }), []);
 
-  const getPaymentRecoverySteps = useCallback((reasons = [], err = null) => {
-    const steps = [];
-    const reasonSet = new Set(Array.isArray(reasons) ? reasons : []);
-    const code = err?.code || "";
-
-    if (reasonSet.has("missing_paid_to_cognit") || reasonSet.has("invalid_banking_name")) {
-      steps.push(uiText("payment.recovery.useSupportedApp"));
-    }
-    if (reasonSet.has("invalid_amount")) {
-      steps.push(uiText("payment.recovery.exactAmount", { amount: PAYMENT_AMOUNT_LABEL }));
-    }
-    if (reasonSet.has("time_out_of_range")) {
-      steps.push(uiText("payment.recovery.withinTimer"));
-    }
-    if (reasonSet.has("ocr_unavailable") || reasonSet.has("invalid_datetime_format_gpay") || reasonSet.has("invalid_datetime_format_paytm") || reasonSet.has("invalid_datetime_format_bhim")) {
-      steps.push(uiText("payment.recovery.clearScreenshot"));
-    }
-    if (reasonSet.has("missing_success")) {
-      steps.push(uiText("payment.recovery.successStatus"));
-    }
-    if (reasonSet.has("failure_indicator")) {
-      steps.push(uiText("payment.recovery.failureStatus"));
-    }
-    if (code === "DUP_003_0001" || code === PAYMENT_ERROR_CODES.screenshotReusedOther) {
-      steps.push(uiText("payment.recovery.reusedOther", { amount: PAYMENT_AMOUNT_LABEL }));
-    }
-    if (code === PAYMENT_ERROR_CODES.screenshotReusedSelf) {
-      steps.push(uiText("payment.recovery.reusedSelf"));
-    }
-    if (code === PAYMENT_ERROR_CODES.screenshotPreviouslyRejected) {
-      steps.push(uiText("payment.recovery.rejectedReuse"));
-    }
-    if (steps.length === 0) {
-      steps.push(uiText("payment.recovery.defaultFresh", { amount: PAYMENT_AMOUNT_LABEL }));
-      steps.push(uiText("payment.recovery.defaultRetry"));
-    }
-    return steps;
-  }, []);
-
-  const isPaymentAmountMismatch = useCallback((paymentData) => {
-    if (!paymentData) return false;
-    if (!Number.isFinite(EXPECTED_PAYMENT_AMOUNT) || EXPECTED_PAYMENT_AMOUNT <= 0) {
-      return false;
-    }
-    const amountValue = Number(paymentData?.amount);
-    if (Number.isFinite(amountValue)) {
-      return Math.abs(amountValue - EXPECTED_PAYMENT_AMOUNT) > 0.001;
-    }
-    const link = String(getPaymentField(paymentData, PAYMENT_API_FIELDS.upiLink) || "");
-    const match = link.match(/[?&]am=([^&]+)/i);
-    if (!match) return false;
-    const parsed = Number(decodeURIComponent(match[1]));
-    if (!Number.isFinite(parsed)) return false;
-    return Math.abs(parsed - EXPECTED_PAYMENT_AMOUNT) > 0.001;
-  }, []);
-
-  const calculateBlurVariance = useCallback((image) => {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return 999;
-
-    const maxDim = 320;
-    const scale = Math.min(1, maxDim / Math.max(image.width, image.height));
-    const w = Math.max(32, Math.floor(image.width * scale));
-    const h = Math.max(32, Math.floor(image.height * scale));
-    canvas.width = w;
-    canvas.height = h;
-    ctx.drawImage(image, 0, 0, w, h);
-
-    const { data } = ctx.getImageData(0, 0, w, h);
-    const gray = new Float32Array(w * h);
-    for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-      gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    }
-
-    const lap = [];
-    for (let y = 1; y < h - 1; y += 1) {
-      for (let x = 1; x < w - 1; x += 1) {
-        const c = gray[y * w + x] * -4;
-        const n = gray[(y - 1) * w + x];
-        const s = gray[(y + 1) * w + x];
-        const e = gray[y * w + (x + 1)];
-        const west = gray[y * w + (x - 1)];
-        lap.push(c + n + s + e + west);
-      }
-    }
-
-    if (!lap.length) return 0;
-    const mean = lap.reduce((a, b) => a + b, 0) / lap.length;
-    const variance = lap.reduce((a, b) => a + (b - mean) ** 2, 0) / lap.length;
-    return variance;
-  }, []);
+  const getPaymentRecoverySteps = useCallback((reasons = [], err = null) => buildPaymentRecoverySteps({
+    reasons,
+    err,
+    uiText,
+    paymentAmountLabel: PAYMENT_AMOUNT_LABEL,
+    paymentErrorCodes: PAYMENT_ERROR_CODES,
+  }), []);
 
   const validateScreenshotQuality = useCallback(
-    (file) =>
-      new Promise((resolve) => {
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = () => {
-          const width = img.naturalWidth || img.width;
-          const height = img.naturalHeight || img.height;
-          const blurVariance = calculateBlurVariance(img);
-          URL.revokeObjectURL(url);
-
-          if (width < MIN_SCREENSHOT_WIDTH || height < MIN_SCREENSHOT_HEIGHT) {
-            resolve({
-              ok: false,
-              message: uiText("payment.resolutionLow", {
-                width,
-                height,
-                minWidth: MIN_SCREENSHOT_WIDTH,
-                minHeight: MIN_SCREENSHOT_HEIGHT,
-              })
-            });
-            return;
-          }
-          if (blurVariance < MIN_LAPLACIAN_VARIANCE) {
-            resolve({
-              ok: false,
-              message: uiText("payment.blurry")
-            });
-            return;
-          }
-          resolve({ ok: true, width, height, blurVariance });
-        };
-        img.onerror = () => {
-          URL.revokeObjectURL(url);
-          resolve({ ok: false, message: uiText("payment.invalidImage") });
-        };
-        img.src = url;
-      }),
-    [calculateBlurVariance]
+    (file) => validateScreenshotQualityFile({
+      file,
+      calculateVariance: calculateBlurVariance,
+      uiText,
+      minWidth: MIN_SCREENSHOT_WIDTH,
+      minHeight: MIN_SCREENSHOT_HEIGHT,
+      minVariance: MIN_LAPLACIAN_VARIANCE,
+    }),
+    []
   );
 
+  const {
+    uploadFile,
+    uploadPreviewUrl,
+    uploadFileRef,
+    fileInputRef,
+    handleFileChange: updateUploadState,
+    clearSelectedFile: resetSelectedFile,
+  } = usePaymentUploadState({
+    maxUploadBytes: MAX_UPLOAD_BYTES,
+    maxUploadMb: MAX_UPLOAD_MB,
+    getInvalidTypeMessage: () => getErrorMessage(PAYMENT_ERROR_CODES.invalidImage),
+    getTooLargeMessage: (fileSize) => {
+      const actualMb = (fileSize / (1024 * 1024)).toFixed(2);
+      return uiText("payment.fileTooLarge", { actual: actualMb, max: MAX_UPLOAD_MB });
+    },
+  });
+
   const savePaymentViewState = useCallback((state) => {
-    if (!isOnline) return;
-    try {
-      const safeState = { ...(state || {}) };
-      writeExpiringValue(scopedPaymentStateKey, safeState, {
-        area: "local",
-        schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
-        ttlMs: PAYMENT_STATE_TTL_MS,
-      });
-      // Clear any legacy/unscoped copies.
-      removeStoredKey(PAYMENT_STATE_KEY, "session");
-      removeStoredKey(PAYMENT_STATE_KEY, "local");
-    } catch {
-      // Ignore storage failures
-    }
+    persistPaymentViewState({
+      isOnline,
+      scopedPaymentStateKey,
+      paymentStateKey: PAYMENT_STATE_KEY,
+      schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+      ttlMs: PAYMENT_STATE_TTL_MS,
+      state,
+    });
   }, [isOnline, scopedPaymentStateKey]);
 
   const clearPaymentViewState = useCallback(() => {
-    forEachStorageArea((area) => {
-      removeStoredKey(PAYMENT_STATE_KEY, area);
-      removeStoredKey(scopedPaymentStateKey, area);
-      removeStoredKey(PAYMENT_TOKEN_KEY, area);
-      removeStoredKey(scopedPaymentTokenKey, area);
+    clearPaymentScopedState({
+      paymentStateKey: PAYMENT_STATE_KEY,
+      scopedPaymentStateKey,
+      paymentTokenKey: PAYMENT_TOKEN_KEY,
+      scopedPaymentTokenKey,
     });
   }, [scopedPaymentStateKey, scopedPaymentTokenKey]);
 
   const savePaymentToken = useCallback((token, paymentId = null) => {
-    if (!token) return;
-    try {
-      const payload = {
-        token,
-        paymentId: paymentId || null,
-        mintedAt: Date.now(),
-      };
-      writeExpiringValue(scopedPaymentTokenKey, payload, {
-        area: "local",
-        schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
-        ttlMs: PAYMENT_STATE_TTL_MS,
-      });
-      removeStoredKey(PAYMENT_TOKEN_KEY, "session");
-      removeStoredKey(PAYMENT_TOKEN_KEY, "local");
-    } catch {
-      // Ignore storage failures.
-    }
+    saveScopedPaymentToken({
+      token,
+      paymentId,
+      scopedPaymentTokenKey,
+      paymentTokenKey: PAYMENT_TOKEN_KEY,
+      schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+      ttlMs: PAYMENT_STATE_TTL_MS,
+    });
   }, [scopedPaymentTokenKey]);
 
   const loadPaymentToken = useCallback((expectedPaymentId = null) => {
-    try {
-      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
-      const scopedLocal = readExpiringValue(scopedPaymentTokenKey, null, { ...readOpts, area: "local" });
-      const normalize = (value) => {
-        if (!value) return null;
-        if (typeof value === "string") return { token: value, paymentId: null };
-        if (typeof value === "object" && value.token) return value;
-        return null;
-      };
-      const isMatch = (value) => !expectedPaymentId || !value?.paymentId || value.paymentId === expectedPaymentId;
-      const normalizedLocal = normalize(scopedLocal);
-      if (normalizedLocal && isMatch(normalizedLocal)) return normalizedLocal.token;
-      const scopedSession = readExpiringValue(scopedPaymentTokenKey, null, { ...readOpts, area: "session" });
-      const normalizedSession = normalize(scopedSession);
-      if (normalizedSession && isMatch(normalizedSession)) {
-        try {
-          writeExpiringValue(scopedPaymentTokenKey, normalizedSession, { ...readOpts, area: "local" });
-        } catch {
-          // Ignore migration failures.
-        }
-        removeStoredKey(scopedPaymentTokenKey, "session");
-        return normalizedSession.token;
-      }
-      const legacy =
-        readExpiringValue(PAYMENT_TOKEN_KEY, null, { ...readOpts, area: "local" }) ||
-        readExpiringValue(PAYMENT_TOKEN_KEY, null, { ...readOpts, area: "session" });
-      const normalizedLegacy = normalize(legacy);
-      if (normalizedLegacy && isMatch(normalizedLegacy)) {
-        try {
-          writeExpiringValue(scopedPaymentTokenKey, normalizedLegacy, { ...readOpts, area: "local" });
-        } catch {
-          // Ignore migration failures.
-        }
-        removeStoredKey(PAYMENT_TOKEN_KEY, "local");
-        removeStoredKey(PAYMENT_TOKEN_KEY, "session");
-        removeStoredKey(scopedPaymentTokenKey, "session");
-        return normalizedLegacy.token;
-      }
-    } catch {
-      // Ignore storage failures.
-    }
-    return null;
+    return loadScopedPaymentToken({
+      expectedPaymentId,
+      scopedPaymentTokenKey,
+      paymentTokenKey: PAYMENT_TOKEN_KEY,
+      schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+      ttlMs: PAYMENT_STATE_TTL_MS,
+    });
   }, [scopedPaymentTokenKey]);
 
   const getPaymentStatusWithRetry = useCallback(async ({
@@ -408,127 +278,49 @@ export function usePaymentLinkPage({
     throw new Error("payment_status_retry_exhausted");
   }, [loadPaymentToken, savePaymentToken]);
 
-  const loadPaymentViewState = useCallback(() => {
-    try {
-      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
-      let data = readExpiringValue(scopedPaymentStateKey, null, { ...readOpts, area: "local" });
-      if (!data) {
-        const legacy = readExpiringValue(scopedPaymentStateKey, null, { ...readOpts, area: "session" }) ||
-          readExpiringValue(PAYMENT_STATE_KEY, null, { ...readOpts, area: "local" }) ||
-          readExpiringValue(PAYMENT_STATE_KEY, null, { ...readOpts, area: "session" });
-        if (legacy) {
-          try {
-            writeExpiringValue(scopedPaymentStateKey, legacy, { ...readOpts, area: "local" });
-          } catch {
-            // Ignore migration failures.
-          }
-          forEachStorageArea((area) => removeStoredKey(PAYMENT_STATE_KEY, area));
-          removeStoredKey(scopedPaymentStateKey, "session");
-          data = legacy;
-        }
-      }
-      if (!data || data[PAYMENT_STATE_FIELDS.publicId] !== publicId) return null;
-      return data;
-    } catch {
-      return null;
-    }
-  }, [publicId, scopedPaymentStateKey]);
+  const loadPaymentViewState = useCallback(() => loadStoredPaymentViewState({
+    publicId,
+    scopedPaymentStateKey,
+    paymentStateKey: PAYMENT_STATE_KEY,
+    schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+    ttlMs: PAYMENT_STATE_TTL_MS,
+    publicIdField: PAYMENT_STATE_FIELDS.publicId,
+  }), [publicId, scopedPaymentStateKey]);
 
-  const loadStoredPaymentId = useCallback(() => {
-    try {
-      const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
-      const scopedLocal = readExpiringValue(scopedPaymentIdKey, null, { ...readOpts, area: "local" });
-      if (scopedLocal) return scopedLocal;
-      const scopedSession = readExpiringValue(scopedPaymentIdKey, null, { ...readOpts, area: "session" });
-      if (scopedSession) {
-        try {
-          writeExpiringValue(scopedPaymentIdKey, scopedSession, { ...readOpts, area: "local" });
-        } catch {
-          // Ignore migration failures.
-        }
-        removeStoredKey(scopedPaymentIdKey, "session");
-        return scopedSession;
-      }
-      const legacy =
-        readExpiringValue(PAYMENT_ID_KEY, null, { ...readOpts, area: "local" }) ||
-        readExpiringValue(PAYMENT_ID_KEY, null, { ...readOpts, area: "session" });
-      if (legacy) {
-        try {
-          writeExpiringValue(scopedPaymentIdKey, legacy, { ...readOpts, area: "local" });
-        } catch {
-          // Ignore migration failures.
-        }
-        removeStoredKey(PAYMENT_ID_KEY, "local");
-        removeStoredKey(PAYMENT_ID_KEY, "session");
-        removeStoredKey(scopedPaymentIdKey, "session");
-        return legacy;
-      }
-    } catch {
-      // Ignore storage failures.
-    }
-    return null;
-  }, [scopedPaymentIdKey]);
+  const loadStoredPaymentId = useCallback(() => loadPersistedPaymentId({
+    scopedPaymentIdKey,
+    paymentIdKey: PAYMENT_ID_KEY,
+    schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+    ttlMs: PAYMENT_STATE_TTL_MS,
+  }), [scopedPaymentIdKey]);
 
   // Timer state persistence helpers
   const saveTimerState = useCallback((expiresAt, paused = null) => {
-    const payload = {
-      expiresAt,
-      totalDurationMs: Math.max(1000, timerTotalMsRef.current || 1000),
-      pausedRemainingMs: paused?.remainingMs ?? null,
-      pausedAt: paused?.pausedAt ?? null,
-    };
-    writeExpiringValue(scopedPaymentTimerKey, payload, {
-      area: "local",
+    persistTimerState({
+      scopedPaymentTimerKey,
+      paymentTimerKey: PAYMENT_TIMER_KEY,
       schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
       ttlMs: PAYMENT_STATE_TTL_MS,
+      expiresAt,
+      totalDurationMs: timerTotalMsRef.current,
+      paused,
     });
-    removeStoredKey(PAYMENT_TIMER_KEY, "session");
-    removeStoredKey(PAYMENT_TIMER_KEY, "local");
   }, [scopedPaymentTimerKey]);
 
   const clearTimerState = useCallback(() => {
-    forEachStorageArea((area) => {
-      removeStoredKey(PAYMENT_TIMER_KEY, area);
-      removeStoredKey(scopedPaymentTimerKey, area);
+    clearScopedTimerState({
+      paymentTimerKey: PAYMENT_TIMER_KEY,
+      scopedPaymentTimerKey,
     });
   }, [scopedPaymentTimerKey]);
 
   const getTimerState = useCallback(() => {
-    const readOpts = { schemaVersion: PAYMENT_STATE_SCHEMA_VERSION, ttlMs: PAYMENT_STATE_TTL_MS };
-    let value = readExpiringValue(scopedPaymentTimerKey, null, { ...readOpts, area: "local" });
-    if (!value) {
-      const legacy = readExpiringValue(scopedPaymentTimerKey, null, { ...readOpts, area: "session" }) ||
-        readExpiringValue(PAYMENT_TIMER_KEY, null, { ...readOpts, area: "local" }) ||
-        readExpiringValue(PAYMENT_TIMER_KEY, null, { ...readOpts, area: "session" });
-      if (legacy) {
-        try {
-          writeExpiringValue(scopedPaymentTimerKey, legacy, { ...readOpts, area: "local" });
-        } catch {
-          // Ignore migration failures.
-        }
-        forEachStorageArea((area) => removeStoredKey(PAYMENT_TIMER_KEY, area));
-        removeStoredKey(scopedPaymentTimerKey, "session");
-        value = legacy;
-      }
-    }
-    if (typeof value === "string") {
-      return { expiresAt: value, totalDurationMs: null, pausedRemainingMs: null, pausedAt: null };
-    }
-    if (value && typeof value === "object") {
-      return {
-        expiresAt: value.expiresAt || null,
-        totalDurationMs: Number.isFinite(Number(value.totalDurationMs))
-          ? Number(value.totalDurationMs)
-          : null,
-        pausedRemainingMs: Number.isFinite(Number(value.pausedRemainingMs))
-          ? Number(value.pausedRemainingMs)
-          : null,
-        pausedAt: Number.isFinite(Number(value.pausedAt))
-          ? Number(value.pausedAt)
-          : null,
-      };
-    }
-    return null;
+    return getStoredTimerState({
+      scopedPaymentTimerKey,
+      paymentTimerKey: PAYMENT_TIMER_KEY,
+      schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
+      ttlMs: PAYMENT_STATE_TTL_MS,
+    });
   }, [scopedPaymentTimerKey]);
 
   const stopTimer = useCallback((clearPersisted = false) => {
@@ -541,73 +333,17 @@ export function usePaymentLinkPage({
     }
   }, [clearTimerState]);
 
-  const getServerRemainingMs = useCallback((payload) => {
-    const seconds = Number(getPaymentField(payload, PAYMENT_API_FIELDS.timeRemainingSeconds));
-    if (Number.isFinite(seconds) && seconds >= 0) {
-      return Math.max(0, Math.floor(seconds * 1000));
-    }
-    const expiresAt = getPaymentField(payload, PAYMENT_API_FIELDS.expiresAt);
-    if (expiresAt) {
-      const diff = new Date(expiresAt).getTime() - Date.now();
-      return Math.max(0, diff);
-    }
-    return 0;
-  }, []);
+  const getServerRemainingMsValue = useCallback((payload) => getServerRemainingMs(
+    payload,
+    PAYMENT_API_FIELDS.timeRemainingSeconds,
+    PAYMENT_API_FIELDS.expiresAt
+  ), []);
 
-  // Calculate timer values based on expiry
-  const calculateTimerValues = useCallback((expiresAt) => {
-    const now = new Date().getTime();
-    const expiry = new Date(expiresAt).getTime();
-    const totalDuration = Math.max(1000, timerTotalMsRef.current || 1000);
-    const remaining = Math.max(0, expiry - now);
-    const progress = Math.max(0, (remaining / totalDuration) * 100);
-    return { remaining, progress };
-  }, []);
-
-  // Format time remaining into MM:SS
-  const formatTime = (ms) => {
-    const totalSeconds = Math.ceil(ms / runtimeConfig.msPerSecond);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  // Get timer color based on progress
-  const getTimerColor = () => {
-    if (timerProgress > 60) return '#27ae60';
-    if (timerProgress > 30) return '#f39c12';
-    return '#e74c3c';
-  };
-
-  // Get border animation style for UPI button
-  const getButtonStyle = () => {
-    const color = getTimerColor();
-    return {
-      border: `3px solid ${color}`,
-      boxShadow: `0 0 10px ${color}40, 0 0 20px ${color}20`,
-      animation: timerProgress <= 15 ? 'timer-pulse 1s ease-in-out infinite' : 'none',
-    };
-  };
-
-  // Get QR code container style with animated border and glow
-  const getQrContainerStyle = () => {
-    const color = getTimerColor();
-    const progressAngle = Math.max(0, Math.min(360, (timerProgress / 100) * 360));
-    return {
-      borderRadius: '16px',
-      background: 'var(--panel)',
-      width: '100%',
-      position: 'relative',
-      backgroundImage: `linear-gradient(var(--panel), var(--panel)), conic-gradient(from -90deg, ${color} 0deg ${progressAngle}deg, var(--border-light) ${progressAngle}deg 360deg)`,
-      backgroundOrigin: 'border-box',
-      backgroundClip: 'padding-box, border-box',
-      border: '3px solid transparent',
-      boxShadow: `0 0 20px ${color}30, 0 4px 12px rgba(0,0,0,0.1)`,
-      transition: 'box-shadow 0.5s ease, background 0.5s ease',
-      animation: timerProgress <= 30 ? `qr-glow 1.5s ease-in-out infinite${timerProgress <= 15 ? ', timer-pulse 1s ease-in-out infinite' : ''}` : 'none',
-      overflow: 'hidden',
-    };
-  };
+  const getTimerValues = useCallback((expiresAt) => calculateTimerValues(expiresAt, timerTotalMsRef.current), []);
+  const formatTime = useCallback((ms) => formatCountdown(ms, runtimeConfig.msPerSecond), []);
+  const getTimerColorValue = useCallback(() => getTimerColor(timerProgress), [timerProgress]);
+  const getButtonStyle = useCallback(() => getTimerButtonStyle(timerProgress), [timerProgress]);
+  const getQrContainerStyleValue = useCallback(() => getQrContainerStyle(timerProgress), [timerProgress]);
 
   // Handle payment expiry
   const handleExpiry = useCallback(() => {
@@ -628,7 +364,7 @@ export function usePaymentLinkPage({
     saveTimerState(expiresAt);
 
     const updateTimer = () => {
-      const { remaining, progress } = calculateTimerValues(expiresAt);
+      const { remaining, progress } = getTimerValues(expiresAt);
       setTimeRemaining(remaining);
       setTimerProgress(progress);
 
@@ -640,7 +376,7 @@ export function usePaymentLinkPage({
 
     updateTimer();
     timerIntervalRef.current = scheduleInterval(updateTimer, runtimeConfig.paymentTimerTickMs);
-  }, [calculateTimerValues, saveTimerState, handleExpiry, stopTimer]);
+  }, [getTimerValues, saveTimerState, handleExpiry, stopTimer]);
 
   const requestStartTimer = useCallback((expiresAt) => {
     if (!expiresAt) return;
@@ -664,13 +400,13 @@ export function usePaymentLinkPage({
   const resumeTimerFromCurrentPayment = useCallback(() => {
     const expiresAt = getPaymentField(paymentData, PAYMENT_API_FIELDS.expiresAt);
     if (!expiresAt) return;
-    const { remaining } = calculateTimerValues(expiresAt);
+    const { remaining } = getTimerValues(expiresAt);
     if (remaining > 0) {
       requestStartTimer(expiresAt);
       return;
     }
     handleExpiry();
-  }, [paymentData, calculateTimerValues, requestStartTimer, handleExpiry]);
+  }, [paymentData, getTimerValues, requestStartTimer, handleExpiry]);
 
   const resumePausedTimer = useCallback(() => {
     const paused = pausedTimerRef.current;
@@ -754,13 +490,13 @@ export function usePaymentLinkPage({
       if (createdToken) {
         savePaymentToken(createdToken, createdPaymentId);
       }
-      writeExpiringValue(scopedPaymentIdKey, getPaymentField(data, PAYMENT_API_FIELDS.id), {
-        area: "local",
+      saveScopedPaymentId({
+        paymentId: getPaymentField(data, PAYMENT_API_FIELDS.id),
+        scopedPaymentIdKey,
+        paymentIdKey: PAYMENT_ID_KEY,
         schemaVersion: PAYMENT_STATE_SCHEMA_VERSION,
         ttlMs: PAYMENT_STATE_TTL_MS,
       });
-      removeStoredKey(PAYMENT_ID_KEY, "session");
-      removeStoredKey(PAYMENT_ID_KEY, "local");
 
       const expiresAt = new Date(getPaymentField(data, PAYMENT_API_FIELDS.expiresAt));
       const now = new Date();
@@ -768,7 +504,7 @@ export function usePaymentLinkPage({
         throw new Error(getErrorMessage(PAYMENT_ERROR_CODES.sessionExpired));
       }
 
-      const serverRemainingMs = getServerRemainingMs(data);
+      const serverRemainingMs = getServerRemainingMsValue(data);
       timerTotalMsRef.current = Math.max(
         1000,
         serverRemainingMs || Math.max(0, expiresAt.getTime() - now.getTime())
@@ -798,9 +534,7 @@ export function usePaymentLinkPage({
       }
       const errorMessage = timedOut
         ? uiText("payment.createTimeout")
-        : err.code
-          ? (err.message || getErrorMessage(err.code))
-          : err.message || getErrorMessage(PAYMENT_ERROR_CODES.systemCreate);
+        : getDisplayErrorMessage(err, PAYMENT_ERROR_CODES.systemCreate);
       showRetryHintError(errorMessage);
       forEachStorageArea((area) => {
         removeStoredKey(PAYMENT_ID_KEY, area);
@@ -823,7 +557,7 @@ export function usePaymentLinkPage({
         setIsLoading(false);
       }
     }
-  }, [beginOperation, fetchPaymentQr, getServerRemainingMs, isMobile, isOnline, isOperationCurrent, onParticipantNotFound, publicId, requestStartTimer, savePaymentToken, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError, stopTimer]);
+  }, [beginOperation, fetchPaymentQr, getServerRemainingMsValue, isMobile, isOnline, isOperationCurrent, onParticipantNotFound, publicId, requestStartTimer, savePaymentToken, savePaymentViewState, scopedPaymentIdKey, scopedPendingCreateKey, showRetryHintError, stopTimer]);
 
   useEffect(() => {
     return () => {
@@ -948,11 +682,11 @@ export function usePaymentLinkPage({
               [PAYMENT_API_FIELDS.expiresAt]: getPaymentField(statusData, PAYMENT_API_FIELDS.expiresAt) || getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.expiresAt),
               [PAYMENT_API_FIELDS.timeRemainingSeconds]: getPaymentField(statusData, PAYMENT_API_FIELDS.timeRemainingSeconds) ?? getPaymentField(restoredPaymentData, PAYMENT_API_FIELDS.timeRemainingSeconds),
             };
-            const serverRemainingMs = getServerRemainingMs(statusData || mergedPaymentData);
+            const serverRemainingMs = getServerRemainingMsValue(statusData || mergedPaymentData);
             if (!storedTimer?.totalDurationMs) {
               timerTotalMsRef.current = Math.max(1000, serverRemainingMs || timerTotalMsRef.current);
             }
-            const { remaining, progress } = calculateTimerValues(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
+            const { remaining, progress } = getTimerValues(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
             if (remaining > 0 && restoredStatus !== PAYMENT_STATUS.success) {
               if (cancelled) return;
               setPaymentData(mergedPaymentData);
@@ -977,7 +711,7 @@ export function usePaymentLinkPage({
               if (storedTimer?.totalDurationMs) {
                 timerTotalMsRef.current = Math.max(1000, storedTimer.totalDurationMs);
               }
-              const { remaining, progress } = calculateTimerValues(expiresAt);
+              const { remaining, progress } = getTimerValues(expiresAt);
               if (remaining > 0) {
                 if (cancelled) return;
               setPaymentData(restoredPaymentData);
@@ -1071,11 +805,11 @@ export function usePaymentLinkPage({
           }
 
           if (serverStatus === PAYMENT_STATUS.pending || serverStatus === PAYMENT_STATUS.processing) {
-            const serverRemainingMs = getServerRemainingMs(statusData || mergedPaymentData);
+            const serverRemainingMs = getServerRemainingMsValue(statusData || mergedPaymentData);
             if (!storedTimer?.totalDurationMs) {
               timerTotalMsRef.current = Math.max(1000, serverRemainingMs || timerTotalMsRef.current);
             }
-            const { remaining, progress } = calculateTimerValues(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
+            const { remaining, progress } = getTimerValues(getPaymentField(mergedPaymentData, PAYMENT_API_FIELDS.expiresAt));
             if (remaining > 0) {
               if (cancelled) return;
               setPaymentData(mergedPaymentData);
@@ -1119,16 +853,15 @@ export function usePaymentLinkPage({
       stopTimer();
     };
   }, [
-    calculateTimerValues,
+    getTimerValues,
     clearPaymentViewState,
     createPayment,
     fetchPaymentQr,
-    getServerRemainingMs,
+    getServerRemainingMsValue,
     getVerificationErrorMessage,
     getTimerState,
     handleExpiry,
     isMobile,
-    isPaymentAmountMismatch,
     loadStoredPaymentId,
     loadPaymentViewState,
     loadPaymentToken,
@@ -1174,7 +907,7 @@ export function usePaymentLinkPage({
       return;
     }
     if (expiresAt) {
-      const { remaining } = calculateTimerValues(expiresAt);
+      const { remaining } = getTimerValues(expiresAt);
       if (remaining > 0) {
         startTimer(expiresAt);
       } else {
@@ -1186,65 +919,26 @@ export function usePaymentLinkPage({
     return () => {
       stopTimer();
     };
-  }, [paymentData, getTimerState, clearTimerState, calculateTimerValues, startTimer, handleExpiry, stopTimer, verifying]);
+  }, [paymentData, getTimerState, clearTimerState, getTimerValues, startTimer, handleExpiry, stopTimer, verifying]);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const clearPreviouslySelected = () => {
-        if (uploadPreviewUrl) {
-          URL.revokeObjectURL(uploadPreviewUrl);
-        }
-        setUploadFile(null);
-        uploadFileRef.current = null;
-        setUploadPreviewUrl("");
+  const handleFileChange = (event) => {
+    updateUploadState(event, {
+      onInvalid: showRetryHintError,
+      onSelected: () => {
+        setError(null);
         setFailureReasons([]);
         setPaymentStatus(PAYMENT_STATUS.pending);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-        if (e?.target) {
-          e.target.value = "";
-        }
-      };
-      if (!file.type.startsWith("image/")) {
-        clearPreviouslySelected();
-        showRetryHintError(getErrorMessage(PAYMENT_ERROR_CODES.invalidImage));
-        return;
-      }
-      if (file.size > MAX_UPLOAD_BYTES) {
-        const actualMb = (file.size / (1024 * 1024)).toFixed(2);
-        clearPreviouslySelected();
-        showRetryHintError(uiText("payment.fileTooLarge", { actual: actualMb, max: MAX_UPLOAD_MB }));
-        return;
-      }
-      if (uploadPreviewUrl) {
-        URL.revokeObjectURL(uploadPreviewUrl);
-      }
-      setUploadFile(file);
-      uploadFileRef.current = file;
-      setUploadPreviewUrl(URL.createObjectURL(file));
-      setError(null);
-      setFailureReasons([]);
-      setPaymentStatus(PAYMENT_STATUS.pending);
-      setRetryInSeconds(0);
-    }
+        setRetryInSeconds(0);
+      },
+    });
   };
 
   const clearSelectedFile = () => {
-    if (uploadPreviewUrl) {
-      URL.revokeObjectURL(uploadPreviewUrl);
-    }
-    setUploadFile(null);
-    uploadFileRef.current = null;
-    setUploadPreviewUrl("");
+    resetSelectedFile();
     setFailureReasons([]);
     setPaymentStatus(PAYMENT_STATUS.pending);
     setError(null);
     setRetryInSeconds(0);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
   };
 
   const calculateSha256 = async (file) => {
@@ -1282,12 +976,7 @@ export function usePaymentLinkPage({
     clearPaymentViewState();
     setPaymentData(null);
     setPaymentStatus(PAYMENT_STATUS.pending);
-    setUploadFile(null);
-    uploadFileRef.current = null;
-    if (uploadPreviewUrl) {
-      URL.revokeObjectURL(uploadPreviewUrl);
-      setUploadPreviewUrl("");
-    }
+    resetSelectedFile();
     setFailureReasons([]);
     setError(null);
     setRetryInSeconds(0);
@@ -1322,7 +1011,7 @@ export function usePaymentLinkPage({
     // Pause timer while verification is running; keep persisted expiry to resume on errors.
     const currentExpiresAt = getPaymentField(paymentData, PAYMENT_API_FIELDS.expiresAt);
     if (currentExpiresAt) {
-      const { remaining } = calculateTimerValues(currentExpiresAt);
+      const { remaining } = getTimerValues(currentExpiresAt);
       pausedTimerRef.current = {
         remainingMs: remaining,
         totalDurationMs: timerTotalMsRef.current,
@@ -1441,7 +1130,7 @@ export function usePaymentLinkPage({
         resumePausedTimer();
         return;
       }
-      const serverRemainingMs = getServerRemainingMs(precheckStatus);
+      const serverRemainingMs = getServerRemainingMsValue(precheckStatus);
       if (serverRemainingMs > 0) {
         timerTotalMsRef.current = Math.max(1000, serverRemainingMs);
       }
@@ -1533,7 +1222,7 @@ export function usePaymentLinkPage({
           );
         } else if (err?.status === 409) {
           // Known conflict errors (e.g., reused/rejected screenshot). Show UI message and stop.
-          showRetryHintError(err?.message || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
+          showRetryHintError(getDisplayErrorMessage(err, PAYMENT_ERROR_CODES.screenshotRejected));
           lastRejectedShaRef.current = selectedFileHash || lastRejectedShaRef.current;
           setVerifying(false);
           resumePausedTimer();
@@ -1553,7 +1242,7 @@ export function usePaymentLinkPage({
         const reasons = verification.failure_reasons || [];
         setFailureReasons(reasons);
         const specificError = getVerificationErrorMessage(reasons);
-        showRetryHintError(specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
+          showRetryHintError(specificError || getErrorMessage(PAYMENT_ERROR_CODES.screenshotRejected));
         lastRejectedShaRef.current = selectedFileHash || lastRejectedShaRef.current;
         savePaymentViewState({
           [PAYMENT_STATE_FIELDS.publicId]: effectivePublicId,
@@ -1641,12 +1330,12 @@ export function usePaymentLinkPage({
       }
       if (!isOperationCurrent(operationId)) return;
       // Handle specific error codes with better messaging
-      if (err.code === PAYMENT_ERROR_CODES.sessionExpired || err.code === "ERR_PAYMENT_EXPIRED") {
+      if (err.code === PAYMENT_ERROR_CODES.sessionExpired) {
         handleExpiry();
         return;
       }
       if (err.code === PAYMENT_ERROR_CODES.maxAttempts) {
-        showRetryHintError(err.message || getErrorMessage(PAYMENT_ERROR_CODES.maxAttempts));
+        showRetryHintError(getDisplayErrorMessage(err, PAYMENT_ERROR_CODES.maxAttempts));
         setPaymentStatus(PAYMENT_STATUS.failed);
         return;
       }
@@ -1656,7 +1345,7 @@ export function usePaymentLinkPage({
         const sizeLabel = Number.isFinite(actualMb) ? actualMb.toFixed(2) : "unknown";
         showRetryHintError(uiText("payment.fileTooLarge", { actual: sizeLabel, max: MAX_UPLOAD_MB }));
       } else if (err.code) {
-        showRetryHintError(err.message || getErrorMessage(err.code));
+        showRetryHintError(getDisplayErrorMessage(err, err.code));
       } else if (err.message && err.message.toLowerCase().includes(NETWORK_ERROR_HINTS.timeout)) {
         showRetryHintError(getErrorMessage('SYS_002_0008'));
       } else if (err.message && err.message.toLowerCase().includes(NETWORK_ERROR_HINTS.fetch)) {
@@ -1683,10 +1372,10 @@ export function usePaymentLinkPage({
     isOperationCurrent,
     onNext,
     getVerificationErrorMessage,
-    getServerRemainingMs,
+    getServerRemainingMsValue,
     handleExpiry,
     resumePausedTimer,
-    calculateTimerValues,
+    getTimerValues,
     saveTimerState,
     validateScreenshotQuality,
     loadPaymentToken,
@@ -1706,6 +1395,7 @@ export function usePaymentLinkPage({
     sessionId,
     scopedPaymentIdKey,
     scopedPendingVerifyKey,
+    uploadFileRef,
   ]);
 
   const markQrVisible = useCallback(() => {
@@ -1812,14 +1502,6 @@ export function usePaymentLinkPage({
     return () => clearScheduledTimeout(t);
   }, [retryInSeconds]);
 
-  useEffect(() => {
-    return () => {
-      if (uploadPreviewUrl) {
-        URL.revokeObjectURL(uploadPreviewUrl);
-      }
-    };
-  }, [uploadPreviewUrl]);
-
   return {
     MAX_UPLOAD_MB,
     PAYMENT_AMOUNT_LABEL,
@@ -1844,9 +1526,9 @@ export function usePaymentLinkPage({
     retryBlocked,
     retryButtonLabel,
     formatTime,
-    getTimerColor,
+    getTimerColor: getTimerColorValue,
     getButtonStyle,
-    getQrContainerStyle,
+    getQrContainerStyle: getQrContainerStyleValue,
     getVerificationErrorMessage,
     getPaymentRecoverySteps,
     createPayment,

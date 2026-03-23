@@ -6,7 +6,7 @@ import ThemeToggleIcon from "./ThemeToggleIcon.jsx";
 import DSButton from "./design/DSButton.jsx";
 import { useIsMobile } from "../hooks/useIsMobile.js";
 import { uiText } from "../utils/uiText";
-import { NOT_FOUND_ILLUSTRATION } from "../content/notFoundIllustration.js";
+import { DOG_ILLUSTRATION } from "../content/notFoundIllustration.js";
 import { DOM_ROLES } from "../constants/dom.js";
 import { runtimeConfig } from "../config/runtime";
 
@@ -33,14 +33,6 @@ export default function MaintenancePage({
     }, runtimeConfig.countdownTickMs);
     return () => clearInterval(timer);
   }, [reloading, retryIn]);
-
-  React.useEffect(() => {
-    if (reloading || retryIn > 0) return;
-    if (autoRetrySeconds > 0 && onRetry) {
-      setReloading(true);
-      onRetry();
-    }
-  }, [autoRetrySeconds, onRetry, reloading, retryIn]);
 
   const handleRetry = () => {
     setReloading(true);
@@ -83,9 +75,9 @@ export default function MaintenancePage({
       <div className="panel">
         <div className="page-hero">
           <div className="not-found-dog">
-            <svg viewBox={NOT_FOUND_ILLUSTRATION.viewBox} role={DOM_ROLES.image} aria-label={NOT_FOUND_ILLUSTRATION.ariaLabel}>
+            <svg viewBox={DOG_ILLUSTRATION.viewBox} role={DOM_ROLES.image} aria-label={DOG_ILLUSTRATION.ariaLabel}>
               <defs>
-                {NOT_FOUND_ILLUSTRATION.gradients.map((gradient) => (
+                {DOG_ILLUSTRATION.gradients.map((gradient) => (
                   <linearGradient key={gradient.id} id={gradient.id} x1={gradient.x1} y1={gradient.y1} x2={gradient.x2} y2={gradient.y2}>
                     {gradient.stops.map((stop, index) => (
                       <stop key={`${gradient.id}-${index}`} offset={stop.offset} stopColor={stop.stopColor} />
@@ -93,7 +85,7 @@ export default function MaintenancePage({
                   </linearGradient>
                 ))}
               </defs>
-              {NOT_FOUND_ILLUSTRATION.shapes.map((shape, index) => React.createElement(shape.type, {
+              {DOG_ILLUSTRATION.shapes.map((shape, index) => React.createElement(shape.type, {
                 key: `${shape.type}-${index}`,
                 ...shape.props,
               }))}
@@ -104,12 +96,12 @@ export default function MaintenancePage({
             icon="!"
             title={uiText("maintenance.title")}
             message={error?.message || getErrorMessage("SYS_002_0021")}
-            actionLabel={retryIn > 0 ? uiText("common.tryAgainIn", { seconds: retryIn }) : uiText("maintenance.action")}
+            actionLabel={retryIn > 0 ? uiText("common.tryAgainIn", { seconds: retryIn }) : uiText("common.reload")}
             onAction={handleRetry}
+            disabled={retryIn > 0}
           />
         </div>
       </div>
     </div>
   );
 }
-

@@ -3,9 +3,7 @@ Submission routes module for C.O.G.N.I.T. backend.
 Handles survey submissions and survey telemetry capture.
 """
 
-import hashlib
 import logging
-from datetime import datetime, timezone
 
 from flask import request, g
 
@@ -53,38 +51,6 @@ from app.constants.request_keys import (
     REQUEST_KEY_TURNSTILE_TOKEN,
 )
 from app.constants.route_constants import SUBMIT_ROUTE
-from app.constants.submission_constants import (
-    ATTENTION_FAILURE_COPIED_PATTERN,
-    ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT,
-    ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD,
-    ATTENTION_FAILURE_TOO_FAST,
-    ATTENTION_FAILURE_TOO_SHORT,
-    PARTICIPANT_META_KEY_ATTENTION_MONITOR,
-    PARTICIPANT_META_KEY_CONSECUTIVE_FAILURES,
-    PARTICIPANT_META_KEY_LAST_CHECKED_AT,
-    PARTICIPANT_META_KEY_RECENT_ATTENTION_SCORE,
-    PARTICIPANT_META_KEY_RECENT_RESULTS,
-    SUBMISSION_META_KEY_ATTENTION,
-    SUBMISSION_META_KEY_CONTENT_FINGERPRINT,
-    SUBMISSION_META_KEY_DISTINCT_WORD_COUNT,
-    SUBMISSION_META_KEY_EXPECTED_TERMS,
-    SUBMISSION_META_KEY_FAILURE_REASONS,
-    SUBMISSION_META_KEY_MATCHED_TERMS,
-    SUBMISSION_META_KEY_STRICT,
-    SUBMISSION_RESPONSE_STATUS,
-)
-from app.constants.response_keys import (
-    RESPONSE_KEY_ATTENTION_PASSED,
-    RESPONSE_KEY_ATTENTION_STATUS,
-    RESPONSE_KEY_ENGAGEMENT,
-    RESPONSE_KEY_FLAGGED_TOO_FAST,
-    RESPONSE_KEY_IS_ATTENTION_CHECK,
-    RESPONSE_KEY_IS_SURVEY,
-    RESPONSE_KEY_QUALITY_SCORE,
-    RESPONSE_KEY_STATUS,
-    RESPONSE_KEY_SURVEY_INDEX,
-    RESPONSE_KEY_WORD_COUNT,
-)
 from app.constants.observability_constants import (
     OBS_EVENT_SUBMISSION_COMMIT_FAILED,
     OBS_EVENT_SUBMISSION_RELEASE_RESERVATION_FAILED,
@@ -135,6 +101,12 @@ from app.services import (
     update_participant_metadata,
     upsert_participant_activity_stats,
 )
+from app.services.submission_processing_service import (
+    apply_attention_monitor,
+    build_submission_response_payload,
+    evaluate_attention_result,
+    merge_submission_engagement,
+)
 from middleware.payment_flow import require_payment_completed
 
 
@@ -167,34 +139,34 @@ def submit():
     ).strip()[:128]
     public_id = d.get(REQUEST_KEY_PUBLIC_ID)
     if not public_id:
-        return create_error_response("MISSING_FIELDS", {"fields": ["public_id"]})
+        return create_error_response("VAL_SUBMISSION_PUBLIC_ID_REQUIRED")
 
-    turnstile_ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host)
+    turnstile_ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host, endpoint=request.path)
     if not turnstile_ok:
-        return create_error_response("BOT_CHALLENGE_FAILED")
+        return create_error_response("BOT_SUBMISSION_FAILED")
 
     image_id_str = d.get(REQUEST_KEY_IMAGE_ID)
     if not image_id_str:
-        return create_error_response("MISSING_FIELDS", {"fields": ["image_id"]})
+        return create_error_response("VAL_SUBMISSION_IMAGE_ID_REQUIRED")
 
     description = (d.get(REQUEST_KEY_DESCRIPTION) or "").strip()
     if len(description) < MIN_DESCRIPTION_LENGTH or len(description) > MAX_DESCRIPTION_LENGTH:
-        return create_error_response("DESCRIPTION_LENGTH")
+        return create_error_response("VAL_DESC_LENGTH")
 
     feedback = (d.get(REQUEST_KEY_FEEDBACK) or "").strip()
     if len(feedback) < MIN_FEEDBACK_LENGTH or len(feedback) > MAX_FEEDBACK_LENGTH:
-        return create_error_response("FEEDBACK_LENGTH")
+        return create_error_response("VAL_FEEDBACK_LENGTH")
 
     try:
         rating = int(d[REQUEST_KEY_RATING])
         if not MIN_RATING <= rating <= MAX_RATING:
             raise ValueError
     except Exception:
-        return create_error_response("RATING_INVALID")
+        return create_error_response("VAL_RATING_INVALID")
 
     word_count = count_words(description)
     if word_count < MIN_WORD_COUNT:
-        return create_error_response("WORD_COUNT", {"actual": word_count})
+        return create_error_response("VAL_WORD_COUNT", {"actual": word_count})
 
     ts = clamp_time_spent_seconds(d.get(REQUEST_KEY_TIME_SPENT_SECONDS))
 
@@ -242,9 +214,9 @@ def submit():
         p_row = fetch_submission_participant(db, public_id)
 
         if not p_row or p_row[2]:
-            return create_error_response("PARTICIPANT_NOT_FOUND")
+            return create_error_response("NF_SUBMISSION_PARTICIPANT_NOT_FOUND")
         if not p_row[1]:
-            return create_error_response("CONSENT_REQUIRED")
+            return create_error_response("AUTH_CONSENT_REQUIRED")
         try:
             ensure_submission_workflow_state(p_row[4], p_row[5])
         except StateTransitionError as workflow_err:
@@ -256,7 +228,7 @@ def submit():
                 public_id=public_id,
                 reason=str(workflow_err),
             )
-            return create_error_response("PAYMENT_INVALID_STATE")
+            return create_error_response("PAY_SUBMISSION_WORKFLOW_INVALID_STATE")
 
         participant_id = p_row[0]
         participant_meta = p_row[3] or {}
@@ -264,11 +236,11 @@ def submit():
             participant_meta = {}
 
         if p_row[6]:
-            return create_error_response("FLAGGED_ACCOUNT")
+            return create_error_response("AUTH_ACCOUNT_FLAGGED")
 
         img_row = fetch_submission_image_target(db, image_id_str)
         if not img_row:
-            return create_error_response("INVALID_IMAGE_ID")
+            return create_error_response("VAL_INVALID_IMAGE_ID")
         image_id_fk = img_row[0]
         is_survey = bool(img_row[1])
 
@@ -279,75 +251,47 @@ def submit():
             survey_index = None
 
             if has_duplicate_non_survey_submission(db, participant_id=participant_id, image_id_fk=image_id_fk):
-                return create_error_response("DUPLICATE_SUBMISSION")
+                return create_error_response("DUP_SUBMISSION")
 
         ac_row = fetch_attention_check(db, image_id_fk)
 
         is_attention = ac_row is not None
-        attention_passed = None
-        attention_expected_terms = []
-        attention_matched_terms = []
-        attention_failure_reasons = []
-        description_fingerprint = hashlib.sha256(normalize_for_attention(description).encode("utf-8")).hexdigest()
         distinct_word_count = len(set(alphabetic_tokens(description)))
-        if is_attention:
-            expected = ac_row[0].strip().lower()
-            strict = ac_row[1]
-            attention_expected_terms = extract_expected_terms(expected) or [normalize_for_attention(expected)]
-            attention_matched_terms = match_attention_terms(description, attention_expected_terms, strict)
-            attention_passed = len(attention_matched_terms) > 0
-            if not attention_passed:
-                attention_failure_reasons.append(ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD)
-
-            if len(description.strip()) < ATTENTION_MIN_CHAR_LENGTH:
-                attention_passed = False
-                attention_failure_reasons.append(ATTENTION_FAILURE_TOO_SHORT)
-
-            if distinct_word_count < ATTENTION_MIN_DISTINCT_WORDS:
-                attention_passed = False
-                attention_failure_reasons.append(ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT)
-
-            copied = has_copied_attention_pattern(
-                db,
-                image_id_fk=image_id_fk,
-                description_fingerprint=description_fingerprint,
-                participant_id=participant_id,
-            )
-            if copied:
-                attention_passed = False
-                attention_failure_reasons.append(ATTENTION_FAILURE_COPIED_PATTERN)
-
         dynamic_too_fast_threshold = compute_dynamic_too_fast_threshold(TOO_FAST_SECONDS, word_count)
         too_fast = ts is not None and ts < dynamic_too_fast_threshold
-        if is_attention and too_fast:
-            attention_passed = False
-            attention_failure_reasons.append(ATTENTION_FAILURE_TOO_FAST)
+        attention_result = evaluate_attention_result(
+            db=db,
+            is_attention=is_attention,
+            attention_check_row=ac_row,
+            description=description,
+            normalize_for_attention=normalize_for_attention,
+            extract_expected_terms=extract_expected_terms,
+            match_attention_terms=match_attention_terms,
+            has_copied_attention_pattern=has_copied_attention_pattern,
+            image_id_fk=image_id_fk,
+            participant_id=participant_id,
+            distinct_word_count=distinct_word_count,
+            attention_min_char_length=ATTENTION_MIN_CHAR_LENGTH,
+            attention_min_distinct_words=ATTENTION_MIN_DISTINCT_WORDS,
+            too_fast=bool(is_attention and too_fast),
+        )
+        attention_passed = attention_result["attention_passed"]
+        attention_expected_terms = attention_result["attention_expected_terms"]
+        attention_matched_terms = attention_result["attention_matched_terms"]
+        attention_failure_reasons = attention_result["attention_failure_reasons"]
+        description_fingerprint = attention_result["description_fingerprint"]
+        submission_meta = attention_result["submission_meta"]
 
-        submission_meta = {}
-        if is_attention:
-            submission_meta[SUBMISSION_META_KEY_ATTENTION] = {
-                SUBMISSION_META_KEY_STRICT: bool(ac_row[1]),
-                SUBMISSION_META_KEY_EXPECTED_TERMS: attention_expected_terms,
-                SUBMISSION_META_KEY_MATCHED_TERMS: attention_matched_terms,
-                SUBMISSION_META_KEY_FAILURE_REASONS: attention_failure_reasons,
-                SUBMISSION_META_KEY_DISTINCT_WORD_COUNT: distinct_word_count,
-                SUBMISSION_META_KEY_CONTENT_FINGERPRINT: description_fingerprint,
-            }
-
-        engagement = normalize_engagement_counts(d)
-        tab_switch_count = engagement["tab_switch_count"]
-        page_close_attempts = engagement["page_close_attempts"]
-        network_disconnects = engagement["network_disconnects"]
-        if survey_metrics["survey_time_spent_ms"] == 0 and ts is not None:
-            survey_metrics["survey_time_spent_ms"] = max(0, int(float(ts) * 1000))
-        if survey_metrics["survey_page_views"] == 0:
-            survey_metrics["survey_page_views"] = 1
-        if survey_metrics["survey_tab_switches"] == 0:
-            survey_metrics["survey_tab_switches"] = tab_switch_count
-        if survey_metrics["survey_page_close_attempts"] == 0:
-            survey_metrics["survey_page_close_attempts"] = page_close_attempts
-        if survey_metrics["survey_network_disconnects"] == 0:
-            survey_metrics["survey_network_disconnects"] = network_disconnects
+        engagement_result = merge_submission_engagement(
+            normalize_engagement_counts=normalize_engagement_counts,
+            payload=d,
+            survey_metrics=survey_metrics,
+            time_spent_seconds=ts,
+        )
+        tab_switch_count = engagement_result["tab_switch_count"]
+        page_close_attempts = engagement_result["page_close_attempts"]
+        network_disconnects = engagement_result["network_disconnects"]
+        survey_metrics = engagement_result["survey_metrics"]
 
         quality = calculate_quality_score(
             word_count,
@@ -386,39 +330,21 @@ def submit():
             survey_metrics=survey_metrics,
         )
 
-        consecutive_failures = 0
-        recent_attention_score = None
-        hard_flag_triggered = False
-        soft_flag_triggered = False
+        monitor_result = apply_attention_monitor(
+            participant_meta=participant_meta,
+            attention_passed=attention_passed,
+            is_attention=is_attention,
+            hard_flag_consecutive_fails=ATTENTION_HARD_FLAG_CONSEC_FAILS,
+            attention_flag_min_checks=ATTENTION_FLAG_MIN_CHECKS,
+            attention_flag_threshold=ATTENTION_FLAG_THRESHOLD,
+        )
+        consecutive_failures = monitor_result["consecutive_failures"]
+        recent_attention_score = monitor_result["recent_attention_score"]
+        hard_flag_triggered = monitor_result["hard_flag_triggered"]
+        soft_flag_triggered = monitor_result["soft_flag_triggered"]
 
         if is_attention:
-            monitor = participant_meta.get(PARTICIPANT_META_KEY_ATTENTION_MONITOR, {})
-            recent_results = monitor.get(PARTICIPANT_META_KEY_RECENT_RESULTS, [])
-            if not isinstance(recent_results, list):
-                recent_results = []
-            recent_results = [bool(x) for x in recent_results[-9:]]
-            recent_results.append(bool(attention_passed))
-
-            for result in reversed(recent_results):
-                if result:
-                    break
-                consecutive_failures += 1
-
-            recent_attention_score = round(sum(1 for x in recent_results if x) / len(recent_results), 4)
-            hard_flag_triggered = consecutive_failures >= ATTENTION_HARD_FLAG_CONSEC_FAILS
-            soft_flag_triggered = (
-                len(recent_results) >= ATTENTION_FLAG_MIN_CHECKS
-                and recent_attention_score < float(ATTENTION_FLAG_THRESHOLD)
-            )
-
-            participant_meta[PARTICIPANT_META_KEY_ATTENTION_MONITOR] = {
-                PARTICIPANT_META_KEY_RECENT_RESULTS: recent_results,
-                PARTICIPANT_META_KEY_CONSECUTIVE_FAILURES: consecutive_failures,
-                PARTICIPANT_META_KEY_RECENT_ATTENTION_SCORE: recent_attention_score,
-                PARTICIPANT_META_KEY_LAST_CHECKED_AT: datetime.now(timezone.utc).isoformat(),
-            }
-
-            update_participant_metadata(db, participant_id=participant_id, participant_meta=participant_meta)
+            update_participant_metadata(db, participant_id=participant_id, participant_meta=monitor_result["participant_meta"])
             insert_attention_event_record(
                 db,
                 participant_id=participant_id,
@@ -476,32 +402,25 @@ def submit():
             word_count=int(word_count),
         )
 
-        response_payload = {
-            RESPONSE_KEY_STATUS: SUBMISSION_RESPONSE_STATUS,
-            RESPONSE_KEY_WORD_COUNT: word_count,
-            RESPONSE_KEY_QUALITY_SCORE: quality,
-            RESPONSE_KEY_ATTENTION_PASSED: attention_passed,
-            RESPONSE_KEY_FLAGGED_TOO_FAST: too_fast,
-            RESPONSE_KEY_SURVEY_INDEX: survey_index,
-            RESPONSE_KEY_IS_SURVEY: is_survey,
-            RESPONSE_KEY_IS_ATTENTION_CHECK: is_attention,
-            RESPONSE_KEY_ENGAGEMENT: {
-                "tab_switch_count": tab_switch_count,
-                "page_close_attempts": page_close_attempts,
-                "network_disconnects": network_disconnects,
-                "survey_metrics": survey_metrics,
-            },
-            RESPONSE_KEY_ATTENTION_STATUS: {
-                RESPONSE_KEY_IS_ATTENTION_CHECK: is_attention,
-                "passed": attention_passed if is_attention else None,
-                "expected_terms": attention_expected_terms,
-                "matched_terms": attention_matched_terms,
-                "failure_reasons": attention_failure_reasons,
-                "consecutive_failures": consecutive_failures if is_attention else None,
-                "recent_attention_score": recent_attention_score,
-                "hard_flag_triggered": hard_flag_triggered
-            }
-        }
+        response_payload = build_submission_response_payload(
+            word_count=word_count,
+            quality=quality,
+            attention_passed=attention_passed,
+            too_fast=too_fast,
+            survey_index=survey_index,
+            is_survey=is_survey,
+            is_attention=is_attention,
+            tab_switch_count=tab_switch_count,
+            page_close_attempts=page_close_attempts,
+            network_disconnects=network_disconnects,
+            survey_metrics=survey_metrics,
+            attention_expected_terms=attention_expected_terms,
+            attention_matched_terms=attention_matched_terms,
+            attention_failure_reasons=attention_failure_reasons,
+            consecutive_failures=consecutive_failures,
+            recent_attention_score=recent_attention_score,
+            hard_flag_triggered=hard_flag_triggered,
+        )
         save_idempotent_response(
             db,
             endpoint=SUBMIT_ROUTE,
@@ -523,6 +442,6 @@ def submit():
         except Exception:
             log_event(logger, OBS_EVENT_SUBMISSION_ROLLBACK_FAILED, level=logging.WARNING, error=str(exc))
         if "unique" in str(exc).lower() and "survey_index" in str(exc):
-            return create_error_response("SURVEY_EXISTS")
+            return create_error_response("DUP_SURVEY_ROUND")
         logger.error(LOG_SUBMISSION_FAILED, getattr(g, "request_id", None), public_id, exc)
-        return create_error_response("DATABASE_ERROR")
+        return create_error_response("SYS_SUBMISSION_SAVE_FAILED")

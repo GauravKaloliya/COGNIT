@@ -28,89 +28,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION sync_participant_payment_status()
+CREATE OR REPLACE FUNCTION set_participant_stage_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE participants
-    SET payment_status = CASE
-        WHEN NEW.status = 'success' THEN 'paid'
-        WHEN NEW.status IN ('failed', 'expired', 'rejected_fraud') THEN 'failed'
-        WHEN NEW.status = 'refunded' THEN 'refunded'
-        ELSE payment_status
-    END,
-    current_stage = CASE
-        WHEN NEW.status = 'success' THEN 'survey'
-        WHEN NEW.status IN ('failed', 'expired', 'rejected_fraud') THEN 'payment'
-        ELSE current_stage
-    END,
-    stage_updated_at = CASE
-        WHEN NEW.status = 'success' OR NEW.status IN ('failed', 'expired', 'rejected_fraud') THEN CURRENT_TIMESTAMP
-        ELSE stage_updated_at
-    END
-    WHERE id = NEW.participant_id;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION reject_expired_pending_payments()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.status IN ('pending', 'processing')
-       AND NEW.expires_at <= CURRENT_TIMESTAMP THEN
-        NEW.status := 'expired';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION validate_payment_status_transition()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF OLD.status IN ('success', 'rejected_fraud', 'expired', 'failed') THEN
-        RAISE EXCEPTION 'Cannot change payment status from final state: %', OLD.status;
-    END IF;
-
-    IF OLD.status = 'pending' AND NEW.status NOT IN ('processing', 'expired', 'failed', 'rejected_fraud') THEN
-        RAISE EXCEPTION 'Invalid transition from pending to %', NEW.status;
-    END IF;
-
-    IF OLD.status = 'processing' AND NEW.status NOT IN ('success', 'rejected_fraud', 'failed') THEN
-        RAISE EXCEPTION 'Invalid transition from processing to %', NEW.status;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION set_stage_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.current_stage IS DISTINCT FROM OLD.current_stage THEN
-        NEW.stage_updated_at = CURRENT_TIMESTAMP;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION validate_payment_for_submission()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM participants
-        WHERE id = NEW.participant_id AND payment_status = 'paid'
-    ) THEN
-        RAISE EXCEPTION 'Cannot create submission: participant payment_status is not "paid"';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION validate_payment_stage_consistency()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.payment_status IN ('pending', 'failed', 'cancelled')
-       AND NEW.current_stage IN ('survey', 'finished') THEN
-        RAISE EXCEPTION 'Cannot be in survey/finished stage with payment status: %', NEW.payment_status;
+    IF NEW.participant_stage IS DISTINCT FROM OLD.participant_stage THEN
+        NEW.participant_stage_updated_at = CURRENT_TIMESTAMP;
     END IF;
     RETURN NEW;
 END;
@@ -213,37 +135,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION validate_payment_file_status()
-RETURNS TRIGGER AS $$
-DECLARE
-    payment_status TEXT;
-BEGIN
-    SELECT status INTO payment_status
-    FROM payments
-    WHERE id = NEW.payment_id;
-
-    IF payment_status IN ('failed', 'rejected_fraud', 'expired', 'refunded') THEN
-        RAISE EXCEPTION 'Cannot attach payment file to payment in status %', payment_status;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION validate_rejected_payment_has_signal()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.status = 'rejected_fraud' THEN
-        IF NOT EXISTS (
-            SELECT 1 FROM payment_fraud_signals pfs WHERE pfs.payment_id = NEW.id
-        ) THEN
-            RAISE EXCEPTION 'rejected_fraud payment % must have at least one fraud signal', NEW.id;
-        END IF;
-    END IF;
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
 CREATE OR REPLACE FUNCTION prevent_attention_event_mutation()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -292,9 +183,44 @@ VALUES
     ('other','Other',     NULL)
 ON CONFLICT (code) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS prior_experiences (
+    code             VARCHAR(64) PRIMARY KEY,
+    display_name     VARCHAR(120) NOT NULL,
+    group_label      VARCHAR(80) NOT NULL,
+    group_sort_order SMALLINT NOT NULL DEFAULT 0,
+    sort_order       SMALLINT NOT NULL DEFAULT 0,
+    active           BOOLEAN DEFAULT TRUE
+);
+
+INSERT INTO prior_experiences (code, display_name, group_label, group_sort_order, sort_order)
+VALUES
+    ('programming_software_development', 'Programming/Software Development', 'Technical Skills', 1, 1),
+    ('data_science_machine_learning', 'Data Science/Machine Learning', 'Technical Skills', 1, 2),
+    ('web_development', 'Web Development', 'Technical Skills', 1, 3),
+    ('mobile_app_development', 'Mobile App Development', 'Technical Skills', 1, 4),
+    ('database_administration', 'Database Administration', 'Technical Skills', 1, 5),
+    ('cloud_computing', 'Cloud Computing/AWS/Azure', 'Technical Skills', 1, 6),
+    ('cybersecurity', 'Cybersecurity', 'Technical Skills', 1, 7),
+    ('network_administration', 'Network Administration', 'Technical Skills', 1, 8),
+    ('devops_ci_cd', 'DevOps/CI-CD', 'Technical Skills', 1, 9),
+    ('computer_vision_ai', 'Computer Vision/AI', 'Technical Skills', 1, 10),
+    ('writing_content_creation', 'Writing/Content Creation', 'General Skills', 2, 1),
+    ('public_speaking', 'Public Speaking', 'General Skills', 2, 2),
+    ('photography', 'Photography', 'General Skills', 2, 3),
+    ('art_design_creative', 'Art/Design/Creative', 'General Skills', 2, 4),
+    ('music_performance', 'Music/Performance', 'General Skills', 2, 5),
+    ('sports_athletics', 'Sports/Athletics', 'General Skills', 2, 6),
+    ('cooking_culinary', 'Cooking/Culinary', 'General Skills', 2, 7),
+    ('none', 'None', 'Other', 99, 1)
+ON CONFLICT (code) DO NOTHING;
+
 -- =====================================================================
 -- MAIN TABLES
 -- =====================================================================
+-- App-layer ownership note:
+-- payment workflow transitions, participant progression, and submission
+-- eligibility are enforced in backend services. The schema keeps structural
+-- integrity, timestamp convenience triggers, and immutable audit protections.
 CREATE TABLE IF NOT EXISTS participants (
     id               BIGSERIAL PRIMARY KEY,
     public_id        UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
@@ -305,16 +231,16 @@ CREATE TABLE IF NOT EXISTS participants (
     age              SMALLINT CHECK (age >= 13 AND age <= 100),
     location         VARCHAR(120),
     language_code    VARCHAR(20) REFERENCES languages(code),
-    prior_experience VARCHAR(120),
+    prior_experience VARCHAR(64) REFERENCES prior_experiences(code),
     consent_given    BOOLEAN NOT NULL DEFAULT FALSE,
     consent_at       TIMESTAMPTZ,
     email_verified   BOOLEAN NOT NULL DEFAULT FALSE,
     email_verified_at TIMESTAMPTZ,
-    payment_status   VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (payment_status IN ('pending','paid','failed','refunded','cancelled')),
-    current_stage    VARCHAR(32) NOT NULL DEFAULT 'consent'
-        CHECK (current_stage IN ('consent','user-details','payment-content','payment-link','payment','survey','finished')),
-    stage_updated_at TIMESTAMPTZ,
+    participant_payment_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (participant_payment_status IN ('pending','paid','failed','refunded','cancelled')),
+    participant_stage VARCHAR(32) NOT NULL DEFAULT 'consent'
+        CHECK (participant_stage IN ('consent','user-details','payment-content','payment-link','payment','survey','finished')),
+    participant_stage_updated_at TIMESTAMPTZ,
     ip_hash          CHAR(64) NOT NULL CHECK (length(ip_hash) = 64),
     user_agent       VARCHAR(512),
     extra_metadata   JSONB NOT NULL DEFAULT '{}',
@@ -325,19 +251,14 @@ CREATE TABLE IF NOT EXISTS participants (
     CONSTRAINT chk_email_format    CHECK (email ~* '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$' OR email IS NULL)
 );
 
+-- Convenience triggers: timestamp bookkeeping only.
 CREATE TRIGGER trg_participants_updated_at
     BEFORE UPDATE ON participants
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_participants_stage_updated_at
-    BEFORE UPDATE OF current_stage ON participants
-    FOR EACH ROW EXECUTE FUNCTION set_stage_updated_at();
-
-CREATE TRIGGER trg_validate_payment_stage_consistency
-    BEFORE UPDATE ON participants
-    FOR EACH ROW
-    WHEN (OLD.payment_status IS DISTINCT FROM NEW.payment_status OR OLD.current_stage IS DISTINCT FROM NEW.current_stage)
-    EXECUTE FUNCTION validate_payment_stage_consistency();
+    BEFORE UPDATE OF participant_stage ON participants
+    FOR EACH ROW EXECUTE FUNCTION set_participant_stage_updated_at();
 
 -- Active-only unique constraints
 CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_username ON participants (username) WHERE is_deleted = false;
@@ -346,7 +267,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_email    ON participan
 CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (public_id);
 CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (payment_status);
+CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (participant_payment_status);
 
 -- Email OTPs (verification)
 CREATE TABLE IF NOT EXISTS email_otps (
@@ -449,10 +370,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     CONSTRAINT chk_survey_fields_symmetric CHECK ((survey_index IS NULL) = (is_survey = false))
 );
 
-CREATE TRIGGER trg_validate_payment_submission
-    BEFORE INSERT ON submissions
-    FOR EACH ROW EXECUTE FUNCTION validate_payment_for_submission();
-
+-- Derived stats trigger kept intentionally small and local to submissions.
 CREATE TRIGGER trg_sync_attention_stats_from_submission
     AFTER INSERT ON submissions
     FOR EACH ROW
@@ -489,6 +407,7 @@ CREATE INDEX IF NOT EXISTS idx_attention_events_passed
 CREATE INDEX IF NOT EXISTS idx_attention_events_fingerprint
     ON attention_events (content_fingerprint) WHERE content_fingerprint IS NOT NULL;
 
+-- Immutable audit protections for append-only attention events.
 CREATE TRIGGER trg_attention_events_no_update
     BEFORE UPDATE ON attention_events
     FOR EACH ROW EXECUTE FUNCTION prevent_attention_event_mutation();
@@ -682,21 +601,6 @@ CREATE TRIGGER trg_payments_updated_at
     BEFORE UPDATE ON payments
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE TRIGGER trg_reject_expired_pending
-    BEFORE INSERT OR UPDATE OF status, expires_at
-    ON payments
-    FOR EACH ROW EXECUTE FUNCTION reject_expired_pending_payments();
-
-CREATE TRIGGER trg_validate_payment_status_transition
-    BEFORE UPDATE OF status ON payments
-    FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
-    EXECUTE FUNCTION validate_payment_status_transition();
-
-CREATE TRIGGER trg_sync_payment_status
-    AFTER UPDATE OF status ON payments
-    FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
-    EXECUTE FUNCTION sync_participant_payment_status();
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_per_participant
     ON payments (participant_id)
     WHERE status IN ('pending','processing');
@@ -730,7 +634,7 @@ CREATE TABLE IF NOT EXISTS payment_files (
 );
 
 CREATE TABLE IF NOT EXISTS image_reservations (
-    image_id      VARCHAR(128) PRIMARY KEY,
+    image_public_id VARCHAR(128) PRIMARY KEY,
     participant_id BIGINT REFERENCES participants(id) ON DELETE SET NULL,
     reserved_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at    TIMESTAMPTZ NOT NULL,
@@ -749,10 +653,6 @@ CREATE INDEX IF NOT EXISTS idx_payment_files_sha256   ON payment_files (sha256);
 CREATE INDEX IF NOT EXISTS idx_payment_files_sha256_payment ON payment_files (sha256, payment_id);
 CREATE INDEX IF NOT EXISTS idx_payment_files_phash    ON payment_files (image_phash) WHERE image_phash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_payment_files_phash_bucket ON payment_files (image_phash_bucket) WHERE image_phash_bucket IS NOT NULL;
-
-CREATE TRIGGER trg_payment_files_status_guard
-    BEFORE INSERT OR UPDATE OF payment_id ON payment_files
-    FOR EACH ROW EXECUTE FUNCTION validate_payment_file_status();
 
 CREATE TABLE IF NOT EXISTS payment_upload_attempts (
     id               BIGSERIAL PRIMARY KEY,
@@ -796,12 +696,6 @@ CREATE TABLE IF NOT EXISTS payment_fraud_signals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fraud_signals_payment ON payment_fraud_signals (payment_id);
-
-CREATE CONSTRAINT TRIGGER trg_rejected_payment_requires_signal
-    AFTER INSERT OR UPDATE OF status ON payments
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW
-    EXECUTE FUNCTION validate_rejected_payment_has_signal();
 
 CREATE TABLE IF NOT EXISTS payment_submissions (
     payment_id   BIGINT NOT NULL REFERENCES payments(id)   ON DELETE CASCADE,

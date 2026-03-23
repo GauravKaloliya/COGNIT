@@ -6,7 +6,7 @@ import { APP_ROUTES } from "../constants/routes";
 
 export function useFinishedPage({ publicId, clearUserStorage }) {
   const isOnline = useOnlineStatus();
-  const rewardAmountLabel = `₹${runtimeConfig.rewardAmount}`;
+  const rewardAmountLabel = uiText("common.inrAmount", { amount: runtimeConfig.rewardAmount });
 
   useEffect(() => {
     document.title = uiText("finish.documentTitle");
