@@ -8,6 +8,7 @@ import PageStatusBanners from "../components/PageStatusBanners.jsx";
 import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
 import PageActions from "../components/PageActions.jsx";
 import RefreshIcon from "../components/icons/RefreshIcon.jsx";
+import LoadingSpinner from "../components/icons/LoadingSpinner.jsx";
 
 export default function UserDetailsPage({
   publicId,
@@ -284,12 +285,12 @@ export default function UserDetailsPage({
                   className="otp-resend-btn"
                   variant="ghost"
                   type="button"
-                  disabled={!canResend}
-                  onClick={handleResend}
-                  aria-label={otpStatus === OTP_STATUS.sending ? uiText("email.requesting") : resendLabel}
-                  title={otpStatus === OTP_STATUS.sending ? uiText("email.requesting") : resendLabel}
+                  onClick={canResend ? handleResend : undefined}
+                  aria-disabled={!canResend}
+                  aria-label={resendLabel}
+                  title={resendLabel}
                 >
-                  <RefreshIcon />
+                  {otpStatus === OTP_STATUS.sending ? <LoadingSpinner /> : <RefreshIcon />}
                 </DSButton>
               </div>
 
