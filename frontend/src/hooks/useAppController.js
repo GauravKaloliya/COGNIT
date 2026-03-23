@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useSystemHealth } from "./useSystemHealth";
 import { usePaymentFlow } from "./usePaymentFlow";
@@ -315,7 +316,7 @@ export function useAppController() {
     setPaymentVerified(false);
     setPaymentSubStage(APP_FLOW.paymentSubStages.content);
     setStage(APP_FLOW.stages.userDetails);
-    addToast(getErrorMessage("ERR_PARTICIPANT_NOT_FOUND"), "warning");
+    addToast(getErrorMessage("NF_001_0001"), "warning");
   }, [addToast, publicId]);
 
   useEffect(() => {
@@ -726,7 +727,7 @@ export function useAppController() {
           setPaymentSubStage(APP_FLOW.paymentSubStages.content);
           setPaymentVerified(false);
           addToast(getErrorMessage("NF_001_0001"), "warning");
-        } else if (error?.code === "NF_001_0003" || error?.code === "ERR_PAYMENT_NOT_FOUND") {
+        } else if (error?.code === "NF_001_0003") {
           setStage(APP_FLOW.stages.payment);
           setPaymentSubStage(APP_FLOW.paymentSubStages.content);
           setPaymentVerified(false);
@@ -786,7 +787,7 @@ export function useAppController() {
       return participant;
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
-      throw new Error(error.message || getErrorMessage("SYS_002_0022"));
+      throw new Error(getDisplayErrorMessage(error, "SYS_002_0022"));
     } finally {
       if (submitFlowAbortRef.current === controller) {
         submitFlowAbortRef.current = null;
@@ -808,7 +809,7 @@ export function useAppController() {
       return await endpoints.recordConsent(consentPublicId, { signal: controller.signal });
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
-      throw new Error(error.message || getErrorMessage("SYS_002_0002"));
+      throw new Error(getDisplayErrorMessage(error, "SYS_002_0002"));
     } finally {
       if (submitFlowAbortRef.current === controller) {
         submitFlowAbortRef.current = null;

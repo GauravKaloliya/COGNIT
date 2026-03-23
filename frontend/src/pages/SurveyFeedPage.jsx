@@ -56,8 +56,7 @@ export default function SurveyFeedPage({
         />
         <div className="survey-feedback-tip">
           <p>
-            <em>Tip: Aim to describe colors, textures, relationships, and any notable objects.
-            Remember to write at least {MIN_WORDS} words per description.</em>
+            <em>{uiText("survey.feedTip", { minWords: MIN_WORDS })}</em>
           </p>
         </div>
         <PageActions sticky inline className="survey-feedback-actions">
@@ -68,8 +67,10 @@ export default function SurveyFeedPage({
           >
             {loadingNext
               ? uiText("survey.loading")
-              : !isOnline && pendingContinue && retryCountdownContinue > 0
-                ? uiText("common.tryAgainIn", { seconds: retryCountdownContinue })
+              : !isOnline && pendingContinue
+                ? (retryCountdownContinue > 0
+                  ? uiText("common.tryAgainIn", { seconds: retryCountdownContinue })
+                  : uiText("survey.feedOfflineContinue"))
                 : uiText("common.continue")}
             {!isOnline && pendingContinue && <ButtonRetryBadge seconds={retryCountdownContinue} />}
           </DSButton>
@@ -79,8 +80,10 @@ export default function SurveyFeedPage({
             onClick={handleSurveyFinish}
             disabled={loadingNext || !isOnline}
           >
-            {!isOnline && pendingFinish && retryCountdownFinish > 0
-              ? uiText("common.tryAgainIn", { seconds: retryCountdownFinish })
+            {!isOnline && pendingFinish
+              ? (retryCountdownFinish > 0
+                ? uiText("common.tryAgainIn", { seconds: retryCountdownFinish })
+                : uiText("survey.feedOffline"))
               : uiText("common.finish")}
             {!isOnline && pendingFinish && <ButtonRetryBadge seconds={retryCountdownFinish} />}
           </DSButton>

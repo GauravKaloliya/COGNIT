@@ -98,7 +98,7 @@ export async function apiFetch(endpoint, options = {}) {
       }
       if (
         !isMaintenance
-        && (effectiveStatus === 429 || parsedError?.code === "ERR_RATE_LIMIT" || parsedError?.category === "RATE")
+        && (effectiveStatus === 429 || parsedError?.category === "RATE")
       ) {
         try {
           window.dispatchEvent(new CustomEvent(RATE_LIMIT_EVENT, { detail: error }));

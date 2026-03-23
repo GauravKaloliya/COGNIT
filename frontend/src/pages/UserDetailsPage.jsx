@@ -1,7 +1,6 @@
 import React from "react";
 import { sanitizeUsername, useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
-import { PRIOR_EXPERIENCE_GROUPS, PRIOR_EXPERIENCE_NONE } from "../content/userDetailsOptions";
 import DSButton from "../components/design/DSButton.jsx";
 import { runtimeConfig } from "../config/runtime";
 import PageStatusBanners from "../components/PageStatusBanners.jsx";
@@ -26,6 +25,7 @@ export default function UserDetailsPage({
     isOnline,
     genderOptions,
     languageOptions,
+    priorExperienceGroups,
     optionsLoading,
     errors,
     submitting,
@@ -109,6 +109,7 @@ export default function UserDetailsPage({
     optionsLoading ||
     genderOptions.length === 0 ||
     languageOptions.length === 0 ||
+    priorExperienceGroups.length === 0 ||
     !isOnline ||
     !isFormComplete ||
     (locationPermissionDenied && !manualLocationAllowed) ||
@@ -416,14 +417,13 @@ export default function UserDetailsPage({
             onBlur={(e) => handleFieldBlur('prior_experience', e.target.value)}
           >
             <option value="" disabled>{uiText("user.priorExperiencePlaceholder")}</option>
-            {PRIOR_EXPERIENCE_GROUPS.map((group) => (
+            {priorExperienceGroups.map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.options.map((option) => (
-                  <option key={option} value={option}>{option}</option>
+                  <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </optgroup>
             ))}
-            <option value={PRIOR_EXPERIENCE_NONE}>{PRIOR_EXPERIENCE_NONE}</option>
           </select>
           {errors.prior_experience && <span className="error-text">{errors.prior_experience}</span>}
         </div>
@@ -441,8 +441,12 @@ export default function UserDetailsPage({
               {submitLabel}
               {!isOnline && <ButtonRetryBadge seconds={retryCountdown} />}
             </DSButton>
-            {!isOnline && retryCountdown > 0 && (
-              <div className="helper-text">{uiText("common.tryAgainIn", { seconds: retryCountdown })}</div>
+            {!isOnline && (
+              <div className="helper-text">
+                {retryCountdown > 0
+                  ? uiText("common.tryAgainIn", { seconds: retryCountdown })
+                  : uiText("user.offlineBanner")}
+              </div>
             )}
           </>
         )}

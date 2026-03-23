@@ -16,17 +16,17 @@ QUERY_LOAD_IMAGE_POOL = text("""
 
 QUERY_RESERVE_IMAGE = text("""
     INSERT INTO image_reservations (
-        image_id, participant_id, reserved_at, expires_at, released_at
+        image_public_id, participant_id, reserved_at, expires_at, released_at
     ) VALUES (
         :iid, :pid, :now, :now, NULL
     )
-    ON CONFLICT (image_id) DO UPDATE SET
+    ON CONFLICT (image_public_id) DO UPDATE SET
         participant_id = EXCLUDED.participant_id,
         reserved_at = EXCLUDED.reserved_at,
         expires_at = EXCLUDED.expires_at,
         released_at = NULL
     WHERE image_reservations.released_at IS NOT NULL
-    RETURNING image_id
+    RETURNING image_public_id
 """)
 
 QUERY_CLEANUP_STALE_RESERVATIONS = text("""

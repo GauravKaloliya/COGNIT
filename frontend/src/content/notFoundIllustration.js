@@ -1,6 +1,8 @@
-export const NOT_FOUND_ILLUSTRATION = {
+import { uiText } from "../utils/uiText";
+
+export const DOG_ILLUSTRATION = {
   viewBox: "0 0 200 240",
-  ariaLabel: "Cute full body dog illustration",
+  ariaLabel: uiText("illustration.dogAriaLabel"),
   gradients: [
     {
       id: "dogBody",

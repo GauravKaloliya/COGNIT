@@ -1,5 +1,6 @@
 import { runtimeConfig } from "../config/runtime";
 import { scheduleTimeout } from "./timing";
+import { uiText } from "./uiText.js";
 
 let scriptPromise = null;
 
@@ -13,7 +14,7 @@ const isLocalhost = () => {
 
 const ensureTurnstileScript = () => {
   if (typeof window === "undefined") {
-    return Promise.reject(new Error("Turnstile unavailable in non-browser context"));
+    return Promise.reject(new Error(uiText("turnstile.unavailableBrowser")));
   }
   if (window.turnstile) return Promise.resolve();
   if (scriptPromise) return scriptPromise;
@@ -22,7 +23,7 @@ const ensureTurnstileScript = () => {
     const existing = document.querySelector(`script[src^="${TURNSTILE_SCRIPT_SRC}"]`);
     if (existing) {
       existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Failed to load Turnstile script")), { once: true });
+      existing.addEventListener("error", () => reject(new Error(uiText("turnstile.loadFailed"))), { once: true });
       return;
     }
     const script = document.createElement("script");
@@ -32,7 +33,7 @@ const ensureTurnstileScript = () => {
     script.onload = () => resolve();
     script.onerror = () => {
       scriptPromise = null;
-      reject(new Error("Failed to load Turnstile script"));
+      reject(new Error(uiText("turnstile.loadFailed")));
     };
     document.head.appendChild(script);
   });
@@ -50,17 +51,17 @@ export const getTurnstileToken = async (action = "submit") => {
   }
   const siteKey = (runtimeConfig.turnstileSiteKey || "").trim();
   if (!siteKey) {
-    throw new Error("Turnstile site key is missing");
+    throw new Error(uiText("turnstile.siteKeyMissing"));
   }
   try {
     await Promise.race([
       ensureTurnstileScript(),
       new Promise((_, reject) =>
-        scheduleTimeout(() => reject(new Error("Turnstile load timed out")), TURNSTILE_TIMEOUT_MS)
+        scheduleTimeout(() => reject(new Error(uiText("turnstile.loadTimedOut"))), TURNSTILE_TIMEOUT_MS)
       ),
     ]);
     if (!window.turnstile) {
-      throw new Error("Turnstile not initialized");
+      throw new Error(uiText("turnstile.notInitialized"));
     }
 
     const container = document.createElement("div");
@@ -102,27 +103,27 @@ export const getTurnstileToken = async (action = "submit") => {
           },
           "error-callback": () => {
             cleanup();
-            reject(new Error("Turnstile execution failed"));
+            reject(new Error(uiText("turnstile.executionFailed")));
           },
           "expired-callback": () => {
             cleanup();
-            reject(new Error("Turnstile token expired"));
+            reject(new Error(uiText("turnstile.tokenExpired")));
           },
         });
         window.turnstile.execute(widgetId);
       } catch (error) {
         cleanup();
-        reject(error instanceof Error ? error : new Error("Turnstile render failed"));
+        reject(error instanceof Error ? error : new Error(uiText("turnstile.renderFailed")));
       }
       }),
       new Promise((_, reject) =>
-        scheduleTimeout(() => reject(new Error("Turnstile execution timed out")), TURNSTILE_TIMEOUT_MS)
+        scheduleTimeout(() => reject(new Error(uiText("turnstile.executionTimedOut"))), TURNSTILE_TIMEOUT_MS)
       ),
     ]);
   } catch (error) {
     // Avoid hard-blocking UX on runtime Turnstile failures.
     // Backend remains source of truth and can enforce challenge in non-local environments.
     if (isLocalhost()) return "";
-    throw error instanceof Error ? error : new Error("Turnstile unavailable");
+    throw error instanceof Error ? error : new Error(uiText("turnstile.unavailable"));
   }
 };

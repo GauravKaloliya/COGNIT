@@ -1,5 +1,5 @@
 import React from "react";
-import { getErrorMessage } from "../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import { PAYMENT_API_FIELDS } from "../constants/fields";
 import { uiText } from "../utils/uiText.js";
 import PanelState from "../components/PanelState.jsx";
@@ -57,16 +57,16 @@ export default function PaymentLinkPage({
   });
 
   const renderGlobalRetryAction = () => {
-    const isCoolingDown = retryInSeconds > 0;
-    if (!isCoolingDown) return null;
     return (
       <PageActions>
         <DSButton
           variant="primary"
           onClick={restartPayment}
-          disabled
+          disabled={retryInSeconds > 0 || offlineDisabled}
         >
-          {uiText("common.tryAgainIn", { seconds: retryInSeconds })}
+          {retryInSeconds > 0
+            ? uiText("common.tryAgainIn", { seconds: retryInSeconds })
+            : uiText("common.reload")}
         </DSButton>
       </PageActions>
     );
@@ -112,7 +112,7 @@ export default function PaymentLinkPage({
           <h2 className="payment-title">{uiText("payment.expiredHeading")}</h2>
         </div>
         <div className="banner warning spaced">
-          {error || getErrorMessage("PAY_001_0001")}
+          {getDisplayErrorMessage(error, "PAY_001_0001")}
         </div>
         {renderGlobalRetryAction()}
       </div>
@@ -128,7 +128,7 @@ export default function PaymentLinkPage({
           <p className="payment-subtitle">{uiText("payment.verifySubtitle")}</p>
         </div>
         <div className="banner warning spaced">
-          {error || getErrorMessage("FRAUD_002_0009")}
+          {getDisplayErrorMessage(error, "FRAUD_002_0009")}
         </div>
         {failureReasons.length > 0 && (
           <div className="payment-failure-details">
@@ -145,6 +145,30 @@ export default function PaymentLinkPage({
           <ul>
             {getPaymentRecoverySteps(failureReasons).map((step, idx) => (
               <li key={`fraud-step-${idx}`}>{step}</li>
+            ))}
+          </ul>
+        </div>
+        {renderGlobalRetryAction()}
+      </div>
+    );
+  }
+
+  if (paymentStatus === "failed") {
+    return (
+      <div className="panel payment-panel">
+        <div className="payment-header">
+          <div className="icon-badge" aria-hidden="true">⚠️</div>
+          <h2 className="payment-title">{uiText("payment.verifyTitle")}</h2>
+          <p className="payment-subtitle">{uiText("payment.verifySubtitle")}</p>
+        </div>
+        <div className="banner warning spaced">
+          {getDisplayErrorMessage(error, "SYS_002_0012")}
+        </div>
+        <div className="payment-next-steps">
+          <p><strong>{uiText("payment.nextStepsTitle")}</strong></p>
+          <ul>
+            {getPaymentRecoverySteps(failureReasons).map((step, idx) => (
+              <li key={`failed-step-${idx}`}>{step}</li>
             ))}
           </ul>
         </div>
@@ -327,7 +351,7 @@ export default function PaymentLinkPage({
                 }}
               >
                 {uploadPreviewUrl ? (
-                  <img src={uploadPreviewUrl} alt="Payment screenshot preview" className="payment-upload-preview" />
+                  <img src={uploadPreviewUrl} alt={uiText("payment.previewAlt")} className="payment-upload-preview" />
                 ) : (
                   <div className="payment-upload-placeholder">
                     <p>📷</p>

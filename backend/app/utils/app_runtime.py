@@ -25,7 +25,6 @@ from app.config import (
     SECURITY_REFERRER_POLICY,
     SECURITY_XSS_PROTECTION,
 )
-from app.constants.error_codes import DETAIL_REASONS, ERROR_MESSAGE_TEMPLATES
 from app.constants.log_messages import LOG_HEALTH_CHECK_FAILED
 from app.database import engine, get_db
 from app.extensions import app
@@ -165,8 +164,8 @@ def handle_payload_too_large(app):
     max_mb = max(1, round(max_bytes / (1024 * 1024)))
     return create_error_response(
         "VAL_FILE_TOO_LARGE",
-        details={"max_mb": max_mb, "reason": DETAIL_REASONS["PAYLOAD_TOO_LARGE"]},
-        custom_message=ERROR_MESSAGE_TEMPLATES["PAYLOAD_TOO_LARGE"].format(max_mb=max_mb),
+        details={"max_mb": max_mb, "reason": "payload_too_large"},
+        max_mb=max_mb,
     )
 
 
@@ -180,9 +179,8 @@ def get_cached_health_response(app, logger: logging.Logger):
             response.headers.setdefault("Cache-Control", f"public, max-age={int(HEALTH_CACHE_TTL_SECONDS)}")
             return response
         return create_error_response(
-            "SYS_INTERNAL_ERROR",
+            "SYS_SERVICE_DEGRADED",
             details=cache.get("details", {}),
-            custom_message=cache.get("message", ERROR_MESSAGE_TEMPLATES["SERVICE_DEGRADED"]),
         )
 
     try:
@@ -198,13 +196,12 @@ def get_cached_health_response(app, logger: logging.Logger):
         app._health_cache = {
             "checked_at": now_ts,
             "ok": False,
-            "message": ERROR_MESSAGE_TEMPLATES["SERVICE_DEGRADED"],
+            "message": "Service degraded",
             "details": {"status": "degraded"},
         }
         return create_error_response(
-            "SYS_INTERNAL_ERROR",
+            "SYS_SERVICE_DEGRADED",
             details={"status": "degraded"},
-            custom_message=ERROR_MESSAGE_TEMPLATES["SERVICE_DEGRADED"],
         )
 
 

@@ -1,3 +1,5 @@
+import { uiText } from "./uiText.js";
+
 export const getPublicIdOrNull = (publicId) => {
   const value = String(publicId || "").trim();
   return value ? value : null;
@@ -17,7 +19,7 @@ export const assertPublicId = (publicId, onMissing, options = {}) => {
   if (typeof onMissing === "function") {
     onMissing();
   }
-  const { code = "NF_001_0001", message = "Account not found. Please register first." } = options || {};
+  const { code = "NF_001_0001", message = uiText("publicId.missing") } = options || {};
   const err = new Error(message);
   err.code = code;
   throw err;

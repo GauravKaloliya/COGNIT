@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
+import { getDisplayErrorMessage } from "../utils/appError";
 import { uiText } from "../utils/uiText";
 import { requirePublicId } from "../utils/publicId";
 import { APP_FLOW } from "../config/appFlow";
@@ -56,7 +57,7 @@ export function usePaymentFlow({
       if (error?.code === REQUEST_CODES.aborted) {
         return;
       }
-      const errorMessage = error.message || getErrorMessage("PAY_001_0005");
+      const errorMessage = getDisplayErrorMessage(error, "PAY_001_0005");
       addToast(errorMessage, TOAST_VARIANTS.error);
       setPaymentVerified(false);
       if (stage !== APP_FLOW.stages.payment) {
