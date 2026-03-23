@@ -6,7 +6,7 @@ Configures logging handlers that write to stdout for Vercel's runtime log collec
 import logging
 import sys
 
-from app.config import LOG_LEVEL, LOGGING_AUTO_CONFIG
+from app.config import LOG_LEVEL, LOGGING_AUTO_CONFIG, SUPPRESS_ACCESS_LOGS
 
 
 _logging_already_configured = False
@@ -64,7 +64,10 @@ def configure_logging(log_level=None):
         logger.setLevel(level)
         logger.propagate = True
 
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    werkzeug_logger = logging.getLogger("werkzeug")
+    werkzeug_logger.setLevel(logging.WARNING)
+    if SUPPRESS_ACCESS_LOGS:
+        werkzeug_logger.disabled = True
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("botocore").setLevel(logging.WARNING)
     logging.getLogger("boto3").setLevel(logging.WARNING)

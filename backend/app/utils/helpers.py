@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any, Dict, Optional, Tuple
 
-from flask import jsonify, request, g
+from flask import g, has_request_context, jsonify, request
 from sqlalchemy import text
 
 from app.config import (
@@ -37,6 +37,7 @@ from app.constants.response_keys import (
 from app.constants.log_messages import LOG_AUDIT_LOG_INSERT_FAILED, LOG_IP_HASH_SALT_MISSING
 from app.constants.observability_constants import OBS_EVENT_AUDIT_LOG_INSERT_FAILED, OBS_EVENT_IP_HASH_SALT_MISSING
 from app.utils.observability import log_event
+from app.constants.observability_constants import OBS_EVENT_APP_ERROR_RESPONSE
 
 logger = logging.getLogger(__name__)
 _IP_HASH_SALT_WARNED = False
@@ -207,6 +208,31 @@ def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
         response[RESPONSE_KEY_ERROR][RESPONSE_KEY_FIELDS] = kwargs["fields"]
     if kwargs.get("details"):
         response[RESPONSE_KEY_ERROR][RESPONSE_KEY_DETAILS] = kwargs["details"]
+    has_request = has_request_context()
+    route_rule = getattr(request, "url_rule", None).rule if has_request and getattr(request, "url_rule", None) else None
+    path = request.path if has_request else None
+    method = request.method if has_request else None
+    vercel_id = request.headers.get("x-vercel-id") if has_request else None
+    origin = request.headers.get("Origin") if has_request else None
+    referer = request.headers.get("Referer") if has_request else None
+    log_event(
+        logger,
+        OBS_EVENT_APP_ERROR_RESPONSE,
+        level=logging.WARNING if status < 500 else logging.ERROR,
+        request_id=request_id,
+        method=method,
+        path=path,
+        route=route_rule or path,
+        error_key=error_key,
+        error_code=error_def.get("code"),
+        error_status=status,
+        error_category=category,
+        retryable=bool(retryable),
+        field=error_def.get("field"),
+        vercel_id=vercel_id,
+        origin=origin,
+        referer=referer,
+    )
     # Always return HTTP 200 to avoid browser console noise for expected business errors.
     # Clients must use `error.http_status` (and `error.code`) to drive behavior.
     resp = jsonify(response)

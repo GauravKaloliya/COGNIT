@@ -3,7 +3,6 @@ Cloudflare Turnstile verification utilities.
 """
 
 import logging
-import random
 import time
 from typing import Optional, Tuple
 import ipaddress
@@ -19,14 +18,12 @@ from app.config import (
 from app.constants.observability_constants import (
     OBS_EVENT_TURNSTILE_VERIFY_FAILED,
     OBS_EVENT_TURNSTILE_VERIFY_SLOW,
-    OBS_EVENT_TURNSTILE_VERIFY_SUCCESS,
     OBS_EVENT_TURNSTILE_VERIFY_TIMEOUT,
 )
 from app.utils.observability import log_event
 
 logger = logging.getLogger(__name__)
 _TURNSTILE_SLOW_THRESHOLD_MS = 750
-_TURNSTILE_SUCCESS_SAMPLE_RATE = 0.1
 
 
 def _is_loopback_ip(value: Optional[str]) -> bool:
@@ -98,14 +95,7 @@ def verify_turnstile_token(
             log_event(
                 logger,
                 OBS_EVENT_TURNSTILE_VERIFY_SLOW,
-                latency_ms=elapsed_ms,
-                success=bool(data.get("success")),
-                endpoint=endpoint,
-            )
-        elif random.random() < _TURNSTILE_SUCCESS_SAMPLE_RATE:
-            log_event(
-                logger,
-                OBS_EVENT_TURNSTILE_VERIFY_SUCCESS,
+                level=logging.WARNING,
                 latency_ms=elapsed_ms,
                 success=bool(data.get("success")),
                 endpoint=endpoint,

@@ -161,7 +161,6 @@ def build_email_otp_payload(*, email: str, otp: str, public_id: str) -> dict:
 def send_email_otp(payload: dict, *, request_id: str | None = None) -> None:
     token = _build_jwt()
     headers = {"Authorization": f"Bearer {token}"}
-    start = time.monotonic()
     try:
         response = requests.post(
             EMAIL_OTP_WEBHOOK_URL,
@@ -170,63 +169,15 @@ def send_email_otp(payload: dict, *, request_id: str | None = None) -> None:
             timeout=EMAIL_OTP_WEBHOOK_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.info(
-            "email_otp_webhook_ok",
-            extra={
-                "event": "email_otp_webhook_ok",
-                "status_code": response.status_code,
-                "latency_ms": elapsed_ms,
-                "request_id": request_id,
-            },
-        )
         return
     except requests_exceptions.Timeout as exc:
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.warning(
-            "email_otp_webhook_timeout",
-            extra={
-                "event": "email_otp_webhook_timeout",
-                "latency_ms": elapsed_ms,
-                "timeout_s": EMAIL_OTP_WEBHOOK_TIMEOUT_SECONDS,
-                "request_id": request_id,
-            },
-        )
         raise EmailOtpSendError(kind="timeout", detail=str(exc)) from exc
     except requests_exceptions.HTTPError as exc:
-        elapsed_ms = int((time.monotonic() - start) * 1000)
         status_code = exc.response.status_code if exc.response is not None else None
-        logger.warning(
-            "email_otp_webhook_http_error",
-            extra={
-                "event": "email_otp_webhook_http_error",
-                "status_code": status_code,
-                "latency_ms": elapsed_ms,
-                "request_id": request_id,
-            },
-        )
         raise EmailOtpSendError(kind="http_error", status_code=status_code, detail=str(exc)) from exc
     except requests_exceptions.ConnectionError as exc:
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.warning(
-            "email_otp_webhook_connection_error",
-            extra={
-                "event": "email_otp_webhook_connection_error",
-                "latency_ms": elapsed_ms,
-                "request_id": request_id,
-            },
-        )
         raise EmailOtpSendError(kind="connection_error", detail=str(exc)) from exc
     except requests_exceptions.RequestException as exc:
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.warning(
-            "email_otp_webhook_request_error",
-            extra={
-                "event": "email_otp_webhook_request_error",
-                "latency_ms": elapsed_ms,
-                "request_id": request_id,
-            },
-        )
         raise EmailOtpSendError(kind="request_error", detail=str(exc)) from exc
 
 
@@ -234,19 +185,12 @@ def enqueue_email_otp(payload: dict, *, otp_id: int, request_id: str | None = No
     def _send() -> None:
         try:
             send_email_otp(payload, request_id=request_id)
-        except Exception as exc:
+        except Exception:
             try:
                 with engine.begin() as conn:
                     conn.execute(QUERY_MARK_OTP_USED, {"id": int(otp_id)})
             except Exception:
-                logger.warning(
-                    "email_otp_async_mark_used_failed",
-                    extra={"request_id": request_id, "otp_id": int(otp_id)},
-                )
-            logger.warning(
-                "email_otp_async_send_failed",
-                extra={"request_id": request_id, "otp_id": int(otp_id), "error": str(exc)},
-            )
+                pass
 
     EMAIL_OTP_EXECUTOR.submit(_send)
 

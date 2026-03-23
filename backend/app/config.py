@@ -185,6 +185,7 @@ IDEMPOTENCY_TTL_SECONDS = 86400
 
 LOG_LEVEL = "INFO"
 LOGGING_AUTO_CONFIG = True
+SUPPRESS_ACCESS_LOGS = _bool_env("SUPPRESS_ACCESS_LOGS", True)
 WEBSITE_URL = _required_env("WEBSITE_URL")
 _default_cookie_secure = bool(WEBSITE_URL.lower().startswith("https://"))
 SESSION_COOKIE_SECURE = _bool_env("SESSION_COOKIE_SECURE", _default_cookie_secure)

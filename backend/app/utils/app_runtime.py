@@ -36,7 +36,6 @@ from app.constants.observability_constants import (
     OBS_EVENT_DEVICE_FINGERPRINT_COMMIT_FAILED,
     OBS_EVENT_DEVICE_FINGERPRINT_ROLLBACK_FAILED,
     OBS_EVENT_SECURITY_HEADERS_APPLY_FAILED,
-    OBS_EVENT_REQUEST_RECEIVED,
     OBS_EVENT_REQUEST_COMPLETED,
     OBS_EVENT_LATENCY_SLO_BREACH,
 )
@@ -59,16 +58,6 @@ def initialize_request_context(logger: logging.Logger):
             device_fingerprint_middleware()
     except Exception as exc:
         log_event(logger, OBS_EVENT_DEVICE_FINGERPRINT_INIT_FAILED, level=logging.WARNING, error=str(exc))
-
-    log_event(
-        logger,
-        OBS_EVENT_REQUEST_RECEIVED,
-        method=request.method,
-        path=request.path,
-        request_id=g.request_id,
-        participant_id=getattr(g, "participant_id", None),
-    )
-
 
 def _normalize_success_envelope(response):
     try:
@@ -133,6 +122,10 @@ def finalize_response(response, logger: logging.Logger):
     _commit_device_fingerprint_if_needed(response, logger)
     response = _normalize_success_envelope(response)
 
+    app_error_code = response.headers.get("X-COGNIT-Error-Code")
+    app_error_status = response.headers.get("X-COGNIT-Error-Status")
+    app_error_category = response.headers.get("X-COGNIT-Error-Category")
+
     if hasattr(g, "request_start_time"):
         duration_ms = int((datetime.now(timezone.utc) - g.request_start_time).total_seconds() * 1000)
         log_event(
@@ -140,9 +133,15 @@ def finalize_response(response, logger: logging.Logger):
             OBS_EVENT_REQUEST_COMPLETED,
             method=request.method,
             path=request.path,
+            route=getattr(request, "url_rule", None).rule if getattr(request, "url_rule", None) else request.path,
             request_id=request_id,
             status_code=int(response.status_code),
+            transport_status=int(response.status_code),
+            app_error_code=app_error_code,
+            app_error_status=int(app_error_status) if app_error_status and str(app_error_status).isdigit() else None,
+            app_error_category=app_error_category,
             latency_ms=duration_ms,
+            vercel_id=request.headers.get("x-vercel-id"),
         )
         if duration_ms > API_LATENCY_SLO_MS:
             log_event(

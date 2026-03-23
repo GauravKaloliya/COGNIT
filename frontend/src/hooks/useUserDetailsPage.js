@@ -30,6 +30,11 @@ import {
 } from "../constants/userDetails";
 import { REQUEST_CODES } from "../constants/request";
 import { REGEX_PATTERNS } from "../constants/patterns";
+import {
+  buildUserDetailsValidators,
+  prioritizeEnglishOptions,
+  sanitizeLocationValue,
+} from "../utils/userDetailsHelpers";
 
 const USERNAME_MIN_LENGTH = runtimeConfig.usernameMinLength;
 const AGE_MIN = runtimeConfig.ageMin;
@@ -55,8 +60,6 @@ const EMAIL_OTP_TTL_MS = Math.max(
   (runtimeConfig.emailOtpExpirySeconds || 300) * 1000
 );
 
-export const sanitizeUsername = (value) => value.replace(/[^a-zA-Z0-9_]/g, "");
-
 export function useUserDetailsPage({
   publicId,
   demographics,
@@ -70,27 +73,6 @@ export function useUserDetailsPage({
   const scopedOtpKey = makeScopedKey(EMAIL_OTP_STATE_KEY, scope);
   const scopedDemographicsKey = makeScopedKey(DEMOGRAPHICS_KEY, scope);
 
-  const prioritizeEnglish = useCallback((items = []) => {
-    const list = Array.isArray(items) ? items : [];
-    const isEnglish = (item) => {
-      if (!item) return false;
-      if (typeof item === "string") return item.trim().toLowerCase() === "english";
-      const value = String(item.value || "").trim().toLowerCase();
-      const label = String(item.label || "").trim().toLowerCase();
-      return value === "english" || label === "english";
-    };
-    const isOther = (item) => {
-      if (!item) return false;
-      if (typeof item === "string") return item.trim().toLowerCase() === "other";
-      const value = String(item.value || "").trim().toLowerCase();
-      const label = String(item.label || "").trim().toLowerCase();
-      return value === "other" || label === "other";
-    };
-    const english = list.filter(isEnglish);
-    const otherItems = list.filter(isOther);
-    const remaining = list.filter((item) => !isEnglish(item) && !isOther(item));
-    return [...english, ...remaining, ...otherItems];
-  }, []);
   const isOnline = useOnlineStatus();
   const [optionLists, setOptionLists] = useState(() => {
     const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null, "local");
@@ -160,6 +142,12 @@ export function useUserDetailsPage({
   const [otpStatus, setOtpStatus] = useState(OTP_STATUS.idle);
   const [otpExpiresAt, setOtpExpiresAt] = useState(null);
   const [otpExpirySeconds, setOtpExpirySeconds] = useState(0);
+  const validators = useMemo(() => buildUserDetailsValidators({
+    usernameMinLength: USERNAME_MIN_LENGTH,
+    ageMin: AGE_MIN,
+    ageMax: AGE_MAX,
+    locationMinLength: LOCATION_MIN_LENGTH,
+  }), []);
   const otpValue = otpDigits.join("");
   const showOtpField = [
     OTP_STATUS.sending,
@@ -286,7 +274,7 @@ export function useUserDetailsPage({
         if (cancelled) return;
         const nextOptions = {
           genders: Array.isArray(data?.genders) ? data.genders : [],
-          languages: prioritizeEnglish(Array.isArray(data?.languages) ? data.languages : []),
+          languages: prioritizeEnglishOptions(Array.isArray(data?.languages) ? data.languages : []),
           prior_experiences: Array.isArray(data?.prior_experiences) ? data.prior_experiences : [],
         };
         setOptionLists({
@@ -306,7 +294,7 @@ export function useUserDetailsPage({
         if (cancelled || error?.code === REQUEST_CODES.aborted) return;
         const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null);
         const cachedGenders = Array.isArray(cached?.genders) ? cached.genders : [];
-        const cachedLanguages = prioritizeEnglish(Array.isArray(cached?.languages) ? cached.languages : []);
+        const cachedLanguages = prioritizeEnglishOptions(Array.isArray(cached?.languages) ? cached.languages : []);
         const cachedPriorExperiences = Array.isArray(cached?.prior_experiences) ? cached.prior_experiences : [];
         if (cachedGenders.length > 0 && cachedLanguages.length > 0 && cachedPriorExperiences.length > 0) {
           setOptionLists({
@@ -332,7 +320,7 @@ export function useUserDetailsPage({
     return () => {
       cancelled = true;
     };
-  }, [isOnline, prioritizeEnglish]);
+  }, [isOnline]);
 
   useEffect(() => {
     if (!optionLists.priorExperiences.length) return;
@@ -348,61 +336,13 @@ export function useUserDetailsPage({
     setDemographics((prev) => ({ ...prev, prior_experience: String(labelMatch.value) }));
   }, [demographics.prior_experience, optionLists.priorExperiences, setDemographics]);
 
-  const validateUsernameInput = useCallback((rawUsername) => {
-    const value = String(rawUsername ?? "").trim();
-    if (!value || value.length < USERNAME_MIN_LENGTH) {
-      return getErrorMessage("VAL_001_0010", "en", { min: USERNAME_MIN_LENGTH });
-    }
-    if (!REGEX_PATTERNS.username.test(value)) {
-      return getErrorMessage("VAL_001_0011");
-    }
-    return "";
-  }, []);
-
-  const validateEmailInput = useCallback((rawEmail) => {
-    const value = String(rawEmail ?? "").trim().toLowerCase();
-    if (!value) return getErrorMessage("VAL_001_0012");
-    if (!REGEX_PATTERNS.email.test(value)) return getErrorMessage("VAL_001_0013");
-    const domain = value.split("@")[1];
-    if (!runtimeConfig.allowedEmailDomains.includes(domain)) return getErrorMessage("VAL_001_0014");
-    return "";
-  }, []);
-
-  const validateGenderInput = useCallback((rawGender) => (
-    String(rawGender ?? "").trim() ? "" : getErrorMessage("VAL_001_0017")
-  ), []);
-
-  const validateAgeInput = useCallback((rawAge) => {
-    const trimmed = String(rawAge ?? "").trim();
-    if (!trimmed) return getErrorMessage("VAL_001_0018");
-    if (!REGEX_PATTERNS.digitsOnly.test(trimmed)) return getErrorMessage("VAL_001_0019", "en", { min: AGE_MIN, max: AGE_MAX });
-    const ageNum = Number(trimmed);
-    if (!Number.isInteger(ageNum) || ageNum < AGE_MIN || ageNum > AGE_MAX) {
-      return getErrorMessage("VAL_001_0019", "en", { min: AGE_MIN, max: AGE_MAX });
-    }
-    return "";
-  }, []);
-
-  const validateLocationInput = useCallback((rawLocation) => {
-    const value = String(rawLocation ?? "").trim();
-    return value.length >= LOCATION_MIN_LENGTH ? "" : getErrorMessage("VAL_001_0020");
-  }, []);
-
-  const validateLanguageInput = useCallback((rawLanguage) => (
-    String(rawLanguage ?? "").trim() ? "" : getErrorMessage("VAL_001_0021")
-  ), []);
-
-  const validatePriorExperienceInput = useCallback((rawPriorExperience) => (
-    String(rawPriorExperience ?? "").trim() ? "" : getErrorMessage("VAL_001_0022")
-  ), []);
-
-  const sanitizeLocationValue = useCallback((value) => {
-    const raw = String(value ?? "");
-    if (!raw.trim()) return "";
-    const trimmed = raw.trim();
-    const coordinateOnly = /^\s*[-+]?\d+(\.\d+)?\s*,\s*[-+]?\d+(\.\d+)?(\s*,\s*[-+]?\d+(\.\d+)?)?\s*$/.test(trimmed);
-    return coordinateOnly ? "" : raw;
-  }, []);
+  const validateUsernameInput = useCallback((rawUsername) => validators.validateUsernameInput(rawUsername), [validators]);
+  const validateEmailInput = useCallback((rawEmail) => validators.validateEmailInput(rawEmail), [validators]);
+  const validateGenderInput = useCallback((rawGender) => validators.validateGenderInput(rawGender), [validators]);
+  const validateAgeInput = useCallback((rawAge) => validators.validateAgeInput(rawAge), [validators]);
+  const validateLocationInput = useCallback((rawLocation) => validators.validateLocationInput(rawLocation), [validators]);
+  const validateLanguageInput = useCallback((rawLanguage) => validators.validateLanguageInput(rawLanguage), [validators]);
+  const validatePriorExperienceInput = useCallback((rawPriorExperience) => validators.validatePriorExperienceInput(rawPriorExperience), [validators]);
 
   const setDetectedLocation = useCallback((value) => {
     if (userEditedLocationRef.current) return;
@@ -416,7 +356,7 @@ export function useUserDetailsPage({
       delete next.location;
       return next;
     });
-  }, [sanitizeLocationValue, setDemographics]);
+  }, [setDemographics]);
 
   const markLocationAutoSuccess = useCallback(() => {
     try {
@@ -603,7 +543,6 @@ export function useUserDetailsPage({
   }, [
     getBrowserPosition,
     markLocationAutoSuccess,
-    sanitizeLocationValue,
     setDemographics,
     setDetectedLocation,
     setManualLocationAllowed,
@@ -684,7 +623,7 @@ export function useUserDetailsPage({
       setDemographics((prev) => ({ ...prev, location: sanitized }));
       if (!sanitized) setManualLocationAllowed(true);
     }
-  }, [demographics.location, sanitizeLocationValue, setDemographics, setManualLocationAllowed]);
+  }, [demographics.location, setDemographics, setManualLocationAllowed]);
 
   useEffect(() => {
     const availabilityRef = availabilityAbortRef.current;
