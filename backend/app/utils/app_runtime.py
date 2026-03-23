@@ -29,6 +29,7 @@ from app.constants.log_messages import LOG_HEALTH_CHECK_FAILED
 from app.database import engine, get_db
 from app.extensions import app
 from app.utils.helpers import create_error_response, success_response
+from app.utils.api_docs import build_endpoint_docs, build_error_docs, build_example_docs
 from app.utils.observability import log_event
 from app.constants.observability_constants import (
     OBS_EVENT_DB_SESSION_INIT_FAILED,
@@ -209,6 +210,9 @@ def render_api_docs_page(template_name: str, active_page: str):
         template_name,
         base_url=DOCS_BASE_URL,
         active_page=active_page,
+        endpoint_docs=build_endpoint_docs(),
+        error_groups=build_error_docs(),
+        example_docs=build_example_docs(),
     )
     try:
         response = app.make_response(response)
