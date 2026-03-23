@@ -70,7 +70,6 @@ export default function UserDetailsPage({
   const LOCATION_MIN = constants.locationMin;
   const usernameOk = (demographics.username || "").trim().length >= USERNAME_MIN;
   const emailOk = Boolean((demographics.email || "").trim()) && !errors.email;
-  const phoneOk = Boolean((demographics.phone || "").trim()) && !errors.phone;
   const ageOk = Boolean((demographics.age || "").trim()) && !errors.age;
   const locationOk = (demographics.location || "").trim().length >= LOCATION_MIN && !errors.location;
   const rawEmailDomains = uiText("user.emailDomains").split("|").map((d) => d.trim()).filter(Boolean);
@@ -206,30 +205,6 @@ export default function UserDetailsPage({
           {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
           {errors.email && <span className="error-text">{errors.email}</span>}
           {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
-        </div>
-
-        <div className={`form-field ${errors.phone ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.phone")} <span className="required" aria-label="required">*</span></label>
-          <input
-            type="tel"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            className={errors.phone ? 'error-input' : ''}
-            placeholder={uiText("user.phonePlaceholder")}
-            value={demographics.phone || ''}
-            disabled={inputsLocked}
-            onChange={(e) => {
-              const value = e.target.value.replace(/\D/g, '');
-              updateField('phone', value);
-            }}
-            onBlur={(e) => {
-              const value = e.target.value.replace(/\D/g, '');
-              handleFieldBlur('phone', value, true);
-            }}
-          />
-          {checking.phone && <span className="checking-text">{uiText("user.checking")}</span>}
-          {errors.phone && <span className="error-text">{errors.phone}</span>}
-          {!phoneOk && <span className="helper-text warning">{uiText("user.phoneHint")}</span>}
         </div>
 
         {showOtpField && (

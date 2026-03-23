@@ -13,7 +13,7 @@ export const CONSENT_CONTENT = {
       heading: "What Participation Involves",
       intro: "If you choose to participate, you will:",
       items: [
-        "Create an account using a valid Indian mobile number and supported email provider",
+        "Create an account using a supported email provider",
         "Provide minimal demographic information (age group, gender, state/UT, primary language)",
         "Complete a brief practice survey",
         "View a sequence of everyday and abstract images",
@@ -79,7 +79,6 @@ export const CONSENT_CONTENT = {
       items: [
         "Are currently located in India",
         "Are 13 years of age or older",
-        "Possess a valid 10-digit Indian mobile number",
         "Have access to a supported email provider",
         "Are comfortable reading and writing in English",
       ],

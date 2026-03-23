@@ -19,7 +19,6 @@ CONFIDENTIAL_KEYWORDS = {
     "hash",
     "otp",
     "email",
-    "phone",
     "ip",
 }
 
