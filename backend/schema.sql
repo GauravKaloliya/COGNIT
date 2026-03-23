@@ -301,7 +301,6 @@ CREATE TABLE IF NOT EXISTS participants (
     session_id       VARCHAR(128) NOT NULL,
     username         VARCHAR(50) NOT NULL,
     email            VARCHAR(255),
-    phone            VARCHAR(20),
     gender_code      VARCHAR(32) REFERENCES genders(code),
     age              SMALLINT CHECK (age >= 13 AND age <= 100),
     location         VARCHAR(120),
@@ -323,8 +322,7 @@ CREATE TABLE IF NOT EXISTS participants (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT chk_email_format    CHECK (email ~* '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$' OR email IS NULL),
-    CONSTRAINT chk_phone_format    CHECK (phone ~ '^[0-9+ -]{8,15}$' OR phone IS NULL)
+    CONSTRAINT chk_email_format    CHECK (email ~* '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$' OR email IS NULL)
 );
 
 CREATE TRIGGER trg_participants_updated_at
@@ -344,7 +342,6 @@ CREATE TRIGGER trg_validate_payment_stage_consistency
 -- Active-only unique constraints
 CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_username ON participants (username) WHERE is_deleted = false;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_email    ON participants (email)    WHERE is_deleted = false AND email IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_phone    ON participants (phone)    WHERE is_deleted = false AND phone IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (public_id);
 CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);

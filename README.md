@@ -41,7 +41,7 @@ C.O.G.N.I.T. is a research-grade data collection platform where participant trus
 ## Core Product Capabilities
 
 ### 1) Participant Lifecycle
-- Participant creation with uniqueness checks (`username`, `email`, `phone`)
+- Participant creation with uniqueness checks (`username`, `email`)
 - Consent recording with idempotency support
 - Stage progression: `consent -> user-details -> payment -> survey -> finished`
 
@@ -152,7 +152,6 @@ Primary routes used by the app:
 - `POST /participants`
 - `GET /check-username`
 - `GET /check-email`
-- `GET /check-phone`
 - `POST /consent`
 - `GET /participants/{public_id}/payment-status`
 - `POST /payments/create`

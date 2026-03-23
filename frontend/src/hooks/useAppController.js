@@ -79,13 +79,7 @@ function createId() {
   return createFallbackUuid();
 }
 
-function normalizePhoneForApi(rawPhone) {
-  const digits = String(rawPhone ?? "").replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith(STRING_PREFIXES.countryCode91)) return digits.slice(2);
-  return digits;
-}
-
-const validateStageTransition = (currentStage, targetStage, paymentVerified = false) => {
+  const validateStageTransition = (currentStage, targetStage, paymentVerified = false) => {
   const currentIndex = APP_STAGE_ORDER.indexOf(currentStage);
   const targetIndex = APP_STAGE_ORDER.indexOf(targetStage);
   if (targetIndex <= currentIndex) return true;
@@ -103,38 +97,31 @@ const validateStageTransition = (currentStage, targetStage, paymentVerified = fa
   }
 };
 
-const isDemographicsComplete = (demographics) => {
-  const username = String(demographics?.username || "").trim();
-  const email = String(demographics?.email || "").trim().toLowerCase();
-  const phoneDigits = String(demographics?.phone || "").replace(/\D/g, "");
-  const gender = String(demographics?.gender_code || "").trim();
-  const ageRaw = String(demographics?.age || "").trim();
-  const location = String(demographics?.location || "").trim();
-  const language = String(demographics?.language_code || "").trim();
-  const prior = String(demographics?.prior_experience || "").trim();
-  const usernameOk = username.length >= runtimeConfig.usernameMinLength;
-  const emailOk = REGEX_PATTERNS.email.test(email);
-  const phoneOk = REGEX_PATTERNS.indianPhone.test(phoneDigits) || (
-    phoneDigits.length === 12 &&
-    phoneDigits.startsWith(STRING_PREFIXES.countryCode91) &&
-    REGEX_PATTERNS.indianPhone.test(phoneDigits.slice(2))
-  );
-  const ageNum = Number(ageRaw);
-  const ageOk = Number.isFinite(ageNum) && ageNum >= runtimeConfig.ageMin && ageNum <= runtimeConfig.ageMax;
-  const locationOk = location.length >= runtimeConfig.locationMinLength;
-  return usernameOk && emailOk && phoneOk && gender && ageOk && locationOk && language && prior;
-};
+  const isDemographicsComplete = (demographics) => {
+    const username = String(demographics?.username || "").trim();
+    const email = String(demographics?.email || "").trim().toLowerCase();
+    const gender = String(demographics?.gender_code || "").trim();
+    const ageRaw = String(demographics?.age || "").trim();
+    const location = String(demographics?.location || "").trim();
+    const language = String(demographics?.language_code || "").trim();
+    const prior = String(demographics?.prior_experience || "").trim();
+    const usernameOk = username.length >= runtimeConfig.usernameMinLength;
+    const emailOk = REGEX_PATTERNS.email.test(email);
+    const ageNum = Number(ageRaw);
+    const ageOk = Number.isFinite(ageNum) && ageNum >= runtimeConfig.ageMin && ageNum <= runtimeConfig.ageMax;
+    const locationOk = location.length >= runtimeConfig.locationMinLength;
+    return usernameOk && emailOk && gender && ageOk && locationOk && language && prior;
+  };
 
 const hasAnyDemographicsValue = (demographics) => {
   if (!demographics) return false;
-  const fields = [
-    demographics.username,
-    demographics.email,
-    demographics.phone,
-    demographics.gender_code,
-    demographics.age,
-    demographics.location,
-    demographics.language_code,
+    const fields = [
+      demographics.username,
+      demographics.email,
+      demographics.gender_code,
+      demographics.age,
+      demographics.location,
+      demographics.language_code,
     demographics.prior_experience,
   ];
   return fields.some((value) => String(value || "").trim().length > 0);
@@ -184,14 +171,13 @@ export function useAppController() {
   const [paymentVerified, setPaymentVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.paymentVerified, false, scopeId));
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [demographics, setDemographics] = useState(
-    readCoreValue(runtimeConfig.storageKeys.demographics, {
-      username: "",
-      email: "",
-      phone: "",
-      gender_code: "",
-      age: "",
-      location: "",
-      language_code: "",
+      readCoreValue(runtimeConfig.storageKeys.demographics, {
+        username: "",
+        email: "",
+        gender_code: "",
+        age: "",
+        location: "",
+        language_code: "",
       prior_experience: "",
     }, scopeId, { ttlMs: PII_STATE_TTL_MS })
   );
@@ -644,14 +630,13 @@ export function useAppController() {
     setEmailVerified((prev) => (emailStored.hasValue ? emailStored.value : prev));
     const paymentStored = readScoped(runtimeConfig.storageKeys.paymentVerified, false, CORE_STATE_TTL_MS);
     setPaymentVerified((prev) => (paymentStored.hasValue ? paymentStored.value : prev));
-    const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
-      username: "",
-      email: "",
-      phone: "",
-      gender_code: "",
-      age: "",
-      location: "",
-      language_code: "",
+      const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
+        username: "",
+        email: "",
+        gender_code: "",
+        age: "",
+        location: "",
+        language_code: "",
       prior_experience: "",
     }, publicId, { ttlMs: PII_STATE_TTL_MS });
     setDemographics((prev) => (hasAnyDemographicsValue(storedDemographics) ? storedDemographics : prev));
@@ -786,14 +771,13 @@ export function useAppController() {
     const controller = new AbortController();
     submitFlowAbortRef.current = controller;
     try {
-      const participant = await endpoints.createParticipant({
-        username: demographics.username,
-        email: demographics.email,
-        phone: normalizePhoneForApi(demographics.phone),
-        gender_code: demographics.gender_code,
-        age: parseInt(demographics.age),
-        location: demographics.location,
-        language_code: demographics.language_code,
+        const participant = await endpoints.createParticipant({
+          username: demographics.username,
+          email: demographics.email,
+          gender_code: demographics.gender_code,
+          age: parseInt(demographics.age),
+          location: demographics.location,
+          language_code: demographics.language_code,
         prior_experience: demographics.prior_experience,
       }, { signal: controller.signal });
       if (participant?.public_id) setPublicId(participant.public_id);

@@ -12,7 +12,6 @@ from app.config import (
 )
 from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
-    PARTICIPANT_FIELD_PHONE,
     PARTICIPANT_FIELD_USERNAME,
 )
 from app.constants.participant_patterns import PUBLIC_ID_REGEX
@@ -29,14 +28,13 @@ from sqlalchemy import text
 PARTICIPANT_REQUIRED_FIELDS = [
     PARTICIPANT_FIELD_USERNAME,
     PARTICIPANT_FIELD_EMAIL,
-    PARTICIPANT_FIELD_PHONE,
     "gender_code",
     "age",
     "location",
     "language_code",
     "prior_experience",
 ]
-PARTICIPANT_AVAILABILITY_FIELDS = {PARTICIPANT_FIELD_USERNAME, PARTICIPANT_FIELD_EMAIL, PARTICIPANT_FIELD_PHONE}
+PARTICIPANT_AVAILABILITY_FIELDS = {PARTICIPANT_FIELD_USERNAME, PARTICIPANT_FIELD_EMAIL}
 
 
 def set_participant_cookies(response, public_id: str, session_id: str):
@@ -75,21 +73,18 @@ def generate_session_id(data) -> str:
     return str(data.get("session_id") or f"sess_{uuid.uuid4().hex}").strip()[:128]
 
 
-def find_existing_participant_conflict(db, *, username: str, email: str, phone: str):
+def find_existing_participant_conflict(db, *, username: str, email: str):
     existing = db.execute(QUERY_FIND_EXISTING_PARTICIPANT_CONFLICT, {
         "un": username,
         "em": email,
-        "ph": phone,
     }).fetchone()
     if not existing:
         return None
-    existing_username, existing_email, existing_phone = existing
+    existing_username, existing_email = existing
     if existing_username == username:
         return "DUP_USERNAME"
     if existing_email == email:
         return "DUP_EMAIL"
-    if existing_phone == phone:
-        return "DUP_PHONE"
     return "PARTICIPANT_EXISTS"
 
 
@@ -107,7 +102,6 @@ def insert_participant(
         "sid": session_id,
         "un": str(payload["username"]).strip()[:50],
         "em": str(payload["email"]).strip().lower()[:255],
-        "ph": str(payload["phone"]).strip()[:20],
         "gc": str(payload["gender_code"]).strip().lower()[:32],
         "age": int(payload["age"]),
         "loc": str(payload["location"]).strip()[:120],

@@ -3,24 +3,23 @@
 from sqlalchemy import text
 
 QUERY_FIND_EXISTING_PARTICIPANT_CONFLICT = text("""
-    SELECT username, email, phone
+    SELECT username, email
     FROM participants
     WHERE is_deleted = false
       AND (
         username = :un
         OR email = :em
-        OR phone = :ph
       )
     LIMIT 1
 """)
 
 QUERY_INSERT_PARTICIPANT = text("""
     INSERT INTO participants (
-        public_id, session_id, username, email, phone,
+        public_id, session_id, username, email,
         gender_code, age, location, language_code, prior_experience,
         ip_hash, user_agent, extra_metadata
     ) VALUES (
-        :pub, :sid, :un, :em, :ph, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
+        :pub, :sid, :un, :em, :gc, :age, :loc, :lc, :pe, :iph, :ua, '{}'
     )
     RETURNING id
 """)

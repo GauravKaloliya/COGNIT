@@ -117,13 +117,6 @@
     "category": "VAL",
     "field": "email"
   },
-  "VAL_PHONE_INVALID": {
-    "code": "VAL_001_0003",
-    "message": "Please enter a valid 10-digit Indian mobile number",
-    "status": 400,
-    "category": "VAL",
-    "field": "phone"
-  },
   "VAL_AGE_INVALID": {
     "code": "VAL_001_0004",
     "message": "Age must be between 13 and 100",
@@ -289,13 +282,6 @@
     "category": "DUP",
     "field": "email"
   },
-  "DUP_PHONE": {
-    "code": "DUP_001_0003",
-    "message": "This phone number is already registered",
-    "status": 409,
-    "category": "DUP",
-    "field": "phone"
-  },
   "DUP_PUBLIC_ID": {
     "code": "DUP_001_0004",
     "message": "You have already registered",
@@ -346,7 +332,7 @@
   },
   "PARTICIPANT_EXISTS": {
     "code": "ERR_PARTICIPANT_EXISTS",
-    "message": "Username, email, or phone is already registered.",
+    "message": "Username or email is already registered.",
     "status": 409,
     "category": "DUP"
   },
