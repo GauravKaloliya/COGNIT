@@ -1,0 +1,403 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from app.config import (
+    CONSENT_RATE_LIMIT,
+    DOCS_BASE_URL,
+    EMAIL_OTP_REQUEST_RATE_LIMIT,
+    EMAIL_OTP_VERIFY_RATE_LIMIT,
+    HEALTH_RATE_LIMIT,
+    INTERNAL_VERIFY_RATE_LIMIT,
+    PARTICIPANT_CHECK_RATE_LIMIT,
+    PARTICIPANT_CREATE_RATE_LIMIT,
+    PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+    PAYMENT_CREATE_RATE_LIMIT,
+    PAYMENT_STATUS_RATE_LIMIT,
+    PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT,
+    PAYMENT_TOKEN_RATE_LIMIT,
+    PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT,
+    PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
+    ROOT_RATE_LIMIT,
+    SUBMIT_RATE_LIMIT,
+    ERROR_CODES,
+)
+from app.constants.route_constants import (
+    CHECK_EMAIL_ROUTE,
+    CHECK_USERNAME_ROUTE,
+    CLIENT_ERROR_ROUTE,
+    CONSENT_ROUTE,
+    EMAIL_OTP_REQUEST_ROUTE,
+    EMAIL_OTP_VERIFY_ROUTE,
+    HEALTH_ROUTE,
+    IMAGES_RANDOM_ROUTE,
+    INTERNAL_PAYMENT_VERIFY_ROUTE,
+    PARTICIPANTS_ROUTE,
+    PARTICIPANT_OPTIONS_ROUTE,
+    PARTICIPANT_PAYMENT_STATUS_ROUTE,
+    PARTICIPANT_SESSION_ROUTE,
+    PAYMENTS_CREATE_ROUTE,
+    PAYMENT_QR_ROUTE,
+    PAYMENT_STATUS_ROUTE,
+    PAYMENT_TOKEN_ROUTE,
+    PAYMENT_UPLOAD_URL_ROUTE,
+    PAYMENT_VERIFY_UPLOAD_ROUTE,
+    SUBMIT_ROUTE,
+)
+from app.extensions import app
+
+
+_ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
+    ("GET", HEALTH_ROUTE): {
+        "summary": "Server and database health check endpoint.",
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": HEALTH_RATE_LIMIT,
+        "query": [],
+        "headers": [],
+        "body": None,
+    },
+    ("GET", CHECK_USERNAME_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
+        "query": ["username=<candidate_username>"],
+        "headers": [],
+        "body": None,
+    },
+    ("GET", CHECK_EMAIL_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
+        "query": ["email=<candidate@example.com>"],
+        "headers": [],
+        "body": None,
+    },
+    ("POST", CLIENT_ERROR_ROUTE): {
+        "summary": "Receive structured frontend error telemetry.",
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": ROOT_RATE_LIMIT,
+        "headers": ["Content-Type: application/json"],
+        "body": {
+            "message": "Unhandled UI exception",
+            "route": "/payments/abc/status",
+            "tag": "payment_status_poll",
+            "context": {"component": "PaymentLinkPage"},
+            "meta": {"browser": "Safari"},
+            "stack": "Error: ...",
+        },
+    },
+    ("POST", PARTICIPANTS_ROUTE): {
+        "auth": "none",
+        "idempotency": "required",
+        "rate_limit": PARTICIPANT_CREATE_RATE_LIMIT,
+        "headers": ["Content-Type: application/json", "X-Idempotency-Key: <uuid>"],
+        "body": {
+            "username": "gaurav_01",
+            "email": "gaurav@example.com",
+            "gender_code": "male",
+            "age": 24,
+            "location": "Ahmedabad, Gujarat",
+            "language_code": "en",
+            "prior_experience": "none",
+            "turnstile_token": "<turnstile-token>",
+        },
+        "notes": ["Sets participant cookies on success."],
+    },
+    ("POST", CONSENT_ROUTE): {
+        "auth": "none",
+        "idempotency": "optional",
+        "rate_limit": CONSENT_RATE_LIMIT,
+        "headers": ["Content-Type: application/json", "X-Idempotency-Key: <uuid> (optional)"],
+        "body": {"public_id": "<participant_public_id>"},
+    },
+    ("GET", PARTICIPANT_PAYMENT_STATUS_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
+        "headers": [],
+        "body": None,
+        "notes": ["Path parameter: public_id"],
+    },
+    ("GET", PARTICIPANT_SESSION_ROUTE): {
+        "auth": "participant cookies",
+        "idempotency": "n/a",
+        "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
+        "headers": [],
+        "body": None,
+    },
+    ("GET", PARTICIPANT_OPTIONS_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
+        "headers": [],
+        "body": None,
+    },
+    ("POST", EMAIL_OTP_REQUEST_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": EMAIL_OTP_REQUEST_RATE_LIMIT,
+        "headers": ["Content-Type: application/json"],
+        "body": {
+            "public_id": "<participant_public_id>",
+            "email": "gaurav@example.com",
+            "email_update": False,
+        },
+    },
+    ("POST", EMAIL_OTP_VERIFY_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": EMAIL_OTP_VERIFY_RATE_LIMIT,
+        "headers": ["Content-Type: application/json"],
+        "body": {
+            "public_id": "<participant_public_id>",
+            "email": "gaurav@example.com",
+            "otp": "123456",
+        },
+    },
+    ("GET", IMAGES_RANDOM_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": "none",
+        "query": [
+            "public_id=<participant_public_id> (optional)",
+            "exclude=image_001,image_002 (optional)",
+            "force_attention=1 (optional, honored only when backend env allows it)",
+        ],
+        "headers": [],
+        "body": None,
+    },
+    ("POST", PAYMENTS_CREATE_ROUTE): {
+        "auth": "none",
+        "idempotency": "required",
+        "rate_limit": PAYMENT_CREATE_RATE_LIMIT,
+        "headers": ["Content-Type: application/json", "X-Idempotency-Key: <uuid>"],
+        "body": {
+            "public_id": "<participant_public_id>",
+            "amount": 1,
+            "turnstile_token": "<turnstile-token>",
+        },
+        "notes": ["Returns payment_public_id, expiry metadata, UPI details, and a write-token signature context."],
+    },
+    ("GET", PAYMENT_QR_ROUTE): {
+        "auth": "none",
+        "idempotency": "n/a",
+        "rate_limit": PAYMENT_STATUS_RATE_LIMIT,
+        "headers": [],
+        "body": None,
+        "notes": ["Path parameter: payment_public_id"],
+    },
+    ("POST", PAYMENT_UPLOAD_URL_ROUTE): {
+        "summary": "Mint a presigned upload URL for staged payment screenshot upload.",
+        "auth": "payment write token",
+        "idempotency": "n/a",
+        "rate_limit": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
+        "headers": ["Content-Type: application/json", "Authorization: Bearer <payment_write_token>"],
+        "body": {
+            "file_extension": "png",
+            "mime_type": "image/png",
+            "file_size": 245678,
+            "sha256": "<64-char lowercase hex hash>",
+        },
+        "notes": ["Path parameter: payment_public_id", "Accepts X-Payment-Token as an alternative to Authorization header."],
+    },
+    ("POST", PAYMENT_VERIFY_UPLOAD_ROUTE): {
+        "summary": "Verify an uploaded or inline screenshot, run fraud checks, and finalize payment state.",
+        "auth": "payment write token",
+        "idempotency": "required",
+        "rate_limit": PAYMENT_VERIFY_UPLOAD_RATE_LIMIT,
+        "headers": [
+            "Content-Type: application/json",
+            "Authorization: Bearer <payment_write_token>",
+            "X-Idempotency-Key: <uuid>",
+        ],
+        "body": {
+            "upload_object_key": "payments/staging/<payment_public_id>/<uuid>.png",
+            "file_extension": "png",
+            "mime_type": "image/png",
+            "sha256": "<64-char lowercase hex hash>",
+            "turnstile_token": "<turnstile-token>",
+        },
+        "notes": ["Path parameter: payment_public_id", "You may send image_base64 instead of upload_object_key."],
+    },
+    ("GET", PAYMENT_STATUS_ROUTE): {
+        "auth": "payment write token",
+        "idempotency": "n/a",
+        "rate_limit": f"{PAYMENT_STATUS_RATE_LIMIT}; per payment {PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT}",
+        "headers": ["Authorization: Bearer <payment_write_token>"],
+        "body": None,
+        "notes": ["Path parameter: payment_public_id", "Accepts X-Payment-Token as an alternative to Authorization header."],
+    },
+    ("POST", PAYMENT_TOKEN_ROUTE): {
+        "summary": "Mint a payment write token for an active payment session.",
+        "auth": "participant cookies or explicit identifiers",
+        "idempotency": "n/a",
+        "rate_limit": f"{PAYMENT_TOKEN_RATE_LIMIT}; per payment {PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT}",
+        "headers": ["Content-Type: application/json"],
+        "body": {
+            "public_id": "<participant_public_id>",
+            "session_id": "<participant_session_id>",
+        },
+        "notes": ["Path parameter: payment_public_id"],
+    },
+    ("POST", INTERNAL_PAYMENT_VERIFY_ROUTE): {
+        "auth": "internal token",
+        "idempotency": "n/a",
+        "rate_limit": INTERNAL_VERIFY_RATE_LIMIT,
+        "headers": ["X-Internal-Token: <internal_verify_token>"],
+        "body": None,
+        "notes": ["Path parameter: payment_public_id"],
+    },
+    ("POST", SUBMIT_ROUTE): {
+        "summary": "Submit an image description with survey feedback and engagement telemetry.",
+        "auth": "completed payment + verified email",
+        "idempotency": "required",
+        "rate_limit": SUBMIT_RATE_LIMIT,
+        "headers": ["Content-Type: application/json", "X-Idempotency-Key: <uuid>"],
+        "body": {
+            "public_id": "<participant_public_id>",
+            "image_id": "image_001",
+            "description": "A detailed 60+ word description of the image content goes here.",
+            "feedback": "The task instructions were clear.",
+            "rating": 8,
+            "time_spent_seconds": 94,
+            "tab_switch_count": 0,
+            "page_close_attempts": 0,
+            "network_disconnects": 0,
+            "survey_time_spent_ms": 91000,
+            "survey_page_views": 1,
+            "survey_tab_switches": 0,
+            "survey_page_close_attempts": 0,
+            "survey_network_disconnects": 0,
+            "survey_max_scroll_depth_pct": 100,
+            "survey_clicks": 4,
+            "survey_keypresses": 102,
+            "turnstile_token": "<turnstile-token>",
+        },
+    },
+}
+
+_DOCS_EXCLUDED = {
+    "/",
+    "/api-docs",
+    "/api-docs/endpoints",
+    "/api-docs/errors",
+    "/api-docs/examples",
+    "/static/<path:filename>",
+}
+
+_ORDER = [
+    ("GET", HEALTH_ROUTE),
+    ("GET", CHECK_USERNAME_ROUTE),
+    ("GET", CHECK_EMAIL_ROUTE),
+    ("POST", CLIENT_ERROR_ROUTE),
+    ("POST", PARTICIPANTS_ROUTE),
+    ("POST", CONSENT_ROUTE),
+    ("GET", PARTICIPANT_PAYMENT_STATUS_ROUTE),
+    ("GET", PARTICIPANT_SESSION_ROUTE),
+    ("GET", PARTICIPANT_OPTIONS_ROUTE),
+    ("POST", EMAIL_OTP_REQUEST_ROUTE),
+    ("POST", EMAIL_OTP_VERIFY_ROUTE),
+    ("GET", IMAGES_RANDOM_ROUTE),
+    ("POST", PAYMENTS_CREATE_ROUTE),
+    ("GET", PAYMENT_QR_ROUTE),
+    ("POST", PAYMENT_UPLOAD_URL_ROUTE),
+    ("POST", PAYMENT_VERIFY_UPLOAD_ROUTE),
+    ("GET", PAYMENT_STATUS_ROUTE),
+    ("POST", PAYMENT_TOKEN_ROUTE),
+    ("POST", INTERNAL_PAYMENT_VERIFY_ROUTE),
+    ("POST", SUBMIT_ROUTE),
+]
+
+
+def _normalize_rule(rule: str) -> str:
+    return rule.replace("<", "{").replace(">", "}")
+
+
+def _example_url(base_url: str, path: str, query: list[str] | None) -> str:
+    url = f"{base_url}{path}"
+    if query:
+        raw_pairs = []
+        for item in query:
+            pair = item.split(" ", 1)[0]
+            raw_pairs.append(pair)
+        url = f"{url}?{'&'.join(raw_pairs)}"
+    return url
+
+
+def _build_curl_example(base_url: str, method: str, path: str, meta: dict[str, Any]) -> str:
+    lines = [f'curl -X {method} "{_example_url(base_url, path, meta.get("query"))}"']
+    for header in meta.get("headers") or []:
+        lines.append(f'  -H "{header}"')
+    body = meta.get("body")
+    if body is not None:
+        body_json = json.dumps(body, indent=2)
+        lines.append(f"  -d '{body_json}'")
+    return " \\\n".join(lines)
+
+
+def build_endpoint_docs() -> list[dict[str, Any]]:
+    docs = []
+    endpoint_to_doc = {endpoint: app.view_functions[endpoint].__doc__ or "" for endpoint in app.view_functions}
+    order_index = {key: idx for idx, key in enumerate(_ORDER)}
+
+    for rule in app.url_map.iter_rules():
+        if rule.rule in _DOCS_EXCLUDED:
+            continue
+        methods = [m for m in sorted(rule.methods) if m in {"GET", "POST"}]
+        if not methods:
+            continue
+        normalized_path = _normalize_rule(rule.rule)
+        docstring = " ".join(endpoint_to_doc.get(rule.endpoint, "").split())
+        for method in methods:
+            key = (method, rule.rule)
+            meta = _ENDPOINT_METADATA.get(key)
+            if not meta:
+                continue
+            summary = meta.get("summary") or docstring or f"{method} {normalized_path}"
+            search_text = " ".join(
+                [method.lower(), normalized_path.lower(), summary.lower(), " ".join((meta.get("notes") or [])).lower()]
+            )
+            docs.append({
+                "method": method,
+                "path": normalized_path,
+                "summary": summary,
+                "auth": meta["auth"],
+                "idempotency": meta["idempotency"],
+                "rate_limit": meta["rate_limit"],
+                "query": meta.get("query") or [],
+                "headers": meta.get("headers") or [],
+                "body": meta.get("body"),
+                "notes": meta.get("notes") or [],
+                "search_text": search_text,
+                "curl_example": _build_curl_example(DOCS_BASE_URL, method, normalized_path, meta),
+                "order": order_index.get(key, 999),
+            })
+    return sorted(docs, key=lambda item: (item["order"], item["path"], item["method"]))
+
+
+def build_error_docs() -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for error_key, error_def in sorted(ERROR_CODES.items(), key=lambda item: (item[1].get("category", ""), item[1].get("code", ""))):
+        category = str(error_def.get("category") or "SYS")
+        grouped.setdefault(category, []).append({
+            "key": error_key,
+            "code": error_def.get("code"),
+            "message": error_def.get("message"),
+            "status": error_def.get("status"),
+            "field": error_def.get("field"),
+            "reason": error_def.get("reason"),
+        })
+    return [{"category": category, "errors": errors} for category, errors in grouped.items()]
+
+
+def build_example_docs() -> list[dict[str, Any]]:
+    return [{
+        "method": endpoint["method"],
+        "path": endpoint["path"],
+        "summary": endpoint["summary"],
+        "curl_example": endpoint["curl_example"],
+        "notes": endpoint["notes"],
+    } for endpoint in build_endpoint_docs()]

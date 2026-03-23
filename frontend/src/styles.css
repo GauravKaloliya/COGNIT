@@ -2796,7 +2796,6 @@ body.dark .toast.warning {
 
 @media (min-width: 768px) {
   .payment-panel {
-    border: 1px solid var(--border);
     box-shadow: var(--shadow-sm);
   }
 }

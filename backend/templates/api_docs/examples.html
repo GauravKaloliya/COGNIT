@@ -2,135 +2,19 @@
 {% block docs_content %}
 <section class="doc-section">
   <h2>Examples</h2>
-  <p class="section-note">Generated from the live Flask route map. Replace placeholders (e.g. <code>{'{'}payment_public_id{'}'}</code>) and add required body fields.</p>
+  <p class="section-note">These examples are generated from the current backend route map and docs metadata. Replace placeholders like <code>{payment_public_id}</code>, tokens, and ids with real values.</p>
 
   <div class="examples-grid">
+    {% for example in example_docs %}
     <article class="example-card">
-      <h3>GET /check-email</h3>
-      <p class="section-note">Check if email is already registered.</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/check-email" \
-  -H "Content-Type: application/json"</pre></div>
-	    </article>
-	    <article class="example-card">
-	      <h3>GET /check-username</h3>
-      <p class="section-note">Check if username is available for registration.</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/check-username" \
-  -H "Content-Type: application/json"</pre></div>
+      <h3>{{ example.method }} {{ example.path }}</h3>
+      <p class="section-note">{{ example.summary }}</p>
+      {% for note in example.notes %}
+      <p class="section-note">{{ note }}</p>
+      {% endfor %}
+      <div class="code-block"><pre>{{ example.curl_example }}</pre></div>
     </article>
-    <article class="example-card">
-      <h3>POST /consent</h3>
-      <p class="section-note">Record participant consent agreement.</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/consent" \
-  -H "Content-Type: application/json" \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /email-otp/request</h3>
-      <p class="section-note">Request a verification OTP to be sent via email.</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/email-otp/request" \
-  -H "Content-Type: application/json" \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /email-otp/verify</h3>
-      <p class="section-note">Verify an email OTP and mark participant email as verified.</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/email-otp/verify" \
-  -H "Content-Type: application/json" \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>GET /images/random</h3>
-      <p class="section-note">Get a random image with deterministic attention-check placement.</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/images/random" \
-  -H "Content-Type: application/json"</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /internal/payments/{payment_public_id}/verify</h3>
-      <p class="section-note">Internal endpoint for payment verification (auth + rate limited).</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/internal/payments/{payment_public_id}/verify" \
-  -H "Content-Type: application/json" \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>GET /participant-options</h3>
-      <p class="section-note">Return participant form options sourced from the database.</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/participant-options" \
-  -H "Content-Type: application/json"</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /participants</h3>
-      <p class="section-note">Create a new participant registration.</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/participants" \
-  -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: &lt;uuid&gt;" \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>GET /participants/session</h3>
-      <p class="section-note">Return participant identifiers from httpOnly cookies (if present).</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/participants/session" \
-  -H "Content-Type: application/json"</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>GET /participants/{public_id}/payment-status</h3>
-      <p class="section-note">Get participant&#x27;s payment status for frontend access control.</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/participants/{public_id}/payment-status" \
-  -H "Content-Type: application/json"</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /payments/create</h3>
-      <p class="section-note">Create a new payment session with timer.</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/create" \
-  -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: &lt;uuid&gt;" \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>GET /payments/{payment_public_id}/qr</h3>
-      <p class="section-note">Return payment QR code lazily to keep /payments/create lightweight.</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/payments/{payment_public_id}/qr" \
-  -H "Content-Type: application/json"</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>GET /payments/{payment_public_id}/status</h3>
-      <p class="section-note">Get current payment status including expiry check.</p>
-      <div class="code-block"><pre>curl -X GET "{{ base_url }}/payments/{payment_public_id}/status" \
-  -H "Content-Type: application/json" \
-  # Uses session cookies set by /participants</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /payments/{payment_public_id}/token</h3>
-      <p class="section-note">Mint a new payment write token for an active session.</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/{payment_public_id}/token" \
-  -H "Content-Type: application/json" \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /payments/{payment_public_id}/upload-url</h3>
-      <p class="section-note">payment.get_payment_upload_url (get_payment_upload_url)</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/{payment_public_id}/upload-url" \
-  -H "Content-Type: application/json" \
-  # Uses session cookies set by /participants \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /payments/{payment_public_id}/verify-upload</h3>
-      <p class="section-note">payment.verify_and_upload_payment (verify_and_upload_payment)</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/payments/{payment_public_id}/verify-upload" \
-  -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: &lt;uuid&gt;" \
-  # Uses session cookies set by /participants \
-  -d '{}'</pre></div>
-    </article>
-    <article class="example-card">
-      <h3>POST /submit</h3>
-      <p class="section-note">Submit an image description or survey response.</p>
-      <div class="code-block"><pre>curl -X POST "{{ base_url }}/submit" \
-  -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: &lt;uuid&gt;" \
-  # Requires completed payment flow \
-  -d '{}'</pre></div>
-    </article>
+    {% endfor %}
   </div>
 </section>
 {% endblock %}

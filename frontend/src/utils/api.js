@@ -259,8 +259,6 @@ export const endpoints = {
     const params = new URLSearchParams();
     if (exclude.length > 0) params.set('exclude', exclude.join(','));
     if (publicId) params.set('public_id', publicId);
-    // Force attention images only (temporary).
-    params.set("force_attention", "1");
     const qs = params.toString();
     return api.get(API_ROUTES.randomImage(qs), options);
   },
