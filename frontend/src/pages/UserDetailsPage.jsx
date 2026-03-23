@@ -8,6 +8,34 @@ import PageStatusBanners from "../components/PageStatusBanners.jsx";
 import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
 import PageActions from "../components/PageActions.jsx";
 
+function RefreshIcon({ size = 18 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M20 12a8 8 0 1 1-2.34-5.66"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M20 4v6h-6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function UserDetailsPage({
   publicId,
   demographics,
@@ -179,117 +207,128 @@ export default function UserDetailsPage({
           )}
         </div>
 
-        <div className={`form-field ${errors.email ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.email")} <span className="required" aria-label="required">*</span></label>
-          <div className="input-with-ghost">
-            <input
-              type="email"
-              className={errors.email ? 'error-input' : ''}
-              placeholder=""
-              value={demographics.email || ''}
-              disabled={emailInputDisabled}
-              onChange={(e) => updateField('email', e.target.value)}
-              onFocus={() => setEmailFocused(true)}
-              onBlur={(e) => {
-                setEmailFocused(false);
-                handleFieldBlur('email', e.target.value, true);
-              }}
-            />
-            {showEmailGhost && (
-              <span className="ghost-placeholder simple">
-                <span className="ghost-prefix">{uiText("user.emailGhostPrefix")}</span>
-              <span key={emailPlaceholderIndex} className="ghost-domain simple-animate">{emailPlaceholderDomain}</span>
-              </span>
-            )}
-          </div>
-          {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
-          {errors.email && <span className="error-text">{errors.email}</span>}
-          {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
-        </div>
-
-        {showOtpField && (
-          <div className="form-field">
-            <label>{uiText("email.otpLabel")} <span className="required" aria-label="required">*</span></label>
-            <div className="otp-inputs" role="group" aria-label={uiText("email.otpLabel")}>
-              {otpDigits.map((digit, index) => (
-                <input
-                  key={`otp-${index}`}
-                  ref={(el) => {
-                    inputRefs.current[index] = el;
-                  }}
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  className="otp-input"
-                  maxLength={1}
-                  value={digit}
-                  disabled={otpStatus === OTP_STATUS.verifying || otpStatus === OTP_STATUS.sending}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const digitsOnly = toOtpDigits(raw);
-
-                    if (index !== editableOtpIndex) {
-                      inputRefs.current[editableOtpIndex]?.focus();
-                      return;
-                    }
-
-                    setOtpDigit(index, digitsOnly);
-                    if (digitsOnly && index < otpLength - 1) {
-                      window.setTimeout(() => inputRefs.current[index + 1]?.focus(), runtimeConfig.focusAdvanceDelayMs);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Backspace") {
-                      e.preventDefault();
-                      if (index !== editableOtpIndex) {
-                        inputRefs.current[editableOtpIndex]?.focus();
-                        return;
-                      }
-                      // Allow clearing only the current editable digit (no going back).
-                      setOtpDigit(index, "");
-                      return;
-                    }
-                    if (e.key === "ArrowLeft") {
-                      e.preventDefault();
-                      inputRefs.current[editableOtpIndex]?.focus();
-                      return;
-                    }
-                    if (e.key === "ArrowRight") {
-                      e.preventDefault();
-                      inputRefs.current[editableOtpIndex]?.focus();
-                    }
-                  }}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    const pasted = e.clipboardData.getData("text");
-                    const digitsOnly = toOtpDigits(pasted);
-                    if (!digitsOnly) return;
-                    setOtpFromPaste(0, digitsOnly);
-                    const nextIndex = Math.min(otpLength - 1, digitsOnly.length - 1);
-                    window.setTimeout(() => inputRefs.current[nextIndex]?.focus(), runtimeConfig.focusAdvanceDelayMs);
-                  }}
-                  onFocus={() => {
-                    if (index !== editableOtpIndex) inputRefs.current[editableOtpIndex]?.focus();
-                  }}
-                  aria-label={`${uiText("email.otpLabel")} ${index + 1}`}
-                />
-              ))}
+        <div className="form-field-stack">
+          <div className={`form-field ${errors.email ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
+            <label>{uiText("user.email")} <span className="required" aria-label="required">*</span></label>
+            <div className="input-with-ghost">
+              <input
+                type="email"
+                className={errors.email ? 'error-input' : ''}
+                placeholder=""
+                value={demographics.email || ''}
+                disabled={emailInputDisabled}
+                onChange={(e) => updateField('email', e.target.value)}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={(e) => {
+                  setEmailFocused(false);
+                  handleFieldBlur('email', e.target.value, true);
+                }}
+              />
+              {showEmailGhost && (
+                <span className="ghost-placeholder simple">
+                  <span className="ghost-prefix">{uiText("user.emailGhostPrefix")}</span>
+                  <span key={emailPlaceholderIndex} className="ghost-domain simple-animate">{emailPlaceholderDomain}</span>
+                </span>
+              )}
             </div>
-            {otpError && <span className="error-text">{otpError}</span>}
-            {showOtpExpiry && <span className="helper-text warning">{otpExpiryMessage}</span>}
-            <div className="inline-actions">
-              <DSButton
-                variant="ghost"
-                type="button"
-                disabled={!canResend}
-                onClick={handleResend}
-              >
-                {otpStatus === OTP_STATUS.sending ? uiText("email.requesting") : resendLabel}
-              </DSButton>
+            {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
+            {errors.email && <span className="error-text">{errors.email}</span>}
+            {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
+          </div>
+
+          {showOtpField && (
+            <div className="form-field otp-field">
+              <label>{uiText("email.otpLabel")} <span className="required" aria-label="required">*</span></label>
+
+              <div className="otp-row">
+                <div className="otp-inputs" role="group" aria-label={uiText("email.otpLabel")}>
+                  {otpDigits.map((digit, index) => (
+                    <input
+                      key={`otp-${index}`}
+                      ref={(el) => {
+                        inputRefs.current[index] = el;
+                      }}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      className="otp-input"
+                      maxLength={1}
+                      value={digit}
+                      disabled={otpStatus === OTP_STATUS.verifying || otpStatus === OTP_STATUS.sending}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const digitsOnly = toOtpDigits(raw);
+
+                        if (index !== editableOtpIndex) {
+                          inputRefs.current[editableOtpIndex]?.focus();
+                          return;
+                        }
+
+                        setOtpDigit(index, digitsOnly);
+                        if (digitsOnly && index < otpLength - 1) {
+                          window.setTimeout(() => inputRefs.current[index + 1]?.focus(), runtimeConfig.focusAdvanceDelayMs);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Backspace") {
+                          e.preventDefault();
+                          if (index !== editableOtpIndex) {
+                            inputRefs.current[editableOtpIndex]?.focus();
+                            return;
+                          }
+                          // Allow clearing only the current editable digit (no going back).
+                          setOtpDigit(index, "");
+                          return;
+                        }
+                        if (e.key === "ArrowLeft") {
+                          e.preventDefault();
+                          inputRefs.current[editableOtpIndex]?.focus();
+                          return;
+                        }
+                        if (e.key === "ArrowRight") {
+                          e.preventDefault();
+                          inputRefs.current[editableOtpIndex]?.focus();
+                        }
+                      }}
+                      onPaste={(e) => {
+                        e.preventDefault();
+                        const pasted = e.clipboardData.getData("text");
+                        const digitsOnly = toOtpDigits(pasted);
+                        if (!digitsOnly) return;
+                        setOtpFromPaste(0, digitsOnly);
+                        const nextIndex = Math.min(otpLength - 1, digitsOnly.length - 1);
+                        window.setTimeout(() => inputRefs.current[nextIndex]?.focus(), runtimeConfig.focusAdvanceDelayMs);
+                      }}
+                      onFocus={() => {
+                        if (index !== editableOtpIndex) inputRefs.current[editableOtpIndex]?.focus();
+                      }}
+                      aria-label={`${uiText("email.otpLabel")} ${index + 1}`}
+                    />
+                  ))}
+                </div>
+
+                <DSButton
+                  className="otp-resend-btn"
+                  variant="ghost"
+                  type="button"
+                  disabled={!canResend}
+                  onClick={handleResend}
+                  aria-label={otpStatus === OTP_STATUS.sending ? uiText("email.requesting") : resendLabel}
+                  title={otpStatus === OTP_STATUS.sending ? uiText("email.requesting") : resendLabel}
+                >
+                  <RefreshIcon />
+                </DSButton>
+              </div>
+
+              {otpError && <span className="error-text">{otpError}</span>}
+              {showOtpExpiry && <span className="helper-text warning">{otpExpiryMessage}</span>}
+              {resendSeconds > 0 && (
+                <span className="helper-text">{uiText("email.resendIn", { seconds: resendSeconds })}</span>
+              )}
               {otpStatusMessage && <span className="checking-text">{otpStatusMessage}</span>}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className={`form-field ${errors.gender_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
           <label>{uiText("user.gender")} <span className="required" aria-label="required">*</span></label>
