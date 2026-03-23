@@ -5,10 +5,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import logging
 
-from app.config import IDEMPOTENCY_TTL_SECONDS
+from app.config import ERROR_CODES, IDEMPOTENCY_TTL_SECONDS
 from app.constants.idempotency_constants import (
-    IDEMPOTENCY_CONFLICT_ERROR_CODE,
-    IDEMPOTENCY_CONFLICT_MESSAGE,
     IDEMPOTENCY_DEFAULT_STATUS,
     LOG_IDEMPOTENCY_CONFLICT,
 )
@@ -29,6 +27,7 @@ from app.services.idempotency_query_service import (
     QUERY_SAVE_IDEMPOTENCY_RESPONSE,
 )
 logger = logging.getLogger(__name__)
+IDEMPOTENCY_CONFLICT_ERROR = ERROR_CODES["VAL_IDEMPOTENCY_CONFLICT"]
 
 
 def build_request_hash(payload: Dict[str, Any]) -> str:
@@ -72,16 +71,16 @@ def load_idempotent_response(
         )
         return {
             RESPONSE_KEY_ERROR: {
-                RESPONSE_KEY_CODE: IDEMPOTENCY_CONFLICT_ERROR_CODE,
-                RESPONSE_KEY_MESSAGE: IDEMPOTENCY_CONFLICT_MESSAGE,
+                RESPONSE_KEY_CODE: IDEMPOTENCY_CONFLICT_ERROR["code"],
+                RESPONSE_KEY_MESSAGE: IDEMPOTENCY_CONFLICT_ERROR["message"],
             }
         }, ({
             RESPONSE_KEY_SUCCESS: False,
             RESPONSE_KEY_ERROR: {
-                RESPONSE_KEY_CODE: IDEMPOTENCY_CONFLICT_ERROR_CODE,
-                RESPONSE_KEY_MESSAGE: IDEMPOTENCY_CONFLICT_MESSAGE,
+                RESPONSE_KEY_CODE: IDEMPOTENCY_CONFLICT_ERROR["code"],
+                RESPONSE_KEY_MESSAGE: IDEMPOTENCY_CONFLICT_ERROR["message"],
             }
-        }, 409)
+        }, int(IDEMPOTENCY_CONFLICT_ERROR["status"]))
 
     if isinstance(response_body, str):
         try:

@@ -1,5 +1,5 @@
 import React from "react";
-import { sanitizeUsername, useUserDetailsPage } from "../hooks/useUserDetailsPage";
+import { useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
 import DSButton from "../components/design/DSButton.jsx";
 import { runtimeConfig } from "../config/runtime";
@@ -8,6 +8,7 @@ import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
 import PageActions from "../components/PageActions.jsx";
 import RefreshIcon from "../components/icons/RefreshIcon.jsx";
 import LoadingSpinner from "../components/icons/LoadingSpinner.jsx";
+import { sanitizeUsername } from "../utils/userDetailsHelpers";
 
 export default function UserDetailsPage({
   publicId,

@@ -54,14 +54,10 @@ from app.constants.ocr_constants import (
     REGEX_AMOUNT,
     REGEX_BHIM_DATE,
     REGEX_BHIM_LABEL,
-    REGEX_GAURAV,
     REGEX_GOOGLE_PAY,
     REGEX_GPAY_APP,
     REGEX_GPAY_DATE,
     REGEX_PAID,
-    REGEX_PAID_GAURAV,
-    REGEX_PAID_TO_COGNIT,
-    REGEX_PAID_TO_GAURAV,
     REGEX_PAYTM_DATE_DAY_FIRST,
     REGEX_PAYTM_DATE_MONTH_FIRST,
     REGEX_PAYTM_LABEL,
@@ -364,15 +360,9 @@ def verify_payment_screenshot(
 
     has_paytm = REGEX_PAYTM_LABEL.search(lower) is not None
     has_bhim = REGEX_BHIM_LABEL.search(lower) is not None
-    has_paid_to_cognit = REGEX_PAID_TO_COGNIT.search(lower) is not None
-    has_paid_to_gaurav = REGEX_PAID_TO_GAURAV.search(lower) is not None
-    has_paid_gaurav = REGEX_PAID_GAURAV.search(lower) is not None
-    has_gpay_recipient_phrase = (
-        has_paid_to_cognit
-        or has_paid_to_gaurav
-        or has_paid_gaurav
-        or has_paid_to_gaurav
-    )
+    has_paid_to_gaurav = re.search(r"\bpaid\s+to\s+gaurav\b", lower, re.IGNORECASE) is not None
+    has_paid_gaurav = re.search(r"\bpaid\s+gaurav\b", lower, re.IGNORECASE) is not None
+    has_gpay_recipient_phrase = has_paid_to_gaurav or has_paid_gaurav
 
     if has_paytm:
         detected_app = APP_PAYTM
@@ -417,7 +407,7 @@ def verify_payment_screenshot(
     # ─────────────────────────────────────────────
 
     # Rule 1: Banking name must contain strict token "gaurav" (case-insensitive).
-    if REGEX_GAURAV.search(lower) is None:
+    if re.search(r"\bgaurav\b", lower, re.IGNORECASE) is None:
         failures.append(FAILURE_INVALID_BANKING_NAME)
 
     # Rule 2: Amount must be exactly ₹1 / Rs.1 / rs 1 (optionally 1.00).
@@ -502,12 +492,10 @@ def sanitize_extracted_text_for_storage(
     add_match(REGEX_GOOGLE_PAY.pattern)
 
     # Core payment semantics
-    add_match(REGEX_PAID_TO_COGNIT.pattern)
-    add_match(REGEX_PAID_TO_GAURAV.pattern)
-    add_match(REGEX_PAID_GAURAV.pattern)
+    add_match(r"\bpaid\s+to\s+gaurav\b")
+    add_match(r"\bpaid\s+gaurav\b")
     add_match(REGEX_PAID.pattern)
-    add_match(r"\bcognit\b")
-    add_match(REGEX_GAURAV.pattern)
+    add_match(r"\bgaurav\b")
     add_match(REGEX_AMOUNT.pattern)
 
     # Time
