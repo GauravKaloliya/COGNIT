@@ -28,7 +28,7 @@ import {
   USER_DETAIL_FIELDS,
 } from "../constants/userDetails";
 import { REQUEST_CODES } from "../constants/request";
-import { REGEX_PATTERNS, STRING_PREFIXES } from "../constants/patterns";
+import { REGEX_PATTERNS } from "../constants/patterns";
 
 const USERNAME_MIN_LENGTH = runtimeConfig.usernameMinLength;
 const AGE_MIN = runtimeConfig.ageMin;

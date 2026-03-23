@@ -3,6 +3,7 @@ import json
 from app.config import (
     PRIORITY_QUEUE_MIN_TOTAL_WORDS,
     PRIORITY_QUEUE_MIN_ROUNDS,
+    PRIORITY_MIN_SUBMISSIONS,
     REWARD_MAX_AVG_TIME_SECONDS,
     REWARD_MIN_AVG_FEEDBACK_LENGTH,
     REWARD_MIN_AVG_RATING,
@@ -59,7 +60,7 @@ def evaluate_priority_and_rewards(db, participant_id: int, correlation_id: str =
         and (payment_status == PARTICIPANT_PAYMENT_STATUS_PAID)
         and int(total_words or 0) >= PRIORITY_QUEUE_MIN_TOTAL_WORDS
         and int(max_round or 0) >= PRIORITY_QUEUE_MIN_ROUNDS
-        and int(survey_count or 0) >= PRIORITY_QUEUE_MIN_ROUNDS
+        and int(survey_count or 0) >= PRIORITY_MIN_SUBMISSIONS
         and int(total_tab_switch or 0) == 0
         and int(total_page_close or 0) == 0
         and int(total_network_disconnect or 0) == 0
@@ -81,9 +82,10 @@ def evaluate_priority_and_rewards(db, participant_id: int, correlation_id: str =
         "is_eligible": layer_one_pass,
         "reason_code": queue_reason,
         "metadata": json.dumps({
-            "thresholds": {
-                "min_total_words": PRIORITY_QUEUE_MIN_TOTAL_WORDS,
-                "min_rounds": PRIORITY_QUEUE_MIN_ROUNDS,
+                "thresholds": {
+                    "min_total_words": PRIORITY_QUEUE_MIN_TOTAL_WORDS,
+                    "min_rounds": PRIORITY_QUEUE_MIN_ROUNDS,
+                    "min_submissions": PRIORITY_MIN_SUBMISSIONS,
             }
         }),
     })

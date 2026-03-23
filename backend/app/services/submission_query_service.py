@@ -118,7 +118,10 @@ QUERY_INSERT_ATTENTION_EVENT = text("""
 
 QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG = text("""
     UPDATE participant_attention_stats
-    SET is_flagged = CASE WHEN :hard_flag THEN true ELSE is_flagged END,
+    SET is_flagged = CASE
+            WHEN :hard_flag OR :soft_flag THEN true
+            ELSE is_flagged
+        END,
         last_checked_at = CURRENT_TIMESTAMP
     WHERE participant_id = :pid
 """)
@@ -253,10 +256,11 @@ def insert_attention_event_record(db, *, participant_id: int, submission_id: int
     })
 
 
-def update_participant_attention_flag(db, *, participant_id: int, hard_flag_triggered: bool):
+def update_participant_attention_flag(db, *, participant_id: int, hard_flag_triggered: bool, soft_flag_triggered: bool):
     db.execute(QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG, {
         "pid": int(participant_id),
         "hard_flag": bool(hard_flag_triggered),
+        "soft_flag": bool(soft_flag_triggered),
     })
 
 

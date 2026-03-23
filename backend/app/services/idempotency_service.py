@@ -1,9 +1,11 @@
 import hashlib
 import json
+import random
 from typing import Any, Dict, Optional, Tuple
 
 import logging
 
+from app.config import IDEMPOTENCY_TTL_SECONDS
 from app.constants.idempotency_constants import (
     IDEMPOTENCY_CONFLICT_ERROR_CODE,
     IDEMPOTENCY_CONFLICT_MESSAGE,
@@ -117,6 +119,8 @@ def save_idempotent_response(
         })
     except Exception:
         return
+    if IDEMPOTENCY_TTL_SECONDS > 0 and random.random() < 0.02:
+        cleanup_idempotency_keys(db, int(IDEMPOTENCY_TTL_SECONDS))
 
 
 def cleanup_idempotency_keys(db, ttl_seconds: int) -> None:

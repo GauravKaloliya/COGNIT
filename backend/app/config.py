@@ -180,7 +180,6 @@ IDEMPOTENCY_TTL_SECONDS = 86400
 
 LOG_LEVEL = "INFO"
 LOGGING_AUTO_CONFIG = True
-VERCEL_ENV = _str_env("VERCEL_ENV", "development")
 WEBSITE_URL = _required_env("WEBSITE_URL")
 _default_cookie_secure = bool(WEBSITE_URL.lower().startswith("https://"))
 SESSION_COOKIE_SECURE = _bool_env("SESSION_COOKIE_SECURE", _default_cookie_secure)
@@ -197,13 +196,23 @@ PARTICIPANT_PUBLIC_COOKIE_NAME = "cognit_public_id"
 # Payment & UPI Configuration
 # ────────────────────────────────────────────────
 
-UPI_VPA = _required_env("UPI_VPA")
 UPI_NAME = _required_env("UPI_NAME")
 PAYMENT_AMOUNT = _required_float_env("PAYMENT_AMOUNT")
 PAYMENT_SECRET = _required_env("PAYMENT_SECRET")
 PAYMENT_EXPIRY_SECONDS = _required_int_env("PAYMENT_EXPIRY_SECONDS")
 PAYMENT_SCREENSHOT_TIMEZONE = _str_env("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
 PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = 300
+
+# Optional UPI pool configuration (comma-separated).
+UPI_POOL_VPAS = _required_env("UPI_POOL_VPAS")
+
+UPI_PER_UPI_LIMIT = _int_env("UPI_PER_UPI_LIMIT", 20, min_value=1, max_value=200)
+UPI_USER_LIMIT = _int_env("UPI_USER_LIMIT", 6, min_value=1, max_value=50)
+UPI_COOLDOWN_SECONDS = _int_env("UPI_COOLDOWN_SECONDS", 600, min_value=60, max_value=86400)
+UPI_FAILURE_DECAY_SECONDS = _int_env("UPI_FAILURE_DECAY_SECONDS", 600, min_value=60, max_value=86400)
+UPI_BURST_RESET_SECONDS = _int_env("UPI_BURST_RESET_SECONDS", 60, min_value=10, max_value=3600)
+UPI_COOLDOWN_CAPACITY_FACTOR = _float_env("UPI_COOLDOWN_CAPACITY_FACTOR", 0.5, min_value=0.1, max_value=1.0)
+UPI_TIE_SCORE_THRESHOLD = _int_env("UPI_TIE_SCORE_THRESHOLD", 1, min_value=0, max_value=10)
 
 
 # ────────────────────────────────────────────────
@@ -303,6 +312,8 @@ FRAUD_SCORE_WEIGHTS: Dict[str, float] = {
     "invalid_datetime_format_bhim": 62,
     "invalid_banking_name": 68,
     "invalid_amount": 78,
+    "missing_success": 74,
+    "failure_indicator": 88,
     "missing_paid_to_cognit": 66,
     "missing_paytm_label": 58,
     "missing_bhim_label": 58,
@@ -404,25 +415,26 @@ DOCS_BASE_URL = _str_env("DOCS_BASE_URL", WEBSITE_URL)
 PORT = _int_env("PORT", 5000, min_value=1, max_value=65535)
 FLASK_DEBUG = _bool_env("FLASK_DEBUG", True)
 
-ROOT_RATE_LIMIT = "30 per minute"
+ROOT_RATE_LIMIT = "60 per minute"
 DOCS_RATE_LIMIT = "30 per minute"
-HEALTH_RATE_LIMIT = "10 per minute"
-PARTICIPANT_CREATE_RATE_LIMIT = "30 per minute"
-PARTICIPANT_CHECK_RATE_LIMIT = "30 per minute"
+HEALTH_RATE_LIMIT = "20 per minute"
+PARTICIPANT_CREATE_RATE_LIMIT = "20 per minute"
+PARTICIPANT_CHECK_RATE_LIMIT = "60 per minute"
 CONSENT_RATE_LIMIT = "20 per minute"
-PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT = "30 per minute"
-SUBMIT_RATE_LIMIT = "60 per minute"
-PAYMENT_CREATE_RATE_LIMIT = "60 per minute"
-PAYMENT_VERIFY_UPLOAD_RATE_LIMIT = "20 per minute"
-PAYMENT_STATUS_RATE_LIMIT = "20 per minute"
-PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT = "12 per minute"
-PAYMENT_TOKEN_RATE_LIMIT = "10 per minute"
-PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT = "6 per minute"
-EMAIL_OTP_REQUEST_RATE_LIMIT = "10 per minute"
-EMAIL_OTP_VERIFY_RATE_LIMIT = "10 per minute"
+PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT = "60 per minute"
+SUBMIT_RATE_LIMIT = "20 per minute"
+PAYMENT_CREATE_RATE_LIMIT = "20 per minute"
+PAYMENT_VERIFY_UPLOAD_RATE_LIMIT = "12 per minute"
+PAYMENT_STATUS_RATE_LIMIT = "60 per minute"
+PAYMENT_STATUS_RATE_LIMIT_PER_PAYMENT = "20 per minute"
+PAYMENT_TOKEN_RATE_LIMIT = "30 per minute"
+PAYMENT_TOKEN_RATE_LIMIT_PER_PAYMENT = "12 per minute"
+EMAIL_OTP_REQUEST_RATE_LIMIT = "10 per hour"
+EMAIL_OTP_VERIFY_RATE_LIMIT = "12 per minute"
 
 IMAGE_PICK_ATTEMPTS_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_ATTENTION", "4"))
-IMAGE_PICK_ATTEMPTS_NON_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_NON_ATTENTION", "8"))
+IMAGE_PICK_ATTEMPTS_NON_ATTENTION = int(os.getenv("IMAGE_PICK_ATTEMPTS_NON_ATTENTION", "4"))
+FORCE_ATTENTION_IMAGES = _bool_env("FORCE_ATTENTION_IMAGES", False)
 
 
 validate_config()

@@ -25,6 +25,8 @@ FAILURE_INVALID_DATETIME_GPAY = "invalid_datetime_format_gpay"
 FAILURE_INVALID_DATETIME_PAYTM = "invalid_datetime_format_paytm"
 FAILURE_INVALID_DATETIME_BHIM = "invalid_datetime_format_bhim"
 FAILURE_TIME_OUT_OF_RANGE = "time_out_of_range"
+FAILURE_MISSING_SUCCESS = "missing_success"
+FAILURE_FAILURE_INDICATOR = "failure_indicator"
 
 REGEX_TIME_12H = re.compile(r"\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)\b", re.IGNORECASE)
 REGEX_GPAY_DATE = re.compile(

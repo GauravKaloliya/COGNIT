@@ -14,6 +14,7 @@ from app.config import (
     API_LATENCY_SLO_MS,
     DOCS_BASE_URL,
     HEALTH_CACHE_TTL_SECONDS,
+    ENABLE_DEVICE_FINGERPRINTING,
     SECURITY_CONTENT_TYPE_OPTIONS,
     SECURITY_FRAME_OPTIONS,
     SECURITY_HSTS_ENABLED,
@@ -55,7 +56,8 @@ def initialize_request_context(logger: logging.Logger):
         log_event(logger, OBS_EVENT_DB_SESSION_INIT_FAILED, level=logging.WARNING, error=str(exc))
 
     try:
-        device_fingerprint_middleware()
+        if ENABLE_DEVICE_FINGERPRINTING:
+            device_fingerprint_middleware()
     except Exception as exc:
         log_event(logger, OBS_EVENT_DEVICE_FINGERPRINT_INIT_FAILED, level=logging.WARNING, error=str(exc))
 
@@ -83,6 +85,8 @@ def _normalize_success_envelope(response):
 
 
 def _commit_device_fingerprint_if_needed(response, logger: logging.Logger):
+    if not ENABLE_DEVICE_FINGERPRINTING:
+        return
     if getattr(g, "device_fingerprint_written", False) and request.method in {"GET", "HEAD"}:
         db = getattr(g, "db", None)
         try:
