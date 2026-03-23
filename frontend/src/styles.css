@@ -1259,6 +1259,16 @@ body.dark .consent-fade {
   padding: 0;
 }
 
+.loading-spinner {
+  color: var(--primary);
+  animation: spin 0.9s linear infinite;
+}
+
+.otp-resend-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .otp-inputs {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
