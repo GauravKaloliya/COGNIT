@@ -15,6 +15,14 @@ import { PAYMENT_ERROR_CODES } from "../constants/payment";
 import { API_ROUTES, APP_ROUTES } from "../constants/routes";
 import { reportClientError } from "./errorReporter";
 
+const RATE_LIMIT_EVENT = "cognit:rate-limit";
+const MAINTENANCE_EVENT = "cognit:maintenance";
+const MAINTENANCE_CODES = new Set([
+  "PAY_001_0009",
+  "PAY_001_0010",
+  "PAY_001_0011",
+]);
+
 /**
  * Enhanced fetch wrapper with standardized error handling
  */
@@ -91,6 +99,21 @@ export async function apiFetch(endpoint, options = {}) {
       error.originalMessage = parsedError.originalMessage;
       error.requestId = parsedError.requestId || response.headers.get(REQUEST_HEADERS.requestId) || requestId;
       
+      const isMaintenance = parsedError?.code && MAINTENANCE_CODES.has(parsedError.code);
+      if (isMaintenance) {
+        try {
+          window.dispatchEvent(new CustomEvent(MAINTENANCE_EVENT, { detail: error }));
+        } catch {
+          // ignore event dispatch failures
+        }
+      }
+      if (!isMaintenance && (response.status === 429 || parsedError?.code === "ERR_RATE_LIMIT" || parsedError?.category === "RATE")) {
+        try {
+          window.dispatchEvent(new CustomEvent(RATE_LIMIT_EVENT, { detail: error }));
+        } catch {
+          // ignore event dispatch failures
+        }
+      }
       throw error;
     }
     
@@ -224,13 +247,8 @@ export const endpoints = {
     const params = new URLSearchParams();
     if (exclude.length > 0) params.set('exclude', exclude.join(','));
     if (publicId) params.set('public_id', publicId);
-    // Dev-only: allow forcing attention images by adding ?force_attention=1 to the app URL.
-    if (import.meta.env.DEV && typeof window !== "undefined") {
-      const qs = new URLSearchParams(window.location.search || "");
-      if ((qs.get("force_attention") || "").trim() === "1") {
-        params.set("force_attention", "1");
-      }
-    }
+    // Force attention images only (temporary).
+    params.set("force_attention", "1");
     const qs = params.toString();
     return api.get(API_ROUTES.randomImage(qs), options);
   },

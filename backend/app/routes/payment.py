@@ -103,6 +103,7 @@ from app.services import (
     build_reused_payment_response_payload,
     build_request_hash,
     create_payment_record,
+    fetch_used_upis_for_participant,
     enqueue_payment_audit,
     expire_payment_if_needed,
     fetch_active_payment_for_reuse,
@@ -115,6 +116,7 @@ from app.services import (
     load_idempotent_response,
     mark_existing_active_payments_failed,
     normalize_payment_amount,
+    select_upi_for_payment,
     save_idempotent_response,
     issue_payment_write_token,
 )
@@ -199,6 +201,33 @@ def create_payment():
             payload, status_code = replay
             return success_response(payload), status_code
 
+    user_key = get_ip_hash()
+    used_upis = fetch_used_upis_for_participant(db, participant_id=participant_id, now_utc=datetime.now(timezone.utc))
+    selection = select_upi_for_payment(
+        db,
+        user_key=user_key,
+        session_id=participant_session_id or "",
+        used_upis=used_upis,
+    )
+    if selection.get("status") == "MAINTENANCE":
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return create_error_response("PAY_UPI_MAINTENANCE")
+    if selection.get("status") == "USER_LIMIT_EXCEEDED":
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return create_error_response("PAY_UPI_USER_LIMIT")
+    if selection.get("status") == "SESSION_LIMIT_EXCEEDED":
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return create_error_response("PAY_UPI_SESSION_LIMIT")
+
     mark_existing_active_payments_failed(db, participant_id)
 
     try:
@@ -207,6 +236,9 @@ def create_payment():
             participant_id=participant_id,
             public_id=public_id,
             amount=amount,
+            upi_account_id=selection.get("upi_account_id"),
+            upi_vpa=selection.get("upi_vpa"),
+            upi_name=selection.get("upi_name"),
         )
         logger.info(
             "payment_create_success request_id=%s public_id=%s payment_id=%s expires_at=%s",
@@ -226,6 +258,8 @@ def create_payment():
             expires_at=expires_at,
             expires_str=expires_str,
             signature=signature,
+            upi_vpa=selection.get("upi_vpa"),
+            upi_name=selection.get("upi_name"),
             device_fingerprint=getattr(g, "device_fingerprint", None) or "",
             session_id=participant_session_id or "",
             time_remaining_seconds=PAYMENT_EXPIRY_SECONDS,
@@ -328,21 +362,26 @@ def get_payment_qr(payment_public_id):
     try:
         db = get_db()
         row = db.execute(text("""
-            SELECT amount, status
+            SELECT amount, status, upi_vpa, upi_name
             FROM payments
             WHERE public_id = :pid
             LIMIT 1
         """), {"pid": payment_public_id}).fetchone()
         if not row:
             return create_error_response("PAYMENT_NOT_FOUND")
-        amount, status = row
+        amount, status, upi_vpa, upi_name = row
         actual_amount = round(float(amount), 2) if amount is not None else None
         if actual_amount is None or not is_expected_payment_amount(actual_amount):
             return create_error_response("INVALID_AMOUNT")
         if status in PAYMENT_QR_BLOCKED_STATUSES:
             return create_error_response("PAYMENT_INVALID_STATE")
 
-        upi_link = generate_upi_link(float(amount), payment_ref=str(payment_public_id))
+        upi_link = generate_upi_link(
+            float(amount),
+            payment_ref=str(payment_public_id),
+            upi_vpa=upi_vpa,
+            upi_name=upi_name,
+        )
         return success_response({
             RESPONSE_KEY_PAYMENT_ID: payment_public_id,
             RESPONSE_KEY_QR_BASE64: build_qr_base64(upi_link),

@@ -161,6 +161,12 @@ export function usePaymentLinkPage({
     if (reasonSet.has("ocr_unavailable") || reasonSet.has("invalid_datetime_format_gpay") || reasonSet.has("invalid_datetime_format_paytm") || reasonSet.has("invalid_datetime_format_bhim")) {
       steps.push(uiText("payment.recovery.clearScreenshot"));
     }
+    if (reasonSet.has("missing_success")) {
+      steps.push(uiText("payment.recovery.successStatus"));
+    }
+    if (reasonSet.has("failure_indicator")) {
+      steps.push(uiText("payment.recovery.failureStatus"));
+    }
     if (code === "DUP_003_0001" || code === PAYMENT_ERROR_CODES.screenshotReusedOther) {
       steps.push(uiText("payment.recovery.reusedOther", { amount: PAYMENT_AMOUNT_LABEL }));
     }

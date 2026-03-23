@@ -16,6 +16,7 @@ from app.config import (
     TOO_FAST_SECONDS,
     ALLOWED_IMAGE_EXTENSIONS,
     CONTENT_TYPE_MAP,
+    ENABLE_AUDIT_LOGGING,
     IP_HASH_SALT,
     TRUST_PROXY_HEADERS,
 )
@@ -151,6 +152,8 @@ def log_audit(
     status_code: Optional[int] = 200,
 ):
     """Log an audit event to the database."""
+    if not ENABLE_AUDIT_LOGGING:
+        return
     try:
         db.execute(text("""
             INSERT INTO audit_log (
