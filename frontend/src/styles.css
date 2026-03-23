@@ -1254,6 +1254,7 @@ body.dark .consent-fade {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .otp-row .otp-inputs {
@@ -1296,6 +1297,7 @@ body.dark .consent-fade {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--space-2);
   max-width: 360px;
+  width: 100%;
 }
 
 .otp-input {
@@ -1306,6 +1308,17 @@ body.dark .consent-fade {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   background: var(--panel);
+}
+
+@media (max-width: 420px) {
+  .otp-inputs {
+    gap: var(--space-1);
+    max-width: 100%;
+  }
+
+  .otp-input {
+    font-size: 16px;
+  }
 }
 
 .otp-input:focus {
