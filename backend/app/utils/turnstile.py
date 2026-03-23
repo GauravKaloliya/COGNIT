@@ -2,6 +2,9 @@
 Cloudflare Turnstile verification utilities.
 """
 
+import logging
+import random
+import time
 from typing import Optional, Tuple
 import ipaddress
 import requests
@@ -13,6 +16,17 @@ from app.config import (
     TURNSTILE_TIMEOUT_SECONDS,
     TURNSTILE_BYPASS_LOCAL,
 )
+from app.constants.observability_constants import (
+    OBS_EVENT_TURNSTILE_VERIFY_FAILED,
+    OBS_EVENT_TURNSTILE_VERIFY_SLOW,
+    OBS_EVENT_TURNSTILE_VERIFY_SUCCESS,
+    OBS_EVENT_TURNSTILE_VERIFY_TIMEOUT,
+)
+from app.utils.observability import log_event
+
+logger = logging.getLogger(__name__)
+_TURNSTILE_SLOW_THRESHOLD_MS = 750
+_TURNSTILE_SUCCESS_SAMPLE_RATE = 0.1
 
 
 def _is_loopback_ip(value: Optional[str]) -> bool:
@@ -48,6 +62,7 @@ def verify_turnstile_token(
     token: str,
     remote_ip: Optional[str] = None,
     host: Optional[str] = None,
+    endpoint: Optional[str] = None,
 ) -> Tuple[bool, dict]:
     """
     Verify a Turnstile token against Cloudflare siteverify API.
@@ -71,12 +86,34 @@ def verify_turnstile_token(
         payload["remoteip"] = remote_ip
 
     try:
+        started_at = time.monotonic()
         resp = requests.post(
             TURNSTILE_VERIFY_URL,
             data=payload,
             timeout=max(1.0, float(TURNSTILE_TIMEOUT_SECONDS)),
         )
         data = resp.json() if resp.content else {}
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        if elapsed_ms >= _TURNSTILE_SLOW_THRESHOLD_MS:
+            log_event(
+                logger,
+                OBS_EVENT_TURNSTILE_VERIFY_SLOW,
+                latency_ms=elapsed_ms,
+                success=bool(data.get("success")),
+                endpoint=endpoint,
+            )
+        elif random.random() < _TURNSTILE_SUCCESS_SAMPLE_RATE:
+            log_event(
+                logger,
+                OBS_EVENT_TURNSTILE_VERIFY_SUCCESS,
+                latency_ms=elapsed_ms,
+                success=bool(data.get("success")),
+                endpoint=endpoint,
+            )
         return bool(data.get("success")), data
+    except requests.exceptions.Timeout:
+        log_event(logger, OBS_EVENT_TURNSTILE_VERIFY_TIMEOUT, level=logging.WARNING, endpoint=endpoint)
+        return False, {"success": False, "error-codes": ["verification-request-timeout"]}
     except Exception:
+        log_event(logger, OBS_EVENT_TURNSTILE_VERIFY_FAILED, level=logging.WARNING, endpoint=endpoint)
         return False, {"success": False, "error-codes": ["verification-request-failed"]}

@@ -17,8 +17,10 @@ from app.constants.participant_constants import (
 from app.constants.participant_patterns import PUBLIC_ID_REGEX
 from app.services.participant_query_service import (
     QUERY_CHECK_PARTICIPANT_FIELD_AVAILABLE_TEMPLATE,
+    QUERY_CHECK_PRIOR_EXPERIENCE_EXISTS,
     QUERY_FETCH_GENDERS,
     QUERY_FETCH_LANGUAGES,
+    QUERY_FETCH_PRIOR_EXPERIENCES,
     QUERY_FIND_EXISTING_PARTICIPANT_CONFLICT,
     QUERY_GET_EXISTING_SESSION_ID,
     QUERY_INSERT_PARTICIPANT,
@@ -85,7 +87,7 @@ def find_existing_participant_conflict(db, *, username: str, email: str):
         return "DUP_USERNAME"
     if existing_email == email:
         return "DUP_EMAIL"
-    return "PARTICIPANT_EXISTS"
+    return "DUP_PUBLIC_ID"
 
 
 def insert_participant(
@@ -133,6 +135,27 @@ def fetch_participant_options(db):
 
     languages = db.execute(QUERY_FETCH_LANGUAGES).fetchall()
 
+    prior_experiences = db.execute(QUERY_FETCH_PRIOR_EXPERIENCES).fetchall()
+    grouped_prior_experiences = []
+    current_group = None
+    current_options = []
+    for code, display_name, group_label in prior_experiences:
+        group_name = str(group_label)
+        if current_group != group_name:
+            if current_group is not None:
+                grouped_prior_experiences.append({
+                    "label": current_group,
+                    "options": current_options,
+                })
+            current_group = group_name
+            current_options = []
+        current_options.append({"value": str(code), "label": str(display_name)})
+    if current_group is not None:
+        grouped_prior_experiences.append({
+            "label": current_group,
+            "options": current_options,
+        })
+
     return {
         "genders": [
             {"value": str(code), "label": str(display_name)}
@@ -149,4 +172,13 @@ def fetch_participant_options(db):
             }
             for code, name, native_name in languages
         ],
+        "prior_experiences": grouped_prior_experiences,
     }
+
+
+def is_valid_prior_experience_code(db, code: str) -> bool:
+    value = str(code or "").strip()
+    if not value:
+        return False
+    row = db.execute(QUERY_CHECK_PRIOR_EXPERIENCE_EXISTS, {"code": value}).scalar()
+    return bool(row)

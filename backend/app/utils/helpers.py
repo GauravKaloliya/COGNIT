@@ -182,7 +182,6 @@ def log_audit(
 def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
     """Generate strict standardized error response."""
     error_def = ERROR_CODES.get(error_key, ERROR_CODES["SYS_INTERNAL_ERROR"])
-    custom_message = kwargs.get("custom_message")
     status = int(error_def.get("status", 500))
     category = error_def.get("category", "SYS")
     retryable = kwargs.get("retryable")
@@ -195,7 +194,7 @@ def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
         RESPONSE_KEY_SUCCESS: False,
         RESPONSE_KEY_ERROR: {
             RESPONSE_KEY_CODE: error_def["code"],
-            RESPONSE_KEY_MESSAGE: custom_message or base_message,
+            RESPONSE_KEY_MESSAGE: base_message,
             RESPONSE_KEY_CATEGORY: category,
             RESPONSE_KEY_HTTP_STATUS: status,
             RESPONSE_KEY_RETRYABLE: bool(retryable),
@@ -233,11 +232,10 @@ def success_response(data: Optional[Dict] = None, message: Optional[str] = None)
 def create_error_response(
     error_key: str, 
     details: Optional[dict] = None, 
-    custom_message: Optional[str] = None,
     **kwargs,
 ) -> Tuple[Any, int]:
     """Project-wide error response helper."""
-    return error_response(error_key, details=details, custom_message=custom_message, **kwargs)
+    return error_response(error_key, details=details, **kwargs)
 
 
 # ────────────────────────────────────────────────

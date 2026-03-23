@@ -4,7 +4,7 @@ import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
 import DSButton from './design/DSButton.jsx';
 import { uiText } from '../utils/uiText.js';
-import { NOT_FOUND_ILLUSTRATION } from '../content/notFoundIllustration.js';
+import { DOG_ILLUSTRATION } from '../content/notFoundIllustration.js';
 import { APP_ROUTES } from '../constants/routes.js';
 import { BUTTON_VARIANTS, PANEL_STATE_ICONS, PANEL_STATE_VARIANTS } from '../constants/componentUi.js';
 import { DOM_ROLES } from '../constants/dom.js';
@@ -35,9 +35,9 @@ export default function NotFound({ darkMode = false, onToggleDarkMode }) {
       <div className="panel">
         <div className="page-hero">
           <div className="not-found-dog">
-            <svg viewBox={NOT_FOUND_ILLUSTRATION.viewBox} role={DOM_ROLES.image} aria-label={NOT_FOUND_ILLUSTRATION.ariaLabel}>
+            <svg viewBox={DOG_ILLUSTRATION.viewBox} role={DOM_ROLES.image} aria-label={DOG_ILLUSTRATION.ariaLabel}>
               <defs>
-                {NOT_FOUND_ILLUSTRATION.gradients.map((gradient) => (
+                {DOG_ILLUSTRATION.gradients.map((gradient) => (
                   <linearGradient key={gradient.id} id={gradient.id} x1={gradient.x1} y1={gradient.y1} x2={gradient.x2} y2={gradient.y2}>
                     {gradient.stops.map((stop, index) => (
                       <stop key={`${gradient.id}-${index}`} offset={stop.offset} stopColor={stop.stopColor} />
@@ -45,7 +45,7 @@ export default function NotFound({ darkMode = false, onToggleDarkMode }) {
                   </linearGradient>
                 ))}
               </defs>
-              {NOT_FOUND_ILLUSTRATION.shapes.map((shape, index) => React.createElement(shape.type, {
+              {DOG_ILLUSTRATION.shapes.map((shape, index) => React.createElement(shape.type, {
                 key: `${shape.type}-${index}`,
                 ...shape.props,
               }))}

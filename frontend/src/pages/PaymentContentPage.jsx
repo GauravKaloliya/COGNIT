@@ -118,8 +118,10 @@ export default function PaymentContentPage({ onNext }) {
 
       <PageActions sticky>
         <DSButton variant="primary" onClick={handleContinue} disabled={!isOnline || continuing}>
-          {!isOnline && pendingContinue && retryCountdown > 0
-            ? uiText("common.tryAgainIn", { seconds: retryCountdown })
+          {!isOnline && pendingContinue
+            ? (retryCountdown > 0
+              ? uiText("common.tryAgainIn", { seconds: retryCountdown })
+              : uiText("payment.offlineCreate"))
             : uiText("payment.continueToPayment")}
           {!isOnline && pendingContinue && <ButtonRetryBadge seconds={retryCountdown} />}
         </DSButton>

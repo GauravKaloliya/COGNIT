@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
+import { getDisplayErrorMessage } from "../utils/appError";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { requirePublicId } from "../utils/publicId";
@@ -86,7 +87,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
         return null;
       }
-      const errorMessage = error.message || getErrorMessage("SYS_002_0016");
+      const errorMessage = getDisplayErrorMessage(error, "SYS_002_0016");
       addToast(errorMessage, "error");
       setImageError(errorMessage);
       setSurvey(null);
@@ -172,7 +173,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
         return;
       }
       setLastSubmissionSucceeded(false);
-      const errorMessage = error.message || getErrorMessage("SYS_002_0006");
+      const errorMessage = getDisplayErrorMessage(error, "SYS_002_0006");
       throw new Error(errorMessage);
     } finally {
       if (submitAbortRef.current === controller) {

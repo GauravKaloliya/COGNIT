@@ -12,6 +12,7 @@ from io import BytesIO
 
 import qrcode
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 from app.config import PAYMENT_AMOUNT, PAYMENT_EXPIRY_SECONDS
 from app.constants.payment_constants import (
@@ -22,6 +23,7 @@ from app.constants.payment_constants import (
     PAYMENT_STATUS_PROCESSING,
     PAYMENT_STATUS_FAILED,
 )
+from app.services.payment_query_service import sync_participant_from_payment_status
 from app.constants.response_keys import (
     RESPONSE_KEY_AMOUNT,
     RESPONSE_KEY_AUTO_REJECTED,
@@ -204,6 +206,7 @@ def mark_existing_active_payments_failed(db, participant_id: int):
         "pending_status": PAYMENT_STATUS_PENDING,
         "processing_status": PAYMENT_STATUS_PROCESSING,
     })
+    sync_participant_from_payment_status(db, participant_id=int(participant_id), status=PAYMENT_STATUS_FAILED)
 
 
 def create_payment_record(
@@ -232,6 +235,7 @@ def create_payment_record(
         "timer_time": datetime.now(timezone.utc),
         "detected_app": PAYMENT_DETECTED_APP_UNKNOWN,
     }).fetchone()
+    sync_participant_from_payment_status(db, participant_id=int(participant_id), status=PAYMENT_STATUS_PENDING)
     return payment_row, signature, expires_at, expires_str
 
 
@@ -341,7 +345,13 @@ def expire_payment_if_needed(db, *, payment_id: int, status: str, expires_at):
     is_expired = expires_at and now > expires_at
     updated_status = status
     if is_expired and status in PAYMENT_ACTIVE_STATUSES:
+        participant_id = db.execute(
+            text("SELECT participant_id FROM payments WHERE id = :pid"),
+            {"pid": int(payment_id)},
+        ).scalar()
         db.execute(QUERY_EXPIRE_PAYMENT_IF_NEEDED, {"pid": payment_id, "expired_status": PAYMENT_STATUS_EXPIRED})
+        if participant_id:
+            sync_participant_from_payment_status(db, participant_id=int(participant_id), status=PAYMENT_STATUS_EXPIRED)
         db.commit()
         updated_status = PAYMENT_STATUS_EXPIRED
     return updated_status, now

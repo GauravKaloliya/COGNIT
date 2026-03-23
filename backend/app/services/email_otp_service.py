@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import secrets
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import json
 import time
 import re
@@ -41,10 +42,12 @@ from app.services.email_otp_query_service import (
     QUERY_UPDATE_PARTICIPANT_EMAIL,
     QUERY_SELECT_PARTICIPANT_BY_PUBLIC_EMAIL,
 )
+from app.database import engine
 
 
 OTP_DIGITS = "0123456789"
 logger = logging.getLogger(__name__)
+EMAIL_OTP_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="email-otp")
 
 
 class EmailOtpSendError(RuntimeError):
@@ -225,6 +228,27 @@ def send_email_otp(payload: dict, *, request_id: str | None = None) -> None:
             },
         )
         raise EmailOtpSendError(kind="request_error", detail=str(exc)) from exc
+
+
+def enqueue_email_otp(payload: dict, *, otp_id: int, request_id: str | None = None) -> None:
+    def _send() -> None:
+        try:
+            send_email_otp(payload, request_id=request_id)
+        except Exception as exc:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(QUERY_MARK_OTP_USED, {"id": int(otp_id)})
+            except Exception:
+                logger.warning(
+                    "email_otp_async_mark_used_failed",
+                    extra={"request_id": request_id, "otp_id": int(otp_id)},
+                )
+            logger.warning(
+                "email_otp_async_send_failed",
+                extra={"request_id": request_id, "otp_id": int(otp_id), "error": str(exc)},
+            )
+
+    EMAIL_OTP_EXECUTOR.submit(_send)
 
 
 def otp_is_expired(expires_at: datetime) -> bool:
