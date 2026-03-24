@@ -150,6 +150,18 @@ export function useSurveyPage({
     }
   }, [setComments, setDescription, setElapsed, setEngagementData, setRating, surveyStartTime]);
 
+  useEffect(() => {
+    setImageLoaded(false);
+    setImageError(false);
+    setIsZoomed(false);
+    setSubmitError("");
+    setShowValidationErrors(false);
+    setDescription("");
+    setRating(0);
+    setComments("");
+    resetEngagement();
+  }, [resetEngagement, setDescription, setRating, setComments, survey?.image_id]);
+
   const {
     draftRestored,
     lastSavedAt,
@@ -171,18 +183,6 @@ export function useSurveyPage({
     },
     onRestore: restoreDraft,
   });
-
-  useEffect(() => {
-    setImageLoaded(false);
-    setImageError(false);
-    setIsZoomed(false);
-    setSubmitError("");
-    setShowValidationErrors(false);
-    setDescription("");
-    setRating(0);
-    setComments("");
-    resetEngagement();
-  }, [resetEngagement, setDescription, setRating, setComments, survey?.image_id]);
 
   useEffect(() => {
     if (!submitError) return;

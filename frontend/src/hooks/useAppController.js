@@ -185,24 +185,6 @@ export function useAppController() {
   }, [stage, setStage]);
 
   useEffect(() => {
-    let hasAlive = false;
-    try {
-      hasAlive = sessionStorage.getItem(SESSION_ALIVE_KEY) === "1";
-    } catch {
-      hasAlive = true;
-    }
-    if (!hasAlive) {
-      try {
-        const darkMode = localStorage.getItem(runtimeConfig.storageKeys.darkMode);
-        localStorage.clear();
-        sessionStorage.clear();
-        if (darkMode !== null) {
-          localStorage.setItem(runtimeConfig.storageKeys.darkMode, darkMode);
-        }
-      } catch {
-        // Ignore storage failures.
-      }
-    }
     try {
       sessionStorage.setItem(SESSION_ALIVE_KEY, "1");
     } catch {
