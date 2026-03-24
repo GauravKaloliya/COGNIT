@@ -105,6 +105,7 @@ from app.services import (
     log_payment_audit,
     mark_existing_active_payments_failed,
     normalize_payment_amount,
+    record_upi_result,
     select_upi_for_payment,
 )
 from middleware.payment_flow import require_valid_payment_session
@@ -374,6 +375,12 @@ def refresh_payment_upi(payment_public_id: str):
         return create_error_response("PAY_UPI_ALTERNATE_UNAVAILABLE")
 
     try:
+        record_upi_result(
+            db,
+            payment_id=int(current_payment_id),
+            result_status="FAILURE",
+            result_reason="LIMIT_REPORTED",
+        )
         mark_existing_active_payments_failed(db, participant_id)
         payment_row, signature, expires_at, expires_str = create_payment_record(
             db,
