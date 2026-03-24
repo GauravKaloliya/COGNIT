@@ -112,11 +112,6 @@ from app.utils.helpers import (
     log_audit,
     success_response,
 )
-from app.utils.runtime_cache import (
-    get_cached_participant_options,
-    set_cached_participant_id,
-    set_cached_participant_options,
-)
 from app.utils.turnstile import verify_turnstile_token
 
 
@@ -177,8 +172,6 @@ def create_participant():
             ip_hash=iph,
             user_agent=ua,
         )
-        set_cached_participant_id(public_id, int(participant_id))
-        
         log_audit(
             db,
             AUDIT_EVENT_PARTICIPANT_CREATED,
@@ -330,12 +323,8 @@ def get_participant_session():
 def get_participant_options():
     """Return participant form options sourced from the database."""
     try:
-        cached = get_cached_participant_options()
-        if cached:
-            return success_response(cached)
         db = get_db()
         payload = fetch_participant_options(db)
-        set_cached_participant_options(payload)
         return success_response(payload)
     except Exception as e:
         logger.error(LOG_PARTICIPANT_OPTIONS_FAILED, e, getattr(g, "request_id", None))

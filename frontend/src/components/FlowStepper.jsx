@@ -26,7 +26,11 @@ export default function FlowStepper({ stage }) {
 
   return (
     <div className="flow-stepper-wrap" aria-label={uiText("common.progress")}>
-      <div ref={stepperRef} className="flow-stepper">
+      <div
+        ref={stepperRef}
+        className="flow-stepper"
+        style={{ "--flow-step-count": APP_STAGE_ORDER.length }}
+      >
         {APP_STAGE_ORDER.map((key, index) => {
           const state = index < currentIndex ? "done" : index === currentIndex ? "active" : "upcoming";
           const labelKey = STEP_LABELS[key] || key;

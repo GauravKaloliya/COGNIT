@@ -6,6 +6,7 @@ import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
+import { useIsMobile } from "./useIsMobile";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout, SECOND_MS } from "../utils/timing";
 import { requirePublicId } from "../utils/publicId";
 import {
@@ -13,16 +14,13 @@ import {
   getPendingFlag,
   makeScopedKey,
   readExpiringValue,
-  readJsonValue,
   readStoredMeta,
   removeStoredKey,
   setPendingFlag,
   writeExpiringValue,
-  writeJsonValue,
 } from "../utils/storage";
 import {
   GEOLOCATION_ERROR_CODES,
-  GEOLOCATION_MODES,
   REVERSE_GEOCODE_FIELDS,
   USER_DETAILS_DUPLICATE_ERROR_CODES,
   USER_DETAILS_ERROR_CODE_TO_FIELD,
@@ -41,24 +39,45 @@ const AGE_MIN = runtimeConfig.ageMin;
 const AGE_MAX = runtimeConfig.ageMax;
 const LOCATION_MIN_LENGTH = runtimeConfig.locationMinLength;
 const OTP_STATUS = runtimeConfig.otpStatus;
-const MAX_AUTO_LOCATION_ATTEMPTS = 2;
-const AUTO_LOCATION_PROMPT_KEY = runtimeConfig.storageKeys.autoLocationPrompt;
-const AUTO_LOCATION_SUCCESS_KEY = runtimeConfig.storageKeys.autoLocationSuccess;
-const AUTO_LOCATION_PROMPT_DEDUPE_MS = 2000;
-const AUTO_LOCATION_SESSION_PROMPT_KEY = `${AUTO_LOCATION_SUCCESS_KEY}_prompted_session`;
-const LOCATION_PERMISSION_GRANTED_KEY = `${AUTO_LOCATION_SUCCESS_KEY}_permission_granted`;
 const REVERSE_GEOCODE_STATE_KEY = runtimeConfig.storageKeys.reverseGeocodeState;
 const REVERSE_GEOCODE_MIN_INTERVAL_MS = 10000;
 const REVERSE_GEOCODE_MAX_BACKOFF_MS = 60000;
 const REVERSE_GEOCODE_TTL_MS = runtimeConfig.reverseGeocodeTtlMs;
 const USER_DETAILS_PENDING_KEY = runtimeConfig.storageKeys.userDetailsPending;
-const PARTICIPANT_OPTIONS_KEY = runtimeConfig.storageKeys.participantOptions;
 const DEMOGRAPHICS_KEY = runtimeConfig.storageKeys.demographics;
 const EMAIL_OTP_STATE_KEY = runtimeConfig.storageKeys.emailOtpState;
+const DESKTOP_LOCATION_SESSION_KEY = "desktop_location_session_v1";
 const EMAIL_OTP_TTL_MS = Math.max(
   30000,
   (runtimeConfig.emailOtpExpirySeconds || 300) * 1000
 );
+
+function readDesktopLocationSession() {
+  try {
+    const raw = sessionStorage.getItem(DESKTOP_LOCATION_SESSION_KEY);
+    if (!raw) return { prompted: false, permission: "unknown", value: "" };
+    const parsed = JSON.parse(raw);
+    return {
+      prompted: parsed?.prompted === true,
+      permission: typeof parsed?.permission === "string" ? parsed.permission : "unknown",
+      value: typeof parsed?.value === "string" ? parsed.value : "",
+    };
+  } catch {
+    return { prompted: false, permission: "unknown", value: "" };
+  }
+}
+
+function writeDesktopLocationSession(patch) {
+  try {
+    const current = readDesktopLocationSession();
+    sessionStorage.setItem(DESKTOP_LOCATION_SESSION_KEY, JSON.stringify({
+      ...current,
+      ...patch,
+    }));
+  } catch {
+    // Ignore sessionStorage failures.
+  }
+}
 
 export function useUserDetailsPage({
   publicId,
@@ -74,17 +93,17 @@ export function useUserDetailsPage({
   const scopedDemographicsKey = makeScopedKey(DEMOGRAPHICS_KEY, scope);
 
   const isOnline = useOnlineStatus();
-  const [optionLists, setOptionLists] = useState(() => {
-    const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null, "local");
-    return {
-      genders: Array.isArray(cached?.genders) ? cached.genders : [],
-      languages: Array.isArray(cached?.languages) ? cached.languages : [],
-      priorExperiences: Array.isArray(cached?.prior_experiences) ? cached.prior_experiences : [],
-    };
+  const isMobile = useIsMobile();
+  const initialDesktopLocationSession = useMemo(
+    () => (isMobile ? { prompted: false, permission: "unknown", value: "" } : readDesktopLocationSession()),
+    [isMobile]
+  );
+  const [optionLists, setOptionLists] = useState({
+    genders: [],
+    languages: [],
+    priorExperiences: [],
   });
-  const [optionsLoading, setOptionsLoading] = useState(() => (
-    optionLists.genders.length === 0 || optionLists.languages.length === 0 || optionLists.priorExperiences.length === 0
-  ));
+  const [optionsLoading, setOptionsLoading] = useState(true);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const otpLength = runtimeConfig.emailOtpLength;
@@ -102,23 +121,12 @@ export function useUserDetailsPage({
   const [locating, setLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
-  const [locationPermissionState, setLocationPermissionState] = useState(() => {
-    try {
-      return localStorage.getItem(LOCATION_PERMISSION_GRANTED_KEY) === "1" ? "granted" : "unknown";
-    } catch {
-      return "unknown";
-    }
-  });
-  const [manualLocationAllowed, setManualLocationAllowed] = useState(false);
+  const [locationPermissionState, setLocationPermissionState] = useState(initialDesktopLocationSession.permission);
+  const [manualLocationAllowed, setManualLocationAllowed] = useState(true);
   const locationAttemptedRef = useRef(false);
-  const [locationAutoSucceeded, setLocationAutoSucceeded] = useState(() => {
-    try {
-      return localStorage.getItem(AUTO_LOCATION_SUCCESS_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const autoLocationAttemptsRef = useRef(0);
+  const [locationAutoSucceeded, setLocationAutoSucceeded] = useState(
+    !isMobile && Boolean(sanitizeLocationValue(initialDesktopLocationSession.value))
+  );
   const autoDetectStartedRef = useRef(false);
   const participantOptionsLoadedRef = useRef(
     optionLists.genders.length > 0 && optionLists.languages.length > 0 && optionLists.priorExperiences.length > 0
@@ -282,7 +290,6 @@ export function useUserDetailsPage({
           languages: nextOptions.languages,
           priorExperiences: nextOptions.prior_experiences,
         });
-        writeJsonValue(PARTICIPANT_OPTIONS_KEY, nextOptions, "local");
         participantOptionsLoadedRef.current = true;
         setErrors((prev) => {
           if (!prev.general) return prev;
@@ -292,22 +299,10 @@ export function useUserDetailsPage({
         });
       } catch (error) {
         if (cancelled || error?.code === REQUEST_CODES.aborted) return;
-        const cached = readJsonValue(PARTICIPANT_OPTIONS_KEY, null);
-        const cachedGenders = Array.isArray(cached?.genders) ? cached.genders : [];
-        const cachedLanguages = prioritizeEnglishOptions(Array.isArray(cached?.languages) ? cached.languages : []);
-        const cachedPriorExperiences = Array.isArray(cached?.prior_experiences) ? cached.prior_experiences : [];
-        if (cachedGenders.length > 0 && cachedLanguages.length > 0 && cachedPriorExperiences.length > 0) {
-          setOptionLists({
-            genders: cachedGenders,
-            languages: cachedLanguages,
-            priorExperiences: cachedPriorExperiences,
-          });
-        } else {
-          setErrors((prev) => ({
-            ...prev,
-            general: error?.message || getErrorMessage("SYS_001_0001"),
-          }));
-        }
+        setErrors((prev) => ({
+          ...prev,
+          general: error?.message || getErrorMessage("SYS_001_0001"),
+        }));
       } finally {
         if (!cancelled) {
           setOptionsLoading(false);
@@ -349,7 +344,7 @@ export function useUserDetailsPage({
     const sanitized = sanitizeLocationValue(value);
     setDemographics((prev) => ({ ...prev, location: sanitized }));
     setLocationPermissionDenied(false);
-    setManualLocationAllowed(!sanitized);
+    setManualLocationAllowed(true);
     setErrors((prev) => {
       if (!prev.location) return prev;
       const next = { ...prev };
@@ -359,14 +354,9 @@ export function useUserDetailsPage({
   }, [setDemographics]);
 
   const markLocationAutoSuccess = useCallback(() => {
-    try {
-      localStorage.setItem(AUTO_LOCATION_SUCCESS_KEY, "1");
-      localStorage.setItem(LOCATION_PERMISSION_GRANTED_KEY, "1");
-    } catch {
-      // Ignore storage failures.
-    }
     setLocationAutoSucceeded(true);
     setLocationPermissionDenied(false);
+    setLocationPermissionState("granted");
     setManualLocationAllowed(true);
     setLocationStatus("");
   }, [setLocationPermissionDenied, setManualLocationAllowed, setLocationStatus]);
@@ -377,14 +367,17 @@ export function useUserDetailsPage({
     })
   ), []);
 
-  const detectLocation = useCallback((mode = GEOLOCATION_MODES.manual) => {
-    locationAttemptedRef.current = true;
-    if (mode === GEOLOCATION_MODES.auto) {
-      if (autoLocationAttemptsRef.current >= MAX_AUTO_LOCATION_ATTEMPTS) return;
-      autoLocationAttemptsRef.current += 1;
+  const detectLocation = useCallback(() => {
+    if (isMobile) {
+      setManualLocationAllowed(true);
+      setLocationPermissionDenied(false);
+      setLocationPermissionState("unknown");
+      setLocationStatus("");
+      return;
     }
-    setManualLocationAllowed(false);
+    locationAttemptedRef.current = true;
     setLocationPermissionDenied(false);
+    writeDesktopLocationSession({ prompted: true });
     setErrors((prev) => {
       if (!prev.location) return prev;
       const next = { ...prev };
@@ -395,6 +388,7 @@ export function useUserDetailsPage({
       setLocationStatus(uiText("user.locationFallback"));
       setLocationPermissionDenied(false);
       setManualLocationAllowed(true);
+      writeDesktopLocationSession({ prompted: true, permission: "unknown" });
       setErrors((prev) => {
         const next = { ...prev };
         delete next.location;
@@ -403,10 +397,30 @@ export function useUserDetailsPage({
       return;
     }
 
-    setLocating(true);
-    setLocationStatus(uiText("user.locationRequesting"));
     const resolveLocation = async () => {
       try {
+        if (navigator.permissions?.query) {
+          try {
+            const permission = await navigator.permissions.query({ name: "geolocation" });
+            const permissionState = permission?.state || "unknown";
+            setLocationPermissionState(permissionState);
+            if (permissionState === "denied") {
+              setLocationPermissionDenied(true);
+              writeDesktopLocationSession({
+                prompted: true,
+                permission: "denied",
+                value: "",
+              });
+              setLocationStatus(uiText("user.locationPermissionDenied"));
+              return;
+            }
+          } catch {
+            // Ignore permissions API failures and fall through to geolocation.
+          }
+        }
+
+        setLocating(true);
+        setLocationStatus(uiText("user.locationRequesting"));
         let position;
         try {
           position = await getBrowserPosition({
@@ -423,11 +437,6 @@ export function useUserDetailsPage({
           });
         }
         setLocationPermissionState("granted");
-        try {
-          localStorage.setItem(LOCATION_PERMISSION_GRANTED_KEY, "1");
-        } catch {
-          // Ignore storage failures.
-        }
 
         const { latitude, longitude } = position.coords;
         let detectedLocation = "";
@@ -507,12 +516,17 @@ export function useUserDetailsPage({
         }
 
         userEditedLocationRef.current = false;
-        setDemographics((prev) => ({ ...prev, location: "" }));
         setDetectedLocation(detectedLocation);
         if (sanitizeLocationValue(detectedLocation)) {
+          writeDesktopLocationSession({
+            prompted: true,
+            permission: "granted",
+            value: sanitizeLocationValue(detectedLocation),
+          });
           markLocationAutoSuccess();
           setLocationStatus(uiText("user.locationDetected"));
         } else {
+          writeDesktopLocationSession({ prompted: true, permission: "granted", value: "" });
           setManualLocationAllowed(true);
           if (locationAttemptedRef.current) setLocationStatus(uiText("user.locationFallback"));
         }
@@ -520,13 +534,11 @@ export function useUserDetailsPage({
         const denied = error?.code === GEOLOCATION_ERROR_CODES.permissionDenied;
         setLocationPermissionState(denied ? "denied" : "unknown");
         setLocationPermissionDenied(denied);
-        if (denied) {
-          try {
-            localStorage.removeItem(LOCATION_PERMISSION_GRANTED_KEY);
-          } catch {
-            // Ignore storage failures.
-          }
-        }
+        writeDesktopLocationSession({
+          prompted: true,
+          permission: denied ? "denied" : "unknown",
+          value: "",
+        });
         setManualLocationAllowed(true);
         setLocationStatus(denied ? uiText("user.locationPermissionDenied") : uiText("user.locationFallback"));
         setErrors((prev) => {
@@ -542,8 +554,8 @@ export function useUserDetailsPage({
     resolveLocation();
   }, [
     getBrowserPosition,
+    isMobile,
     markLocationAutoSuccess,
-    setDemographics,
     setDetectedLocation,
     setManualLocationAllowed,
     setLocationPermissionDenied,
@@ -551,58 +563,36 @@ export function useUserDetailsPage({
   ]);
 
   useEffect(() => {
+    if (isMobile) {
+      setLocating(false);
+      setLocationPermissionDenied(false);
+      setLocationPermissionState("unknown");
+      setManualLocationAllowed(true);
+      setLocationAutoSucceeded(false);
+      setLocationStatus("");
+      return;
+    }
+
+    const saved = readDesktopLocationSession();
+    setLocationPermissionState(saved.permission);
+    setLocationPermissionDenied(saved.permission === "denied");
+    setLocationAutoSucceeded(Boolean(sanitizeLocationValue(saved.value)));
+    setManualLocationAllowed(true);
+    if (sanitizeLocationValue(saved.value) && !sanitizeLocationValue(demographics.location)) {
+      userEditedLocationRef.current = false;
+      setDetectedLocation(saved.value);
+    }
     if (autoDetectStartedRef.current) return;
     autoDetectStartedRef.current = true;
 
     const maybeAutoDetect = async () => {
-      if (locationAutoSucceeded) return;
-      try {
-        const lastPromptAt = Number(localStorage.getItem(AUTO_LOCATION_PROMPT_KEY) || "0");
-        const now = Date.now();
-        if (now - lastPromptAt < AUTO_LOCATION_PROMPT_DEDUPE_MS) return;
-
-        if (navigator.permissions?.query) {
-          try {
-            const permission = await navigator.permissions.query({ name: "geolocation" });
-            setLocationPermissionState(permission.state || "unknown");
-            if (permission.state === "granted") {
-              try {
-                localStorage.setItem(LOCATION_PERMISSION_GRANTED_KEY, "1");
-              } catch {
-                // Ignore storage failures.
-              }
-            }
-            if (permission.state === "denied") {
-              setLocationPermissionDenied(true);
-              setManualLocationAllowed(true);
-              setLocationStatus(uiText("user.locationPermissionDenied"));
-              return;
-            }
-            if (permission.state === "prompt") {
-              setManualLocationAllowed(true);
-              setLocationStatus("");
-              try {
-                const prompted = sessionStorage.getItem(AUTO_LOCATION_SESSION_PROMPT_KEY) === "1";
-                if (prompted) return;
-                sessionStorage.setItem(AUTO_LOCATION_SESSION_PROMPT_KEY, "1");
-              } catch {
-                // Ignore sessionStorage failures; continue prompting once.
-              }
-            }
-          } catch {
-            // Ignore permissions API failures and fall through.
-          }
-        }
-
-        localStorage.setItem(AUTO_LOCATION_PROMPT_KEY, String(now));
-      } catch {
-        // Ignore storage failures; continue with normal behavior.
-      }
-      detectLocation(GEOLOCATION_MODES.auto);
+      const session = readDesktopLocationSession();
+      if (session.permission === "granted" || session.permission === "denied" || session.prompted) return;
+      detectLocation();
     };
 
     void maybeAutoDetect();
-  }, [detectLocation, locationAutoSucceeded, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
+  }, [demographics.location, detectLocation, isMobile, setDetectedLocation, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
 
   useEffect(() => {
     if (!locationAutoSucceeded) return;
@@ -612,18 +602,22 @@ export function useUserDetailsPage({
   }, [locationAutoSucceeded, setLocationPermissionDenied, setLocationStatus, setManualLocationAllowed]);
 
   useEffect(() => {
+    if (isMobile) return;
     if (locationPermissionState !== "granted" || locating) return;
     setLocationPermissionDenied(false);
     setManualLocationAllowed(true);
-  }, [locationPermissionState, locating, setLocationPermissionDenied, setManualLocationAllowed]);
+  }, [isMobile, locationPermissionState, locating, setLocationPermissionDenied, setManualLocationAllowed]);
 
   useEffect(() => {
     const sanitized = sanitizeLocationValue(demographics.location);
     if (sanitized !== String(demographics.location || "")) {
       setDemographics((prev) => ({ ...prev, location: sanitized }));
+      if (!isMobile && locationPermissionState === "granted") {
+        writeDesktopLocationSession({ prompted: true, permission: "granted", value: sanitized });
+      }
       if (!sanitized) setManualLocationAllowed(true);
     }
-  }, [demographics.location, setDemographics, setManualLocationAllowed]);
+  }, [demographics.location, isMobile, locationPermissionState, setDemographics, setManualLocationAllowed]);
 
   useEffect(() => {
     const availabilityRef = availabilityAbortRef.current;
@@ -651,9 +645,7 @@ export function useUserDetailsPage({
     if (genderError) newErrors.gender_code = genderError;
     const ageError = validateAgeInput(demographics.age);
     if (ageError) newErrors.age = ageError;
-    const locationError = (locationPermissionDenied && !manualLocationAllowed)
-      ? uiText("user.locationPermissionRequired")
-      : validateLocationInput(demographics.location);
+    const locationError = validateLocationInput(demographics.location);
     if (locationError) newErrors[USER_DETAIL_FIELDS.location] = locationError;
     const languageError = validateLanguageInput(demographics.language_code);
     if (languageError) newErrors.language_code = languageError;
@@ -663,8 +655,6 @@ export function useUserDetailsPage({
     return Object.keys(newErrors).length === 0;
   }, [
     demographics,
-    locationPermissionDenied,
-    manualLocationAllowed,
     validateAgeInput,
     validateEmailInput,
     validateGenderInput,

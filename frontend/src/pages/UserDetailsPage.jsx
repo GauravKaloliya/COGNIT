@@ -9,6 +9,7 @@ import PageActions from "../components/PageActions.jsx";
 import RefreshIcon from "../components/icons/RefreshIcon.jsx";
 import LoadingSpinner from "../components/icons/LoadingSpinner.jsx";
 import { sanitizeUsername } from "../utils/userDetailsHelpers";
+import { useIsMobile } from "../hooks/useIsMobile.js";
 
 export default function UserDetailsPage({
   publicId,
@@ -21,6 +22,7 @@ export default function UserDetailsPage({
 }) {
   const [emailFocused, setEmailFocused] = React.useState(false);
   const [emailPlaceholderIndex, setEmailPlaceholderIndex] = React.useState(0);
+  const isMobile = useIsMobile();
   const {
     constants,
     isOnline,
@@ -33,10 +35,7 @@ export default function UserDetailsPage({
     checking,
     locating,
     locationStatus,
-    locationPermissionDenied,
     locationPermissionState,
-    manualLocationAllowed,
-    locationAutoSucceeded,
     userEditedLocationRef,
     isFormComplete,
     detectLocation,
@@ -113,7 +112,6 @@ export default function UserDetailsPage({
     priorExperienceGroups.length === 0 ||
     !isOnline ||
     !isFormComplete ||
-    (locationPermissionDenied && !manualLocationAllowed) ||
     Object.keys(errors).length > 0 ||
     otpStatus !== OTP_STATUS.idle
   );
@@ -356,11 +354,11 @@ export default function UserDetailsPage({
             placeholder={
               locating
                 ? uiText("user.locationPlaceholderDetecting")
-                : (manualLocationAllowed ? uiText("user.locationPlaceholderManual") : uiText("user.locationPlaceholderAuto"))
+                : uiText("user.locationPlaceholderManual")
             }
             value={demographics.location || ''}
-            disabled={locating || !manualLocationAllowed || inputsLocked}
-            readOnly={locating || !manualLocationAllowed || inputsLocked}
+            disabled={locating || inputsLocked}
+            readOnly={locating || inputsLocked}
             onChange={(e) => {
               userEditedLocationRef.current = true;
               updateField("location", e.target.value);
@@ -369,7 +367,7 @@ export default function UserDetailsPage({
               handleFieldBlur("location", e.target.value);
             }}
           />
-          {locationPermissionState !== "granted" && !locating && !locationAutoSucceeded && (
+          {!isMobile && locationPermissionState !== "granted" && !locating && (
             <DSButton
               type="button"
               variant="ghost"
@@ -380,8 +378,8 @@ export default function UserDetailsPage({
               {uiText("user.enableLocation")}
             </DSButton>
           )}
-          {locationStatus && !locationAutoSucceeded && <span className="checking-text">{locationStatus}</span>}
-          {locationPermissionDenied && !locationAutoSucceeded && (
+          {!isMobile && locationStatus && <span className="checking-text">{locationStatus}</span>}
+          {!isMobile && locationPermissionState === "denied" && (
             <span className="helper-text warning">{uiText("user.locationPermissionHelp")}</span>
           )}
           {errors.location && <span className="error-text">{errors.location}</span>}

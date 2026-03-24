@@ -10,7 +10,6 @@ from app.constants.route_constants import IMAGES_RANDOM_ROUTE
 from app.database import get_db
 from app.utils.helpers import create_error_response, success_response
 from app.utils.decorators import track_performance
-from app.utils.runtime_cache import resolve_participant_id
 from app.config import ATTENTION_INTERVAL, FORCE_ATTENTION_IMAGES
 from app.services.image_service import (
     select_random_image_for_participant,
@@ -51,7 +50,16 @@ def random_image():
         force_attention = False
         participant_id = None
         if public_id:
-            participant_id = resolve_participant_id(db, public_id)
+            participant_id = db.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM participants
+                    WHERE public_id = :pub AND is_deleted = false
+                    """
+                ),
+                {"pub": public_id},
+            ).scalar()
             if participant_id:
                 total_submissions = db.execute(text("""
                     SELECT COUNT(*) FROM submissions
