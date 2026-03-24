@@ -84,6 +84,7 @@ export function useAppController() {
   const toastRef = useRef(new Map());
   const submitFlowAbortRef = useRef(null);
   const expiryNoticeShownRef = useRef(false);
+  const [frontendSessionExpired, setFrontendSessionExpired] = useState(false);
   const addToast = useCallback((message, type = TOAST_VARIANTS.info, action) => {
     const dedupeKey = `${type}:${message}`;
     const now = Date.now();
@@ -121,6 +122,22 @@ export function useAppController() {
     });
     if (expiredFound) {
       expiryNoticeShownRef.current = true;
+      setFrontendSessionExpired(true);
+      setPublicId("");
+      setSessionId("");
+      setStage(APP_FLOW.stages.consent);
+      setConsentGiven(false);
+      setUserDetailsSubmitted(false);
+      setEmailVerified(false);
+      setDemographics({
+        username: "",
+        email: "",
+        gender_code: "",
+        age: "",
+        location: "",
+        language_code: "",
+        prior_experience: "",
+      });
       addToast(uiText("app.sessionExpired"), TOAST_VARIANTS.warning);
     }
   }, [addToast]);
@@ -299,6 +316,10 @@ export function useAppController() {
   useEffect(() => {
     let cancelled = false;
     const hydrateFromCookies = async () => {
+      if (frontendSessionExpired) {
+        if (!cancelled) setSessionHydrated(true);
+        return;
+      }
       if (publicId) {
         if (!cancelled) setSessionHydrated(true);
         return;
@@ -318,7 +339,7 @@ export function useAppController() {
     return () => {
       cancelled = true;
     };
-  }, [publicId]);
+  }, [frontendSessionExpired, publicId]);
 
   // Migration on boot: move previous sessionStorage / unscoped values into localStorage scoped-by-participant keys.
   useEffect(() => {

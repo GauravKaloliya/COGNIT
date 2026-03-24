@@ -192,8 +192,6 @@ export function useSurveyPage({
 
   const {
     draftRestored,
-    lastSavedAt,
-    isSaving,
     saveError,
     clearDrafts,
   } = useSurveyDraftPersistence({
@@ -445,8 +443,6 @@ export function useSurveyPage({
     preventCopyPaste,
     preventClipboardShortcuts,
     draftRestored,
-    lastSavedAt,
-    isSaving,
     saveError,
   };
 }
