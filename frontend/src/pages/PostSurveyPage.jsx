@@ -1,18 +1,19 @@
 import React from "react";
 import PageSkeleton from "../components/PageSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
-import { useSurveyFeedPage } from "../hooks/useSurveyFeedPage";
 import { uiText } from "../utils/uiText";
 import DSButton from "../components/design/DSButton.jsx";
 import PageStatusBanners from "../components/PageStatusBanners.jsx";
 import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
 import PageActions from "../components/PageActions.jsx";
+import { usePostSurveyPage } from "../hooks/usePostSurveyPage";
 
-export default function SurveyFeedPage({
+export default function PostSurveyPage({
   surveyCompleted = 0,
-  setSurveyFeedbackReady,
-  setStage,
-  fetchNextSurvey,
+  publicId = "",
+  clearUserStorage = null,
+  setSurveyFeedbackReady = null,
+  fetchNextSurvey = null,
 }) {
   const {
     minWords: MIN_WORDS,
@@ -25,9 +26,10 @@ export default function SurveyFeedPage({
     retryCountdownFinish,
     handleSurveyContinue,
     handleSurveyFinish,
-  } = useSurveyFeedPage({
+  } = usePostSurveyPage({
+    publicId,
+    clearUserStorage,
     setSurveyFeedbackReady,
-    setStage,
     fetchNextSurvey,
   });
 
@@ -42,18 +44,30 @@ export default function SurveyFeedPage({
   }
 
   return (
-    <div className="panel survey-feed-panel">
+    <div className="panel finish-panel survey-feed-panel">
       <PageStatusBanners
         isOnline={isOnline}
-        offlineMessage={uiText("survey.feedOffline")}
+        offlineMessage={uiText("finish.offlineBanner")}
       />
-      <div className="guidance">
+      <div className="finish-wrapper guidance">
+        <h2>{uiText("finish.thankYouTitle")}</h2>
+        <p className="page-subtitle">
+          {uiText("finish.pageSubtitle", { count: surveyCompleted, suffix: surveyCompleted !== 1 ? "s" : "" })}
+        </p>
+
         <PanelState
           variant="success"
           icon="✓"
           title={uiText("survey.feedComplete")}
           message={uiText("survey.feedCompleteMessage", { count: surveyCompleted, suffix: surveyCompleted === 1 ? "" : "s" })}
         />
+        <PanelState
+          variant="success"
+          icon="✓"
+          title={uiText("finish.thanks")}
+          message={uiText("finish.responsesRecorded")}
+        />
+        <p className="debrief">{uiText("finish.debrief")}</p>
         <div className="survey-feedback-tip">
           <p>
             <em>{uiText("survey.feedTip", { minWords: MIN_WORDS })}</em>
@@ -83,11 +97,16 @@ export default function SurveyFeedPage({
             {!isOnline && pendingFinish
               ? (retryCountdownFinish > 0
                 ? uiText("common.tryAgainIn", { seconds: retryCountdownFinish })
-                : uiText("survey.feedOffline"))
-              : uiText("common.finish")}
+                : uiText("finish.offlineFinishMessage"))
+              : uiText("finish.finishButton")}
             {!isOnline && pendingFinish && <ButtonRetryBadge seconds={retryCountdownFinish} />}
           </DSButton>
         </PageActions>
+        {!isOnline && (
+          <div className="banner warning">
+            <span>{uiText("finish.offlineFinishMessage")}</span>
+          </div>
+        )}
         {continueError && (
           <div className="card">
             <div className="card-header">

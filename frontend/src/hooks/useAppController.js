@@ -516,11 +516,13 @@ export function useAppController() {
 
   useEffect(() => {
     if (stage !== APP_FLOW.stages.survey || !systemReady || surveyFeedbackReady) return;
+    if (!sessionHydrated) return;
     const restoredImageUrl = survey?.url || survey?.image_url || survey?.imageUrl || "";
     if (!survey || !survey.image_id || !String(restoredImageUrl).trim()) {
+      if (!publicId) return;
       fetchImage({ clearCurrent: false });
     }
-  }, [fetchImage, stage, survey, surveyFeedbackReady, systemReady]);
+  }, [fetchImage, publicId, sessionHydrated, stage, survey, surveyFeedbackReady, systemReady]);
 
   const createParticipant = useCallback(async () => {
     if (submitFlowAbortRef.current) {

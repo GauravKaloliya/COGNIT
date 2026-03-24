@@ -51,9 +51,7 @@ from app.config import (
     HEALTH_RATE_LIMIT,
     FLASK_DEBUG,
     PORT,
-    IDEMPOTENCY_TTL_SECONDS,
 )
-from app.services.idempotency_service import cleanup_idempotency_keys
 from app.logging_config import configure_logging
 
 # Initialize logging after imports are available.
@@ -78,9 +76,6 @@ app.register_blueprint(submission_bp)
 def log_request():
     """Log incoming requests and attach security context."""
     initialize_request_context(logger)
-    db = getattr(g, "db", None)
-    if db is not None:
-        cleanup_idempotency_keys(db, IDEMPOTENCY_TTL_SECONDS)
 
 @app.after_request
 def log_response(response):

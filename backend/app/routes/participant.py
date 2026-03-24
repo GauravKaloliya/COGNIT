@@ -72,7 +72,6 @@ from app.extensions import limiter
 from app.services import (
     EmailOtpSendError,
     build_email_otp_payload,
-    build_request_hash,
     collect_missing_participant_fields,
     email_in_use_by_other,
     enqueue_email_otp,
@@ -92,14 +91,12 @@ from app.services import (
     is_participant_field_available,
     is_valid_prior_experience_code,
     is_valid_public_id,
-    load_idempotent_response,
     mark_email_otp_used,
     mark_existing_otps_used,
     mark_participant_email_verified,
     otp_expiry_timestamp,
     otp_is_expired,
     otp_is_over_attempts,
-    save_idempotent_response,
     set_participant_cookies,
     send_email_otp,
     update_participant_email,
@@ -259,32 +256,11 @@ def record_consent():
     """Record participant consent agreement."""
     data = request.json or {}
     public_id = data.get(REQUEST_KEY_PUBLIC_ID)
-    idempotency_key = (
-        request.headers.get("X-Idempotency-Key")
-        or data.get(REQUEST_KEY_IDEMPOTENCY_KEY)
-        or ""
-    ).strip()[:128]
     if not public_id:
         return create_error_response("VAL_CONSENT_PUBLIC_ID_REQUIRED")
 
     try:
         db = get_db()
-        request_hash = ""
-        if idempotency_key:
-            request_hash = build_request_hash({
-                REQUEST_KEY_PUBLIC_ID: str(public_id).strip(),
-            })
-            _idem, replay = load_idempotent_response(
-                db,
-                endpoint=CONSENT_ROUTE,
-                idempotency_key=idempotency_key,
-                participant_public_id=str(public_id).strip(),
-                request_hash=request_hash,
-            )
-            if replay:
-                payload, status_code = replay
-                return success_response(payload), status_code
-
         row = db.execute(text("""
             UPDATE participants
             SET consent_given = true, consent_at = CURRENT_TIMESTAMP
@@ -296,16 +272,6 @@ def record_consent():
         pid = row[0]
         log_audit(db, AUDIT_EVENT_CONSENT_RECORDED, participant_id=pid)
         response_payload = {RESPONSE_KEY_STATUS: PARTICIPANT_STATUS_CONSENT_RECORDED}
-        if idempotency_key:
-            save_idempotent_response(
-                db,
-                endpoint=CONSENT_ROUTE,
-                idempotency_key=idempotency_key,
-                participant_public_id=str(public_id).strip(),
-                request_hash=request_hash,
-                response_body=response_payload,
-                status_code=200,
-            )
         db.commit()
         return success_response(response_payload)
     except Exception as e:
