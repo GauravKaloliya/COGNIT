@@ -79,7 +79,7 @@ export function useSurveyPage({
   const currentStep = Math.max(1, surveyCompleted + 1);
   const minimumMet = wordCount >= MIN_WORDS && comments.trim().length >= MIN_FEEDBACK_LENGTH && rating > 0;
   const priorityMet = descriptionPriorityReady && feedbackPriorityReady;
-  const { imageSrc, cacheBustedSrc, hasUsableSurveyImage } = useMemo(
+  const { imageSrc, hasUsableSurveyImage } = useMemo(
     () => buildSurveyImageState(survey),
     [survey]
   );
@@ -400,7 +400,6 @@ export function useSurveyPage({
     descriptionRef,
     commentsRef,
     imageSrc,
-    cacheBustedSrc,
     hasUsableSurveyImage,
     handleRetryImage,
     handleSubmit,

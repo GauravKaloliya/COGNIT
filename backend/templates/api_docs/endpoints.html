@@ -2,7 +2,10 @@
 {% block docs_content %}
 <section class="doc-section">
   <div class="endpoint-head">
-    <h2>Endpoints</h2>
+    <div>
+      <h2>Endpoints</h2>
+      <p class="section-note">This index reflects the current backend route map, auth expectations, and example request shapes.</p>
+    </div>
     <input id="endpointSearch" type="search" placeholder="Filter endpoints" aria-label="Filter endpoints">
   </div>
 
@@ -16,10 +19,11 @@
         <span>Idempotency: <code>{{ endpoint.idempotency }}</code></span>
         <span>Rate limit: <code>{{ endpoint.rate_limit }}</code></span>
       </div>
-      {% if endpoint.query or endpoint.headers or endpoint.notes %}
+      {% if endpoint.query or endpoint.headers or endpoint.body or endpoint.notes %}
       <div class="section-note" style="margin-top:10px;">
         {% if endpoint.query %}<div><strong>Query:</strong> {{ endpoint.query|join(', ') }}</div>{% endif %}
         {% if endpoint.headers %}<div><strong>Headers:</strong> {{ endpoint.headers|join(', ') }}</div>{% endif %}
+        {% if endpoint.body %}<div><strong>Body:</strong> JSON payload required</div>{% endif %}
         {% for note in endpoint.notes %}<div><strong>Note:</strong> {{ note }}</div>{% endfor %}
       </div>
       {% endif %}

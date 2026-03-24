@@ -2,7 +2,7 @@
 {% block docs_content %}
 <section class="doc-section">
   <h2>Errors</h2>
-  <p class="section-note">Source of truth: backend <code>app.config.ERROR_CODES</code>. Use <code>error.code</code> for client behavior and log <code>error.request_id</code> for support/debugging.</p>
+  <p class="section-note">Source of truth: backend <code>app.config.ERROR_CODES</code>. Build client behavior around <code>error.code</code>, and keep <code>error.request_id</code> for support and trace correlation.</p>
 
   <div class="error-grid">
     {% for group in error_groups %}
@@ -33,7 +33,10 @@
     "category": "VAL",
     "http_status": 400,
     "retryable": false,
-    "request_id": "6d1902a2-9f91-41da-b3df-128565f4bdb3"
+    "request_id": "6d1902a2-9f91-41da-b3df-128565f4bdb3",
+    "details": {
+      "field": "X-Idempotency-Key"
+    }
   }
 }</pre>
   </div>

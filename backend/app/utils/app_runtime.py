@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from datetime import datetime, timezone
 
@@ -13,7 +12,6 @@ from sqlalchemy import text
 from app.config import (
     API_LATENCY_SLO_MS,
     DOCS_BASE_URL,
-    HEALTH_CACHE_TTL_SECONDS,
     ENABLE_DEVICE_FINGERPRINTING,
     SECURITY_CONTENT_TYPE_OPTIONS,
     SECURITY_FRAME_OPTIONS,
@@ -169,36 +167,13 @@ def handle_payload_too_large(app):
     )
 
 
-def get_cached_health_response(app, logger: logging.Logger):
-    now_ts = time.time()
-    cache = getattr(app, "_health_cache", None)
-    if cache and (now_ts - cache.get("checked_at", 0.0)) <= max(0.5, HEALTH_CACHE_TTL_SECONDS):
-        cached_ok = bool(cache.get("ok"))
-        if cached_ok:
-            response = success_response(cache.get("data", {"status": "healthy", "database": "connected"}))
-            response.headers.setdefault("Cache-Control", f"public, max-age={int(HEALTH_CACHE_TTL_SECONDS)}")
-            return response
-        return create_error_response(
-            "SYS_SERVICE_DEGRADED",
-            details=cache.get("details", {}),
-        )
-
+def get_health_response(logger: logging.Logger):
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        data = {"status": "healthy", "database": "connected"}
-        app._health_cache = {"checked_at": now_ts, "ok": True, "data": data}
-        response = success_response(data)
-        response.headers.setdefault("Cache-Control", f"public, max-age={int(HEALTH_CACHE_TTL_SECONDS)}")
-        return response
+        return success_response({"status": "healthy", "database": "connected"})
     except Exception as exc:
         logger.error(LOG_HEALTH_CHECK_FAILED, exc)
-        app._health_cache = {
-            "checked_at": now_ts,
-            "ok": False,
-            "message": "Service degraded",
-            "details": {"status": "degraded"},
-        }
         return create_error_response(
             "SYS_SERVICE_DEGRADED",
             details={"status": "degraded"},
@@ -214,9 +189,7 @@ def render_api_docs_page(template_name: str, active_page: str) -> Response:
         error_groups=build_error_docs(),
         example_docs=build_example_docs(),
     )
-    response = app.make_response(rendered)
-    response.headers.setdefault("Cache-Control", "public, max-age=300")
-    return response
+    return app.make_response(rendered)
 
 
 def redirect_to_api_docs_endpoints():

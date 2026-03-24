@@ -13,8 +13,6 @@ from sqlalchemy import text
 
 from app.config import DEVICE_FINGERPRINT_SALTS, ENABLE_DEVICE_FINGERPRINTING
 
-_FINGERPRINT_HISTORY_CACHE: dict[int, dict[str, object]] = {}
-_FINGERPRINT_HISTORY_CACHE_TTL_SECONDS = 300
 logger = logging.getLogger(__name__)
 
 
@@ -143,26 +141,14 @@ def calculate_risk_score(
     
     # Check for rapid changes in fingerprint (device switching)
     if participant_id:
-        now_ts = int(time.time())
-        cache_entry = _FINGERPRINT_HISTORY_CACHE.get(int(participant_id))
-        fetched_at = cache_entry.get("fetched_at", 0) if cache_entry else 0
-        if cache_entry and (now_ts - int(fetched_at if isinstance(fetched_at, (int, float, str, bytes)) else 0)) <= _FINGERPRINT_HISTORY_CACHE_TTL_SECONDS:
-            previous_fingerprints = cache_entry.get("rows", [])
-        else:
-            previous_fingerprints = db.execute(text("""
-                SELECT fingerprint_hash, created_at
-                FROM device_fingerprints
-                WHERE participant_id = :pid
-                ORDER BY created_at DESC
-                LIMIT 5
-            """), {"pid": participant_id}).fetchall()
-            _FINGERPRINT_HISTORY_CACHE[int(participant_id)] = {
-                "fetched_at": now_ts,
-                "rows": previous_fingerprints,
-            }
-        if not isinstance(previous_fingerprints, list):
-            previous_fingerprints = []
-        
+        previous_fingerprints = db.execute(text("""
+            SELECT fingerprint_hash, created_at
+            FROM device_fingerprints
+            WHERE participant_id = :pid
+            ORDER BY created_at DESC
+            LIMIT 5
+        """), {"pid": participant_id}).fetchall()
+
         current_fingerprint = generate_device_fingerprint(fingerprint_data)
         
         if len(previous_fingerprints) > 0:
