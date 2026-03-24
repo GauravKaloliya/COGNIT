@@ -135,7 +135,13 @@ def submit():
     if not public_id:
         return create_error_response("VAL_SUBMISSION_PUBLIC_ID_REQUIRED")
 
-    turnstile_ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host, endpoint=request.path)
+    turnstile_ok, _ts_data = verify_turnstile_token(
+        turnstile_token,
+        request.remote_addr,
+        request.host,
+        endpoint=request.path,
+        idempotency_key=idempotency_key,
+    )
     if not turnstile_ok:
         return create_error_response("BOT_SUBMISSION_FAILED")
 
