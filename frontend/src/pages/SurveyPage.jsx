@@ -92,7 +92,17 @@ export default function SurveyPage({
   if (!survey || !survey.image_id || !hasUsableSurveyImage) {
     return (
       <div className="panel status-panel">
-        {isFetchingImage || (!survey || !survey.image_id) ? (
+        {fetchError && !isFetchingImage ? (
+          <PanelState
+            variant="error"
+            icon="!"
+            title={uiText("survey.imageLoadFailed")}
+            message={fetchError || uiText("survey.imageRestoreFailed")}
+            actionLabel={null}
+            onAction={null}
+            disabled
+          />
+        ) : isFetchingImage || (!survey || !survey.image_id) ? (
           <PageSkeleton
             title={uiText("survey.loadingImage")}
             subtitle={uiText("survey.canvasSubtitle")}
