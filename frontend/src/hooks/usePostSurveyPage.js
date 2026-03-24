@@ -4,13 +4,15 @@ import { clearPendingFlag, getPendingFlag, setPendingFlag } from "../utils/stora
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
+import { APP_ROUTES } from "../constants/routes";
 
 const SURVEY_FEED_PENDING_CONTINUE_KEY = runtimeConfig.storageKeys.surveyFeedPendingContinue;
 const SURVEY_FEED_PENDING_FINISH_KEY = runtimeConfig.storageKeys.surveyFeedPendingFinish;
 
-export function useSurveyFeedPage({
+export function usePostSurveyPage({
+  publicId,
+  clearUserStorage,
   setSurveyFeedbackReady,
-  setStage,
   fetchNextSurvey,
 }) {
   const [loadingNext, setLoadingNext] = useState(false);
@@ -20,6 +22,10 @@ export function useSurveyFeedPage({
   const isOnline = useOnlineStatus();
   const retryCountdownContinue = useRetryCountdown(!isOnline && pendingContinue, runtimeConfig.serviceRetrySeconds);
   const retryCountdownFinish = useRetryCountdown(!isOnline && pendingFinish, runtimeConfig.serviceRetrySeconds);
+
+  useEffect(() => {
+    document.title = uiText("finish.documentTitle");
+  }, [publicId]);
 
   const handleSurveyContinue = useCallback(async () => {
     if (loadingNext) return;
@@ -47,20 +53,21 @@ export function useSurveyFeedPage({
       return;
     }
     setSurveyFeedbackReady(false);
-    setStage("finished");
-  }, [isOnline, setStage, setSurveyFeedbackReady]);
+    clearUserStorage?.(publicId);
+    window.location.href = APP_ROUTES.home;
+  }, [clearUserStorage, isOnline, publicId, setSurveyFeedbackReady]);
 
   useEffect(() => {
     if (!isOnline || loadingNext) return;
-    const pendingContinue = getPendingFlag(SURVEY_FEED_PENDING_CONTINUE_KEY);
-    const pendingFinish = getPendingFlag(SURVEY_FEED_PENDING_FINISH_KEY);
-    if (pendingContinue) {
+    const shouldContinue = getPendingFlag(SURVEY_FEED_PENDING_CONTINUE_KEY);
+    const shouldFinish = getPendingFlag(SURVEY_FEED_PENDING_FINISH_KEY);
+    if (shouldContinue) {
       clearPendingFlag(SURVEY_FEED_PENDING_CONTINUE_KEY);
       setPendingContinue(false);
       handleSurveyContinue();
       return;
     }
-    if (pendingFinish) {
+    if (shouldFinish) {
       clearPendingFlag(SURVEY_FEED_PENDING_FINISH_KEY);
       setPendingFinish(false);
       handleSurveyFinish();

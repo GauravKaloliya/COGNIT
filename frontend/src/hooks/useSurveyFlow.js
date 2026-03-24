@@ -40,6 +40,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
   useEffect(() => {
     const restoredSurvey = normalizeSurveyPayload(initial?.survey);
     if (restoredSurvey?.[SURVEY_API_FIELDS.imageId]) {
+      setImageError(null);
       setSurvey((prev) => {
         if (prev?.[SURVEY_API_FIELDS.imageId] === restoredSurvey[SURVEY_API_FIELDS.imageId]) {
           return prev;
@@ -95,18 +96,18 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       setSurvey(null);
     }
 
-    if (!publicId) {
-      const errorMessage = getErrorMessage("NF_001_0001");
-      addToast(errorMessage, "warning");
-      setImageError(errorMessage);
-      setSurvey(null);
+    const effectivePublicId = requirePublicId(publicId, () => {
+      // Refresh hydration can briefly lag behind the survey route boot.
+      // Do not convert that transient state into a fatal image error.
+    });
+    if (!effectivePublicId) {
+      setIsFetchingImage(false);
+      inFlightRef.current = false;
+      if (imageAbortRef.current === controller) {
+        imageAbortRef.current = null;
+      }
       return null;
     }
-
-    const effectivePublicId = requirePublicId(publicId, () => {
-      addToast(getErrorMessage("NF_001_0001"), "warning");
-    });
-    if (!effectivePublicId) return null;
 
     try {
       const data = await endpoints.getRandomImage(shownImages, effectivePublicId, { signal: controller.signal });

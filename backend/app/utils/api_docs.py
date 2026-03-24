@@ -34,17 +34,20 @@ from app.extensions import app
 
 _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
     ("GET", HEALTH_ROUTE): {
-        "summary": "Check whether the API and database are reachable.",
+        "summary": "Check whether the API process is up and whether the database can be reached right now.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": HEALTH_RATE_LIMIT,
         "query": [],
         "headers": [],
         "body": None,
-        "notes": ["Returns a simple JSON health payload for uptime probes and local smoke tests."],
+        "notes": [
+            "Intended for uptime probes and smoke tests.",
+            "Returns service-degraded output when the database probe fails.",
+        ],
     },
     ("GET", CHECK_USERNAME_ROUTE): {
-        "summary": "Validate whether a participant username is still available.",
+        "summary": "Check whether a participant username is available before registration.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
@@ -53,7 +56,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": None,
     },
     ("GET", CHECK_EMAIL_ROUTE): {
-        "summary": "Validate whether an email address is already in use.",
+        "summary": "Check whether an email address is already in use.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
@@ -62,7 +65,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": None,
     },
     ("POST", CLIENT_ERROR_ROUTE): {
-        "summary": "Receive structured frontend error telemetry.",
+        "summary": "Receive structured frontend error telemetry for observability and debugging.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": ROOT_RATE_LIMIT,
@@ -77,7 +80,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         },
     },
     ("POST", PARTICIPANTS_ROUTE): {
-        "summary": "Create a participant record and start a cookie-backed session.",
+        "summary": "Create a participant record, set participant cookies, and start the registration session.",
         "auth": "none",
         "idempotency": "required",
         "rate_limit": PARTICIPANT_CREATE_RATE_LIMIT,
@@ -92,26 +95,30 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "prior_experience": "none",
             "turnstile_token": "<turnstile-token>",
         },
-        "notes": ["Sets participant cookies on success."],
+        "notes": [
+            "Sets secure participant cookies on success.",
+            "Turnstile is enforced when backend production verification is enabled.",
+        ],
     },
     ("POST", CONSENT_ROUTE): {
-        "summary": "Record participant consent for a previously created participant id.",
+        "summary": "Mark consent as recorded for an existing participant.",
         "auth": "none",
-        "idempotency": "optional",
+        "idempotency": "n/a",
         "rate_limit": CONSENT_RATE_LIMIT,
-        "headers": ["Content-Type: application/json", "X-Idempotency-Key: <uuid> (optional)"],
+        "headers": ["Content-Type: application/json"],
         "body": {"public_id": "<participant_public_id>"},
+        "notes": ["This is a simple update operation and no longer uses the idempotency layer."],
     },
     ("GET", PARTICIPANT_SESSION_ROUTE): {
-        "summary": "Read the current participant identifiers from secure cookies.",
-        "auth": "participant cookies",
+        "summary": "Read the current participant identifiers from secure cookies, if they exist.",
+        "auth": "participant cookies (optional)",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
         "headers": [],
         "body": None,
     },
     ("GET", PARTICIPANT_OPTIONS_ROUTE): {
-        "summary": "Load registration form options from the database.",
+        "summary": "Load registration form options such as genders, languages, and prior-experience groups.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
@@ -119,7 +126,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": None,
     },
     ("POST", EMAIL_OTP_REQUEST_ROUTE): {
-        "summary": "Create and send a verification OTP for a participant email address.",
+        "summary": "Create and send an email verification OTP for the participant email address.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": EMAIL_OTP_REQUEST_RATE_LIMIT,
@@ -129,7 +136,10 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "email": "gaurav@example.com",
             "email_update": False,
         },
-        "notes": ["Use `email_update=true` when the participant is changing their email address."],
+        "notes": [
+            "Use `email_update=true` when the participant is changing their email address.",
+            "Delivery is rate-limited and OTP state is managed server-side rather than with idempotency replay.",
+        ],
     },
     ("POST", EMAIL_OTP_VERIFY_ROUTE): {
         "summary": "Verify an email OTP and mark the participant email as verified.",
@@ -142,9 +152,10 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "email": "gaurav@example.com",
             "otp": "123456",
         },
+        "notes": ["Consumes the OTP on success and increments attempt counters on invalid codes."],
     },
     ("GET", IMAGES_RANDOM_ROUTE): {
-        "summary": "Select the next survey image, including attention checks when scheduled.",
+        "summary": "Select the next survey image, with deterministic attention-check placement when a participant is known.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": "none",
@@ -155,11 +166,14 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         ],
         "headers": [],
         "body": None,
-        "notes": ["Pass previously shown image ids via `exclude` to avoid immediate repeats in the client."],
+        "notes": [
+            "Pass previously shown image ids via `exclude` to avoid immediate repeats in the client.",
+            "Providing `public_id` enables participant-aware attention scheduling.",
+        ],
     },
     ("POST", SUBMIT_ROUTE): {
-        "summary": "Submit an image description with survey feedback and engagement telemetry.",
-        "auth": "verified participant session",
+        "summary": "Submit an image description, feedback, and engagement telemetry for the active survey image.",
+        "auth": "participant public_id + consented participant state",
         "idempotency": "required",
         "rate_limit": SUBMIT_RATE_LIMIT,
         "headers": ["Content-Type: application/json", "X-Idempotency-Key: <uuid>"],
@@ -183,7 +197,11 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "survey_keypresses": 102,
             "turnstile_token": "<turnstile-token>",
         },
-        "notes": ["Requires the participant cookies set during registration.", "Stores both survey output and engagement telemetry."],
+        "notes": [
+            "Requires a valid participant public_id and a participant that is already consented.",
+            "Stores both survey output and engagement telemetry.",
+            "Protected with idempotency because duplicate submission writes are materially harmful.",
+        ],
     },
 }
 
