@@ -338,7 +338,7 @@ def get_participant_payment_status(public_id):
         db = get_db()
         
         row = db.execute(text("""
-            SELECT id, participant_payment_status, participant_stage
+            SELECT id, payment_status, stage
             FROM participants
             WHERE public_id = :pub AND is_deleted = false
         """), {"pub": public_id}).fetchone()
@@ -346,10 +346,10 @@ def get_participant_payment_status(public_id):
         if not row:
             return create_error_response("NF_PARTICIPANT_STATUS_NOT_FOUND")
         
-        participant_id, participant_payment_status, participant_stage = row
+        participant_id, payment_status, stage = row
         
         # Check for successful payment
-        is_paid = participant_payment_status == PARTICIPANT_PAYMENT_STATUS_PAID
+        is_paid = payment_status == PARTICIPANT_PAYMENT_STATUS_PAID
 
         # Check for any successful payment record
         payment_row = db.execute(text("""
@@ -361,9 +361,9 @@ def get_participant_payment_status(public_id):
         """), {"pid": participant_id, "payment_success_status": PAYMENT_STATUS_SUCCESS}).fetchone()
 
         return success_response({
-            "payment_status": participant_payment_status,
+            "payment_status": payment_status,
             "is_verified": bool(is_paid and payment_row),
-            RESPONSE_KEY_CURRENT_STAGE: participant_stage,
+            RESPONSE_KEY_CURRENT_STAGE: stage,
             RESPONSE_KEY_PAYMENT_ID: str(payment_row[0]) if payment_row else None,
             RESPONSE_KEY_VERIFIED_AT: payment_row[2].isoformat() if payment_row and payment_row[2] else None,
             RESPONSE_KEY_DETECTED_APP: payment_row[3] if payment_row else None,

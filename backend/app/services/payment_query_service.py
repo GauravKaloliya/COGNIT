@@ -99,21 +99,21 @@ QUERY_SET_PAYMENT_VERIFICATION_OUTCOME = text("""
 
 QUERY_SYNC_PARTICIPANT_FROM_PAYMENT = text("""
     UPDATE participants
-    SET participant_payment_status = :participant_payment_status,
-        participant_stage = :participant_stage,
-        participant_stage_updated_at = CURRENT_TIMESTAMP,
+    SET payment_status = :payment_status,
+        stage = :stage,
+        stage_updated_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = :participant_id
 """)
 
 def sync_participant_from_payment_status(db, *, participant_id: int, status: str) -> None:
-    participant_payment_status, participant_stage = participant_state_for_payment_status(status)
+    payment_status, stage = participant_state_for_payment_status(status)
     db.execute(
         QUERY_SYNC_PARTICIPANT_FROM_PAYMENT,
         {
             "participant_id": int(participant_id),
-            "participant_payment_status": participant_payment_status,
-            "participant_stage": participant_stage,
+            "payment_status": payment_status,
+            "stage": stage,
         },
     )
 
