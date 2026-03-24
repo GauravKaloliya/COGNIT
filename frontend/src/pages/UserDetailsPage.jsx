@@ -55,7 +55,6 @@ export default function UserDetailsPage({
     handleFieldBlur,
     updateField,
     draftRestored,
-    saveError,
     retryCountdown,
   } = useUserDetailsPage({
     publicId,
@@ -152,7 +151,6 @@ export default function UserDetailsPage({
           isOnline={isOnline}
           offlineMessage={uiText("user.offlineBanner")}
           draftRestored={draftRestored}
-          saveError={saveError}
           compact
         />
       </div>
