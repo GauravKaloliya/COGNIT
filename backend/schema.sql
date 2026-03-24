@@ -332,6 +332,22 @@ ALTER TABLE attention_checks
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attention_checks_active_unique
     ON attention_checks (image_id) WHERE is_active = true;
 
+CREATE TABLE IF NOT EXISTS image_reservations (
+    image_public_id VARCHAR(64) PRIMARY KEY REFERENCES images(image_id) ON DELETE CASCADE,
+    participant_id  BIGINT REFERENCES participants(id) ON DELETE CASCADE,
+    reserved_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    released_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_reservations_participant_active
+    ON image_reservations (participant_id, reserved_at DESC)
+    WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_image_reservations_expires_active
+    ON image_reservations (expires_at)
+    WHERE released_at IS NULL;
+
 -- =====================================================================
 -- SUBMISSIONS
 -- =====================================================================

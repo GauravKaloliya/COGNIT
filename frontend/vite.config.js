@@ -46,11 +46,6 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       host: true
     },
-    test: {
-      environment: "jsdom",
-      setupFiles: "./src/test/setupTests.js",
-      globals: true,
-    },
     esbuild: {
       drop: mode === "production" ? ["console", "debugger"] : []
     }

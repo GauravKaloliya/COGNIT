@@ -18,7 +18,11 @@ QUERY_RESERVE_IMAGE = text("""
     INSERT INTO image_reservations (
         image_public_id, participant_id, reserved_at, expires_at, released_at
     ) VALUES (
-        :iid, :pid, :now, :now, NULL
+        :iid,
+        :pid,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP + INTERVAL '15 minutes',
+        NULL
     )
     ON CONFLICT (image_public_id) DO UPDATE SET
         participant_id = EXCLUDED.participant_id,

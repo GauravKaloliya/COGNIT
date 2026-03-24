@@ -37,7 +37,7 @@ from app.utils.decorators import track_performance
 from app.utils.helpers import create_error_response, success_response
 from app.utils.app_runtime import (
     finalize_response,
-    get_cached_health_response,
+    get_health_response,
     handle_payload_too_large,
     initialize_request_context,
     redirect_to_api_docs_endpoints,
@@ -140,7 +140,7 @@ def add_rate_limit_headers(response):
 @track_performance
 def health():
     """Server and database health check endpoint."""
-    return get_cached_health_response(app, logger)
+    return get_health_response(logger)
 
 
 # ────────────────────────────────────────────────

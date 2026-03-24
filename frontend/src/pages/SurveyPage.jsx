@@ -61,7 +61,6 @@ export default function SurveyPage({
     descriptionRef,
     commentsRef,
     imageSrc,
-    cacheBustedSrc,
     hasUsableSurveyImage,
     handleSubmit,
     handleImageLoad,
@@ -138,8 +137,8 @@ export default function SurveyPage({
       <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
         {!imageError ? (
           <img
-            key={cacheBustedSrc}
-            src={cacheBustedSrc}
+            key={imageSrc}
+            src={imageSrc}
             alt={uiText("survey.promptAlt")}
             onClick={() => setIsZoomed(!isZoomed)}
             onLoad={handleImageLoad}

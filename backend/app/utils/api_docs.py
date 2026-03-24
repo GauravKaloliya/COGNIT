@@ -34,15 +34,17 @@ from app.extensions import app
 
 _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
     ("GET", HEALTH_ROUTE): {
-        "summary": "Server and database health check endpoint.",
+        "summary": "Check whether the API and database are reachable.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": HEALTH_RATE_LIMIT,
         "query": [],
         "headers": [],
         "body": None,
+        "notes": ["Returns a simple JSON health payload for uptime probes and local smoke tests."],
     },
     ("GET", CHECK_USERNAME_ROUTE): {
+        "summary": "Validate whether a participant username is still available.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
@@ -51,6 +53,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": None,
     },
     ("GET", CHECK_EMAIL_ROUTE): {
+        "summary": "Validate whether an email address is already in use.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
@@ -74,6 +77,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         },
     },
     ("POST", PARTICIPANTS_ROUTE): {
+        "summary": "Create a participant record and start a cookie-backed session.",
         "auth": "none",
         "idempotency": "required",
         "rate_limit": PARTICIPANT_CREATE_RATE_LIMIT,
@@ -91,6 +95,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "notes": ["Sets participant cookies on success."],
     },
     ("POST", CONSENT_ROUTE): {
+        "summary": "Record participant consent for a previously created participant id.",
         "auth": "none",
         "idempotency": "optional",
         "rate_limit": CONSENT_RATE_LIMIT,
@@ -98,6 +103,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": {"public_id": "<participant_public_id>"},
     },
     ("GET", PARTICIPANT_SESSION_ROUTE): {
+        "summary": "Read the current participant identifiers from secure cookies.",
         "auth": "participant cookies",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
@@ -105,6 +111,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": None,
     },
     ("GET", PARTICIPANT_OPTIONS_ROUTE): {
+        "summary": "Load registration form options from the database.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": PARTICIPANT_CHECK_RATE_LIMIT,
@@ -112,6 +119,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": None,
     },
     ("POST", EMAIL_OTP_REQUEST_ROUTE): {
+        "summary": "Create and send a verification OTP for a participant email address.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": EMAIL_OTP_REQUEST_RATE_LIMIT,
@@ -121,8 +129,10 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "email": "gaurav@example.com",
             "email_update": False,
         },
+        "notes": ["Use `email_update=true` when the participant is changing their email address."],
     },
     ("POST", EMAIL_OTP_VERIFY_ROUTE): {
+        "summary": "Verify an email OTP and mark the participant email as verified.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": EMAIL_OTP_VERIFY_RATE_LIMIT,
@@ -134,6 +144,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         },
     },
     ("GET", IMAGES_RANDOM_ROUTE): {
+        "summary": "Select the next survey image, including attention checks when scheduled.",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": "none",
@@ -144,6 +155,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         ],
         "headers": [],
         "body": None,
+        "notes": ["Pass previously shown image ids via `exclude` to avoid immediate repeats in the client."],
     },
     ("POST", SUBMIT_ROUTE): {
         "summary": "Submit an image description with survey feedback and engagement telemetry.",
@@ -171,6 +183,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "survey_keypresses": 102,
             "turnstile_token": "<turnstile-token>",
         },
+        "notes": ["Requires the participant cookies set during registration.", "Stores both survey output and engagement telemetry."],
     },
 }
 

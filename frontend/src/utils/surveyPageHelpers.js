@@ -5,12 +5,8 @@ export function buildSurveyImageState(survey) {
   const imageSrc = resolvedImageUrl
     ? (resolvedImageUrl.startsWith("http") ? resolvedImageUrl : getApiUrl(resolvedImageUrl))
     : "";
-  const cacheBustedSrc = imageSrc
-    ? `${imageSrc}${imageSrc.includes("?") ? "&" : "?"}v=${encodeURIComponent(survey?.image_id || "")}`
-    : "";
   return {
     imageSrc,
-    cacheBustedSrc,
     hasUsableSurveyImage: Boolean(survey?.image_id && imageSrc),
   };
 }

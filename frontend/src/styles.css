@@ -1011,7 +1011,9 @@ body.dark .consent-fade {
 .flow-stepper-wrap {
   position: relative;
   width: 100%;
-  align-self: stretch; /* .app uses align-items:center; stretch this row full-width */
+  align-self: stretch;
+  margin: 0 auto;
+  padding: 0 var(--space-3);
 }
 .flow-stepper-hint {
   display: none;
@@ -1024,35 +1026,59 @@ body.dark .consent-fade {
 .flow-stepper {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--space-2);
+  grid-template-columns: repeat(var(--flow-step-count, 4), minmax(0, 1fr));
+  gap: 0.5rem;
+  align-items: stretch;
+  padding: 0.35rem;
+  border-radius: 1.4rem;
+  background: color-mix(in srgb, var(--secondary) 55%, white 45%);
 }
 .flow-step {
-  background: var(--panel);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  padding: var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 1rem;
+  min-height: 0;
+  padding: 0.7rem 0.8rem;
   text-align: center;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    background-color var(--transition-base),
+    transform var(--transition-base);
 }
 .flow-step.done {
-  border-color: color-mix(in srgb, var(--success) 50%, var(--border-light) 50%);
-  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 22%, transparent 78%);
+  background: color-mix(in srgb, var(--success) 10%, white 90%);
+  color: color-mix(in srgb, var(--success) 80%, var(--text) 20%);
 }
 .flow-step.active {
-  border-color: color-mix(in srgb, var(--primary) 60%, var(--border-light) 40%);
-  box-shadow: var(--shadow-primary);
+  border-color: color-mix(in srgb, var(--primary) 72%, white 28%);
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.12);
 }
 
 .flow-step.active .flow-step-index {
   color: var(--primary);
 }
 .flow-step-label {
-  font-size: var(--text-sm);
+  font-size: clamp(0.82rem, 1vw, 0.95rem);
   font-weight: var(--font-semibold);
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+@media (min-width: 768px) {
+  .flow-stepper-wrap {
+    max-width: 560px;
+    padding: 0;
+  }
+
+  .flow-step {
+    padding: 0.65rem 0.55rem;
+  }
 }
 @media (max-width: 640px) {
   .flow-stepper-wrap {
@@ -1063,23 +1089,25 @@ body.dark .consent-fade {
 
   .flow-stepper {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(var(--flow-step-count, 4), minmax(0, 1fr));
+    gap: 6px;
     overflow-x: visible;
-    padding-bottom: 0;
+    padding: 0.3rem;
     scroll-snap-type: none;
   }
   .flow-step {
     min-width: 0;
-    padding: 8px 6px;
+    min-height: auto;
+    padding: 0.6rem 0.35rem;
     border-radius: var(--radius-full);
     box-shadow: none;
+    transform: none;
   }
   .flow-step-label {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 12px;
+    font-size: 11px;
   }
   .flow-stepper-hint {
     display: none;
@@ -2178,6 +2206,12 @@ body.dark .counts {
   flex-wrap: wrap;
 }
 
+.rating-scale-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  filter: grayscale(0.15);
+}
+
 @media (min-width: 480px) {
   .rating-scale {
     gap: var(--space-2);
@@ -2192,6 +2226,10 @@ body.dark .counts {
 
 .rating-option {
   cursor: pointer;
+}
+
+.rating-scale-disabled .rating-option {
+  cursor: not-allowed;
 }
 
 .rating-option input {
@@ -2244,6 +2282,11 @@ body.dark .counts {
 .rating-option:hover .rating-label {
   border-color: var(--primary);
   transform: scale(1.05);
+}
+
+.rating-scale-disabled .rating-option:hover .rating-label {
+  border-color: var(--border);
+  transform: none;
 }
 
 .rating-option input:checked + .rating-label {
