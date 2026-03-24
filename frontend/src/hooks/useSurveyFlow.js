@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { getDisplayErrorMessage } from "../utils/appError";
@@ -36,6 +36,40 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
   const inFlightRef = useRef(false);
   const imageAbortRef = useRef(null);
   const submitAbortRef = useRef(null);
+
+  useEffect(() => {
+    const restoredSurvey = normalizeSurveyPayload(initial?.survey);
+    if (restoredSurvey?.[SURVEY_API_FIELDS.imageId]) {
+      setSurvey((prev) => {
+        if (prev?.[SURVEY_API_FIELDS.imageId] === restoredSurvey[SURVEY_API_FIELDS.imageId]) {
+          return prev;
+        }
+        if (prev?.[SURVEY_API_FIELDS.imageId] && prev?.[SURVEY_API_FIELDS.url]) {
+          return prev;
+        }
+        return restoredSurvey;
+      });
+    }
+    if (Number.isFinite(initial?.surveyCompleted)) {
+      setSurveyCompleted((prev) => (prev > 0 ? prev : initial.surveyCompleted));
+    }
+    if (initial?.surveyFeedbackReady === true) {
+      setSurveyFeedbackReady(true);
+    }
+    if (initial?.lastSubmissionSucceeded === true) {
+      setLastSubmissionSucceeded(true);
+    }
+    if (Array.isArray(initial?.shownImages) && initial.shownImages.length > 0) {
+      setShownImages((prev) => (prev.length > 0 ? prev : initial.shownImages));
+    }
+  }, [
+    initial?.lastSubmissionSucceeded,
+    initial?.shownImages,
+    initial?.survey,
+    initial?.surveyCompleted,
+    initial?.surveyFeedbackReady,
+    publicId,
+  ]);
 
   const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
     // Keep refresh/session-resumed survey stable: do not request a new image
