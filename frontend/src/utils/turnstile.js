@@ -1,4 +1,5 @@
 import { runtimeConfig } from "../config/runtime";
+import { reportClientError } from "./errorReporter";
 import { scheduleTimeout } from "./timing";
 import { uiText } from "./uiText.js";
 
@@ -43,10 +44,15 @@ const ensureTurnstileScript = () => {
 
 const TURNSTILE_TIMEOUT_MS = 8000;
 
+export const isTurnstileRequired = () => {
+  if (!runtimeConfig.turnstileEnabled) return false;
+  if (import.meta.env.DEV || isLocalhost()) return false;
+  return true;
+};
+
 export const getTurnstileToken = async (action = "submit") => {
-  if (!runtimeConfig.turnstileEnabled) return "";
-  if (import.meta.env.DEV || isLocalhost()) {
-    // Dev (including Codespaces) should not block on Turnstile.
+  if (!isTurnstileRequired()) {
+    // Local development should never block on Turnstile.
     return "";
   }
   const siteKey = (runtimeConfig.turnstileSiteKey || "").trim();
@@ -98,15 +104,37 @@ export const getTurnstileToken = async (action = "submit") => {
           appearance: "interaction-only",
           execution: "execute",
           callback: (token) => {
+            const safeToken = String(token || "").trim();
             cleanup();
-            resolve(token || "");
+            if (!safeToken) {
+              reject(new Error(uiText("turnstile.executionFailed")));
+              return;
+            }
+            resolve(safeToken);
           },
-          "error-callback": () => {
+          "error-callback": async (errorCode) => {
             cleanup();
+            await reportClientError({
+              message: uiText("turnstile.executionFailed"),
+              context: "turnstile_error_callback",
+              route: typeof window !== "undefined" ? window.location.pathname : "",
+              tag: "turnstile_client_error",
+              meta: {
+                action,
+                errorCode: String(errorCode || ""),
+              },
+            });
             reject(new Error(uiText("turnstile.executionFailed")));
           },
-          "expired-callback": () => {
+          "expired-callback": async () => {
             cleanup();
+            await reportClientError({
+              message: uiText("turnstile.tokenExpired"),
+              context: "turnstile_expired_callback",
+              route: typeof window !== "undefined" ? window.location.pathname : "",
+              tag: "turnstile_client_error",
+              meta: { action },
+            });
             reject(new Error(uiText("turnstile.tokenExpired")));
           },
         });
@@ -121,8 +149,13 @@ export const getTurnstileToken = async (action = "submit") => {
       ),
     ]);
   } catch (error) {
-    // Avoid hard-blocking UX on runtime Turnstile failures.
-    // Backend remains source of truth and can enforce challenge in non-local environments.
+    await reportClientError({
+      message: error instanceof Error ? error.message : uiText("turnstile.unavailable"),
+      context: "turnstile_get_token",
+      route: typeof window !== "undefined" ? window.location.pathname : "",
+      tag: "turnstile_client_error",
+      meta: { action },
+    });
     if (isLocalhost()) return "";
     throw error instanceof Error ? error : new Error(uiText("turnstile.unavailable"));
   }

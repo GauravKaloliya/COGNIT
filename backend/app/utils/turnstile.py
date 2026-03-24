@@ -7,6 +7,7 @@ import time
 from typing import Optional, Tuple
 import ipaddress
 import requests
+from flask import g
 
 from app.config import (
     TURNSTILE_ENABLED,
@@ -60,6 +61,7 @@ def verify_turnstile_token(
     remote_ip: Optional[str] = None,
     host: Optional[str] = None,
     endpoint: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ) -> Tuple[bool, dict]:
     """
     Verify a Turnstile token against Cloudflare siteverify API.
@@ -81,6 +83,8 @@ def verify_turnstile_token(
     }
     if remote_ip:
         payload["remoteip"] = remote_ip
+    if idempotency_key:
+        payload["idempotency_key"] = str(idempotency_key).strip()[:128]
 
     try:
         started_at = time.monotonic()
@@ -100,10 +104,42 @@ def verify_turnstile_token(
                 success=bool(data.get("success")),
                 endpoint=endpoint,
             )
+        if not bool(data.get("success")):
+            log_event(
+                logger,
+                OBS_EVENT_TURNSTILE_VERIFY_FAILED,
+                level=logging.WARNING,
+                endpoint=endpoint,
+                host=host,
+                request_id=getattr(g, "request_id", None),
+                token_present=bool(str(token or "").strip()),
+                error_codes=data.get("error-codes") or [],
+                action=data.get("action"),
+                cdata=data.get("cdata"),
+                challenge_ts=data.get("challenge_ts"),
+                hostname=data.get("hostname"),
+            )
         return bool(data.get("success")), data
     except requests.exceptions.Timeout:
-        log_event(logger, OBS_EVENT_TURNSTILE_VERIFY_TIMEOUT, level=logging.WARNING, endpoint=endpoint)
+        log_event(
+            logger,
+            OBS_EVENT_TURNSTILE_VERIFY_TIMEOUT,
+            level=logging.WARNING,
+            endpoint=endpoint,
+            host=host,
+            request_id=getattr(g, "request_id", None),
+        )
         return False, {"success": False, "error-codes": ["verification-request-timeout"]}
-    except Exception:
-        log_event(logger, OBS_EVENT_TURNSTILE_VERIFY_FAILED, level=logging.WARNING, endpoint=endpoint)
+    except Exception as exc:
+        log_event(
+            logger,
+            OBS_EVENT_TURNSTILE_VERIFY_FAILED,
+            level=logging.WARNING,
+            endpoint=endpoint,
+            host=host,
+            request_id=getattr(g, "request_id", None),
+            token_present=bool(str(token or "").strip()),
+            error_codes=["verification-request-failed"],
+            error=str(exc),
+        )
         return False, {"success": False, "error-codes": ["verification-request-failed"]}

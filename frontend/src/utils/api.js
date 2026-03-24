@@ -1,6 +1,6 @@
 import { getApiUrl } from "./apiBase";
 import { parseErrorResponse, getErrorMessage } from "./errorRegistry";
-import { getTurnstileToken } from "./turnstile";
+import { getTurnstileToken, isTurnstileRequired } from "./turnstile";
 import { assertPublicId } from "./publicId";
 import {
   ERROR_NAMES,
@@ -136,6 +136,9 @@ export const api = {
 export const endpoints = {
   createParticipant: async (data, options = {}) => {
     const turnstileToken = await getTurnstileToken("register_submit");
+    if (isTurnstileRequired() && !String(turnstileToken || "").trim()) {
+      throw new Error(getErrorMessage("BOT_001_0002"));
+    }
     const payload = { ...(data || {}) };
     delete payload.public_id;
     delete payload.session_id;
@@ -164,6 +167,9 @@ export const endpoints = {
   },
   submitDescription: async (data, options = {}) => {
     const turnstileToken = await getTurnstileToken("submission_submit");
+    if (isTurnstileRequired() && !String(turnstileToken || "").trim()) {
+      throw new Error(getErrorMessage("BOT_001_0005"));
+    }
     const safePublicId = assertPublicId(data?.public_id, null, { message: getErrorMessage("NF_001_0001") });
     return api.post(API_ROUTES.submit, { ...data, public_id: safePublicId, turnstile_token: turnstileToken || undefined }, options);
   },
