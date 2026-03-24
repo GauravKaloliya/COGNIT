@@ -6,7 +6,6 @@ def ensure_test_env() -> None:
         "WEBSITE_URL": "https://example.com",
         "UPI_NAME": "COGNIT",
         "PAYMENT_SECRET": "test-payment-secret",
-        "UPI_POOL_VPAS": "cognit@upi",
         "EMAIL_OTP_WEBHOOK_URL": "https://example.com/otp",
         "EMAIL_OTP_SENDER": "noreply@example.com",
         "EMAIL_OTP_SUBJECT": "OTP",
