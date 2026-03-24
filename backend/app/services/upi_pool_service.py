@@ -197,7 +197,14 @@ def fetch_used_upis_for_participant(db, *, participant_id: int, now_utc: datetim
     return {int(row[0]) for row in rows if row and row[0] is not None}
 
 
-def select_upi_for_payment(db, *, user_key: str, session_id: str, used_upis: Iterable[int] | None = None):
+def select_upi_for_payment(
+    db,
+    *,
+    user_key: str,
+    session_id: str,
+    used_upis: Iterable[int] | None = None,
+    allow_used_fallback: bool = True,
+):
     now = datetime.now(timezone.utc)
     local_date, _day_start, _day_end = _local_day_bounds(now)
 
@@ -301,11 +308,14 @@ def select_upi_for_payment(db, *, user_key: str, session_id: str, used_upis: Ite
 
         eligible.append(s)
 
-    if not eligible:
+    if not eligible and allow_used_fallback:
         fallback_used = True
         for s in stats:
             if s["status"] == STATUS_ACTIVE and s["attempts_today"] < UPI_PER_UPI_LIMIT:
                 eligible.append(s)
+
+    if not eligible and not allow_used_fallback:
+        return {"status": "NO_ALTERNATE_UPI"}
 
     if not eligible:
         return {"status": "MAINTENANCE"}
