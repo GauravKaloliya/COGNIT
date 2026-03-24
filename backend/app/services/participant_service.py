@@ -14,6 +14,7 @@ from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
     PARTICIPANT_FIELD_USERNAME,
 )
+from app.constants.request_keys import REQUEST_KEY_SESSION_ID
 from app.constants.participant_patterns import PUBLIC_ID_REGEX
 from app.services.participant_query_service import (
     QUERY_CHECK_PARTICIPANT_FIELD_AVAILABLE_TEMPLATE,
@@ -72,7 +73,7 @@ def is_valid_public_id(public_id: str) -> bool:
 
 
 def generate_session_id(data) -> str:
-    return str(data.get("session_id") or f"sess_{uuid.uuid4().hex}").strip()[:128]
+    return str(data.get(REQUEST_KEY_SESSION_ID) or f"sess_{uuid.uuid4().hex}").strip()[:128]
 
 
 def find_existing_participant_conflict(db, *, username: str, email: str):
