@@ -26,6 +26,10 @@ STATUS_ACTIVE = "ACTIVE"
 STATUS_COOLDOWN = "COOLDOWN"
 STATUS_DISABLED = "DISABLED"
 
+RESULT_STATUS_SUCCESS = "SUCCESS"
+RESULT_STATUS_FAILURE = "FAILURE"
+RESULT_REASON_LIMIT_REPORTED = "LIMIT_REPORTED"
+
 
 QUERY_FETCH_ACTIVE_UPI_ACCOUNTS = text("""
     SELECT id, vpa, name, is_active
@@ -384,7 +388,7 @@ def select_upi_for_payment(
     }
 
 
-def record_upi_result(db, *, payment_id: int, result_status: str):
+def record_upi_result(db, *, payment_id: int, result_status: str, result_reason: str | None = None):
     now = datetime.now(timezone.utc)
     payment_row = db.execute(QUERY_FETCH_PAYMENT_UPI, {"pid": int(payment_id)}).fetchone()
     if not payment_row:
@@ -399,7 +403,13 @@ def record_upi_result(db, *, payment_id: int, result_status: str):
             meta = json.loads(meta)
         except Exception:
             meta = {}
-    if meta.get("upi_result_recorded"):
+
+    reason_key = str(result_reason or "").strip().upper()
+    marker_key = "upi_result_recorded"
+    if reason_key == RESULT_REASON_LIMIT_REPORTED:
+        marker_key = "upi_limit_reported"
+
+    if meta.get(marker_key):
         return
 
     local_date, _day_start, _day_end = _local_day_bounds(created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc))
@@ -431,14 +441,15 @@ def record_upi_result(db, *, payment_id: int, result_status: str):
     if not stat:
         return
 
-    if result_status == "FAILURE":
+    if result_status == RESULT_STATUS_FAILURE:
+        is_limit_reported = reason_key == RESULT_REASON_LIMIT_REPORTED
         stat["failures_today"] += 1
-        stat["recent_failures"] += 1
+        stat["recent_failures"] += 2 if is_limit_reported else 1
         stat["consecutive_failures"] += 1
         stat["last_failure_time"] = now
-        if stat["consecutive_failures"] >= 5:
+        if stat["consecutive_failures"] >= 2:
             stat["status"] = STATUS_DISABLED
-        elif stat["recent_failures"] >= 3:
+        elif stat["recent_failures"] >= 1:
             stat["status"] = STATUS_COOLDOWN
             stat["cooldown_until"] = now + timedelta(seconds=UPI_COOLDOWN_SECONDS)
             stat["recent_failures"] = 0
@@ -464,5 +475,9 @@ def record_upi_result(db, *, payment_id: int, result_status: str):
 
     db.execute(QUERY_UPDATE_PAYMENT_METADATA, {
         "pid": int(payment_id),
-        "patch": json.dumps({"upi_result_recorded": True}),
+        "patch": json.dumps({
+            marker_key: True,
+            "upi_result_status": str(result_status or "").upper(),
+            "upi_result_reason": reason_key or None,
+        }),
     })

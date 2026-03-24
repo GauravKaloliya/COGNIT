@@ -222,6 +222,23 @@ export default function PaymentLinkPage({
                   </h3>
                 </div>
                 <div className="card-body">
+                  <div className="payment-upi-help-card" role="note" aria-live="polite">
+                    <div className="payment-upi-help-copy">
+                      <p className="payment-upi-help-eyebrow">{uiText("payment.upiLimitEyebrow")}</p>
+                      <p className="payment-upi-help-title">{uiText("payment.upiLimitTitle")}</p>
+                      <p className="payment-upi-help-text">{uiText("payment.upiLimitHelp")}</p>
+                    </div>
+                    <DSButton
+                      variant="primary"
+                      type="button"
+                      onClick={refreshPaymentUpi}
+                      disabled={offlineDisabled || verifying || isRefreshingUpi || retryBlocked}
+                    >
+                      {isRefreshingUpi
+                        ? uiText("payment.tryingAnotherUpi")
+                        : uiText("payment.tryAnotherUpi")}
+                    </DSButton>
+                  </div>
                   <div className="payment-qr-container" style={!isMobile ? getQrContainerStyle() : undefined}>
                   {isMobile ? (
                     <a
@@ -274,19 +291,6 @@ export default function PaymentLinkPage({
                     <span>⏱️</span>
                     {uiText("payment.pendingBadge")}
                   </div>
-                  <p className="payment-note">{uiText("payment.upiLimitHelp")}</p>
-                  <PageActions>
-                    <DSButton
-                      variant="ghost"
-                      type="button"
-                      onClick={refreshPaymentUpi}
-                      disabled={offlineDisabled || verifying || isRefreshingUpi || retryBlocked}
-                    >
-                      {isRefreshingUpi
-                        ? uiText("payment.tryingAnotherUpi")
-                        : uiText("payment.tryAnotherUpi")}
-                    </DSButton>
-                  </PageActions>
                 </div>
               </section>
             )}
