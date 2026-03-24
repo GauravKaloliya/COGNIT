@@ -13,7 +13,7 @@ QUERY_DUPLICATE_SCREENSHOT = text("""
 QUERY_REJECTED_SCREENSHOT_FAST = text("""
     SELECT 1
     FROM payments
-    WHERE status = 'rejected_fraud'
+    WHERE status = :rejected_status
       AND uploaded_sha256 = :hash
     LIMIT 1
 """)
@@ -22,7 +22,7 @@ QUERY_REJECTED_SCREENSHOT_FILE_HASH = text("""
     SELECT 1
     FROM payment_files pf
     JOIN payments p ON p.id = pf.payment_id
-    WHERE p.status = 'rejected_fraud'
+    WHERE p.status = :rejected_status
       AND pf.sha256 = :hash
     LIMIT 1
 """)
@@ -31,7 +31,7 @@ QUERY_REJECTED_SCREENSHOT_ATTEMPTS = text("""
     SELECT 1
     FROM payment_upload_attempts pua
     JOIN payments p ON p.id = pua.payment_id
-    WHERE p.status = 'rejected_fraud'
+    WHERE p.status = :rejected_status
       AND pua.sha256 = :hash
     LIMIT 1
 """)
@@ -92,7 +92,7 @@ QUERY_OCR_SIGNATURE_REPLAY = text("""
     SELECT pua.payment_id, p.participant_id
     FROM payment_upload_attempts pua
     JOIN payments p ON p.id = pua.payment_id
-    WHERE pua.status IN ('success', 'rejected', 'duplicate')
+    WHERE pua.status IN (:attempt_success, :attempt_rejected, :attempt_duplicate)
       AND pua.sha256 <> :sha
       AND COALESCE(pua.details->>'ocr_signature', '') = :ocr_sig
     ORDER BY pua.created_at DESC
