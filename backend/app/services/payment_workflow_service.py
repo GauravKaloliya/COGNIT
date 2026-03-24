@@ -1,7 +1,11 @@
 from typing import Dict, Set
 
 from app.constants.participant_constants import (
+    PARTICIPANT_PAYMENT_STATUS_FAILED,
+    PARTICIPANT_PAYMENT_STATUS_PENDING,
     PARTICIPANT_PAYMENT_STATUS_PAID,
+    PARTICIPANT_PAYMENT_STATUS_REFUNDED,
+    PARTICIPANT_STAGE_PAYMENT,
     PARTICIPANT_STAGE_FINISHED,
     PARTICIPANT_STAGE_SURVEY,
 )
@@ -35,7 +39,7 @@ def participant_state_for_payment_status(status: str) -> tuple[str, str]:
     if normalized == PAYMENT_STATUS_SUCCESS:
         return PARTICIPANT_PAYMENT_STATUS_PAID, PARTICIPANT_STAGE_SURVEY
     if normalized in {PAYMENT_STATUS_FAILED, PAYMENT_STATUS_EXPIRED, PAYMENT_STATUS_REJECTED_FRAUD}:
-        return "failed", "payment"
+        return PARTICIPANT_PAYMENT_STATUS_FAILED, PARTICIPANT_STAGE_PAYMENT
     if normalized == PAYMENT_STATUS_REFUNDED:
-        return "refunded", "payment"
-    return "pending", "payment"
+        return PARTICIPANT_PAYMENT_STATUS_REFUNDED, PARTICIPANT_STAGE_PAYMENT
+    return PARTICIPANT_PAYMENT_STATUS_PENDING, PARTICIPANT_STAGE_PAYMENT

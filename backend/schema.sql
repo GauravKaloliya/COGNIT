@@ -31,8 +31,8 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION set_participant_stage_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.participant_stage IS DISTINCT FROM OLD.participant_stage THEN
-        NEW.participant_stage_updated_at = CURRENT_TIMESTAMP;
+    IF NEW.stage IS DISTINCT FROM OLD.stage THEN
+        NEW.stage_updated_at = CURRENT_TIMESTAMP;
     END IF;
     RETURN NEW;
 END;
@@ -236,11 +236,11 @@ CREATE TABLE IF NOT EXISTS participants (
     consent_at       TIMESTAMPTZ,
     email_verified   BOOLEAN NOT NULL DEFAULT FALSE,
     email_verified_at TIMESTAMPTZ,
-    participant_payment_status VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (participant_payment_status IN ('pending','paid','failed','refunded','cancelled')),
-    participant_stage VARCHAR(32) NOT NULL DEFAULT 'consent'
-        CHECK (participant_stage IN ('consent','user-details','payment-content','payment-link','payment','survey','finished')),
-    participant_stage_updated_at TIMESTAMPTZ,
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (payment_status IN ('pending','paid','failed','refunded','cancelled')),
+    stage VARCHAR(32) NOT NULL DEFAULT 'consent'
+        CHECK (stage IN ('consent','user-details','payment-content','payment-link','payment','survey','finished')),
+    stage_updated_at TIMESTAMPTZ,
     ip_hash          CHAR(64) NOT NULL CHECK (length(ip_hash) = 64),
     user_agent       VARCHAR(512),
     extra_metadata   JSONB NOT NULL DEFAULT '{}',
@@ -257,7 +257,7 @@ CREATE TRIGGER trg_participants_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_participants_stage_updated_at
-    BEFORE UPDATE OF participant_stage ON participants
+    BEFORE UPDATE OF stage ON participants
     FOR EACH ROW EXECUTE FUNCTION set_participant_stage_updated_at();
 
 -- Active-only unique constraints
@@ -267,14 +267,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_email    ON participan
 CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (public_id);
 CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (participant_payment_status);
+CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (payment_status);
 
-COMMENT ON COLUMN participants.participant_payment_status IS
+COMMENT ON COLUMN participants.payment_status IS
     'App-owned participant payment summary state. Mirrors frontend/backend flow language, not provider-specific payment states.';
-COMMENT ON COLUMN participants.participant_stage IS
-    'App-owned participant progression stage. Kept intentionally prefixed to distinguish it from payment status fields.';
-COMMENT ON COLUMN participants.participant_stage_updated_at IS
-    'Convenience timestamp updated only when participant_stage changes.';
+COMMENT ON COLUMN participants.stage IS
+    'App-owned participant progression stage used by frontend/backends to coordinate flow.';
+COMMENT ON COLUMN participants.stage_updated_at IS
+    'Convenience timestamp updated only when stage changes.';
 
 -- Email OTPs (verification)
 CREATE TABLE IF NOT EXISTS email_otps (

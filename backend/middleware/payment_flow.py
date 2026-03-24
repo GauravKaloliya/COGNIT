@@ -11,6 +11,13 @@ from sqlalchemy import text
 
 from app.utils.helpers import create_error_response, get_ip_hash
 from app.utils.security import verify_payment_write_token
+from app.constants.participant_constants import PARTICIPANT_PAYMENT_STATUS_PAID
+from app.constants.payment_constants import (
+    PAYMENT_STATUS_EXPIRED,
+    PAYMENT_STATUS_PENDING,
+    PAYMENT_STATUS_PROCESSING,
+    PAYMENT_STATUS_SUCCESS,
+)
 
 
 def require_payment_completed(f):
@@ -25,7 +32,7 @@ def require_payment_completed(f):
             public_id = request.args.get("public_id")
 
         if not public_id:
-            return create_error_response("VAL_MISSING_FIELDS", {"fields": ["public_id"]})
+            return create_error_response("VAL_MISSING_FIELDS", fields=["public_id"])
 
         from app.database import get_db
 
@@ -71,12 +78,9 @@ def require_payment_completed(f):
             except Exception:
                 pass
 
-            return create_error_response(
-                "AUTH_EMAIL_NOT_VERIFIED",
-                custom_message="Email must be verified before accessing this feature",
-            )
+            return create_error_response("AUTH_EMAIL_NOT_VERIFIED")
 
-        if payment_status != "paid":
+        if payment_status != PARTICIPANT_PAYMENT_STATUS_PAID:
             try:
                 db.execute(text("""
                     INSERT INTO audit_log (
@@ -102,10 +106,7 @@ def require_payment_completed(f):
             except Exception:
                 pass
 
-            return create_error_response(
-                "PAYMENT_NOT_VERIFIED",
-                custom_message="Payment must be completed before accessing this feature",
-            )
+            return create_error_response("PAY_NOT_VERIFIED")
 
         return f(*args, **kwargs)
 
@@ -127,7 +128,7 @@ def require_valid_payment_session(
             payment_public_id = kwargs.get("payment_public_id")
 
             if not payment_public_id:
-                return create_error_response("VAL_MISSING_FIELDS", {"fields": ["payment_public_id"]})
+                return create_error_response("VAL_MISSING_FIELDS", fields=["payment_public_id"])
 
             from app.database import get_db
 
@@ -146,7 +147,7 @@ def require_valid_payment_session(
             status, expires_at, participant_id, payment_signature, participant_session_id, payment_metadata = result
 
             if require_write_token:
-                valid_states = allowed_states if allowed_states else ["pending"]
+                valid_states = allowed_states if allowed_states else [PAYMENT_STATUS_PENDING]
 
                 auth_header = (request.headers.get("Authorization") or "").strip()
                 token = ""
@@ -184,29 +185,29 @@ def require_valid_payment_session(
                 if expected_nonce and token_nonce != expected_nonce:
                     return create_error_response("AUTH_INVALID_PAYMENT_TOKEN")
             else:
-                valid_states = ["pending", "processing", "success"]
+                valid_states = [PAYMENT_STATUS_PENDING, PAYMENT_STATUS_PROCESSING, PAYMENT_STATUS_SUCCESS]
 
             if status not in valid_states:
                 return create_error_response(
                     "PAY_INVALID_STATE",
-                    details=f"Payment in state '{status}', required: {valid_states}",
+                    details={"current_status": status, "required_statuses": valid_states},
                 )
 
             if not skip_expiry_check and expires_at and datetime.now(timezone.utc) > expires_at:
-                if status == "pending":
+                if status == PAYMENT_STATUS_PENDING:
                     db.execute(text("""
                         UPDATE payments
-                        SET status = 'expired', updated_at = :now
+                        SET status = :expired, updated_at = :now
                         WHERE public_id = :pid
                     """), {
                         "pid": payment_public_id,
+                        "expired": PAYMENT_STATUS_EXPIRED,
                         "now": datetime.now(timezone.utc),
                     })
                     db.commit()
 
                 return create_error_response(
                     "PAY_EXPIRED",
-                    custom_message="Payment session has expired. Please start a new payment.",
                 )
 
             return f(*args, **kwargs)

@@ -19,6 +19,12 @@ from app.constants.observability_constants import (
     OBS_EVENT_FRAUD_REJECTED_FAST_PATH_FAILED,
     OBS_EVENT_FRAUD_REJECTED_FILE_HASH_FAILED,
 )
+from app.constants.payment_constants import (
+    PAYMENT_STATUS_REJECTED_FRAUD,
+    VERIFY_ATTEMPT_STATUS_DUPLICATE,
+    VERIFY_ATTEMPT_STATUS_REJECTED,
+    VERIFY_ATTEMPT_STATUS_SUCCESS,
+)
 from app.utils.fraud_queries import (
     QUERY_DUPLICATE_SCREENSHOT,
     QUERY_FINGERPRINT_MATCH_CURRENT,
@@ -89,7 +95,10 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
     """
     # Fast path: denormalized indexed hash on payments.
     try:
-        hit = db.execute(QUERY_REJECTED_SCREENSHOT_FAST, {"hash": sha256_hash}).scalar()
+        hit = db.execute(
+            QUERY_REJECTED_SCREENSHOT_FAST,
+            {"hash": sha256_hash, "rejected_status": PAYMENT_STATUS_REJECTED_FRAUD},
+        ).scalar()
         if hit:
             return True
     except Exception as e:
@@ -97,7 +106,10 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
 
     # Fallback path 1: historical file hashes linked to rejected payments.
     try:
-        hit = db.execute(QUERY_REJECTED_SCREENSHOT_FILE_HASH, {"hash": sha256_hash}).scalar()
+        hit = db.execute(
+            QUERY_REJECTED_SCREENSHOT_FILE_HASH,
+            {"hash": sha256_hash, "rejected_status": PAYMENT_STATUS_REJECTED_FRAUD},
+        ).scalar()
         if hit:
             return True
     except Exception as e:
@@ -105,7 +117,10 @@ def check_rejected_screenshot(db, sha256_hash: str) -> bool:
 
     # Fallback path 2: upload attempts on rejected payments.
     try:
-        hit = db.execute(QUERY_REJECTED_SCREENSHOT_ATTEMPTS, {"hash": sha256_hash}).scalar()
+        hit = db.execute(
+            QUERY_REJECTED_SCREENSHOT_ATTEMPTS,
+            {"hash": sha256_hash, "rejected_status": PAYMENT_STATUS_REJECTED_FRAUD},
+        ).scalar()
         return bool(hit)
     except Exception as e:
         log_event(logger, OBS_EVENT_FRAUD_REJECTED_ATTEMPTS_FAILED, level=logging.WARNING, error=str(e))
@@ -286,6 +301,9 @@ def check_ocr_signature_replay(
         return False, None, False
     try:
         row = db.execute(QUERY_OCR_SIGNATURE_REPLAY, {
+            "attempt_success": VERIFY_ATTEMPT_STATUS_SUCCESS,
+            "attempt_rejected": VERIFY_ATTEMPT_STATUS_REJECTED,
+            "attempt_duplicate": VERIFY_ATTEMPT_STATUS_DUPLICATE,
             "sha": sha256_hash,
             "ocr_sig": ocr_signature,
         }).fetchone()

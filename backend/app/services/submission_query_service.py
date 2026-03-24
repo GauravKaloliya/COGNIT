@@ -14,8 +14,8 @@ QUERY_FETCH_SUBMISSION_PARTICIPANT = text("""
         p.consent_given,
         p.is_deleted,
         p.extra_metadata,
-        p.participant_payment_status,
-        p.participant_stage,
+        p.payment_status,
+        p.stage,
         COALESCE(pas.is_flagged, false) AS is_flagged
     FROM participants p
     LEFT JOIN participant_attention_stats pas ON pas.participant_id = p.id

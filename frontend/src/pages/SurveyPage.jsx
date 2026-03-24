@@ -175,7 +175,7 @@ export default function SurveyPage({
         </DSButton>
       </div>
 
-      <div className="meta">
+      <div className="meta meta-timer-row">
         <span className="timer">{uiText("survey.timeElapsed", { seconds: elapsed })}</span>
       </div>
 
