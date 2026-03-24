@@ -115,6 +115,8 @@ const TEXT = {
     "consent.checkboxNote": "I confirm that I have read and understood the consent information above and voluntarily agree to participate.",
     "survey.loadingNext": "Loading next survey",
     "survey.loadingNextSubtitle": "Selecting the next image and preparing your form",
+    "survey.loadingSurvey": "Loading survey...",
+    "survey.loadingSurveySubtitle": "Restoring your survey and preparing the image",
     "survey.offlineBanner": "You're offline. Progress might not sync until you reconnect.",
     "survey.offlineSubmit": "You're offline. Submission will be sent once you're back online.",
     "survey.imageRestoreFailed": "Unable to restore survey image. Please retry to continue.",

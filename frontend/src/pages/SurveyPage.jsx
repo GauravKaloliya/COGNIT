@@ -19,6 +19,7 @@ export default function SurveyPage({
   publicId,
   surveyCompleted = 0,
   onSubmit,
+  onRetry = null,
   fetchError = null,
   isFetchingImage = false,
 }) {
@@ -65,6 +66,7 @@ export default function SurveyPage({
     handleSubmit,
     handleImageLoad,
     handleImageError,
+    handleRetryImage,
     getSubmitTooltip,
     preventCopyPaste,
     preventClipboardShortcuts,
@@ -75,7 +77,9 @@ export default function SurveyPage({
     publicId,
     surveyCompleted,
     onSubmit,
+    onRetry,
     fetchError,
+    isFetchingImage,
   });
 
   const MIN_WORDS = constants.minWords;
@@ -98,14 +102,18 @@ export default function SurveyPage({
             icon="!"
             title={uiText("survey.imageLoadFailed")}
             message={fetchError || uiText("survey.imageRestoreFailed")}
-            actionLabel={null}
-            onAction={null}
-            disabled
+            actionLabel={
+              retryDisabled && retryCountdown > 0
+                ? uiText("common.tryAgainIn", { seconds: retryCountdown })
+                : uiText("common.retry")
+            }
+            onAction={retryDisabled ? null : handleRetryImage}
+            disabled={retryDisabled}
           />
         ) : isFetchingImage || (!survey || !survey.image_id) ? (
           <PageSkeleton
-            title={uiText("survey.loadingImage")}
-            subtitle={uiText("survey.canvasSubtitle")}
+            title={uiText("survey.loadingSurvey")}
+            subtitle={uiText("survey.loadingSurveySubtitle")}
             variant="survey"
           />
         ) : fetchError || (survey?.image_id && !imageSrc) ? (
@@ -117,15 +125,15 @@ export default function SurveyPage({
             actionLabel={
               retryDisabled && retryCountdown > 0
                 ? uiText("common.tryAgainIn", { seconds: retryCountdown })
-                : null
+                : uiText("common.retry")
             }
-            onAction={null}
-            disabled
+            onAction={retryDisabled ? null : handleRetryImage}
+            disabled={retryDisabled}
           />
         ) : (
           <PageSkeleton
-            title={uiText("survey.loadingImage")}
-            subtitle={uiText("survey.canvasSubtitle")}
+            title={uiText("survey.loadingSurvey")}
+            subtitle={uiText("survey.loadingSurveySubtitle")}
             variant="survey"
           />
         )}
@@ -165,6 +173,15 @@ export default function SurveyPage({
                 disabled
               >
                 {uiText("common.tryAgainIn", { seconds: retryCountdown })}
+              </DSButton>
+            )}
+            {!retryDisabled && (
+              <DSButton
+                variant="primary"
+                className="small button-top"
+                onClick={handleRetryImage}
+              >
+                {uiText("common.retry")}
               </DSButton>
             )}
           </div>

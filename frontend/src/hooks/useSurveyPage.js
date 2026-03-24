@@ -33,6 +33,8 @@ export function useSurveyPage({
   surveyCompleted = 0,
   onSubmit,
   fetchError = null,
+  onRetry = null,
+  isFetchingImage = false,
 }) {
   const isOnline = useOnlineStatus();
   const [description, setDescription] = useState("");
@@ -48,6 +50,7 @@ export function useSurveyPage({
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [submitLocked, setSubmitLocked] = useState(false);
   const submitUnlockTimeoutRef = useRef(null);
+  const imageLoadTimeoutRef = useRef(null);
   const {
     engagementData,
     setEngagementData,
@@ -98,17 +101,21 @@ export function useSurveyPage({
     if (submitUnlockTimeoutRef.current) {
       clearScheduledTimeout(submitUnlockTimeoutRef.current);
     }
+    if (imageLoadTimeoutRef.current) {
+      clearScheduledTimeout(imageLoadTimeoutRef.current);
+    }
   }, []);
 
-  const handleRetryImage = useCallback((onRetry, isFetchingImage) => {
+  const handleRetryImage = useCallback(() => {
     if (retryDisabled || isFetchingImage) return;
+    if (typeof onRetry !== "function") return;
     setRetryDisabled(true);
     setRetryCountdown(runtimeConfig.serviceRetrySeconds);
     setImageError(false);
     setImageLoaded(false);
     setTimerActive(false);
     onRetry({ clearCurrent: true });
-  }, [retryDisabled, setRetryCountdown, setTimerActive]);
+  }, [isFetchingImage, onRetry, retryDisabled, setRetryCountdown, setTimerActive]);
 
   useEffect(() => {
     if (!retryDisabled || runtimeConfig.serviceRetrySeconds <= 0) {
@@ -132,6 +139,27 @@ export function useSurveyPage({
       setRetryDisabled(false);
     }
   }, [retryCountdown, retryDisabled]);
+
+  useEffect(() => {
+    if (imageLoadTimeoutRef.current) {
+      clearScheduledTimeout(imageLoadTimeoutRef.current);
+      imageLoadTimeoutRef.current = null;
+    }
+    if (!imageSrc || !survey?.image_id || imageLoaded || imageError || fetchError || isFetchingImage) {
+      return undefined;
+    }
+    imageLoadTimeoutRef.current = scheduleTimeout(() => {
+      setImageError(true);
+      setImageLoaded(false);
+      setTimerActive(false);
+    }, 10000);
+    return () => {
+      if (imageLoadTimeoutRef.current) {
+        clearScheduledTimeout(imageLoadTimeoutRef.current);
+        imageLoadTimeoutRef.current = null;
+      }
+    };
+  }, [fetchError, imageError, imageLoaded, imageSrc, isFetchingImage, setTimerActive, survey?.image_id]);
 
   const restoreDraft = useCallback((saved) => {
     setDescription(typeof saved.description === "string" ? saved.description : "");
@@ -301,12 +329,20 @@ export function useSurveyPage({
   }, [canSubmit, handleSubmit, isOnline, submitLocked, submitting]);
 
   const handleImageLoad = useCallback(() => {
+    if (imageLoadTimeoutRef.current) {
+      clearScheduledTimeout(imageLoadTimeoutRef.current);
+      imageLoadTimeoutRef.current = null;
+    }
     setImageLoaded(true);
     setImageError(false);
     setTimerActive(true);
   }, [setTimerActive]);
 
   const handleImageError = useCallback(() => {
+    if (imageLoadTimeoutRef.current) {
+      clearScheduledTimeout(imageLoadTimeoutRef.current);
+      imageLoadTimeoutRef.current = null;
+    }
     setImageError(true);
     setImageLoaded(false);
     setTimerActive(false);
