@@ -113,9 +113,6 @@ export function useUserDetailsPage({
   const [resendInitialSeconds, setResendInitialSeconds] = useState(runtimeConfig.emailOtpResendCooldownSeconds);
   const [emailEditable, setEmailEditable] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const [checking, setChecking] = useState({ username: false, email: false });
   const [locating, setLocating] = useState(false);
@@ -138,9 +135,6 @@ export function useUserDetailsPage({
   const reverseGeocodeAbortRef = useRef(null);
   const availabilityAbortRef = useRef({ username: null, email: null });
   const suppressAvailabilityRef = useRef(false);
-  const saveTimeoutRef = useRef(null);
-  const draftSaveTimeoutRef = useRef(null);
-  const lastSavedAtRef = useRef(null);
   const submittedPublicIdRef = useRef("");
   const submittedEmailRef = useRef("");
   const autoVerifyRef = useRef("");
@@ -820,49 +814,6 @@ export function useUserDetailsPage({
     handleSubmit();
   }, [handleSubmit, isOnline, scopedUserDetailsPendingKey, submitting]);
 
-  useEffect(() => {
-    if (!isOnline) return;
-    setIsSaving(true);
-    setSaveError("");
-    if (draftSaveTimeoutRef.current) {
-      clearScheduledTimeout(draftSaveTimeoutRef.current);
-    }
-    draftSaveTimeoutRef.current = scheduleTimeout(() => {
-      try {
-        const meta =
-          readStoredMeta(scopedDemographicsKey, "local") ||
-          readStoredMeta(DEMOGRAPHICS_KEY, "local");
-        if (meta?.savedAt) {
-          lastSavedAtRef.current = meta.savedAt;
-          setLastSavedAt(meta.savedAt);
-        } else {
-          const now = Date.now();
-          lastSavedAtRef.current = now;
-          setLastSavedAt(now);
-        }
-      } catch {
-        setSaveError(uiText("autosave.failed"));
-        if (lastSavedAtRef.current) {
-          setLastSavedAt(lastSavedAtRef.current);
-        }
-      } finally {
-        if (saveTimeoutRef.current) {
-          clearScheduledTimeout(saveTimeoutRef.current);
-        }
-        saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
-      }
-    }, 700);
-  }, [demographics, isOnline, scopedDemographicsKey]);
-
-  useEffect(() => {
-    if (!isOnline) setIsSaving(false);
-  }, [isOnline]);
-
-  useEffect(() => () => {
-    if (saveTimeoutRef.current) clearScheduledTimeout(saveTimeoutRef.current);
-    if (draftSaveTimeoutRef.current) clearScheduledTimeout(draftSaveTimeoutRef.current);
-  }, []);
-
   const updateField = useCallback((field, value) => {
     setDemographics((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -1196,9 +1147,6 @@ export function useUserDetailsPage({
     handleFieldBlur,
     updateField,
     draftRestored,
-    lastSavedAt,
-    isSaving,
-    saveError,
     retryCountdown,
     otpDigits,
     otpValue,

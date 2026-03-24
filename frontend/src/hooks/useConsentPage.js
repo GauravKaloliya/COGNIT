@@ -55,14 +55,10 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [draftRestored] = useState(() => readConsentDraft(scope));
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const isOnline = useOnlineStatus();
-  const saveTimeoutRef = useRef(null);
   const draftSaveTimeoutRef = useRef(null);
-  const lastSavedAtRef = useRef(null);
   const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
 
   useEffect(() => {
@@ -78,36 +74,19 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
   useEffect(() => {
     if (!isOnline) return;
     setSaveError("");
-    setIsSaving(true);
     if (draftSaveTimeoutRef.current) {
       clearScheduledTimeout(draftSaveTimeoutRef.current);
     }
     draftSaveTimeoutRef.current = scheduleTimeout(() => {
       try {
         writeConsentDraft(scope, consentChecked);
-        const now = Date.now();
-        lastSavedAtRef.current = now;
-        setLastSavedAt(now);
       } catch {
         setSaveError(uiText("autosave.failed"));
-        if (lastSavedAtRef.current) {
-          setLastSavedAt(lastSavedAtRef.current);
-        }
-      } finally {
-        if (saveTimeoutRef.current) {
-          clearScheduledTimeout(saveTimeoutRef.current);
-        }
-        saveTimeoutRef.current = scheduleTimeout(() => setIsSaving(false), 400);
       }
     }, 700);
   }, [consentChecked, isOnline, scope]);
 
-  useEffect(() => {
-    if (!isOnline) setIsSaving(false);
-  }, [isOnline]);
-
   useEffect(() => () => {
-    if (saveTimeoutRef.current) clearScheduledTimeout(saveTimeoutRef.current);
     if (draftSaveTimeoutRef.current) clearScheduledTimeout(draftSaveTimeoutRef.current);
   }, []);
 
@@ -173,8 +152,6 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
     isOnline,
     handleSubmit,
     draftRestored,
-    lastSavedAt,
-    isSaving,
     saveError,
     retryCountdown,
   };
