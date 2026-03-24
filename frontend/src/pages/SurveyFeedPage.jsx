@@ -104,7 +104,7 @@ export default function SurveyFeedPage({
             </div>
             <div className="card-body">
               <p className="helper-text">{uiText("survey.guidanceTitle")}</p>
-              <ul className="payment-list">
+              <ul className="guidance-list">
                 <li>{uiText("survey.guidanceCheckConnection")}</li>
                 <li>{uiText("survey.guidanceContinueLater")}</li>
                 <li>{uiText("survey.guidanceSupport")}</li>

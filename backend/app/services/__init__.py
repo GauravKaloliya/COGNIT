@@ -5,10 +5,6 @@ from .idempotency_service import (
     load_idempotent_response,
     save_idempotent_response,
 )
-from .payment_service import (
-    create_payment_upload_attempt,
-    finalize_payment_upload_attempt,
-)
 from .submission_service import (
     alphabetic_tokens,
     clamp_time_spent_seconds,
@@ -22,7 +18,6 @@ from .submission_service import (
 )
 from .submission_query_service import (
     fetch_attention_check,
-    fetch_latest_success_payment_id,
     fetch_next_survey_index,
     fetch_submission_image_target,
     fetch_submission_participant,
@@ -30,14 +25,12 @@ from .submission_query_service import (
     has_duplicate_non_survey_submission,
     insert_attention_event_record,
     insert_submission_record,
-    link_payment_submission,
     lock_submission_participant,
     release_image_reservation,
     update_participant_attention_flag,
     update_participant_metadata,
     upsert_participant_activity_stats,
 )
-from .reward_service import evaluate_priority_and_rewards
 from .participant_service import (
     collect_missing_participant_fields,
     fetch_participant_options,
@@ -72,35 +65,7 @@ from .email_otp_service import (
     otp_is_over_attempts,
     send_email_otp,
 )
-from .payment_session_service import (
-    build_payment_response_payload,
-    build_payment_status_response,
-    build_qr_base64,
-    build_reused_payment_response_payload,
-    enqueue_payment_audit,
-    expire_payment_if_needed,
-    fetch_active_payment_for_reuse,
-    fetch_payment_refresh_row,
-    fetch_payment_status_row,
-    fetch_token_mint_row,
-    get_participant_session_id,
-    is_duplicate_active_payment_error,
-    is_expected_payment_amount,
-    issue_payment_write_token,
-    log_payment_audit,
-    mark_existing_active_payments_failed,
-    normalize_payment_amount,
-    create_payment_record,
-)
-from .upi_pool_service import (
-    select_upi_for_payment,
-    fetch_used_upis_for_participant,
-    record_upi_result,
-)
 from .state_machine_service import (
-    ensure_payment_status_transition,
-    transition_payment_status,
-    ensure_submission_workflow_state,
     StateTransitionError,
 )
 from .domain_event_service import emit_domain_event
@@ -109,8 +74,6 @@ __all__ = [
     "build_request_hash",
     "load_idempotent_response",
     "save_idempotent_response",
-    "create_payment_upload_attempt",
-    "finalize_payment_upload_attempt",
     "alphabetic_tokens",
     "clamp_time_spent_seconds",
     "normalize_engagement_counts",
@@ -121,7 +84,6 @@ __all__ = [
     "match_attention_terms",
     "normalize_for_attention",
     "fetch_attention_check",
-    "fetch_latest_success_payment_id",
     "fetch_next_survey_index",
     "fetch_submission_image_target",
     "fetch_submission_participant",
@@ -129,13 +91,11 @@ __all__ = [
     "has_duplicate_non_survey_submission",
     "insert_attention_event_record",
     "insert_submission_record",
-    "link_payment_submission",
     "lock_submission_participant",
     "release_image_reservation",
     "update_participant_attention_flag",
     "update_participant_metadata",
     "upsert_participant_activity_stats",
-    "evaluate_priority_and_rewards",
     "collect_missing_participant_fields",
     "fetch_participant_options",
     "find_existing_participant_conflict",
@@ -166,30 +126,6 @@ __all__ = [
     "otp_is_expired",
     "otp_is_over_attempts",
     "send_email_otp",
-    "build_payment_response_payload",
-    "build_payment_status_response",
-    "build_qr_base64",
-    "build_reused_payment_response_payload",
-    "enqueue_payment_audit",
-    "expire_payment_if_needed",
-    "fetch_active_payment_for_reuse",
-    "fetch_payment_refresh_row",
-    "fetch_payment_status_row",
-    "fetch_token_mint_row",
-    "get_participant_session_id",
-    "is_duplicate_active_payment_error",
-    "is_expected_payment_amount",
-    "issue_payment_write_token",
-    "log_payment_audit",
-    "mark_existing_active_payments_failed",
-    "normalize_payment_amount",
-    "create_payment_record",
-    "select_upi_for_payment",
-    "fetch_used_upis_for_participant",
-    "record_upi_result",
-    "ensure_payment_status_transition",
-    "transition_payment_status",
-    "ensure_submission_workflow_state",
     "StateTransitionError",
     "emit_domain_event",
 ]

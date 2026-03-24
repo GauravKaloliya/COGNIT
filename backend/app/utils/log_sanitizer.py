@@ -13,7 +13,6 @@ CONFIDENTIAL_KEYWORDS = {
     "session",
     "key",
     "salt",
-    "upi",
     "vpa",
     "sha256",
     "hash",

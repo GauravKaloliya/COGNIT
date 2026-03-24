@@ -6,161 +6,385 @@ from copy import deepcopy
 from typing import Any, Dict
 
 ERROR_CODES_TEMPLATE: Dict[str, Dict[str, Any]] = {
-        "SYS_INTERNAL_ERROR": {"code": "SYS_001_0001", "message": "Something went wrong. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_DATABASE_ERROR": {"code": "SYS_001_0002", "message": "Database error occurred. Please try again later.", "status": 500, "category": "SYS"},
-        "SYS_SERVICE_UNAVAILABLE": {"code": "SYS_001_0003", "message": "Service temporarily unavailable. Please try later.", "status": 503, "category": "SYS"},
-        "SYS_CONFIG_ERROR": {"code": "SYS_001_0004", "message": "Configuration error. Please contact support.", "status": 500, "category": "SYS"},
-        "SYS_SERVICE_DEGRADED": {"code": "SYS_002_0024", "message": "Service degraded.", "status": 503, "category": "SYS"},
-        "SYS_PAYMENT_CREATE_FAILED": {"code": "SYS_002_0025", "message": "Payment creation failed. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_PAYMENT_QR_FAILED": {"code": "SYS_002_0026", "message": "Failed to load payment QR. Please retry.", "status": 500, "category": "SYS"},
-        "SYS_PAYMENT_UPLOAD_URL_FAILED": {"code": "SYS_002_0027", "message": "Failed to prepare upload URL. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_PAYMENT_VERIFY_FAILED": {"code": "SYS_002_0028", "message": "Payment verification failed. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_PAYMENT_SCREENSHOT_SAVE_FAILED": {"code": "SYS_002_0029", "message": "Failed to save payment screenshot.", "status": 500, "category": "SYS", "reason": "s3_upload_failed"},
-        "SYS_RANDOM_IMAGE_FALLBACK_FAILED": {"code": "SYS_002_0030", "message": "Failed to select a fallback image.", "status": 500, "category": "SYS"},
-        "SYS_RANDOM_IMAGE_QUERY_FAILED": {"code": "SYS_002_0031", "message": "Failed to load the next image. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_PAYMENT_STATUS_FAILED": {"code": "SYS_002_0032", "message": "Failed to fetch payment status. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_PAYMENT_TOKEN_FAILED": {"code": "SYS_002_0033", "message": "Failed to mint payment token. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_INTERNAL_PAYMENT_VERIFY_DB_FAILED": {"code": "SYS_002_0034", "message": "Failed to access payment verification state. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_CHECK_USERNAME_FAILED": {"code": "SYS_002_0035", "message": "Failed to check username availability. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_CHECK_EMAIL_FAILED": {"code": "SYS_002_0036", "message": "Failed to check email availability. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_CONSENT_RECORD_FAILED": {"code": "SYS_002_0037", "message": "Failed to record consent. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_PARTICIPANT_STATUS_FAILED": {"code": "SYS_002_0038", "message": "Failed to fetch participant payment status. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_PARTICIPANT_OPTIONS_FAILED": {"code": "SYS_002_0039", "message": "Failed to load participant options. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_EMAIL_OTP_REQUEST_FAILED": {"code": "SYS_002_0040", "message": "Failed to request email verification code. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_EMAIL_OTP_VERIFY_FAILED": {"code": "SYS_002_0041", "message": "Failed to verify email code. Please try again.", "status": 500, "category": "SYS"},
-        "SYS_SUBMISSION_SAVE_FAILED": {"code": "SYS_002_0042", "message": "Failed to save submission. Please try again.", "status": 500, "category": "SYS"},
-        "RATE_LIMIT_EXCEEDED": {"code": "RATE_001_0001", "message": "Too many attempts. Please wait a moment.", "status": 429, "category": "RATE"},
-        "RATE_TOO_MANY_REQUESTS": {"code": "RATE_001_0002", "message": "Rate limit exceeded. Please slow down.", "status": 429, "category": "RATE"},
-        "VAL_MISSING_FIELDS": {"code": "VAL_003_0001", "message": "Please fill in all required fields.", "status": 400, "category": "VAL", "field": "general"},
-        "VAL_INVALID_FORMAT": {"code": "VAL_003_0002", "message": "Invalid request format.", "status": 400, "category": "VAL"},
-        "VAL_INVALID_REQUEST_ID": {"code": "VAL_003_0003", "message": "Invalid request ID format.", "status": 400, "category": "VAL"},
-        "VAL_METHOD_NOT_ALLOWED": {"code": "VAL_003_0007", "message": "This action is not available here.", "status": 405, "category": "VAL"},
-        "VAL_INVALID_IMAGE_ID": {"code": "VAL_003_0008", "message": "Invalid image identifier.", "status": 400, "category": "VAL", "field": "image_id"},
-        "VAL_IDEMPOTENCY_CONFLICT": {"code": "VAL_003_0009", "message": "Idempotency key reuse with a different request payload is not allowed.", "status": 409, "category": "VAL"},
-        "VAL_IDEMPOTENCY_KEY_REQUIRED": {"code": "VAL_003_0010", "message": "Missing required X-Idempotency-Key header.", "status": 400, "category": "VAL", "field": "X-Idempotency-Key"},
-        "VAL_IDEMPOTENCY_KEY_TOO_LONG": {"code": "VAL_003_0011", "message": "X-Idempotency-Key must be <= 128 characters.", "status": 400, "category": "VAL", "field": "X-Idempotency-Key"},
-        "VAL_INVALID_IMAGE_DATA": {"code": "VAL_003_0012", "message": "Invalid image data.", "status": 400, "category": "VAL"},
-        "VAL_PAYMENT_CREATE_PUBLIC_ID_REQUIRED": {"code": "VAL_003_0013", "message": "Public ID is required to create a payment.", "status": 400, "category": "VAL", "field": "public_id"},
-        "VAL_PAYMENT_UPLOAD_FILE_SIZE_INVALID": {"code": "VAL_003_0014", "message": "Invalid file size.", "status": 400, "category": "VAL", "field": "file_size"},
-        "VAL_PAYMENT_TOKEN_FIELDS_REQUIRED": {"code": "VAL_003_0015", "message": "Payment token request is missing required fields.", "status": 400, "category": "VAL", "field": "general"},
-        "VAL_PARTICIPANT_CREATE_FIELDS_REQUIRED": {"code": "VAL_003_0016", "message": "Participant creation is missing required fields.", "status": 400, "category": "VAL", "field": "general"},
-        "VAL_USERNAME_CHECK_REQUIRED": {"code": "VAL_003_0017", "message": "Username is required.", "status": 400, "category": "VAL", "field": "username"},
-        "VAL_EMAIL_CHECK_REQUIRED": {"code": "VAL_003_0018", "message": "Email is required.", "status": 400, "category": "VAL", "field": "email"},
-        "VAL_CONSENT_PUBLIC_ID_REQUIRED": {"code": "VAL_003_0019", "message": "Public ID is required to record consent.", "status": 400, "category": "VAL", "field": "public_id"},
-        "VAL_PARTICIPANT_STATUS_PUBLIC_ID_REQUIRED": {"code": "VAL_003_0020", "message": "Public ID is required to fetch participant payment status.", "status": 400, "category": "VAL", "field": "public_id"},
-        "VAL_EMAIL_OTP_REQUEST_FIELDS_REQUIRED": {"code": "VAL_003_0021", "message": "Public ID and email are required to request an email verification code.", "status": 400, "category": "VAL", "field": "general"},
-        "VAL_EMAIL_OTP_VERIFY_FIELDS_REQUIRED": {"code": "VAL_003_0022", "message": "Public ID, email, and verification code are required.", "status": 400, "category": "VAL", "field": "general"},
-        "VAL_SUBMISSION_PUBLIC_ID_REQUIRED": {"code": "VAL_003_0023", "message": "Public ID is required to submit a response.", "status": 400, "category": "VAL", "field": "public_id"},
-        "VAL_SUBMISSION_IMAGE_ID_REQUIRED": {"code": "VAL_003_0024", "message": "Image ID is required to submit a response.", "status": 400, "category": "VAL", "field": "image_id"},
-        "VAL_PAYMENT_VERIFY_UPLOAD_OBJECT_KEY_REQUIRED": {"code": "VAL_003_0025", "message": "Upload object key is required when no image is uploaded directly.", "status": 400, "category": "VAL", "field": "upload_object_key"},
-        "VAL_PAYMENT_VERIFY_SHA256_REQUIRED": {"code": "VAL_003_0026", "message": "SHA-256 hash is required for payment verification.", "status": 400, "category": "VAL", "field": "sha256"},
-        "VAL_PAYMENT_VERIFY_OBJECT_KEY_INVALID": {"code": "VAL_003_0027", "message": "Upload object key format is invalid.", "status": 400, "category": "VAL", "field": "upload_object_key"},
-        "VAL_FILE_TOO_LARGE": {"code": "VAL_003_0005", "message": "The file is too large. Please upload a smaller image.", "status": 413, "category": "VAL", "field": "image_base64", "reason": "payment_image_too_large"},
-        "VAL_USERNAME_INVALID": {"code": "VAL_001_0001", "message": "Username must be at least 2 characters and contain only letters, numbers, and underscores.", "status": 400, "category": "VAL", "field": "username"},
-        "VAL_EMAIL_INVALID": {"code": "VAL_001_0002", "message": "Please enter a valid email address from Gmail, Outlook, Hotmail, or iCloud.", "status": 400, "category": "VAL", "field": "email"},
-        "VAL_AGE_INVALID": {"code": "VAL_001_0004", "message": "Age must be between 13 and 100.", "status": 400, "category": "VAL", "field": "age"},
-        "VAL_GENDER_REQUIRED": {"code": "VAL_001_0005", "message": "Please select a gender.", "status": 400, "category": "VAL", "field": "gender_code"},
-        "VAL_LOCATION_REQUIRED": {"code": "VAL_001_0006", "message": "Please enter your location.", "status": 400, "category": "VAL", "field": "location"},
-        "VAL_LANGUAGE_REQUIRED": {"code": "VAL_001_0007", "message": "Please select your native language.", "status": 400, "category": "VAL", "field": "language_code"},
-        "VAL_EXPERIENCE_REQUIRED": {"code": "VAL_001_0008", "message": "Please select your prior experience.", "status": 400, "category": "VAL", "field": "prior_experience"},
-        "VAL_DESC_LENGTH": {"code": "VAL_002_0001", "message": "Description must be {min_description_length}-{max_description_length} characters long.", "status": 400, "category": "VAL", "field": "description"},
-        "VAL_DESC_TOO_SHORT": {"code": "VAL_002_0002", "message": "Description must be at least {min_description_length} characters long.", "status": 400, "category": "VAL", "field": "description"},
-        "VAL_DESC_TOO_LONG": {"code": "VAL_002_0003", "message": "Description cannot exceed {max_description_length} characters.", "status": 400, "category": "VAL", "field": "description"},
-        "VAL_WORD_COUNT": {"code": "VAL_002_0004", "message": "At least {min_word_count} words are required.", "status": 400, "category": "VAL", "field": "description"},
-        "VAL_FEEDBACK_LENGTH": {"code": "VAL_002_0005", "message": "Feedback must be {min_feedback_length}-{max_feedback_length} characters long.", "status": 400, "category": "VAL", "field": "feedback"},
-        "VAL_FEEDBACK_TOO_SHORT": {"code": "VAL_002_0006", "message": "Feedback must be at least {min_feedback_length} characters long.", "status": 400, "category": "VAL", "field": "feedback"},
-        "VAL_FEEDBACK_TOO_LONG": {"code": "VAL_002_0007", "message": "Feedback cannot exceed {max_feedback_length} characters.", "status": 400, "category": "VAL", "field": "feedback"},
-        "VAL_RATING_INVALID": {"code": "VAL_002_0008", "message": "Rating must be between {min_rating} and {max_rating}.", "status": 400, "category": "VAL", "field": "rating"},
-        "VAL_SURVEY_INDEX": {"code": "VAL_002_0011", "message": "Invalid survey index.", "status": 400, "category": "VAL", "field": "survey_index"},
-        "DUP_USERNAME": {"code": "DUP_001_0001", "message": "This username is already taken.", "status": 409, "category": "DUP", "field": "username"},
-        "DUP_EMAIL": {"code": "DUP_001_0002", "message": "This email is already registered.", "status": 409, "category": "DUP", "field": "email"},
-        "DUP_PUBLIC_ID": {"code": "DUP_001_0004", "message": "You have already registered.", "status": 409, "category": "DUP"},
-        "DUP_SUBMISSION": {"code": "DUP_002_0001", "message": "You have already described this image.", "status": 409, "category": "DUP"},
-        "DUP_SURVEY_ROUND": {"code": "DUP_002_0002", "message": "You have already completed this survey round.", "status": 409, "category": "DUP"},
-        "DUP_PAYMENT_IMAGE": {"code": "DUP_003_0001", "message": "This screenshot has already been submitted. Please complete a fresh payment and upload a new screenshot.", "status": 409, "category": "DUP"},
-        "DUP_TRANSACTION": {"code": "DUP_003_0002", "message": "This transaction has already been used.", "status": 409, "category": "DUP"},
-        "DUP_IMAGE_OTHER_USER": {"code": "DUP_003_0003", "message": "This screenshot was already used by another participant. Please make a fresh payment and upload that success screenshot.", "status": 409, "category": "DUP"},
-        "AUTH_CONSENT_REQUIRED": {"code": "AUTH_001_0001", "message": "Please agree to the consent terms to continue.", "status": 403, "category": "AUTH"},
-        "AUTH_ACCOUNT_FLAGGED": {"code": "AUTH_001_0002", "message": "Your account has been flagged. Contact support.", "status": 403, "category": "AUTH"},
-        "AUTH_ACCOUNT_DEACTIVATED": {"code": "AUTH_001_0003", "message": "This account has been deactivated.", "status": 403, "category": "AUTH"},
-        "AUTH_ACCESS_DENIED": {"code": "AUTH_002_0001", "message": "Access denied.", "status": 403, "category": "AUTH"},
-        "NF_PARTICIPANT": {"code": "NF_001_0001", "message": "Account not found. Please register first.", "status": 404, "category": "NF"},
-        "NF_IMAGE": {"code": "NF_001_0002", "message": "Image not found.", "status": 404, "category": "NF"},
-        "NF_PAYMENT": {"code": "NF_001_0003", "message": "Payment not found.", "status": 404, "category": "NF"},
-        "NF_CONSENT": {"code": "NF_001_0004", "message": "Consent record not found.", "status": 404, "category": "NF"},
-        "NF_ROUTE_NOT_FOUND": {"code": "NF_001_0005", "message": "Route not found.", "status": 404, "category": "NF"},
-        "NF_NO_IMAGES_AVAILABLE": {"code": "NF_001_0006", "message": "No images are currently available. Please try again later.", "status": 404, "category": "NF"},
-        "NF_PAYMENT_CREATE_PARTICIPANT": {"code": "NF_001_0007", "message": "Participant not found for payment creation.", "status": 404, "category": "NF"},
-        "NF_PAYMENT_QR_NOT_FOUND": {"code": "NF_001_0008", "message": "Payment not found for QR generation.", "status": 404, "category": "NF"},
-        "NF_PAYMENT_STATUS_NOT_FOUND": {"code": "NF_001_0009", "message": "Payment status could not be found.", "status": 404, "category": "NF"},
-        "NF_PAYMENT_VERIFY_NOT_FOUND": {"code": "NF_001_0010", "message": "Payment not found for verification.", "status": 404, "category": "NF"},
-        "NF_PAYMENT_INTERNAL_VERIFY_NOT_FOUND": {"code": "NF_001_0011", "message": "Payment not found.", "status": 404, "category": "NF"},
-        "NF_CONSENT_PARTICIPANT_NOT_FOUND": {"code": "NF_001_0012", "message": "Participant not found while recording consent.", "status": 404, "category": "NF"},
-        "NF_PARTICIPANT_STATUS_NOT_FOUND": {"code": "NF_001_0013", "message": "Participant not found while fetching payment status.", "status": 404, "category": "NF"},
-        "NF_SUBMISSION_PARTICIPANT_NOT_FOUND": {"code": "NF_001_0014", "message": "Participant not found while submitting the response.", "status": 404, "category": "NF"},
-        "PAY_EXPIRED": {"code": "PAY_001_0001", "message": "Payment session expired. Please start a new payment.", "status": 410, "category": "PAY", "reason": "session_expired_before_verify"},
-        "PAY_INVALID_STATE": {"code": "PAY_001_0002", "message": "This payment cannot be processed right now.", "status": 400, "category": "PAY"},
-        "PAY_INVALID_AMOUNT": {"code": "PAY_001_0003", "message": "Invalid payment amount.", "status": 400, "category": "PAY"},
-        "PAY_ALREADY_PROCESSED": {"code": "PAY_001_0004", "message": "This payment has already been processed.", "status": 400, "category": "PAY"},
-        "PAY_INVALID_IMAGE_TYPE": {"code": "PAY_001_0005", "message": "Invalid image format. Please upload JPG, PNG, or WEBP.", "status": 400, "category": "PAY"},
-        "PAY_INVALID_SHA256": {"code": "PAY_001_0006", "message": "Invalid file hash.", "status": 400, "category": "PAY"},
-        "PAY_VERIFY_ATTEMPTS_EXCEEDED": {"code": "PAY_001_0008", "message": "Maximum verification attempts reached. Please create a new payment session.", "status": 409, "category": "PAY", "reason": "max_verify_attempts_exceeded"},
-        "PAY_UPI_MAINTENANCE": {"code": "PAY_001_0009", "message": "Daily UPI limit reached. Please try again after 24 hours.", "status": 429, "category": "PAY"},
-        "PAY_UPI_USER_LIMIT": {"code": "PAY_001_0010", "message": "Too many payment attempts from your device. Please try again later.", "status": 429, "category": "PAY"},
-        "PAY_UPI_SESSION_LIMIT": {"code": "PAY_001_0011", "message": "Too many payment attempts in this session. Please try again later.", "status": 429, "category": "PAY"},
-        "PAY_UPI_ALTERNATE_UNAVAILABLE": {"code": "PAY_001_0025", "message": "No alternate UPI is available right now. Please try again shortly.", "status": 409, "category": "PAY"},
-        "PAY_PAYMENT_CREATE_INVALID_AMOUNT": {"code": "PAY_001_0024", "message": "Payment amount is invalid for payment creation.", "status": 400, "category": "PAY"},
-        "PAY_PAYMENT_QR_INVALID_STATE": {"code": "PAY_001_0012", "message": "Payment QR cannot be generated for the current payment state.", "status": 400, "category": "PAY"},
-        "PAY_PAYMENT_REFRESH_INVALID_STATE": {"code": "PAY_001_0026", "message": "A new UPI cannot be generated for this payment right now.", "status": 400, "category": "PAY"},
-        "PAY_PAYMENT_TOKEN_INVALID_STATE": {"code": "PAY_001_0013", "message": "A payment token cannot be created right now.", "status": 400, "category": "PAY"},
-        "PAY_SUBMISSION_WORKFLOW_INVALID_STATE": {"code": "PAY_001_0014", "message": "Submission is not allowed in the current payment workflow state.", "status": 400, "category": "PAY"},
-        "PAY_VERIFY_EXPIRED_TRANSITION_INVALID": {"code": "PAY_001_0015", "message": "Payment expired before verification state could be updated.", "status": 400, "category": "PAY"},
-        "PAY_VERIFY_STATUS_INVALID": {"code": "PAY_001_0016", "message": "Payment verification cannot continue from the current payment state.", "status": 400, "category": "PAY"},
-        "PAY_VERIFY_MAX_ATTEMPTS_STATE_INVALID": {"code": "PAY_001_0017", "message": "Payment verification cannot continue because the verification limit has been reached.", "status": 400, "category": "PAY"},
-        "PAY_VERIFY_PROCESSING_STATE_INVALID": {"code": "PAY_001_0018", "message": "Payment could not enter processing state for verification.", "status": 400, "category": "PAY"},
-        "PAY_VERIFY_SUCCESS_STATE_INVALID": {"code": "PAY_001_0019", "message": "Payment could not be finalized as successful.", "status": 400, "category": "PAY"},
-        "PAY_VERIFY_REJECT_STATE_INVALID": {"code": "PAY_001_0020", "message": "Payment could not be finalized as rejected.", "status": 400, "category": "PAY"},
-        "PAY_INTERNAL_VERIFY_START_INVALID": {"code": "PAY_001_0021", "message": "Payment verification cannot start from the current payment state.", "status": 400, "category": "PAY"},
-        "PAY_INTERNAL_VERIFY_FINALIZE_INVALID": {"code": "PAY_001_0022", "message": "Payment verification could not be finalized.", "status": 400, "category": "PAY"},
-        "PAY_PAYMENT_STATUS_AMOUNT_INVALID": {"code": "PAY_001_0023", "message": "Stored payment amount is invalid.", "status": 400, "category": "PAY"},
-        "AUTH_INVALID_PAYMENT_TOKEN": {"code": "AUTH_002_0002", "message": "Invalid or expired payment authorization token.", "status": 403, "category": "AUTH"},
-        "AUTH_PAYMENT_REFRESH_ACCESS_DENIED": {"code": "AUTH_002_0005", "message": "You are not allowed to refresh this payment right now.", "status": 403, "category": "AUTH"},
-        "AUTH_EMAIL_OTP_INVALID": {"code": "AUTH_003_0001", "message": "Invalid verification code. Please try again.", "status": 403, "category": "AUTH"},
-        "AUTH_EMAIL_OTP_EXPIRED": {"code": "AUTH_003_0002", "message": "Verification code expired. Request a new one.", "status": 410, "category": "AUTH"},
-        "AUTH_EMAIL_OTP_TOO_MANY": {"code": "AUTH_003_0003", "message": "Too many attempts. Request a new verification code.", "status": 429, "category": "AUTH"},
-        "AUTH_EMAIL_OTP_NOT_FOUND": {"code": "AUTH_003_0004", "message": "No verification code found. Please request a new one.", "status": 404, "category": "AUTH"},
-        "AUTH_EMAIL_OTP_SEND_FAILED": {"code": "AUTH_003_0005", "message": "Email service is temporarily unavailable. Please try again in a minute.", "status": 503, "category": "AUTH"},
-        "AUTH_EMAIL_OTP_SEND_TIMEOUT": {"code": "AUTH_003_0009", "message": "Email service took too long to respond. Please try again.", "status": 504, "category": "AUTH"},
-        "AUTH_EMAIL_OTP_SEND_HTTP_ERROR": {"code": "AUTH_003_0010", "message": "Email service returned an error. Please try again.", "status": 503, "category": "AUTH"},
-        "AUTH_EMAIL_MISMATCH": {"code": "AUTH_003_0006", "message": "Email does not match your registration details.", "status": 403, "category": "AUTH", "field": "email"},
-        "AUTH_EMAIL_SAME": {"code": "AUTH_003_0007", "message": "Please enter a different email address to update.", "status": 400, "category": "AUTH", "field": "email"},
-        "AUTH_EMAIL_NOT_VERIFIED": {"code": "AUTH_003_0008", "message": "Please verify your email before submitting.", "status": 403, "category": "AUTH"},
-        "BOT_CHALLENGE_FAILED": {"code": "BOT_001_0001", "message": "Human verification failed. Please retry.", "status": 403, "category": "AUTH"},
-        "BOT_PARTICIPANT_CREATE_FAILED": {"code": "BOT_001_0002", "message": "Human verification failed while creating the participant. Please retry.", "status": 403, "category": "AUTH"},
-        "BOT_PAYMENT_CREATE_FAILED": {"code": "BOT_001_0003", "message": "Human verification failed while creating the payment. Please retry.", "status": 403, "category": "AUTH"},
-        "BOT_PAYMENT_VERIFY_FAILED": {"code": "BOT_001_0004", "message": "Human verification failed while verifying the payment. Please retry.", "status": 403, "category": "AUTH"},
-        "BOT_SUBMISSION_FAILED": {"code": "BOT_001_0005", "message": "Human verification failed while submitting the response. Please retry.", "status": 403, "category": "AUTH"},
-        "AUTH_PAYMENT_TOKEN_ACCESS_DENIED": {"code": "AUTH_002_0003", "message": "You are not allowed to mint a payment token for this payment.", "status": 403, "category": "AUTH"},
-        "AUTH_INTERNAL_PAYMENT_VERIFY_ACCESS_DENIED": {"code": "AUTH_002_0004", "message": "You are not allowed to verify this payment internally.", "status": 403, "category": "AUTH"},
-        "FRAUD_LOW_RESOLUTION": {"code": "FRAUD_001_0001", "message": "Screenshot is too blurry. Please upload a clearer image.", "status": 400, "category": "FRAUD"},
-        "FRAUD_LOW_OCR_CONFIDENCE": {"code": "FRAUD_001_0002", "message": "Could not read the screenshot text. Please retake.", "status": 400, "category": "FRAUD"},
-        "FRAUD_UNRECOGNIZED_APP": {"code": "FRAUD_001_0003", "message": "Please use Google Pay, Paytm, or BHIM.", "status": 400, "category": "FRAUD"},
-        "FRAUD_INVALID_BANKING_NAME": {"code": "FRAUD_001_0004", "message": "Payment was not made to the correct beneficiary.", "status": 400, "category": "FRAUD"},
-        "FRAUD_INVALID_AMOUNT": {"code": "FRAUD_001_0005", "message": "Payment amount must be exactly ₹1.", "status": 400, "category": "FRAUD"},
-        "FRAUD_TIME_OUT_OF_RANGE": {"code": "FRAUD_001_0006", "message": "Payment time is outside the allowed payment-session window. Please upload a recent screenshot.", "status": 400, "category": "FRAUD"},
-        "FRAUD_INVALID_TIMESTAMP": {"code": "FRAUD_001_0007", "message": "Could not read payment date or time from the screenshot. Please upload a clearer screenshot.", "status": 400, "category": "FRAUD"},
-        "FRAUD_MISSING_TIMESTAMP": {"code": "FRAUD_001_0008", "message": "Payment time was not found in the screenshot.", "status": 400, "category": "FRAUD"},
-        "FRAUD_VPA_MISMATCH": {"code": "FRAUD_002_0001", "message": "Payment was not made to the correct UPI ID.", "status": 400, "category": "FRAUD"},
-        "FRAUD_NOTE_MISMATCH": {"code": "FRAUD_002_0002", "message": "Payment note does not match. Use the exact note shown.", "status": 400, "category": "FRAUD"},
-        "FRAUD_AMOUNT_MISMATCH": {"code": "FRAUD_002_0003", "message": "Payment amount must be exactly ₹1.", "status": 400, "category": "FRAUD"},
-        "FRAUD_MISSING_SUCCESS": {"code": "FRAUD_002_0004", "message": "A successful payment was not detected in the screenshot.", "status": 400, "category": "FRAUD"},
-        "FRAUD_FAILURE_INDICATOR": {"code": "FRAUD_002_0005", "message": "Payment appears to have failed. Check your UPI app.", "status": 400, "category": "FRAUD"},
-        "FRAUD_DUPLICATE_IMAGE": {"code": "FRAUD_003_0001", "message": "This screenshot belongs to another participant. Please complete a fresh payment and upload a new screenshot.", "status": 409, "category": "FRAUD"},
-        "FRAUD_DUPLICATE_IMAGE_SELF": {"code": "FRAUD_003_0004", "message": "You already submitted this screenshot. Please use a new payment screenshot.", "status": 409, "category": "FRAUD"},
-        "FRAUD_REJECTED_REUSE": {"code": "FRAUD_003_0002", "message": "This screenshot was previously rejected and cannot be reused. Upload a fresh screenshot from a new successful payment.", "status": 409, "category": "FRAUD"},
-        "FRAUD_NOT_UPI_PAYMENT": {"code": "FRAUD_002_0008", "message": "Screenshot does not appear to be a UPI payment.", "status": 400, "category": "FRAUD"},
-        "FRAUD_MISSING_RECIPIENT": {"code": "FRAUD_002_0009", "message": "Payment recipient details were not found in the screenshot.", "status": 400, "category": "FRAUD"},
-        "PAY_NOT_VERIFIED": {"code": "PAY_001_0007", "message": "Payment not verified. Please complete payment first.", "status": 403, "category": "PAY"},
+    "SYS_INTERNAL_ERROR": {
+        "code": "SYS_001_0001",
+        "message": "Something went wrong. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_DATABASE_ERROR": {
+        "code": "SYS_001_0002",
+        "message": "Database error occurred. Please try again later.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_SERVICE_DEGRADED": {
+        "code": "SYS_002_0024",
+        "message": "Service degraded.",
+        "status": 503,
+        "category": "SYS"
+    },
+    "SYS_RANDOM_IMAGE_FALLBACK_FAILED": {
+        "code": "SYS_002_0030",
+        "message": "Failed to select a fallback image.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_RANDOM_IMAGE_QUERY_FAILED": {
+        "code": "SYS_002_0031",
+        "message": "Failed to load the next image. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_CHECK_USERNAME_FAILED": {
+        "code": "SYS_002_0035",
+        "message": "Failed to check username availability. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_CHECK_EMAIL_FAILED": {
+        "code": "SYS_002_0036",
+        "message": "Failed to check email availability. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_CONSENT_RECORD_FAILED": {
+        "code": "SYS_002_0037",
+        "message": "Failed to record consent. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_PARTICIPANT_OPTIONS_FAILED": {
+        "code": "SYS_002_0039",
+        "message": "Failed to load participant options. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_EMAIL_OTP_REQUEST_FAILED": {
+        "code": "SYS_002_0040",
+        "message": "Failed to request email verification code. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_EMAIL_OTP_VERIFY_FAILED": {
+        "code": "SYS_002_0041",
+        "message": "Failed to verify email code. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "SYS_SUBMISSION_SAVE_FAILED": {
+        "code": "SYS_002_0042",
+        "message": "Failed to save submission. Please try again.",
+        "status": 500,
+        "category": "SYS"
+    },
+    "RATE_LIMIT_EXCEEDED": {
+        "code": "RATE_001_0001",
+        "message": "Too many attempts. Please wait a moment.",
+        "status": 429,
+        "category": "RATE"
+    },
+    "VAL_METHOD_NOT_ALLOWED": {
+        "code": "VAL_003_0007",
+        "message": "This action is not available here.",
+        "status": 405,
+        "category": "VAL"
+    },
+    "VAL_INVALID_REQUEST_ID": {
+        "code": "VAL_003_0003",
+        "message": "Invalid request ID format.",
+        "status": 400,
+        "category": "VAL"
+    },
+    "VAL_INVALID_IMAGE_ID": {
+        "code": "VAL_003_0008",
+        "message": "Invalid image identifier.",
+        "status": 400,
+        "category": "VAL",
+        "field": "image_id"
+    },
+    "VAL_IDEMPOTENCY_CONFLICT": {
+        "code": "VAL_003_0009",
+        "message": "Idempotency key reuse with a different request payload is not allowed.",
+        "status": 409,
+        "category": "VAL"
+    },
+    "VAL_IDEMPOTENCY_KEY_REQUIRED": {
+        "code": "VAL_003_0010",
+        "message": "Missing required X-Idempotency-Key header.",
+        "status": 400,
+        "category": "VAL",
+        "field": "X-Idempotency-Key"
+    },
+    "VAL_IDEMPOTENCY_KEY_TOO_LONG": {
+        "code": "VAL_003_0011",
+        "message": "X-Idempotency-Key must be <= 128 characters.",
+        "status": 400,
+        "category": "VAL",
+        "field": "X-Idempotency-Key"
+    },
+    "VAL_PARTICIPANT_CREATE_FIELDS_REQUIRED": {
+        "code": "VAL_003_0016",
+        "message": "Participant creation is missing required fields.",
+        "status": 400,
+        "category": "VAL",
+        "field": "general"
+    },
+    "VAL_USERNAME_CHECK_REQUIRED": {
+        "code": "VAL_003_0017",
+        "message": "Username is required.",
+        "status": 400,
+        "category": "VAL",
+        "field": "username"
+    },
+    "VAL_EMAIL_CHECK_REQUIRED": {
+        "code": "VAL_003_0018",
+        "message": "Email is required.",
+        "status": 400,
+        "category": "VAL",
+        "field": "email"
+    },
+    "VAL_CONSENT_PUBLIC_ID_REQUIRED": {
+        "code": "VAL_003_0019",
+        "message": "Public ID is required to record consent.",
+        "status": 400,
+        "category": "VAL",
+        "field": "public_id"
+    },
+    "VAL_EMAIL_OTP_REQUEST_FIELDS_REQUIRED": {
+        "code": "VAL_003_0021",
+        "message": "Public ID and email are required to request an email verification code.",
+        "status": 400,
+        "category": "VAL",
+        "field": "general"
+    },
+    "VAL_EMAIL_OTP_VERIFY_FIELDS_REQUIRED": {
+        "code": "VAL_003_0022",
+        "message": "Public ID, email, and verification code are required.",
+        "status": 400,
+        "category": "VAL",
+        "field": "general"
+    },
+    "VAL_SUBMISSION_PUBLIC_ID_REQUIRED": {
+        "code": "VAL_003_0023",
+        "message": "Public ID is required to submit a response.",
+        "status": 400,
+        "category": "VAL",
+        "field": "public_id"
+    },
+    "VAL_SUBMISSION_IMAGE_ID_REQUIRED": {
+        "code": "VAL_003_0024",
+        "message": "Image ID is required to submit a response.",
+        "status": 400,
+        "category": "VAL",
+        "field": "image_id"
+    },
+    "VAL_FILE_TOO_LARGE": {
+        "code": "VAL_003_0005",
+        "message": "The file is too large. Please upload a smaller image.",
+        "status": 413,
+        "category": "VAL",
+        "field": "image_base64",
+        "reason": "image_too_large"
+    },
+    "VAL_AGE_INVALID": {
+        "code": "VAL_001_0004",
+        "message": "Age must be between 13 and 100.",
+        "status": 400,
+        "category": "VAL",
+        "field": "age"
+    },
+    "VAL_GENDER_REQUIRED": {
+        "code": "VAL_001_0005",
+        "message": "Please select a gender.",
+        "status": 400,
+        "category": "VAL",
+        "field": "gender_code"
+    },
+    "VAL_LANGUAGE_REQUIRED": {
+        "code": "VAL_001_0007",
+        "message": "Please select your native language.",
+        "status": 400,
+        "category": "VAL",
+        "field": "language_code"
+    },
+    "VAL_EXPERIENCE_REQUIRED": {
+        "code": "VAL_001_0008",
+        "message": "Please select your prior experience.",
+        "status": 400,
+        "category": "VAL",
+        "field": "prior_experience"
+    },
+    "VAL_DESC_LENGTH": {
+        "code": "VAL_002_0001",
+        "message": "Description must be {min_description_length}-{max_description_length} characters long.",
+        "status": 400,
+        "category": "VAL",
+        "field": "description"
+    },
+    "VAL_FEEDBACK_LENGTH": {
+        "code": "VAL_002_0005",
+        "message": "Feedback must be {min_feedback_length}-{max_feedback_length} characters long.",
+        "status": 400,
+        "category": "VAL",
+        "field": "feedback"
+    },
+    "VAL_RATING_INVALID": {
+        "code": "VAL_002_0008",
+        "message": "Rating must be between {min_rating} and {max_rating}.",
+        "status": 400,
+        "category": "VAL",
+        "field": "rating"
+    },
+    "VAL_WORD_COUNT": {
+        "code": "VAL_002_0004",
+        "message": "At least {min_word_count} words are required.",
+        "status": 400,
+        "category": "VAL",
+        "field": "description"
+    },
+    "DUP_USERNAME": {
+        "code": "DUP_001_0001",
+        "message": "This username is already taken.",
+        "status": 409,
+        "category": "DUP",
+        "field": "username"
+    },
+    "DUP_EMAIL": {
+        "code": "DUP_001_0002",
+        "message": "This email is already registered.",
+        "status": 409,
+        "category": "DUP",
+        "field": "email"
+    },
+    "DUP_PUBLIC_ID": {
+        "code": "DUP_001_0004",
+        "message": "You have already registered.",
+        "status": 409,
+        "category": "DUP"
+    },
+    "DUP_SUBMISSION": {
+        "code": "DUP_002_0001",
+        "message": "You have already described this image.",
+        "status": 409,
+        "category": "DUP"
+    },
+    "DUP_SURVEY_ROUND": {
+        "code": "DUP_002_0002",
+        "message": "You have already completed this survey round.",
+        "status": 409,
+        "category": "DUP"
+    },
+    "AUTH_CONSENT_REQUIRED": {
+        "code": "AUTH_001_0001",
+        "message": "Please agree to the consent terms to continue.",
+        "status": 403,
+        "category": "AUTH"
+    },
+    "AUTH_ACCOUNT_FLAGGED": {
+        "code": "AUTH_001_0002",
+        "message": "Your account has been flagged. Contact support.",
+        "status": 403,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_OTP_INVALID": {
+        "code": "AUTH_003_0001",
+        "message": "Invalid verification code. Please try again.",
+        "status": 403,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_OTP_EXPIRED": {
+        "code": "AUTH_003_0002",
+        "message": "Verification code expired. Request a new one.",
+        "status": 410,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_OTP_TOO_MANY": {
+        "code": "AUTH_003_0003",
+        "message": "Too many attempts. Request a new verification code.",
+        "status": 429,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_OTP_NOT_FOUND": {
+        "code": "AUTH_003_0004",
+        "message": "No verification code found. Please request a new one.",
+        "status": 404,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_OTP_SEND_FAILED": {
+        "code": "AUTH_003_0005",
+        "message": "Email service is temporarily unavailable. Please try again in a minute.",
+        "status": 503,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_OTP_SEND_TIMEOUT": {
+        "code": "AUTH_003_0009",
+        "message": "Email service took too long to respond. Please try again.",
+        "status": 504,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_OTP_SEND_HTTP_ERROR": {
+        "code": "AUTH_003_0010",
+        "message": "Email service returned an error. Please try again.",
+        "status": 503,
+        "category": "AUTH"
+    },
+    "AUTH_EMAIL_MISMATCH": {
+        "code": "AUTH_003_0006",
+        "message": "Email does not match your registration details.",
+        "status": 403,
+        "category": "AUTH",
+        "field": "email"
+    },
+    "AUTH_EMAIL_SAME": {
+        "code": "AUTH_003_0007",
+        "message": "Please enter a different email address to update.",
+        "status": 400,
+        "category": "AUTH",
+        "field": "email"
+    },
+    "BOT_PARTICIPANT_CREATE_FAILED": {
+        "code": "BOT_001_0002",
+        "message": "Human verification failed while creating the participant. Please retry.",
+        "status": 403,
+        "category": "AUTH"
+    },
+    "BOT_SUBMISSION_FAILED": {
+        "code": "BOT_001_0005",
+        "message": "Human verification failed while submitting the response. Please retry.",
+        "status": 403,
+        "category": "AUTH"
+    },
+    "NF_CONSENT": {
+        "code": "NF_001_0004",
+        "message": "Consent record not found.",
+        "status": 404,
+        "category": "NF"
+    },
+    "NF_ROUTE_NOT_FOUND": {
+        "code": "NF_001_0005",
+        "message": "Route not found.",
+        "status": 404,
+        "category": "NF"
+    },
+    "NF_NO_IMAGES_AVAILABLE": {
+        "code": "NF_001_0006",
+        "message": "No images are currently available. Please try again later.",
+        "status": 404,
+        "category": "NF"
+    },
+    "NF_CONSENT_PARTICIPANT_NOT_FOUND": {
+        "code": "NF_001_0012",
+        "message": "Participant not found while recording consent.",
+        "status": 404,
+        "category": "NF"
+    },
+    "NF_SUBMISSION_PARTICIPANT_NOT_FOUND": {
+        "code": "NF_001_0014",
+        "message": "Participant not found while submitting the response.",
+        "status": 404,
+        "category": "NF"
+    }
 }
 
 

@@ -68,7 +68,9 @@ def map_participant_create_exception(
     error_str = str(error).lower()
     constraint_name = ""
     try:
-        constraint_name = str(error.orig.diag.constraint_name or "").lower()
+        orig = getattr(error, "orig", None)
+        diag = getattr(orig, "diag", None)
+        constraint_name = str(getattr(diag, "constraint_name", "") or "").lower()
     except Exception:
         constraint_name = ""
 

@@ -4,7 +4,6 @@ import { getErrorMessage } from "../utils/errorRegistry.js";
 import { getDisplayErrorMessage } from "../utils/appError.js";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useSystemHealth } from "./useSystemHealth";
-import { usePaymentFlow } from "./usePaymentFlow";
 import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
@@ -39,12 +38,10 @@ const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
 const CORE_SCOPE_ANON = "anon";
 const CORE_SCOPED_KEYS = [
   runtimeConfig.storageKeys.stage,
-  runtimeConfig.storageKeys.paymentSubStage,
   runtimeConfig.storageKeys.sessionId,
   runtimeConfig.storageKeys.consentGiven,
   runtimeConfig.storageKeys.userDetailsSubmitted,
   runtimeConfig.storageKeys.emailVerified,
-  runtimeConfig.storageKeys.paymentVerified,
   runtimeConfig.storageKeys.demographics,
   runtimeConfig.storageKeys.survey,
   runtimeConfig.storageKeys.surveyCompleted,
@@ -68,11 +65,9 @@ export function useAppController() {
   const scopeId = getScopeId(publicId);
   const [sessionId, setSessionId] = useState(() => readCoreValue(runtimeConfig.storageKeys.sessionId, "", scopeId));
   const [stage, setStage] = useState(() => readCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, scopeId));
-  const [paymentSubStage, setPaymentSubStage] = useState(() => readCoreValue(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content, scopeId));
   const [consentGiven, setConsentGiven] = useState(() => readCoreValue(runtimeConfig.storageKeys.consentGiven, false, scopeId));
   const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => readCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, false, scopeId));
   const [emailVerified, setEmailVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.emailVerified, false, scopeId));
-  const [paymentVerified, setPaymentVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.paymentVerified, false, scopeId));
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [demographics, setDemographics] = useState(
     readCoreValue(runtimeConfig.storageKeys.demographics, {
@@ -86,9 +81,7 @@ export function useAppController() {
     }, scopeId, { ttlMs: PII_STATE_TTL_MS })
   );
   const [toasts, setToasts] = useState([]);
-  const [surveyTransitionInFlight, setSurveyTransitionInFlight] = useState(false);
   const toastRef = useRef(new Map());
-  const participantStatusAbortRef = useRef(null);
   const submitFlowAbortRef = useRef(null);
   const expiryNoticeShownRef = useRef(false);
   const addToast = useCallback((message, type = TOAST_VARIANTS.info, action) => {
@@ -150,11 +143,9 @@ export function useAppController() {
     const keysToClear = [
       runtimeConfig.storageKeys.publicId,
       runtimeConfig.storageKeys.stage,
-      runtimeConfig.storageKeys.paymentSubStage,
       runtimeConfig.storageKeys.consentGiven,
       runtimeConfig.storageKeys.userDetailsSubmitted,
       runtimeConfig.storageKeys.emailVerified,
-      runtimeConfig.storageKeys.paymentVerified,
       runtimeConfig.storageKeys.demographics,
       runtimeConfig.storageKeys.survey,
       runtimeConfig.storageKeys.surveyCompleted,
@@ -163,13 +154,7 @@ export function useAppController() {
       runtimeConfig.storageKeys.shownImages,
       runtimeConfig.storageKeys.sessionId,
       runtimeConfig.storageKeys.emailOtpState,
-      runtimeConfig.storageKeys.paymentId,
-      runtimeConfig.storageKeys.paymentToken,
-      runtimeConfig.storageKeys.paymentTimerExpires,
-      runtimeConfig.storageKeys.paymentState,
-      runtimeConfig.storageKeys.paymentPendingCreate,
-      runtimeConfig.storageKeys.paymentPendingVerify,
-      runtimeConfig.storageKeys.consentDraft,
+                                          runtimeConfig.storageKeys.consentDraft,
       runtimeConfig.storageKeys.consentPending,
       runtimeConfig.storageKeys.userDetailsPending,
       runtimeConfig.storageKeys.surveyPendingSubmit,
@@ -192,35 +177,6 @@ export function useAppController() {
       });
     }
   }, [publicId]);
-
-  const handleParticipantNotFound = useCallback(() => {
-    const scope = String(publicId || "").trim() || CORE_SCOPE_ANON;
-    const keysToClear = [
-      runtimeConfig.storageKeys.publicId,
-      runtimeConfig.storageKeys.sessionId,
-      runtimeConfig.storageKeys.userDetailsSubmitted,
-      runtimeConfig.storageKeys.emailVerified,
-      runtimeConfig.storageKeys.paymentVerified,
-      runtimeConfig.storageKeys.paymentSubStage,
-      runtimeConfig.storageKeys.stage,
-    ];
-    keysToClear.forEach((key) => {
-      forEachStorageArea((area) => {
-        removeStoredKey(key, area);
-        removeStoredKey(makeScopedKey(key, scope), area);
-        removeStoredKey(makeScopedKey(key, CORE_SCOPE_ANON), area);
-      });
-    });
-
-    setPublicId("");
-    setSessionId("");
-    setUserDetailsSubmitted(false);
-    setEmailVerified(false);
-    setPaymentVerified(false);
-    setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-    setStage(APP_FLOW.stages.userDetails);
-    addToast(getErrorMessage("NF_001_0001"), "warning");
-  }, [addToast, publicId]);
 
   useEffect(() => {
     if (stage === "email-verify") {
@@ -353,53 +309,10 @@ export function useAppController() {
   } = surveyFlow;
 
   const systemHealth = useSystemHealth({
-    publicId,
-    stage,
-    paymentVerified,
     isActiveTabOwner,
-    pauseSurveyPaymentGuard: surveyTransitionInFlight,
-    setPaymentVerified,
-    setStage,
-    setPaymentSubStage,
-    addToast,
   });
 
   const { systemReady, systemError, systemChecking, online, lastSyncAt, retryHealthCheck } = systemHealth;
-
-  const transitionToSurvey = useCallback(async () => {
-    setSurveyTransitionInFlight(true);
-    setPaymentVerified(true);
-    setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-    try {
-      const image = await fetchImage({ clearCurrent: true, throwOnError: true });
-      if (!image?.image_id) {
-        setPaymentVerified(false);
-        return false;
-      }
-      if (validateStageTransition(APP_FLOW.stages.payment, APP_FLOW.stages.survey, true)) {
-        setStage(APP_FLOW.stages.survey);
-      }
-      return true;
-    } catch {
-      setPaymentVerified(false);
-      return false;
-    } finally {
-      setSurveyTransitionInFlight(false);
-    }
-  }, [fetchImage]);
-
-
-  const paymentFlow = usePaymentFlow({
-    publicId,
-    stage,
-    setStage,
-    setPaymentSubStage,
-    setPaymentVerified,
-    addToast,
-    transitionToSurvey,
-  });
-
-  const { handlePaymentComplete, handlePaymentContentToLink } = paymentFlow;
 
   useEffect(() => {
     let cancelled = false;
@@ -470,12 +383,10 @@ export function useAppController() {
 
   // Persist scoped workflow state in localStorage.
   useEffect(() => writeCoreValue(runtimeConfig.storageKeys.stage, stage, scopeId), [scopeId, stage]);
-  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.paymentSubStage, paymentSubStage, scopeId), [paymentSubStage, scopeId]);
   useEffect(() => writeCoreValue(runtimeConfig.storageKeys.sessionId, sessionId, scopeId), [scopeId, sessionId]);
   useEffect(() => writeCoreValue(runtimeConfig.storageKeys.consentGiven, consentGiven, scopeId), [consentGiven, scopeId]);
   useEffect(() => writeCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, userDetailsSubmitted, scopeId), [scopeId, userDetailsSubmitted]);
   useEffect(() => writeCoreValue(runtimeConfig.storageKeys.emailVerified, emailVerified, scopeId), [emailVerified, scopeId]);
-  useEffect(() => writeCoreValue(runtimeConfig.storageKeys.paymentVerified, paymentVerified, scopeId), [paymentVerified, scopeId]);
   useEffect(() => {
     if (!isOnline) return;
     if (demographicsSaveTimeoutRef.current) {
@@ -524,16 +435,12 @@ export function useAppController() {
     setSessionId((prev) => (sessionStored.hasValue ? sessionStored.value : prev));
     const stageStored = readScoped(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, CORE_STATE_TTL_MS);
     setStage((prev) => (stageStored.hasValue ? stageStored.value : prev));
-    const paymentSubStageStored = readScoped(runtimeConfig.storageKeys.paymentSubStage, APP_FLOW.paymentSubStages.content, CORE_STATE_TTL_MS);
-    setPaymentSubStage((prev) => (paymentSubStageStored.hasValue ? paymentSubStageStored.value : prev));
     const consentStored = readScoped(runtimeConfig.storageKeys.consentGiven, false, CORE_STATE_TTL_MS);
     setConsentGiven((prev) => (consentStored.hasValue ? consentStored.value : prev));
     const userDetailsStored = readScoped(runtimeConfig.storageKeys.userDetailsSubmitted, false, CORE_STATE_TTL_MS);
     setUserDetailsSubmitted((prev) => (userDetailsStored.hasValue ? userDetailsStored.value : prev));
     const emailStored = readScoped(runtimeConfig.storageKeys.emailVerified, false, CORE_STATE_TTL_MS);
     setEmailVerified((prev) => (emailStored.hasValue ? emailStored.value : prev));
-    const paymentStored = readScoped(runtimeConfig.storageKeys.paymentVerified, false, CORE_STATE_TTL_MS);
-    setPaymentVerified((prev) => (paymentStored.hasValue ? paymentStored.value : prev));
     const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
       username: "",
       email: "",
@@ -555,7 +462,6 @@ export function useAppController() {
       userDetailsSubmitted,
       demographicsComplete: isDemographicsComplete(demographics),
       emailVerified,
-      paymentVerified,
       surveyCompleted,
       surveyFeedbackReady,
       lastSubmissionSucceeded,
@@ -565,9 +471,6 @@ export function useAppController() {
     if (maxAllowedIndex >= 0) {
       if (currentIndex > maxAllowedIndex) {
         setStage(maxAllowedStage);
-        if (maxAllowedStage === APP_FLOW.stages.payment) {
-          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-        }
       } else if (currentIndex >= 0 && currentIndex < maxAllowedIndex) {
         // On refresh, stage can be missing/stale in storage even though prerequisite flags are present.
         // Fast-forward to the furthest valid stage without skipping gated transitions.
@@ -575,7 +478,7 @@ export function useAppController() {
         let nextIndex = currentIndex;
         while (nextIndex < maxAllowedIndex) {
           const candidate = APP_STAGE_ORDER[nextIndex + 1];
-          if (!validateStageTransition(nextStage, candidate, paymentVerified)) break;
+          if (!validateStageTransition(nextStage, candidate)) break;
           nextStage = candidate;
           nextIndex += 1;
         }
@@ -592,7 +495,6 @@ export function useAppController() {
     demographics,
     lastSubmissionSucceeded,
     emailVerified,
-    paymentVerified,
     publicId,
     sessionHydrated,
     stage,
@@ -604,69 +506,18 @@ export function useAppController() {
 
   // Note: We no longer clear storage on unload/refresh to avoid wiping state on refresh.
 
-  useEffect(() => {
-    const verifyStagePrerequisites = async () => {
-      if (!systemReady || !isActiveTabOwner) return;
-      if (!sessionHydrated || !publicId) return;
-      if (![APP_FLOW.stages.survey, APP_FLOW.stages.finished].includes(stage)) return;
-      if (participantStatusAbortRef.current) {
-        participantStatusAbortRef.current.abort();
-      }
-      const controller = new AbortController();
-      participantStatusAbortRef.current = controller;
-      try {
-        const status = await endpoints.getParticipantPaymentStatus(publicId, { signal: controller.signal });
-        const verified = status?.is_verified === true;
-        setPaymentVerified(verified);
-        if ((stage === APP_FLOW.stages.survey || stage === APP_FLOW.stages.finished) && !verified) {
-          setStage(APP_FLOW.stages.payment);
-          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-          addToast(getErrorMessage("PAY_001_0005"), "warning");
-        }
-      } catch (error) {
-        if (error?.code === "REQ_ABORTED" || controller.signal.aborted) return;
-        if (error?.status === 404 || error?.code === "NF_001_0001") {
-          setStage(APP_FLOW.stages.userDetails);
-          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-          setPaymentVerified(false);
-          addToast(getErrorMessage("NF_001_0001"), "warning");
-        } else if (error?.code === "NF_001_0003") {
-          setStage(APP_FLOW.stages.payment);
-          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-          setPaymentVerified(false);
-          addToast(getErrorMessage("NF_001_0003"), "warning");
-        } else {
-          // Keep the current stage on transient status-check failures.
-          addToast(getErrorMessage("SYS_002_0001"), "warning");
-        }
-      } finally {
-        if (participantStatusAbortRef.current === controller) {
-          participantStatusAbortRef.current = null;
-        }
-      }
-    };
-    verifyStagePrerequisites();
-    return () => {
-      if (participantStatusAbortRef.current) {
-        participantStatusAbortRef.current.abort();
-        participantStatusAbortRef.current = null;
-      }
-    };
-  }, [addToast, emailVerified, isActiveTabOwner, publicId, sessionHydrated, stage, systemReady, userDetailsSubmitted]);
-
   useEffect(() => () => {
     cancelInFlightRequests?.();
-    if (participantStatusAbortRef.current) participantStatusAbortRef.current.abort();
     if (submitFlowAbortRef.current) submitFlowAbortRef.current.abort();
   }, [cancelInFlightRequests]);
 
   useEffect(() => {
-    if (stage !== APP_FLOW.stages.survey || !systemReady || !paymentVerified || surveyFeedbackReady) return;
+    if (stage !== APP_FLOW.stages.survey || !systemReady || surveyFeedbackReady) return;
     const restoredImageUrl = survey?.url || survey?.image_url || survey?.imageUrl || "";
     if (!survey || !survey.image_id || !String(restoredImageUrl).trim()) {
       fetchImage({ clearCurrent: false });
     }
-  }, [fetchImage, paymentVerified, stage, survey, surveyFeedbackReady, systemReady]);
+  }, [fetchImage, stage, survey, surveyFeedbackReady, systemReady]);
 
   const createParticipant = useCallback(async () => {
     if (submitFlowAbortRef.current) {
@@ -742,8 +593,8 @@ export function useAppController() {
 
   const handleEmailVerified = useCallback(() => {
     setEmailVerified(true);
-    if (validateStageTransition(APP_FLOW.stages.userDetails, APP_FLOW.stages.payment)) {
-      setStage(APP_FLOW.stages.payment);
+    if (validateStageTransition(APP_FLOW.stages.userDetails, APP_FLOW.stages.survey)) {
+      setStage(APP_FLOW.stages.survey);
     }
   }, [setEmailVerified, setStage]);
   const handleAppError = useCallback(() => addToast(getErrorMessage("SYS_002_0017"), "error"), [addToast]);
@@ -752,7 +603,6 @@ export function useAppController() {
     isOnline,
     isActiveTabOwner,
     stage,
-    paymentSubStage,
     publicId,
     sessionId,
     demographics,
@@ -782,10 +632,7 @@ export function useAppController() {
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleEmailVerified,
-    handlePaymentComplete,
-    handlePaymentContentToLink,
     handleAppError,
     clearUserStorage,
-    handleParticipantNotFound,
   };
 }

@@ -5,7 +5,7 @@ Modular Flask application following 2025 best practices.
 
 from app.extensions import app, limiter, s3
 from app.database import engine, SessionLocal, get_db, teardown_db
-from app.routes import participant_bp, image_bp, submission_bp, payment_bp
+from app.routes import participant_bp, image_bp, submission_bp
 
 
 __all__ = [
@@ -19,5 +19,4 @@ __all__ = [
     'participant_bp',
     'image_bp',
     'submission_bp',
-    'payment_bp',
 ]

@@ -63,8 +63,6 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
   const saveTimeoutRef = useRef(null);
   const draftSaveTimeoutRef = useRef(null);
   const lastSavedAtRef = useRef(null);
-  const paymentAmountLabel = uiText("common.inrAmount", { amount: runtimeConfig.paymentAmount });
-  const rewardAmountLabel = uiText("common.inrAmount", { amount: runtimeConfig.rewardAmount });
   const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
 
   useEffect(() => {
@@ -173,8 +171,6 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
     setError,
     submitting,
     isOnline,
-    paymentAmountLabel,
-    rewardAmountLabel,
     handleSubmit,
     draftRestored,
     lastSavedAt,

@@ -6,15 +6,12 @@ import json
 
 from sqlalchemy import text
 
-from app.constants.submission_constants import PAYMENT_STATUS_SUCCESS
-
 QUERY_FETCH_SUBMISSION_PARTICIPANT = text("""
     SELECT
         p.id,
         p.consent_given,
         p.is_deleted,
         p.extra_metadata,
-        p.payment_status,
         p.stage,
         COALESCE(pas.is_flagged, false) AS is_flagged
     FROM participants p
@@ -143,21 +140,6 @@ QUERY_UPSERT_PARTICIPANT_ACTIVITY_STATS = text("""
         ) >= :ath
 """)
 
-QUERY_FETCH_LATEST_SUCCESS_PAYMENT_ID = text("""
-    SELECT id
-    FROM payments
-    WHERE participant_id = :pid
-      AND status = :status
-    ORDER BY COALESCE(verified_at, created_at) DESC, id DESC
-    LIMIT 1
-""")
-
-QUERY_LINK_PAYMENT_SUBMISSION = text("""
-    INSERT INTO payment_submissions (payment_id, submission_id)
-    VALUES (:payment_id, :submission_id)
-    ON CONFLICT DO NOTHING
-""")
-
 QUERY_RELEASE_IMAGE_RESERVATION = text("""
     UPDATE image_reservations
     SET released_at = CURRENT_TIMESTAMP
@@ -273,14 +255,6 @@ def upsert_participant_activity_stats(db, *, participant_id: int, word_count: in
         "rth": int(priority_rounds_threshold),
         "ath": float(priority_attention_threshold),
     })
-
-
-def fetch_latest_success_payment_id(db, participant_id: int):
-    return db.execute(QUERY_FETCH_LATEST_SUCCESS_PAYMENT_ID, {"pid": int(participant_id), "status": PAYMENT_STATUS_SUCCESS}).scalar()
-
-
-def link_payment_submission(db, *, payment_id: int, submission_id: int):
-    db.execute(QUERY_LINK_PAYMENT_SUBMISSION, {"payment_id": int(payment_id), "submission_id": int(submission_id)})
 
 
 def release_image_reservation(db, *, image_id: str, participant_id: int):

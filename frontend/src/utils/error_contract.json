@@ -5,24 +5,6 @@
     "status": 500,
     "category": "SYS"
   },
-  "PAY_UPI_MAINTENANCE": {
-    "code": "PAY_001_0009",
-    "message": "Daily UPI limit reached. Please try again after 24 hours.",
-    "status": 429,
-    "category": "PAY"
-  },
-  "PAY_UPI_USER_LIMIT": {
-    "code": "PAY_001_0010",
-    "message": "Too many payment attempts from your device. Please try again later.",
-    "status": 429,
-    "category": "PAY"
-  },
-  "PAY_UPI_SESSION_LIMIT": {
-    "code": "PAY_001_0011",
-    "message": "Too many payment attempts in this session. Please try again later.",
-    "status": 429,
-    "category": "PAY"
-  },
   "SYS_DATABASE_ERROR": {
     "code": "SYS_001_0002",
     "message": "Database error occurred. Please try again later.",
@@ -300,21 +282,9 @@
     "status": 409,
     "category": "DUP"
   },
-  "DUP_PAYMENT_IMAGE": {
-    "code": "DUP_003_0001",
-    "message": "This screenshot has already been submitted",
-    "status": 409,
-    "category": "DUP"
-  },
   "DUP_TRANSACTION": {
     "code": "DUP_003_0002",
     "message": "This transaction has already been used",
-    "status": 409,
-    "category": "DUP"
-  },
-  "DUP_IMAGE_OTHER_USER": {
-    "code": "DUP_003_0003",
-    "message": "This screenshot was already used by another user",
     "status": 409,
     "category": "DUP"
   },
@@ -384,12 +354,6 @@
     "status": 404,
     "category": "NF"
   },
-  "NF_PAYMENT": {
-    "code": "NF_001_0003",
-    "message": "Payment not found",
-    "status": 404,
-    "category": "NF"
-  },
   "NF_CONSENT": {
     "code": "NF_001_0004",
     "message": "Consent record not found",
@@ -419,60 +383,6 @@
     "message": "Image not found",
     "status": 404,
     "category": "NF"
-  },
-  "PAYMENT_NOT_FOUND": {
-    "code": "NF_001_0003",
-    "message": "Payment not found",
-    "status": 404,
-    "category": "NF"
-  },
-  "PAY_EXPIRED": {
-    "code": "PAY_001_0001",
-    "message": "Payment session expired. Please start a new payment.",
-    "status": 410,
-    "category": "PAY"
-  },
-  "PAY_INVALID_STATE": {
-    "code": "PAY_001_0002",
-    "message": "Payment cannot be processed in current state",
-    "status": 400,
-    "category": "PAY"
-  },
-  "PAY_INVALID_AMOUNT": {
-    "code": "PAY_001_0003",
-    "message": "Invalid payment amount",
-    "status": 400,
-    "category": "PAY"
-  },
-  "PAY_ALREADY_PROCESSED": {
-    "code": "PAY_001_0004",
-    "message": "Payment has already been processed",
-    "status": 400,
-    "category": "PAY"
-  },
-  "PAY_INVALID_IMAGE_TYPE": {
-    "code": "PAY_001_0005",
-    "message": "Invalid image format. Allowed: JPG, PNG, WEBP",
-    "status": 400,
-    "category": "PAY"
-  },
-  "PAY_INVALID_SHA256": {
-    "code": "PAY_001_0006",
-    "message": "Invalid file hash",
-    "status": 400,
-    "category": "PAY"
-  },
-  "PAY_VERIFY_ATTEMPTS_EXCEEDED": {
-    "code": "PAY_001_0008",
-    "message": "Maximum verification attempts reached. Please create a new payment session.",
-    "status": 409,
-    "category": "PAY"
-  },
-  "AUTH_INVALID_PAYMENT_TOKEN": {
-    "code": "AUTH_002_0002",
-    "message": "Invalid or expired payment authorization token.",
-    "status": 403,
-    "category": "AUTH"
   },
   "AUTH_EMAIL_OTP_INVALID": {
     "code": "AUTH_003_0001",
@@ -533,173 +443,5 @@
     "message": "Human verification failed. Please retry.",
     "status": 403,
     "category": "AUTH"
-  },
-  "PAYMENT_EXPIRED": {
-    "code": "PAY_001_0001",
-    "message": "Payment session expired. Please start a new payment.",
-    "status": 410,
-    "category": "PAY"
-  },
-  "PAYMENT_INVALID_STATE": {
-    "code": "PAY_001_0002",
-    "message": "Payment cannot be processed in current state",
-    "status": 400,
-    "category": "PAY"
-  },
-  "INVALID_AMOUNT": {
-    "code": "PAY_001_0003",
-    "message": "Invalid payment amount",
-    "status": 400,
-    "category": "PAY"
-  },
-  "INVALID_IMAGE_TYPE": {
-    "code": "PAY_001_0005",
-    "message": "Invalid image format. Allowed: JPG, PNG, WEBP",
-    "status": 400,
-    "category": "PAY"
-  },
-  "INVALID_SHA256": {
-    "code": "PAY_001_0006",
-    "message": "Invalid file hash",
-    "status": 400,
-    "category": "PAY"
-  },
-  "FRAUD_LOW_RESOLUTION": {
-    "code": "FRAUD_001_0001",
-    "message": "Screenshot is too blurry. Please upload a clearer image.",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_LOW_OCR_CONFIDENCE": {
-    "code": "FRAUD_001_0002",
-    "message": "Could not read the screenshot text. Please retake.",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_UNRECOGNIZED_APP": {
-    "code": "FRAUD_001_0003",
-    "message": "Please use Google Pay, Paytm, or BHIM",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_INVALID_BANKING_NAME": {
-    "code": "FRAUD_001_0004",
-    "message": "Payment not made to the correct beneficiary",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_INVALID_AMOUNT": {
-    "code": "FRAUD_001_0005",
-    "message": "Payment amount must be exactly ₹1",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_TIME_OUT_OF_RANGE": {
-    "code": "FRAUD_001_0006",
-    "message": "Payment time is outside the allowed payment-session window",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_INVALID_TIMESTAMP": {
-    "code": "FRAUD_001_0007",
-    "message": "Could not read payment time from screenshot",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_MISSING_TIMESTAMP": {
-    "code": "FRAUD_002_0010",
-    "message": "Payment date/time not found in screenshot",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_VPA_MISMATCH": {
-    "code": "FRAUD_002_0001",
-    "message": "Payment not made to correct UPI ID",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_NOTE_MISMATCH": {
-    "code": "FRAUD_002_0002",
-    "message": "Payment note does not match. Use the exact note shown.",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_AMOUNT_MISMATCH": {
-    "code": "FRAUD_002_0003",
-    "message": "Payment amount must be exactly ₹1",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_MISSING_SUCCESS": {
-    "code": "FRAUD_002_0004",
-    "message": "Payment success not detected in screenshot",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_FAILURE_INDICATOR": {
-    "code": "FRAUD_002_0005",
-    "message": "Payment appears to have failed. Check your UPI app.",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_DUPLICATE_IMAGE": {
-    "code": "FRAUD_003_0001",
-    "message": "This screenshot was already submitted by another user",
-    "status": 409,
-    "category": "FRAUD"
-  },
-  "FRAUD_DUPLICATE_IMAGE_SELF": {
-    "code": "FRAUD_003_0004",
-    "message": "You already submitted this screenshot. Please use a new payment screenshot.",
-    "status": 409,
-    "category": "FRAUD"
-  },
-  "FRAUD_REJECTED_REUSE": {
-    "code": "FRAUD_003_0002",
-    "message": "This screenshot was previously rejected",
-    "status": 409,
-    "category": "FRAUD"
-  },
-  "FRAUD_NOT_UPI_PAYMENT": {
-    "code": "FRAUD_002_0008",
-    "message": "Screenshot does not appear to be a UPI payment",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "FRAUD_MISSING_RECIPIENT": {
-    "code": "FRAUD_002_0009",
-    "message": "Payment recipient details not found in screenshot",
-    "status": 400,
-    "category": "FRAUD"
-  },
-  "PAYMENT_NOT_VERIFIED": {
-    "code": "PAY_001_0007",
-    "message": "Payment not verified. Please complete payment first.",
-    "status": 403,
-    "category": "PAY"
-  },
-  "DUPLICATE_IMAGE": {
-    "code": "FRAUD_003_0001",
-    "message": "This screenshot was already submitted by another user",
-    "status": 409,
-    "category": "FRAUD"
-  },
-  "DUPLICATE_IMAGE_SELF": {
-    "code": "FRAUD_003_0004",
-    "message": "You already submitted this screenshot. Please use a new payment screenshot.",
-    "status": 409,
-    "category": "FRAUD"
-  },
-  "REJECTED_REUSE": {
-    "code": "FRAUD_003_0002",
-    "message": "This screenshot was previously rejected",
-    "status": 409,
-    "category": "FRAUD"
-  },
-  "PAYMENT_REJECTED": {
-    "code": "FRAUD_002_0004",
-    "message": "Payment success not detected in screenshot",
-    "status": 400,
-    "category": "FRAUD"
   }
 }

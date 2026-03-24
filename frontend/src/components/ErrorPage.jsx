@@ -36,11 +36,9 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
     const keysToClear = [
       runtimeConfig.storageKeys.publicId,
       runtimeConfig.storageKeys.stage,
-      runtimeConfig.storageKeys.paymentSubStage,
       runtimeConfig.storageKeys.consentGiven,
       runtimeConfig.storageKeys.userDetailsSubmitted,
       runtimeConfig.storageKeys.emailVerified,
-      runtimeConfig.storageKeys.paymentVerified,
       runtimeConfig.storageKeys.demographics,
       runtimeConfig.storageKeys.survey,
       runtimeConfig.storageKeys.surveyCompleted,
@@ -49,11 +47,6 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
       runtimeConfig.storageKeys.shownImages,
       runtimeConfig.storageKeys.sessionId,
       runtimeConfig.storageKeys.emailOtpState,
-      runtimeConfig.storageKeys.paymentId,
-      runtimeConfig.storageKeys.paymentTimerExpires,
-      runtimeConfig.storageKeys.paymentState,
-      runtimeConfig.storageKeys.paymentPendingCreate,
-      runtimeConfig.storageKeys.paymentPendingVerify,
       runtimeConfig.storageKeys.consentDraft,
       runtimeConfig.storageKeys.consentPending,
       runtimeConfig.storageKeys.userDetailsPending,
@@ -71,7 +64,6 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
 
     // Ensure the app boots into Consent deterministically.
     writeExpiringValue(makeScopedKey(runtimeConfig.storageKeys.stage, "anon"), APP_FLOW.stages.consent, { area: "local", schemaVersion, ttlMs });
-    writeExpiringValue(makeScopedKey(runtimeConfig.storageKeys.paymentSubStage, "anon"), APP_FLOW.paymentSubStages.content, { area: "local", schemaVersion, ttlMs });
     writeExpiringValue(makeScopedKey(runtimeConfig.storageKeys.consentGiven, "anon"), false, { area: "local", schemaVersion, ttlMs });
 
     if (typeof storedDarkMode === "boolean") {

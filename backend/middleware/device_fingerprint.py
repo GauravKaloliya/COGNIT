@@ -1,19 +1,19 @@
-"""
-Device Fingerprinting Middleware
-Comprehensive device tracking and risk scoring for fraud prevention
-"""
+"""Device fingerprinting middleware for submission-risk monitoring."""
+
+from __future__ import annotations
 
 import hashlib
-import logging
 import json
+import logging
 import time
 from datetime import datetime, timezone
+
 from flask import request, g
 from sqlalchemy import text
 
 from app.config import DEVICE_FINGERPRINT_SALTS, ENABLE_DEVICE_FINGERPRINTING
 
-_FINGERPRINT_HISTORY_CACHE = {}
+_FINGERPRINT_HISTORY_CACHE: dict[int, dict[str, object]] = {}
 _FINGERPRINT_HISTORY_CACHE_TTL_SECONDS = 300
 logger = logging.getLogger(__name__)
 
@@ -22,62 +22,45 @@ def _should_run_fingerprinting() -> bool:
     if not ENABLE_DEVICE_FINGERPRINTING:
         return False
     path = (request.path or "").lower()
-    # Restrict expensive fingerprint DB work to fraud-sensitive write flows.
+    # Restrict expensive fingerprint DB work to write flows that matter for submissions.
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
-    return path.startswith("/payments/") or path == "/submit"
+    return path == "/submit"
 
 def _resolve_participant_id(db):
-    """Best-effort participant resolution across route styles."""
+    """Best-effort participant resolution across active route styles."""
     if hasattr(g, "participant_id") and g.participant_id:
         return g.participant_id
-    public_id = None
-    payment_public_id = None
 
+    public_id = None
     json_payload = request.get_json(silent=True) or {}
     if request.is_json and json_payload:
         public_id = json_payload.get("public_id")
-        payment_public_id = json_payload.get("payment_public_id")
 
     if not public_id and request.args:
         public_id = request.args.get("public_id")
-    if not payment_public_id and request.args:
-        payment_public_id = request.args.get("payment_public_id")
 
     view_args = getattr(request, "view_args", None) or {}
     if not public_id:
         public_id = view_args.get("public_id")
-    if not payment_public_id:
-        payment_public_id = (
-            view_args.get("payment_public_id")
-            or view_args.get("payment_id")
-        )
 
-    if public_id:
-        row = db.execute(text("""
-            SELECT id FROM participants
-            WHERE public_id = :pub
-        """), {"pub": public_id}).fetchone()
-        if row:
-            g.participant_id = row[0]
-            return row[0]
+    if not public_id:
+        return None
 
-    if payment_public_id:
-        row = db.execute(text("""
-            SELECT participant_id
-            FROM payments
-            WHERE public_id = :pid
-        """), {"pid": payment_public_id}).fetchone()
-        if row:
-            g.participant_id = row[0]
-            return row[0]
+    row = db.execute(text("""
+        SELECT id FROM participants
+        WHERE public_id = :pub
+    """), {"pub": public_id}).fetchone()
+    if row:
+        g.participant_id = row[0]
+        return row[0]
 
     return None
 
 
-def collect_device_characteristics():
+def collect_device_characteristics() -> dict[str, object]:
     """Collect device characteristics for fingerprinting"""
-    characteristics = {
+    characteristics: dict[str, object] = {
         'user_agent': request.headers.get('User-Agent', '')[:512],
         'accept_language': request.headers.get('Accept-Language', '')[:200],
         'accept_encoding': request.headers.get('Accept-Encoding', '')[:200],
@@ -93,7 +76,7 @@ def collect_device_characteristics():
             'platform': request.user_agent.platform or '',
             'browser': request.user_agent.browser or '',
             'version': request.user_agent.version or '',
-            'os': request.user_agent.os or ''
+            'os': getattr(request.user_agent, 'os', '') or '',
         })
     
     return characteristics
@@ -105,7 +88,7 @@ def _get_fingerprint_salts():
     return [s.strip() for s in raw.split(",") if s.strip()] or ["cognit_fingerprint_salt_2024"]
 
 
-def generate_device_fingerprint(characteristics):
+def generate_device_fingerprint(characteristics: dict[str, object]) -> str:
     """Generate a stable device fingerprint hash"""
     # Create a normalized string of key characteristics
     fingerprint_string = json.dumps({
@@ -123,7 +106,7 @@ def generate_device_fingerprint(characteristics):
     return hashlib.sha256(salted_data.encode()).hexdigest()
 
 
-def generate_device_fingerprint_variants(characteristics):
+def generate_device_fingerprint_variants(characteristics: dict[str, object]) -> list[str]:
     """Generate hashes for current and previous salts to allow rotation windows."""
     fingerprint_string = json.dumps({
         'ua': characteristics.get('user_agent', ''),
@@ -138,13 +121,17 @@ def generate_device_fingerprint_variants(characteristics):
         variants.append(hashlib.sha256(salted_data.encode()).hexdigest())
     return list(dict.fromkeys([v for v in variants if v]))
 
-def calculate_risk_score(fingerprint_data, db, participant_id=None):
+def calculate_risk_score(
+    fingerprint_data: dict[str, object],
+    db,
+    participant_id=None,
+) -> tuple[float, list[str]]:
     """Calculate device risk score based on fingerprint characteristics"""
     risk_score = 0.0
     signals = []
     
     # Check for suspicious User-Agent patterns
-    user_agent = fingerprint_data.get('user_agent', '').lower()
+    user_agent = str(fingerprint_data.get('user_agent', '') or '').lower()
     if not user_agent or user_agent in ['curl', 'wget', 'bot', 'spider', 'crawler']:
         risk_score += 25
         signals.append('suspicious_user_agent')
@@ -158,7 +145,8 @@ def calculate_risk_score(fingerprint_data, db, participant_id=None):
     if participant_id:
         now_ts = int(time.time())
         cache_entry = _FINGERPRINT_HISTORY_CACHE.get(int(participant_id))
-        if cache_entry and (now_ts - int(cache_entry.get("fetched_at", 0))) <= _FINGERPRINT_HISTORY_CACHE_TTL_SECONDS:
+        fetched_at = cache_entry.get("fetched_at", 0) if cache_entry else 0
+        if cache_entry and (now_ts - int(fetched_at if isinstance(fetched_at, (int, float, str, bytes)) else 0)) <= _FINGERPRINT_HISTORY_CACHE_TTL_SECONDS:
             previous_fingerprints = cache_entry.get("rows", [])
         else:
             previous_fingerprints = db.execute(text("""
@@ -172,6 +160,8 @@ def calculate_risk_score(fingerprint_data, db, participant_id=None):
                 "fetched_at": now_ts,
                 "rows": previous_fingerprints,
             }
+        if not isinstance(previous_fingerprints, list):
+            previous_fingerprints = []
         
         current_fingerprint = generate_device_fingerprint(fingerprint_data)
         
@@ -189,10 +179,11 @@ def calculate_risk_score(fingerprint_data, db, participant_id=None):
                 signals.append('multiple_device_switches')
     
     # Check for IP address patterns
-    ip_address = fingerprint_data.get('remote_addr', '')
+    ip_address = str(fingerprint_data.get('remote_addr', '') or '')
     if ip_address:
         # Check for proxy/VPN indicators
-        if any(indicator in fingerprint_data.get('x_forwarded_for', '') for indicator in [',', 'proxy', 'vpn']):
+        forwarded_for = str(fingerprint_data.get('x_forwarded_for', '') or '')
+        if any(indicator in forwarded_for for indicator in [',', 'proxy', 'vpn']):
             risk_score += 10
             signals.append('proxy_detected')
     
@@ -201,7 +192,10 @@ def calculate_risk_score(fingerprint_data, db, participant_id=None):
     
     return risk_score, signals
 
-def get_or_create_device_fingerprint(db, participant_id=None):
+def get_or_create_device_fingerprint(
+    db,
+    participant_id=None,
+) -> tuple[str, list[str], float, dict[str, object]]:
     """Get existing or create new device fingerprint"""
     characteristics = collect_device_characteristics()
     fingerprint_hash = generate_device_fingerprint(characteristics)

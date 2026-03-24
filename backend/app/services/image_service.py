@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 import logging
 import time
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import unquote, urlparse
 
 from app.config import (
@@ -30,13 +30,15 @@ IMAGE_POOL_CACHE_KEY_ATTENTION = "attention"
 IMAGE_POOL_CACHE_KEY_NON_ATTENTION = "non_attention"
 IMAGE_POOL_CACHE_KEY_ALL = "all"
 IMAGE_CACHE_KEY_OK = "ok"
-IMAGE_POOL_CACHE = {
+ImagePoolItem = tuple[Any, str, bool, bool]
+
+IMAGE_POOL_CACHE: dict[str, float | list[ImagePoolItem]] = {
     IMAGE_POOL_CACHE_KEY_EXPIRES_AT: 0.0,
     IMAGE_POOL_CACHE_KEY_ATTENTION: [],
     IMAGE_POOL_CACHE_KEY_NON_ATTENTION: [],
     IMAGE_POOL_CACHE_KEY_ALL: [],
 }
-IMAGE_URL_AVAILABILITY_CACHE = {}
+IMAGE_URL_AVAILABILITY_CACHE: dict[str, dict[str, float | bool]] = {}
 IMAGE_RESERVATION_CLEANUP_EXPIRES_AT = 0.0
 logger = logging.getLogger(__name__)
 
@@ -86,12 +88,15 @@ def is_image_url_available(image_url: str) -> bool:
 
 def ensure_image_pool_cache(db) -> None:
     now = time.time()
-    if now < float(IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_EXPIRES_AT]):
+    expires_at = IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_EXPIRES_AT]
+    if isinstance(expires_at, list):
+        expires_at = 0.0
+    if now < float(expires_at):
         return
     rows = db.execute(QUERY_LOAD_IMAGE_POOL).fetchall()
-    attention_rows = []
-    non_attention_rows = []
-    all_rows = []
+    attention_rows: list[ImagePoolItem] = []
+    non_attention_rows: list[ImagePoolItem] = []
+    all_rows: list[ImagePoolItem] = []
     for image_id, image_url, is_attention in rows:
         if not is_image_url_available(image_url):
             continue
@@ -107,7 +112,7 @@ def ensure_image_pool_cache(db) -> None:
     IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_EXPIRES_AT] = now + max(5.0, float(IMAGE_POOL_CACHE_TTL_SECONDS))
 
 
-def pick_from_pool(rows, excluded_set, attempts):
+def pick_from_pool(rows: list[ImagePoolItem], excluded_set, attempts):
     if not rows:
         return None
     max_attempts = min(max(1, int(attempts)), max(1, len(rows) * 2))
@@ -147,12 +152,21 @@ def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
 def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int, force_attention: bool = False):
     ensure_image_pool_cache(db)
     cleanup_stale_reservations(db)
-    row = None
-    attempt_limit = max(3, min(10, len(IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ALL]) or 3))
+    attention_pool = IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ATTENTION]
+    non_attention_pool = IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_NON_ATTENTION]
+    all_pool = IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ALL]
+    if not isinstance(attention_pool, list):
+        attention_pool = []
+    if not isinstance(non_attention_pool, list):
+        non_attention_pool = []
+    if not isinstance(all_pool, list):
+        all_pool = []
+    row: ImagePoolItem | None = None
+    attempt_limit = max(3, min(10, len(all_pool) or 3))
     for _ in range(attempt_limit):
         if force_attention or should_prioritize_attention:
             row = pick_from_pool(
-                IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_ATTENTION],
+                attention_pool,
                 excluded_set,
                 IMAGE_PICK_ATTEMPTS_ATTENTION,
             )
@@ -163,7 +177,7 @@ def select_random_image_for_participant(db, *, excluded_set, participant_id: int
                 break
         elif not row:
             row = pick_from_pool(
-                IMAGE_POOL_CACHE[IMAGE_POOL_CACHE_KEY_NON_ATTENTION],
+                non_attention_pool,
                 excluded_set,
                 IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
             )

@@ -4,9 +4,9 @@ Initializes and configures Flask extensions following application factory patter
 """
 
 import os
-import boto3
+import boto3  # type: ignore[import-untyped]
 from flask import Flask
-from flask_cors import CORS
+from flask_cors import CORS  # type: ignore[import-untyped]
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from redis import Redis
@@ -36,7 +36,7 @@ app = Flask(__name__, template_folder=template_dir)
 app.url_map.strict_slashes = False
 if TRUST_PROXY_HEADERS:
     # Required on Vercel/edge proxies so client IP/scheme are interpreted correctly.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    setattr(app, "wsgi_app", ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1))
 app.config["SECRET_KEY"] = SECRET_KEY
 app.config["SESSION_COOKIE_SECURE"] = bool(SESSION_COOKIE_SECURE)
 app.config["SESSION_COOKIE_HTTPONLY"] = True

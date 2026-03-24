@@ -1,12 +1,10 @@
 import { useCallback, useEffect } from "react";
-import { runtimeConfig } from "../config/runtime";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { uiText } from "../utils/uiText";
 import { APP_ROUTES } from "../constants/routes";
 
 export function useFinishedPage({ publicId, clearUserStorage }) {
   const isOnline = useOnlineStatus();
-  const rewardAmountLabel = uiText("common.inrAmount", { amount: runtimeConfig.rewardAmount });
 
   useEffect(() => {
     document.title = uiText("finish.documentTitle");
@@ -20,7 +18,6 @@ export function useFinishedPage({ publicId, clearUserStorage }) {
 
   return {
     isOnline,
-    rewardAmountLabel,
     handleFinish,
   };
 }

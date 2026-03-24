@@ -4,8 +4,6 @@ import os
 def ensure_test_env() -> None:
     defaults = {
         "WEBSITE_URL": "https://example.com",
-        "UPI_NAME": "COGNIT",
-        "PAYMENT_SECRET": "test-payment-secret",
         "EMAIL_OTP_WEBHOOK_URL": "https://example.com/otp",
         "EMAIL_OTP_SENDER": "noreply@example.com",
         "EMAIL_OTP_SUBJECT": "OTP",

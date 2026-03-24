@@ -7,7 +7,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from flask import g, jsonify, redirect, render_template, request, url_for
+from flask import Response, g, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import text
 
 from app.config import (
@@ -134,7 +134,7 @@ def finalize_response(response, logger: logging.Logger):
             OBS_EVENT_REQUEST_COMPLETED,
             method=request.method,
             path=request.path,
-            route=getattr(request, "url_rule", None).rule if getattr(request, "url_rule", None) else request.path,
+            route=(request.url_rule.rule if request.url_rule is not None else request.path),
             request_id=request_id,
             status_code=int(response.status_code),
             transport_status=int(response.status_code),
@@ -205,8 +205,8 @@ def get_cached_health_response(app, logger: logging.Logger):
         )
 
 
-def render_api_docs_page(template_name: str, active_page: str):
-    response = render_template(
+def render_api_docs_page(template_name: str, active_page: str) -> Response:
+    rendered = render_template(
         template_name,
         base_url=DOCS_BASE_URL,
         active_page=active_page,
@@ -214,12 +214,9 @@ def render_api_docs_page(template_name: str, active_page: str):
         error_groups=build_error_docs(),
         example_docs=build_example_docs(),
     )
-    try:
-        response = app.make_response(response)
-        response.headers.setdefault("Cache-Control", "public, max-age=300")
-        return response
-    except Exception:
-        return response
+    response = app.make_response(rendered)
+    response.headers.setdefault("Cache-Control", "public, max-age=300")
+    return response
 
 
 def redirect_to_api_docs_endpoints():
