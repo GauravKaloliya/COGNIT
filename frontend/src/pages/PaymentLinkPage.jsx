@@ -25,6 +25,7 @@ export default function PaymentLinkPage({
     uploadFile,
     uploadPreviewUrl,
     verifying,
+    isRefreshingUpi,
     error,
     failureReasons,
     refreshNotice,
@@ -46,6 +47,7 @@ export default function PaymentLinkPage({
     handleFileChange,
     clearSelectedFile,
     restartPayment,
+    refreshPaymentUpi,
     handleUploadAndFinalize,
     markQrVisible,
   } = usePaymentLinkPage({
@@ -272,6 +274,19 @@ export default function PaymentLinkPage({
                     <span>⏱️</span>
                     {uiText("payment.pendingBadge")}
                   </div>
+                  <p className="payment-note">{uiText("payment.upiLimitHelp")}</p>
+                  <PageActions>
+                    <DSButton
+                      variant="ghost"
+                      type="button"
+                      onClick={refreshPaymentUpi}
+                      disabled={offlineDisabled || verifying || isRefreshingUpi || retryBlocked}
+                    >
+                      {isRefreshingUpi
+                        ? uiText("payment.tryingAnotherUpi")
+                        : uiText("payment.tryAnotherUpi")}
+                    </DSButton>
+                  </PageActions>
                 </div>
               </section>
             )}

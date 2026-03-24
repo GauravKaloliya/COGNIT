@@ -76,6 +76,7 @@ def payment_selection_error_response(selection: dict):
     status = str(selection.get("status") or "").upper()
     error_map = {
         "MAINTENANCE": "PAY_UPI_MAINTENANCE",
+        "NO_ALTERNATE_UPI": "PAY_UPI_ALTERNATE_UNAVAILABLE",
         "USER_LIMIT_EXCEEDED": "PAY_UPI_USER_LIMIT",
         "SESSION_LIMIT_EXCEEDED": "PAY_UPI_SESSION_LIMIT",
     }

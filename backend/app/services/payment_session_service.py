@@ -52,6 +52,7 @@ from app.database import engine
 from app.services.payment_session_query_service import (
     QUERY_EXPIRE_PAYMENT_IF_NEEDED,
     QUERY_FETCH_ACTIVE_PAYMENT_FOR_REUSE,
+    QUERY_FETCH_PAYMENT_REFRESH_ROW,
     QUERY_FETCH_PAYMENT_STATUS_ROW,
     QUERY_FETCH_TOKEN_MINT_ROW,
     QUERY_GET_PARTICIPANT_SESSION_ID,
@@ -375,3 +376,10 @@ def build_payment_status_response(*, payment_public_id: str, status: str, amount
 
 def fetch_token_mint_row(db, *, payment_public_id: str, public_id: str, session_id: str):
     return db.execute(QUERY_FETCH_TOKEN_MINT_ROW, {"pid": payment_public_id, "pub": public_id, "sid": session_id}).fetchone()
+
+
+def fetch_payment_refresh_row(db, *, payment_public_id: str, public_id: str, session_id: str):
+    return db.execute(
+        QUERY_FETCH_PAYMENT_REFRESH_ROW,
+        {"pid": payment_public_id, "pub": public_id, "sid": session_id},
+    ).fetchone()

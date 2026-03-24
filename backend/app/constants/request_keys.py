@@ -1,6 +1,7 @@
 """Shared request/input payload key constants."""
 
 REQUEST_KEY_PUBLIC_ID = "public_id"
+REQUEST_KEY_SESSION_ID = "session_id"
 REQUEST_KEY_AMOUNT = "amount"
 REQUEST_KEY_IDEMPOTENCY_KEY = "idempotency_key"
 REQUEST_KEY_TURNSTILE_TOKEN = "turnstile_token"

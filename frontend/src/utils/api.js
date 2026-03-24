@@ -283,6 +283,16 @@ export const endpoints = {
       turnstile_token: turnstileToken || undefined,
     }, options);
   },
+  refreshPaymentUpi: async (paymentId, publicId, sessionId, options = {}) => {
+    const turnstileToken = await getTurnstileToken("payment_create");
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
+    const payload = {
+      public_id: safePublicId,
+      turnstile_token: turnstileToken || undefined,
+    };
+    if (sessionId) payload.session_id = sessionId;
+    return api.post(API_ROUTES.refreshPaymentUpi(paymentId), payload, options);
+  },
   getPaymentQr: (paymentId, options = {}) => api.get(API_ROUTES.paymentQr(paymentId), options),
   getPaymentStatus: (paymentId, options = {}, paymentToken = null) => {
     const headers = { ...(options.headers || {}) };
