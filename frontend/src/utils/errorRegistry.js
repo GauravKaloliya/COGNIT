@@ -305,7 +305,8 @@ export function getErrorMessage(errorCode, lang = DEFAULT_LANGUAGE, params = {})
   
   // Replace template variables
   Object.keys(params).forEach(key => {
-    message = message.replace(`{${key}}`, params[key]);
+    const pattern = new RegExp(`\\{${key}\\}`, "g");
+    message = message.replace(pattern, String(params[key]));
   });
 
   const paymentAmount = Number(runtimeConfig.paymentAmount);

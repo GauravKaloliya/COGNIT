@@ -74,3 +74,14 @@ QUERY_FETCH_TOKEN_MINT_ROW = text("""
       AND pr.session_id = :sid
     LIMIT 1
 """)
+
+QUERY_FETCH_PAYMENT_REFRESH_ROW = text("""
+    SELECT p.id, p.participant_id, p.status, p.amount, p.upi_account_id, pr.session_id
+    FROM payments p
+    JOIN participants pr ON pr.id = p.participant_id
+    WHERE p.public_id = :pid
+      AND pr.public_id = :pub
+      AND pr.session_id = :sid
+    LIMIT 1
+    FOR UPDATE
+""")

@@ -31,6 +31,7 @@ from app.constants.event_constants import (
 from app.constants.audit_details import (
     AUDIT_DETAIL_PAYMENT_CREATED,
     AUDIT_DETAIL_PAYMENT_CREATE_FAILED,
+    AUDIT_DETAIL_PAYMENT_REFRESHED,
     AUDIT_DETAIL_PAYMENT_REUSED,
 )
 from app.constants.log_messages import (
@@ -47,15 +48,18 @@ from app.constants.request_keys import (
     REQUEST_KEY_AMOUNT,
     REQUEST_KEY_IDEMPOTENCY_KEY,
     REQUEST_KEY_PUBLIC_ID,
+    REQUEST_KEY_SESSION_ID,
     REQUEST_KEY_TURNSTILE_TOKEN,
 )
 from app.constants.payment_constants import (
+    PAYMENT_STATUS_PENDING,
     PAYMENT_STATUS_READ_ALLOWED,
 )
 from app.constants.route_constants import (
     INTERNAL_PAYMENT_VERIFY_ROUTE,
     PAYMENTS_CREATE_ROUTE,
     PAYMENT_QR_ROUTE,
+    PAYMENT_REFRESH_UPI_ROUTE,
     PAYMENT_STATUS_ROUTE,
     PAYMENT_TOKEN_ROUTE,
     PAYMENT_UPLOAD_URL_ROUTE,
@@ -94,6 +98,7 @@ from app.services import (
     fetch_used_upis_for_participant,
     enqueue_payment_audit,
     fetch_active_payment_for_reuse,
+    fetch_payment_refresh_row,
     get_participant_session_id,
     is_duplicate_active_payment_error,
     is_expected_payment_amount,
@@ -289,6 +294,138 @@ def create_payment():
             details=AUDIT_DETAIL_PAYMENT_CREATE_FAILED.format(error=str(e)[:300]),
             request_data={"amount": amount, "public_id_prefix": public_id[:8]},
         )
+        return create_error_response("SYS_PAYMENT_CREATE_FAILED")
+
+
+@payment_bp.route(PAYMENT_REFRESH_UPI_ROUTE, methods=[HTTP_METHOD_POST])
+@limiter.limit(PAYMENT_CREATE_RATE_LIMIT)
+@track_performance
+def refresh_payment_upi(payment_public_id: str):
+    """Create a fresh payment session with a different UPI for the same participant."""
+    data = request.json or {}
+    public_id = (data.get(REQUEST_KEY_PUBLIC_ID) or "").strip()
+    session_id = (data.get(REQUEST_KEY_SESSION_ID) or "").strip()
+    turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
+
+    if not public_id or not session_id:
+        missing = []
+        if not public_id:
+            missing.append(REQUEST_KEY_PUBLIC_ID)
+        if not session_id:
+            missing.append(REQUEST_KEY_SESSION_ID)
+        return create_error_response("VAL_PAYMENT_TOKEN_FIELDS_REQUIRED", fields=missing)
+
+    ok, _ts_data = verify_turnstile_token(
+        turnstile_token,
+        request.remote_addr,
+        request.host,
+        endpoint=request.path,
+    )
+    if not ok:
+        return create_error_response("BOT_PAYMENT_CREATE_FAILED")
+
+    try:
+        db = get_db()
+    except Exception as e:
+        logger.error(LOG_PAYMENT_CREATE_DB_FAILED, getattr(g, "request_id", None), e)
+        return create_error_response("SYS_PAYMENT_CREATE_FAILED")
+
+    refresh_row = fetch_payment_refresh_row(
+        db,
+        payment_public_id=payment_public_id,
+        public_id=public_id,
+        session_id=session_id,
+    )
+    if not refresh_row:
+        return create_error_response("AUTH_PAYMENT_REFRESH_ACCESS_DENIED")
+
+    current_payment_id, participant_id, current_status, amount, current_upi_account_id, participant_session_id = refresh_row
+    if current_status != PAYMENT_STATUS_PENDING:
+        return create_error_response("PAY_PAYMENT_REFRESH_INVALID_STATE")
+
+    actual_amount = normalize_payment_amount(amount)
+    if not is_expected_payment_amount(actual_amount):
+        return create_error_response("PAY_PAYMENT_CREATE_INVALID_AMOUNT")
+
+    used_upis = fetch_used_upis_for_participant(
+        db,
+        participant_id=participant_id,
+        now_utc=datetime.now(timezone.utc),
+    )
+    if current_upi_account_id is not None:
+        used_upis = set(used_upis)
+        used_upis.add(int(current_upi_account_id))
+
+    selection = select_upi_for_payment(
+        db,
+        user_key=get_ip_hash(),
+        session_id=participant_session_id or session_id,
+        used_upis=used_upis,
+        allow_used_fallback=False,
+    )
+    selection_error = payment_selection_error_response(selection)
+    if selection_error is not None:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return selection_error
+    if str(selection.get("status") or "").upper() != "OK":
+        return create_error_response("PAY_UPI_ALTERNATE_UNAVAILABLE")
+
+    try:
+        mark_existing_active_payments_failed(db, participant_id)
+        payment_row, signature, expires_at, expires_str = create_payment_record(
+            db,
+            participant_id=participant_id,
+            public_id=public_id,
+            amount=actual_amount,
+            upi_account_id=selection.get("upi_account_id"),
+            upi_vpa=selection.get("upi_vpa"),
+            upi_name=selection.get("upi_name"),
+        )
+        response_payload = build_payment_response_payload(
+            db,
+            payment_row_id=int(payment_row[0]),
+            payment_public_id=str(payment_row[1]),
+            participant_id=int(participant_id),
+            public_id=str(public_id),
+            amount=actual_amount,
+            expires_at=expires_at,
+            expires_str=expires_str,
+            signature=signature,
+            upi_vpa=selection.get("upi_vpa"),
+            upi_name=selection.get("upi_name"),
+            device_fingerprint=getattr(g, "device_fingerprint", None) or "",
+            session_id=participant_session_id or session_id,
+            time_remaining_seconds=PAYMENT_EXPIRY_SECONDS,
+        )
+        db.commit()
+        enqueue_payment_audit(
+            event_type=AUDIT_EVENT_PAYMENT_CREATE_SUCCESS,
+            payment_id=payment_row[0],
+            participant_id=participant_id,
+            details=AUDIT_DETAIL_PAYMENT_REFRESHED,
+            request_data={
+                "previous_payment_public_id": str(payment_public_id),
+                "public_id_prefix": public_id[:8],
+            },
+            response_data={
+                "payment_public_id": str(payment_row[1]),
+                "expires_at": expires_str,
+                "refreshed": True,
+            },
+            ip_hash=get_ip_hash(),
+            user_agent=request.headers.get("User-Agent", "")[:512],
+            device_fingerprint=getattr(g, "device_fingerprint", None) or "",
+        )
+        return success_response(response_payload)
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.error(LOG_PAYMENT_CREATE_FAILED, getattr(g, "request_id", None), e)
         return create_error_response("SYS_PAYMENT_CREATE_FAILED")
 
 @payment_bp.route(PAYMENT_QR_ROUTE, methods=[HTTP_METHOD_GET])
