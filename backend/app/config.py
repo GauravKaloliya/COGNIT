@@ -209,9 +209,6 @@ PAYMENT_EXPIRY_SECONDS = _required_int_env("PAYMENT_EXPIRY_SECONDS")
 PAYMENT_SCREENSHOT_TIMEZONE = _str_env("PAYMENT_SCREENSHOT_TIMEZONE", "Asia/Kolkata")
 PAYMENT_VERIFICATION_MAX_TIME_DIFF_SECONDS = 300
 
-# Optional UPI pool configuration (comma-separated).
-UPI_POOL_VPAS = _required_env("UPI_POOL_VPAS")
-
 UPI_PER_UPI_LIMIT = _int_env("UPI_PER_UPI_LIMIT", 20, min_value=1, max_value=200)
 UPI_USER_LIMIT = _int_env("UPI_USER_LIMIT", 6, min_value=1, max_value=50)
 UPI_COOLDOWN_SECONDS = _int_env("UPI_COOLDOWN_SECONDS", 600, min_value=60, max_value=86400)

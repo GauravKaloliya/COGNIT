@@ -11,8 +11,6 @@ from typing import Iterable
 from sqlalchemy import text
 
 from app.config import (
-    UPI_NAME,
-    UPI_POOL_VPAS,
     UPI_PER_UPI_LIMIT,
     UPI_USER_LIMIT,
     UPI_COOLDOWN_SECONDS,
@@ -29,14 +27,11 @@ STATUS_COOLDOWN = "COOLDOWN"
 STATUS_DISABLED = "DISABLED"
 
 
-QUERY_UPSERT_UPI_ACCOUNT = text("""
-    INSERT INTO upi_accounts (vpa, name, is_active)
-    VALUES (:vpa, :name, TRUE)
-    ON CONFLICT (vpa) DO UPDATE
-    SET name = EXCLUDED.name,
-        is_active = TRUE,
-        updated_at = CURRENT_TIMESTAMP
-    RETURNING id, vpa, name, is_active
+QUERY_FETCH_ACTIVE_UPI_ACCOUNTS = text("""
+    SELECT id, vpa, name, is_active
+    FROM upi_accounts
+    WHERE is_active = TRUE
+    ORDER BY id ASC
 """)
 
 
@@ -168,17 +163,6 @@ QUERY_UPDATE_PAYMENT_METADATA = text("""
 """)
 
 
-def _pool_from_config():
-    vpas = [v.strip() for v in (UPI_POOL_VPAS or "").split(",") if v.strip()]
-    if not vpas:
-        return []
-    pool = []
-    for idx, vpa in enumerate(vpas):
-        name = UPI_NAME
-        pool.append({"vpa": vpa, "name": name})
-    return pool
-
-
 def _local_day_bounds(now_utc: datetime):
     tz = ZoneInfo(PAYMENT_SCREENSHOT_TIMEZONE)
     local_now = now_utc.astimezone(tz)
@@ -189,21 +173,18 @@ def _local_day_bounds(now_utc: datetime):
 
 
 def _ensure_upi_accounts(db):
-    pool = _pool_from_config()
-    accounts = []
-    for item in pool:
-        row = db.execute(QUERY_UPSERT_UPI_ACCOUNT, {
-            "vpa": item["vpa"],
-            "name": item["name"],
-        }).fetchone()
-        if row:
-            accounts.append({
-                "id": int(row[0]),
-                "vpa": str(row[1]),
-                "name": str(row[2]),
-                "is_active": bool(row[3]),
-            })
-    return accounts
+    # DB-driven: add/remove UPI accounts by editing the `upi_accounts` table.
+    rows = db.execute(QUERY_FETCH_ACTIVE_UPI_ACCOUNTS).fetchall()
+    return [
+        {
+            "id": int(row[0]),
+            "vpa": str(row[1]),
+            "name": str(row[2]),
+            "is_active": bool(row[3]),
+        }
+        for row in rows
+        if row
+    ]
 
 
 def fetch_used_upis_for_participant(db, *, participant_id: int, now_utc: datetime):

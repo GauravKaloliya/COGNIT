@@ -510,6 +510,17 @@ CREATE TRIGGER trg_upi_accounts_updated_at
     BEFORE UPDATE ON upi_accounts
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+INSERT INTO upi_accounts (vpa, name, is_active)
+VALUES
+    ('iamgaurav225@okaxis', 'cognit', TRUE),
+    ('iamgaurav225-1@okaxis', 'cognit', TRUE),
+    ('arpitamakvana2000@okhdfcbank', 'cognit', TRUE),
+    ('9925998548-2@ybl', 'cognit', TRUE),
+    ('aabhathanki1511@oksbi', 'cognit', TRUE)
+ON CONFLICT (vpa) DO UPDATE SET
+    name = EXCLUDED.name,
+    is_active = EXCLUDED.is_active;
+
 CREATE TABLE IF NOT EXISTS upi_daily_stats (
     id                   BIGSERIAL PRIMARY KEY,
     upi_id               BIGINT NOT NULL REFERENCES upi_accounts(id) ON DELETE CASCADE,
