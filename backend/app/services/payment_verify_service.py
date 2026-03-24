@@ -7,7 +7,6 @@ from flask import jsonify
 from app.config import (
     ERROR_CODES,
     S3_BUCKET_NAME,
-    UPI_NAME,
     PAYMENT_AMOUNT,
     FRAUD_SCORE_WEIGHTS,
     FRAUD_UNKNOWN_REASON_WEIGHT,
@@ -392,7 +391,6 @@ def process_verify_upload(
             extracted_text,
             amount,
             confidence,
-            UPI_NAME,
             time_window_start_utc=timer_activated_at,
             time_window_end_utc=expires_at,
         )
@@ -635,7 +633,7 @@ def process_internal_verify(
         return create_error_response("SYS_SERVICE_UNAVAILABLE")
 
     is_valid, detected_app, failures = verify_payment_screenshot(
-        image, extracted_text, amount, confidence, UPI_NAME
+        image, extracted_text, amount, confidence
     )
     detected_app = detected_app or PAYMENT_DETECTED_APP_UNKNOWN
     filtered_text = sanitize_extracted_text_for_storage(extracted_text, detected_app)

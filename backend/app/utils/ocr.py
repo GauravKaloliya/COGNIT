@@ -315,14 +315,6 @@ def _is_datetime_ambiguous(text: str, app: str) -> bool:
     return len(set(date_matches)) > 1
 
 
-def _has_expected_recipient_hint(text: str, expected_upi_name: str) -> bool:
-    normalized_expected = re.sub(r"[^a-z0-9\s]", " ", (expected_upi_name or "").lower())
-    tokens = [token for token in normalized_expected.split() if len(token) >= 3]
-    if not tokens:
-        return False
-    return any(token in text for token in tokens)
-
-
 def _looks_like_gpay_layout(
     text: str,
     *,
@@ -330,7 +322,6 @@ def _looks_like_gpay_layout(
     has_bhim: bool,
     has_success: bool,
     has_failure: bool,
-    expected_upi_name: str,
 ) -> bool:
     lower = text.lower()
     if has_paytm or has_bhim:
@@ -347,7 +338,7 @@ def _looks_like_gpay_layout(
         return False
     if not has_success or has_failure:
         return False
-    return _has_expected_recipient_hint(lower, expected_upi_name)
+    return True
 
 
 def verify_payment_screenshot(
@@ -355,7 +346,6 @@ def verify_payment_screenshot(
     text: str,
     expected_amount: float,
     confidence: float,
-    expected_upi_name: str,
     time_window_start_utc: Optional[datetime] = None,
     time_window_end_utc: Optional[datetime] = None,
 ) -> Tuple[bool, Optional[str], List[str]]:
@@ -378,8 +368,6 @@ def verify_payment_screenshot(
         text: OCR extracted text
         expected_amount: Expected payment amount (unused, amount must be ₹1)
         confidence: OCR confidence score (unused for validation)
-        expected_upi_name: Expected UPI recipient name from config
-
     Returns:
         Tuple of (is_valid, detected_app, failure_reasons)
     """
@@ -405,7 +393,6 @@ def verify_payment_screenshot(
         has_bhim=has_bhim,
         has_success=has_success,
         has_failure=has_failure,
-        expected_upi_name=expected_upi_name,
     ):
         detected_app = APP_GPAY
 
