@@ -130,6 +130,11 @@ def create_participant():
     """Create a new participant registration."""
     data = request.json or {}
     turnstile_token = (data.get(REQUEST_KEY_TURNSTILE_TOKEN) or "").strip()
+    idempotency_key = (
+        request.headers.get("X-Idempotency-Key")
+        or data.get(REQUEST_KEY_IDEMPOTENCY_KEY)
+        or ""
+    ).strip()[:128]
     missing = collect_missing_participant_fields(data)
     if missing:
         return create_error_response("VAL_PARTICIPANT_CREATE_FIELDS_REQUIRED", fields=missing)
@@ -142,7 +147,13 @@ def create_participant():
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
 
-    ok, _ts_data = verify_turnstile_token(turnstile_token, request.remote_addr, request.host, endpoint=request.path)
+    ok, _ts_data = verify_turnstile_token(
+        turnstile_token,
+        request.remote_addr,
+        request.host,
+        endpoint=request.path,
+        idempotency_key=idempotency_key,
+    )
     if not ok:
         return create_error_response("BOT_PARTICIPANT_CREATE_FAILED")
 
