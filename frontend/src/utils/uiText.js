@@ -35,6 +35,7 @@ const TEXT = {
     "common.processing": "Processing...",
     "common.submitting": "Submitting...",
     "common.pleaseWait": "Please wait...",
+    "common.retry": "Retry",
     "common.reload": "Reload",
     "common.progress": "Progress",
     "consent.estimatedDurationPrefix": "Estimated duration:",
