@@ -50,7 +50,6 @@ export const CONSENT_CONTENT = {
     },
     {
       heading: uiText("consent.sectionCompensation"),
-      dynamicList: true,
       paragraphs: [
         uiText("consent.sectionCompensationP1"),
       ],

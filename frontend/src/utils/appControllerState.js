@@ -44,7 +44,7 @@ export function createClientId() {
   return createFallbackUuid();
 }
 
-export function validateStageTransition(currentStage, targetStage, paymentVerified = false) {
+export function validateStageTransition(currentStage, targetStage) {
   const currentIndex = APP_STAGE_ORDER.indexOf(currentStage);
   const targetIndex = APP_STAGE_ORDER.indexOf(targetStage);
   if (targetIndex <= currentIndex) return true;
@@ -52,9 +52,7 @@ export function validateStageTransition(currentStage, targetStage, paymentVerifi
     case APP_FLOW.stages.consent:
       return targetStage === APP_FLOW.stages.userDetails;
     case APP_FLOW.stages.userDetails:
-      return targetStage === APP_FLOW.stages.payment;
-    case APP_FLOW.stages.payment:
-      return targetStage === APP_FLOW.stages.survey && paymentVerified;
+      return targetStage === APP_FLOW.stages.survey;
     case APP_FLOW.stages.survey:
       return targetStage === APP_FLOW.stages.finished;
     default:
@@ -99,7 +97,6 @@ export function deriveMaxAllowedStage({
   userDetailsSubmitted,
   demographicsComplete,
   emailVerified,
-  paymentVerified,
   surveyCompleted,
   surveyFeedbackReady,
   lastSubmissionSucceeded,
@@ -107,7 +104,6 @@ export function deriveMaxAllowedStage({
   if (!consentGiven) return APP_FLOW.stages.consent;
   if (!hasParticipant || !userDetailsSubmitted || !demographicsComplete) return APP_FLOW.stages.userDetails;
   if (!emailVerified) return APP_FLOW.stages.userDetails;
-  if (!paymentVerified) return APP_FLOW.stages.payment;
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;
   if (surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
   if (currentStage === APP_FLOW.stages.finished) return APP_FLOW.stages.finished;

@@ -5,7 +5,7 @@ import { getDisplayErrorMessage } from "../utils/appError";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { requirePublicId } from "../utils/publicId";
-import { PAYMENT_API_FIELDS, SURVEY_API_FIELDS } from "../constants/fields";
+import { SURVEY_API_FIELDS } from "../constants/fields";
 import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
 import { scheduleTimeout } from "../utils/timing";
@@ -139,7 +139,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
 
       const attentionStatus = result[SURVEY_API_FIELDS.attentionStatus] || {};
       if (attentionStatus[SURVEY_API_FIELDS.isAttentionCheck] && result[SURVEY_API_FIELDS.attentionPassed] === false) {
-        if (attentionStatus[PAYMENT_API_FIELDS.failureReasons]?.includes("too_fast_attention")) {
+        if (attentionStatus[SURVEY_API_FIELDS.failureReasons]?.includes("too_fast_attention")) {
           addToast(uiText("survey.attentionTooFast"), TOAST_VARIANTS.warning);
         } else {
           addToast(uiText("survey.attentionFailed"), TOAST_VARIANTS.warning);

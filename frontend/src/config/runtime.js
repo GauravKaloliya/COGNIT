@@ -3,11 +3,6 @@ const toInt = (value, fallback) => {
   return Number.isFinite(num) ? num : fallback;
 };
 
-const toFloat = (value, fallback) => {
-  const num = Number.parseFloat(String(value ?? ""));
-  return Number.isFinite(num) ? num : fallback;
-};
-
 const toBool = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value).toLowerCase() === "true";
@@ -35,7 +30,6 @@ export const runtimeConfig = {
   toastAutoDismissMs: 4000,
   confettiDurationMs: 1200,
   serviceRetrySeconds: 5,
-  paymentRetrySeconds: 5,
   clientErrorMaxQueue: 20,
   clientErrorMaxFieldLength: 600,
   clientErrorMaxSendAttempts: 5,
@@ -43,13 +37,6 @@ export const runtimeConfig = {
   clientErrorBlockCooldownMs: 900000,
   turnstileEnabled: false,
   turnstileSiteKey: "",
-  paymentStateSchemaVersion: 1,
-  paymentStateTtlMs: 3600000,
-  paymentCreateTimeoutMs: 15000,
-  paymentTimerDurationMs: 300000,
-  paymentTimerTickMs: 1000,
-  paymentAmount: 1,
-  rewardAmount: 10,
   emailOtpLength: 6,
   emailOtpExpirySeconds: 300,
   emailOtpResendCooldownSeconds: 30,
@@ -76,11 +63,9 @@ export const runtimeConfig = {
     activeTabLock: "cognit_active_tab_lock_v1",
     darkMode: "darkMode",
     stage: "stage",
-    paymentSubStage: "paymentSubStage",
     consentGiven: "consentGiven",
     userDetailsSubmitted: "userDetailsSubmitted",
     emailVerified: "emailVerified",
-    paymentVerified: "paymentVerified",
     demographics: "demographics",
     survey: "survey",
     surveyCompleted: "surveyCompleted",
@@ -97,13 +82,6 @@ export const runtimeConfig = {
     autoLocationPrompt: "location_auto_prompt_v1",
     autoLocationSuccess: "location_auto_success_v1",
     reverseGeocodeState: "reverse_geocode_state_v1",
-    paymentContentPending: "payment_content_pending_continue_v1",
-    paymentState: "payment_link_state_v1",
-    paymentTimerExpires: "payment_timer_expires_at",
-    paymentToken: "payment_token",
-    paymentId: "payment_id",
-    paymentPendingCreate: "payment_pending_create_v1",
-    paymentPendingVerify: "payment_pending_verify_v1",
     surveyDraftPrefix: "survey_draft",
     surveyDraftActivePrefix: "survey_draft_active",
     surveyPendingSubmit: "survey_pending_submit_v1",
@@ -114,13 +92,6 @@ export const runtimeConfig = {
     clearOnClose: "clear_on_close_v1",
     sessionAlive: "session_alive_v1",
   },
-  paymentUploadMaxMb: toFloat(
-    import.meta.env.VITE_PAYMENT_UPLOAD_MAX_MB,
-    toFloat(import.meta.env.VITE_MAX_UPLOAD_MB, 8),
-  ),
-  minScreenshotWidth: 600,
-  minScreenshotHeight: 640,
-  minLaplacianVariance: 22,
   surveyDraftSchemaVersion: 1,
   consentDraftSchemaVersion: 1,
   consentDraftTtlMs: 3600000,

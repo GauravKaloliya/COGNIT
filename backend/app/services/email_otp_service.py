@@ -158,7 +158,7 @@ def build_email_otp_payload(*, email: str, otp: str, public_id: str) -> dict:
     }
 
 
-def send_email_otp(payload: dict, *, request_id: str | None = None) -> None:
+def send_email_otp(payload: dict) -> None:
     token = _build_jwt()
     headers = {"Authorization": f"Bearer {token}"}
     try:
@@ -181,10 +181,10 @@ def send_email_otp(payload: dict, *, request_id: str | None = None) -> None:
         raise EmailOtpSendError(kind="request_error", detail=str(exc)) from exc
 
 
-def enqueue_email_otp(payload: dict, *, otp_id: int, request_id: str | None = None) -> None:
+def enqueue_email_otp(payload: dict, *, otp_id: int) -> None:
     def _send() -> None:
         try:
-            send_email_otp(payload, request_id=request_id)
+            send_email_otp(payload)
         except Exception:
             try:
                 with engine.begin() as conn:

@@ -1,8 +1,6 @@
 import React from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
-import PaymentContentPage from "./pages/PaymentContentPage.jsx";
-import PaymentLinkPage from "./pages/PaymentLinkPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
 import SurveyFeedPage from "./pages/SurveyFeedPage.jsx";
 import FinishedPage from "./pages/FinishedPage.jsx";
@@ -37,12 +35,8 @@ class ErrorBoundary extends React.Component {
         <div className="panel">
           <h1>{getErrorMessage("SYS_001_0001")}</h1>
           <p>{getErrorMessage("SYS_002_0023")}</p>
-          {this.state.error?.message && (
-            <p className="error-text">{this.state.error.message}</p>
-          )}
-          {this.state.error?.stack && (
-            <pre className="error-details-pre">{this.state.error.stack}</pre>
-          )}
+          {this.state.error?.message && <p className="error-text">{this.state.error.message}</p>}
+          {this.state.error?.stack && <pre className="error-details-pre">{this.state.error.stack}</pre>}
         </div>
       );
     }
@@ -94,9 +88,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const {
     isActiveTabOwner,
     stage,
-    paymentSubStage,
     publicId,
-    sessionId,
     demographics,
     setDemographics,
     setStage,
@@ -123,11 +115,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleEmailVerified,
-    handlePaymentComplete,
-    handlePaymentContentToLink,
     handleAppError,
     clearUserStorage,
-    handleParticipantNotFound,
   } = useAppController();
   const isMobile = useIsMobile();
   const [showBackToTop, setShowBackToTop] = React.useState(false);
@@ -150,7 +139,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     const media = window.matchMedia("(max-width: 767px)");
     if (!media.matches) return;
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-  }, [stage, paymentSubStage, systemReady]);
+  }, [stage, systemReady]);
 
   const renderContent = () => {
     if (systemChecking && !systemReady) {
@@ -165,8 +154,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
 
     if (systemError && !systemReady) return null;
 
-      switch (stage) {
-        case "consent":
+    switch (stage) {
+      case "consent":
         return (
           <ConsentPage
             publicId={publicId}
@@ -185,18 +174,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
             onEmailVerified={handleEmailVerified}
             addToast={addToast}
             systemReady={systemReady}
-          />
-        );
-      case "payment":
-        return paymentSubStage === "content" ? (
-          <PaymentContentPage onNext={handlePaymentContentToLink} />
-        ) : (
-          <PaymentLinkPage
-            onNext={handlePaymentComplete}
-            publicId={publicId}
-            sessionId={sessionId}
-            addToast={addToast}
-            onParticipantNotFound={handleParticipantNotFound}
           />
         );
       case "survey":
@@ -245,14 +222,14 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
               {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
             </div>
             <div className="header-actions">
-            <DSButton
-              variant="ghost"
-              className="dark-mode-toggle"
-              onClick={toggleDarkMode}
-              title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
-            >
-              <ThemeToggleIcon darkMode={darkMode} />
-            </DSButton>
+              <DSButton
+                variant="ghost"
+                className="dark-mode-toggle"
+                onClick={toggleDarkMode}
+                title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
+              >
+                <ThemeToggleIcon darkMode={darkMode} />
+              </DSButton>
             </div>
           </header>
           <div className="panel status-panel">
@@ -262,9 +239,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
               </div>
             )}
             <h2>{uiText("app.anotherTabTitle")}</h2>
-            <p className="status-message">
-              {uiText("app.anotherTabMessage")}
-            </p>
+            <p className="status-message">{uiText("app.anotherTabMessage")}</p>
             <DSButton variant="primary" onClick={() => claimActiveTabLock()}>
               {uiText("app.reclaimTab")}
             </DSButton>
@@ -331,9 +306,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
 
         <FlowStepper stage={stage} />
 
-        <div className="route-transition">
-          {renderContent()}
-        </div>
+        <div className="route-transition">{renderContent()}</div>
 
         <div className="branding-footer">{uiText("app.footerCredit")}</div>
       </div>

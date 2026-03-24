@@ -1,26 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { apiFetch, endpoints } from "../utils/api";
+import { apiFetch } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { runtimeConfig } from "../config/runtime";
 import { BROWSER_EVENTS } from "../constants/browser";
-import { REQUEST_CACHE, REQUEST_CODES, REQUEST_METHODS, ERROR_NAMES } from "../constants/request";
-import { APP_FLOW } from "../config/appFlow";
-import { TOAST_VARIANTS } from "../constants/ui";
+import { REQUEST_CACHE, REQUEST_METHODS, ERROR_NAMES } from "../constants/request";
 import { API_ROUTES } from "../constants/routes";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
-import { requirePublicId } from "../utils/publicId";
 
-export function useSystemHealth({
-  publicId,
-  stage,
-  paymentVerified,
-  pauseSurveyPaymentGuard = false,
-  isActiveTabOwner = true,
-  setPaymentVerified,
-  setStage,
-  setPaymentSubStage,
-  addToast,
-}) {
+export function useSystemHealth({ isActiveTabOwner = true }) {
   const [systemReady, setSystemReady] = useState(false);
   const [systemError, setSystemError] = useState(null);
   const [systemChecking, setSystemChecking] = useState(true);
@@ -30,7 +17,6 @@ export function useSystemHealth({
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const probeFailCountRef = useRef(0);
   const healthAbortRef = useRef(null);
-  const paymentStatusAbortRef = useRef(null);
   const healthBackoffRef = useRef(1);
 
   const markApiReachable = useCallback(() => {
@@ -47,9 +33,7 @@ export function useSystemHealth({
   }, []);
 
   const probeApiReachability = useCallback(async () => {
-    if (!isActiveTabOwner) {
-      return false;
-    }
+    if (!isActiveTabOwner) return false;
     if (!navigator.onLine) {
       setBrowserOnline(false);
       setApiReachable(false);
@@ -73,7 +57,7 @@ export function useSystemHealth({
       markProbeFailure();
       return false;
     }
-  }, [markApiReachable, markProbeFailure, isActiveTabOwner]);
+  }, [isActiveTabOwner, markApiReachable, markProbeFailure]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -143,9 +127,7 @@ export function useSystemHealth({
           clearScheduledTimeout(timeoutGuard);
         }
       } catch (err) {
-        if (err?.name === ERROR_NAMES.abort) {
-          return;
-        }
+        if (err?.name === ERROR_NAMES.abort) return;
         if (cancelled) return;
         markProbeFailure();
         setSystemReady(false);
@@ -154,9 +136,7 @@ export function useSystemHealth({
       } finally {
         healthAbortRef.current = null;
         if (!cancelled) setSystemChecking(false);
-        if (!cancelled) {
-          scheduleNext(checkHealth, runtimeConfig.healthCheckIntervalMs * healthBackoffRef.current);
-        }
+        if (!cancelled) scheduleNext(checkHealth, runtimeConfig.healthCheckIntervalMs * healthBackoffRef.current);
       }
     }
 
@@ -170,49 +150,6 @@ export function useSystemHealth({
       }
     };
   }, [retryTrigger, markApiReachable, markProbeFailure, isActiveTabOwner]);
-
-  useEffect(() => {
-    const verifyPaymentForSurvey = async () => {
-      if (stage === APP_FLOW.stages.survey && !paymentVerified && systemReady && !pauseSurveyPaymentGuard) {
-        const effectivePublicId = requirePublicId(publicId);
-        if (!effectivePublicId) return;
-        try {
-          if (paymentStatusAbortRef.current) {
-            paymentStatusAbortRef.current.abort();
-          }
-          const controller = new AbortController();
-          paymentStatusAbortRef.current = controller;
-          const paymentStatus = await endpoints.getParticipantPaymentStatus(effectivePublicId, { signal: controller.signal });
-          if (pauseSurveyPaymentGuard) return;
-          if (paymentStatus.is_verified) {
-            setPaymentVerified(true);
-          } else {
-            addToast(getErrorMessage("PAY_001_0005"), TOAST_VARIANTS.error);
-            setStage(APP_FLOW.stages.payment);
-            setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-          }
-        } catch (err) {
-          if (err?.code === REQUEST_CODES.aborted) {
-            return;
-          }
-          if (pauseSurveyPaymentGuard) return;
-          addToast(getErrorMessage("PAY_001_0005"), TOAST_VARIANTS.error);
-          setStage(APP_FLOW.stages.payment);
-          setPaymentSubStage(APP_FLOW.paymentSubStages.content);
-        } finally {
-          paymentStatusAbortRef.current = null;
-        }
-      }
-    };
-
-    verifyPaymentForSurvey();
-    return () => {
-      if (paymentStatusAbortRef.current) {
-        paymentStatusAbortRef.current.abort();
-        paymentStatusAbortRef.current = null;
-      }
-    };
-  }, [stage, systemReady, paymentVerified, publicId, addToast, setPaymentVerified, setStage, setPaymentSubStage, pauseSurveyPaymentGuard]);
 
   return {
     systemReady,

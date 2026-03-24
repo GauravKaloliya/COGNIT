@@ -6,9 +6,9 @@ Provides common helper functions for validation, responses, and audit logging.
 import hashlib
 import logging
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
-from flask import g, has_request_context, jsonify, request
+from flask import Response, g, has_request_context, jsonify, request
 from sqlalchemy import text
 
 from app.config import (
@@ -180,7 +180,7 @@ def log_audit(
 # Response Helpers
 # ────────────────────────────────────────────────
 
-def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
+def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
     """Generate strict standardized error response."""
     error_def = ERROR_CODES.get(error_key, ERROR_CODES["SYS_INTERNAL_ERROR"])
     status = int(error_def.get("status", 500))
@@ -191,25 +191,27 @@ def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
 
     base_message = error_def["message"].format(**kwargs) if kwargs else error_def["message"]
     request_id = getattr(g, "request_id", None)
-    response = {
+    error_payload: dict[str, Any] = {
+        RESPONSE_KEY_CODE: error_def["code"],
+        RESPONSE_KEY_MESSAGE: base_message,
+        RESPONSE_KEY_CATEGORY: category,
+        RESPONSE_KEY_HTTP_STATUS: status,
+        RESPONSE_KEY_RETRYABLE: bool(retryable),
+        RESPONSE_KEY_REQUEST_ID: request_id,
+    }
+    response: dict[str, Any] = {
         RESPONSE_KEY_SUCCESS: False,
-        RESPONSE_KEY_ERROR: {
-            RESPONSE_KEY_CODE: error_def["code"],
-            RESPONSE_KEY_MESSAGE: base_message,
-            RESPONSE_KEY_CATEGORY: category,
-            RESPONSE_KEY_HTTP_STATUS: status,
-            RESPONSE_KEY_RETRYABLE: bool(retryable),
-            RESPONSE_KEY_REQUEST_ID: request_id,
-        }
+        RESPONSE_KEY_ERROR: error_payload,
     }
     if "field" in error_def:
-        response[RESPONSE_KEY_ERROR][RESPONSE_KEY_FIELD] = error_def["field"]
+        error_payload[RESPONSE_KEY_FIELD] = error_def["field"]
     if "fields" in kwargs and kwargs.get("fields") is not None:
-        response[RESPONSE_KEY_ERROR][RESPONSE_KEY_FIELDS] = kwargs["fields"]
+        error_payload[RESPONSE_KEY_FIELDS] = kwargs["fields"]
     if kwargs.get("details"):
-        response[RESPONSE_KEY_ERROR][RESPONSE_KEY_DETAILS] = kwargs["details"]
+        error_payload[RESPONSE_KEY_DETAILS] = kwargs["details"]
     has_request = has_request_context()
-    route_rule = getattr(request, "url_rule", None).rule if has_request and getattr(request, "url_rule", None) else None
+    route_rule_obj = getattr(request, "url_rule", None) if has_request else None
+    route_rule = route_rule_obj.rule if route_rule_obj is not None else None
     path = request.path if has_request else None
     method = request.method if has_request else None
     vercel_id = request.headers.get("x-vercel-id") if has_request else None
@@ -245,9 +247,9 @@ def error_response(error_key: str, **kwargs) -> Tuple[Any, int]:
     return resp, 200
 
 
-def success_response(data: Optional[Dict] = None, message: Optional[str] = None):
+def success_response(data: Optional[dict[str, Any]] = None, message: Optional[str] = None) -> Response:
     """Generate standardized success response."""
-    response = {RESPONSE_KEY_SUCCESS: True}
+    response: dict[str, Any] = {RESPONSE_KEY_SUCCESS: True}
     if message:
         response[RESPONSE_KEY_MESSAGE] = message
     if data:
@@ -256,10 +258,10 @@ def success_response(data: Optional[Dict] = None, message: Optional[str] = None)
 
 
 def create_error_response(
-    error_key: str, 
-    details: Optional[dict] = None, 
+    error_key: str,
+    details: Optional[dict[str, Any]] = None,
     **kwargs,
-) -> Tuple[Any, int]:
+) -> tuple[Response, int]:
     """Project-wide error response helper."""
     return error_response(error_key, details=details, **kwargs)
 
@@ -275,7 +277,7 @@ def get_file_extension(filename: str) -> str:
     return filename.split('.')[-1].lower() if '.' in filename else ""
 
 
-def validate_image_extension(filename: str) -> Tuple[bool, str, str]:
+def validate_image_extension(filename: str) -> tuple[bool, str, str]:
     """
     Validate image file extension.
     

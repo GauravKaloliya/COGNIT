@@ -218,7 +218,7 @@ ON CONFLICT (code) DO NOTHING;
 -- MAIN TABLES
 -- =====================================================================
 -- App-layer ownership note:
--- payment workflow transitions, participant progression, and submission
+-- participant progression and submission workflow
 -- eligibility are enforced in backend services. The schema keeps structural
 -- integrity, timestamp convenience triggers, and immutable audit protections.
 CREATE TABLE IF NOT EXISTS participants (
@@ -236,10 +236,8 @@ CREATE TABLE IF NOT EXISTS participants (
     consent_at       TIMESTAMPTZ,
     email_verified   BOOLEAN NOT NULL DEFAULT FALSE,
     email_verified_at TIMESTAMPTZ,
-    payment_status VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (payment_status IN ('pending','paid','failed','refunded','cancelled')),
     stage VARCHAR(32) NOT NULL DEFAULT 'consent'
-        CHECK (stage IN ('consent','user-details','payment-content','payment-link','payment','survey','finished')),
+        CHECK (stage IN ('consent','user-details','survey','finished')),
     stage_updated_at TIMESTAMPTZ,
     ip_hash          CHAR(64) NOT NULL CHECK (length(ip_hash) = 64),
     user_agent       VARCHAR(512),
@@ -267,10 +265,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_email    ON participan
 CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (public_id);
 CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_participants_payment_status ON participants (payment_status);
 
-COMMENT ON COLUMN participants.payment_status IS
-    'App-owned participant payment summary state. Mirrors frontend/backend flow language, not provider-specific payment states.';
 COMMENT ON COLUMN participants.stage IS
     'App-owned participant progression stage used by frontend/backends to coordinate flow.';
 COMMENT ON COLUMN participants.stage_updated_at IS
@@ -456,7 +451,6 @@ CREATE TABLE IF NOT EXISTS participant_activity_stats (
     total_submissions  INTEGER NOT NULL DEFAULT 0,
     survey_rounds      INTEGER NOT NULL DEFAULT 0,
     priority_eligible  BOOLEAN NOT NULL DEFAULT FALSE,
-    last_reward_check  TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -493,265 +487,6 @@ CREATE TRIGGER trg_priority_participants_updated
 
 CREATE INDEX IF NOT EXISTS idx_priority_participants_eligible
     ON priority_participants (is_eligible, avg_quality_score DESC, completed_rounds DESC);
-
--- =====================================================================
--- PAYMENTS & FRAUD
--- =====================================================================
-CREATE TABLE IF NOT EXISTS upi_accounts (
-    id         BIGSERIAL PRIMARY KEY,
-    vpa        VARCHAR(256) NOT NULL UNIQUE,
-    name       VARCHAR(120) NOT NULL,
-    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER trg_upi_accounts_updated_at
-    BEFORE UPDATE ON upi_accounts
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-INSERT INTO upi_accounts (vpa, name, is_active)
-VALUES
-    ('iamgaurav225@okaxis', 'cognit', TRUE),
-    ('iamgaurav225-1@okaxis', 'cognit', TRUE),
-    ('arpitamakvana2000@okhdfcbank', 'cognit', TRUE),
-    ('9925998548-2@ybl', 'cognit', TRUE),
-    ('aabhathanki1511@oksbi', 'cognit', TRUE)
-ON CONFLICT (vpa) DO UPDATE SET
-    name = EXCLUDED.name,
-    is_active = EXCLUDED.is_active;
-
-CREATE TABLE IF NOT EXISTS upi_daily_stats (
-    id                   BIGSERIAL PRIMARY KEY,
-    upi_id               BIGINT NOT NULL REFERENCES upi_accounts(id) ON DELETE CASCADE,
-    stats_date           DATE NOT NULL,
-    attempts_today       INTEGER NOT NULL DEFAULT 0 CHECK (attempts_today >= 0),
-    failures_today       INTEGER NOT NULL DEFAULT 0 CHECK (failures_today >= 0),
-    recent_failures      INTEGER NOT NULL DEFAULT 0 CHECK (recent_failures >= 0),
-    consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
-    last_failure_time    TIMESTAMPTZ,
-    last_1min_attempts   INTEGER NOT NULL DEFAULT 0 CHECK (last_1min_attempts >= 0),
-    last_burst_reset     TIMESTAMPTZ,
-    cooldown_until       TIMESTAMPTZ,
-    status               VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
-        CHECK (status IN ('ACTIVE','COOLDOWN','DISABLED')),
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (upi_id, stats_date)
-);
-
-CREATE TRIGGER trg_upi_daily_stats_updated_at
-    BEFORE UPDATE ON upi_daily_stats
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX IF NOT EXISTS idx_upi_daily_stats_date ON upi_daily_stats (stats_date);
-CREATE INDEX IF NOT EXISTS idx_upi_daily_stats_status ON upi_daily_stats (status);
-
-CREATE TABLE IF NOT EXISTS upi_global_daily (
-    stats_date      DATE PRIMARY KEY,
-    attempts_today  INTEGER NOT NULL DEFAULT 0 CHECK (attempts_today >= 0),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER trg_upi_global_daily_updated_at
-    BEFORE UPDATE ON upi_global_daily
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TABLE IF NOT EXISTS upi_user_daily_attempts (
-    stats_date  DATE NOT NULL,
-    user_key    VARCHAR(128) NOT NULL,
-    attempts    INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (stats_date, user_key)
-);
-
-CREATE TRIGGER trg_upi_user_daily_attempts_updated_at
-    BEFORE UPDATE ON upi_user_daily_attempts
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TABLE IF NOT EXISTS upi_session_daily_attempts (
-    stats_date  DATE NOT NULL,
-    session_id  VARCHAR(128) NOT NULL,
-    attempts    INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (stats_date, session_id)
-);
-
-CREATE TRIGGER trg_upi_session_daily_attempts_updated_at
-    BEFORE UPDATE ON upi_session_daily_attempts
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TABLE IF NOT EXISTS payments (
-    id                   BIGSERIAL PRIMARY KEY,
-    participant_id       BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-    public_id            UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
-    upi_account_id       BIGINT REFERENCES upi_accounts(id) ON DELETE SET NULL,
-    upi_vpa              VARCHAR(256),
-    upi_name             VARCHAR(120),
-    
-    amount               NUMERIC(12,2) NOT NULL CHECK (amount > 0),
-    currency             VARCHAR(10) NOT NULL DEFAULT 'INR',
-    extracted_text       TEXT,
-    uploaded_sha256      CHAR(64),
-    fraud_score          NUMERIC(5,2) DEFAULT 0 CHECK (fraud_score >= 0),
-    auto_rejected        BOOLEAN DEFAULT FALSE,
-    verification_attempts SMALLINT DEFAULT 0 CHECK (verification_attempts >= 0),
-    signature            CHAR(64) NOT NULL CHECK (length(signature) = 64),
-    expires_at           TIMESTAMPTZ NOT NULL,
-    timer_activated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    status               VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','processing','success','failed','rejected_fraud','expired','refunded')),
-    verified_at          TIMESTAMPTZ,
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    detected_app         VARCHAR(60) NOT NULL DEFAULT 'unknown',
-    verification_details JSONB NOT NULL DEFAULT '{}',
-    metadata             JSONB NOT NULL DEFAULT '{}',
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT chk_expires_after_create CHECK (expires_at > created_at),
-    CONSTRAINT chk_timer_after_create   CHECK (timer_activated_at >= created_at)
-);
-
-CREATE TRIGGER trg_payments_updated_at
-    BEFORE UPDATE ON payments
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_active_per_participant
-    ON payments (participant_id)
-    WHERE status IN ('pending','processing');
-
-CREATE INDEX IF NOT EXISTS idx_payments_expired_pending ON payments (expires_at) WHERE status = 'pending';
-CREATE INDEX IF NOT EXISTS idx_payments_participant ON payments (participant_id);
-CREATE INDEX IF NOT EXISTS idx_payments_status     ON payments (status);
-CREATE INDEX IF NOT EXISTS idx_payments_status_uploaded_sha256 ON payments (status, uploaded_sha256);
-CREATE INDEX IF NOT EXISTS idx_payments_upi_account ON payments (upi_account_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_write_nonce_unique
-    ON payments ((metadata->>'payment_write_nonce'))
-    WHERE (metadata ? 'payment_write_nonce');
-
-CREATE TABLE IF NOT EXISTS payment_files (
-    id                BIGSERIAL PRIMARY KEY,
-    payment_id        BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
-    bucket_name       VARCHAR(120) NOT NULL DEFAULT 'cognitapi',
-    object_key        VARCHAR(512) NOT NULL,
-    sha256            CHAR(64) NOT NULL CHECK (length(sha256) = 64),
-    etag              VARCHAR(128),
-    file_size         BIGINT CHECK (file_size >= 0),
-    content_type      VARCHAR(120),
-    uploaded_by_ip_hash CHAR(64),
-    image_phash       VARCHAR(64),
-    image_phash_bits  BIT(64),
-    image_phash_bucket INTEGER,
-    image_quality_score NUMERIC(5,2),
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT chk_payment_files_key_prefix CHECK (object_key LIKE 'payments/%')
-);
-
-CREATE TABLE IF NOT EXISTS image_reservations (
-    image_public_id VARCHAR(128) PRIMARY KEY,
-    participant_id BIGINT REFERENCES participants(id) ON DELETE SET NULL,
-    reserved_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at    TIMESTAMPTZ NOT NULL,
-    released_at   TIMESTAMPTZ
-);
-
-CREATE INDEX IF NOT EXISTS idx_image_reservations_expires ON image_reservations (expires_at);
-CREATE INDEX IF NOT EXISTS idx_image_reservations_released ON image_reservations (released_at);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_object_key_unique ON payment_files (object_key);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_one_file_per_payment            ON payment_files (payment_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_files_sha256_unique     ON payment_files (sha256);
-
-COMMENT ON COLUMN payment_files.payment_id IS
-    'Current schema intentionally allows one canonical stored screenshot file per payment.';
-COMMENT ON COLUMN payment_files.sha256 IS
-    'Global hash uniqueness is intentional to block screenshot reuse across payments and participants.';
-
-CREATE INDEX IF NOT EXISTS idx_payment_files_payment  ON payment_files (payment_id);
-CREATE INDEX IF NOT EXISTS idx_payment_files_sha256   ON payment_files (sha256);
-CREATE INDEX IF NOT EXISTS idx_payment_files_sha256_payment ON payment_files (sha256, payment_id);
-CREATE INDEX IF NOT EXISTS idx_payment_files_phash    ON payment_files (image_phash) WHERE image_phash IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_payment_files_phash_bucket ON payment_files (image_phash_bucket) WHERE image_phash_bucket IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS payment_upload_attempts (
-    id               BIGSERIAL PRIMARY KEY,
-    payment_id       BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
-    participant_id   BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-    idempotency_key  VARCHAR(128),
-    sha256           CHAR(64) NOT NULL CHECK (length(sha256) = 64),
-    file_extension   VARCHAR(16),
-    mime_type        VARCHAR(120),
-    file_size        BIGINT CHECK (file_size IS NULL OR file_size >= 0),
-    image_phash      VARCHAR(64),
-    status           VARCHAR(32) NOT NULL DEFAULT 'started'
-        CHECK (status IN ('started','success','rejected','duplicate','expired','invalid_state','error')),
-    detected_app     VARCHAR(60) NOT NULL DEFAULT 'unknown',
-    failure_reasons  JSONB NOT NULL DEFAULT '[]',
-    fraud_score      NUMERIC(5,2),
-    details          JSONB NOT NULL DEFAULT '{}',
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    completed_at     TIMESTAMPTZ,
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment ON payment_upload_attempts (payment_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_sha256 ON payment_upload_attempts (sha256);
-CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment_sha256 ON payment_upload_attempts (payment_id, sha256);
-CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_status ON payment_upload_attempts (status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_payment_upload_attempts_idempotency ON payment_upload_attempts (idempotency_key) WHERE idempotency_key IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_upload_attempts_payment_idempotency_unique
-    ON payment_upload_attempts (payment_id, idempotency_key)
-    WHERE idempotency_key IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS payment_fraud_signals (
-    id           BIGSERIAL PRIMARY KEY,
-    payment_id   BIGINT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
-    signal_type  VARCHAR(80) NOT NULL,
-    signal_score NUMERIC(5,2) NOT NULL CHECK (signal_score >= 0),
-    details      JSONB NOT NULL DEFAULT '{}',
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT unique_signal_per_payment UNIQUE (payment_id, signal_type)
-);
-
-CREATE INDEX IF NOT EXISTS idx_fraud_signals_payment ON payment_fraud_signals (payment_id);
-
-CREATE TABLE IF NOT EXISTS payment_submissions (
-    payment_id   BIGINT NOT NULL REFERENCES payments(id)   ON DELETE CASCADE,
-    submission_id BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
-    PRIMARY KEY (payment_id, submission_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_payment_submissions_payment        ON payment_submissions (payment_id);
-CREATE INDEX IF NOT EXISTS idx_payment_submissions_submission     ON payment_submissions (submission_id);
-CREATE INDEX IF NOT EXISTS idx_payment_submissions_submission_payment ON payment_submissions (submission_id, payment_id);
-
--- =====================================================================
--- REWARDS
--- =====================================================================
-CREATE TABLE IF NOT EXISTS reward_winners (
-    id             BIGSERIAL PRIMARY KEY,
-    participant_id BIGINT NOT NULL UNIQUE REFERENCES participants(id) ON DELETE CASCADE,
-    reason_code    VARCHAR(60),
-    is_selected    BOOLEAN NOT NULL DEFAULT TRUE,
-    selected_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    status         VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','paid','cancelled','expired')),
-    notes          TEXT,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER trg_reward_winners_updated
-    BEFORE UPDATE ON reward_winners
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX IF NOT EXISTS idx_reward_winners_status     ON reward_winners (status);
-CREATE INDEX IF NOT EXISTS idx_reward_winners_participant ON reward_winners (participant_id);
 
 -- =====================================================================
 -- SECURITY / AUDIT
@@ -794,26 +529,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_created     ON audit_log (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_participant ON audit_log (participant_id);
 CREATE INDEX IF NOT EXISTS idx_audit_event_type  ON audit_log (event_type);
-
-CREATE TABLE IF NOT EXISTS payment_audit_log (
-    id               BIGSERIAL PRIMARY KEY,
-    event_type       VARCHAR(60) NOT NULL,
-    payment_id       BIGINT REFERENCES payments(id) ON DELETE SET NULL,
-    participant_id   BIGINT REFERENCES participants(id) ON DELETE SET NULL,
-    ip_hash          CHAR(64),
-    user_agent       VARCHAR(512),
-    device_fingerprint VARCHAR(256),
-    request_data     JSONB,
-    response_data    JSONB,
-    fraud_signals    JSONB,
-    details          TEXT CHECK (length(details) <= 8000),
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_payment_audit_payment     ON payment_audit_log (payment_id);
-CREATE INDEX IF NOT EXISTS idx_payment_audit_participant ON payment_audit_log (participant_id);
-CREATE INDEX IF NOT EXISTS idx_payment_audit_event_type  ON payment_audit_log (event_type);
-CREATE INDEX IF NOT EXISTS idx_payment_audit_created     ON payment_audit_log (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     id                    BIGSERIAL PRIMARY KEY,

@@ -43,7 +43,7 @@ from app.utils.app_runtime import (
     redirect_to_api_docs_endpoints,
     render_api_docs_page,
 )
-from app.routes import participant_bp, image_bp, submission_bp, payment_bp
+from app.routes import participant_bp, image_bp, submission_bp
 from app.utils.observability import log_event
 from app.config import (
     ROOT_RATE_LIMIT,
@@ -68,7 +68,6 @@ logger = logging.getLogger(__name__)
 app.register_blueprint(participant_bp)
 app.register_blueprint(image_bp)
 app.register_blueprint(submission_bp)
-app.register_blueprint(payment_bp)
 
 
 # ────────────────────────────────────────────────
@@ -114,7 +113,7 @@ def handle_rate_limit(_error):
 
 
 @app.errorhandler(Exception)
-def handle_unexpected_error(error):
+def handle_unexpected_error(_error):
     logger.exception(LOG_UNHANDLED_EXCEPTION, getattr(g, "request_id", None), request.path)
     return create_error_response("SYS_INTERNAL_ERROR")
 

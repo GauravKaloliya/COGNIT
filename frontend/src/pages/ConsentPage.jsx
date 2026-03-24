@@ -23,8 +23,6 @@ export default function ConsentPage({
     setError,
     submitting,
     isOnline,
-    paymentAmountLabel,
-    rewardAmountLabel,
     handleSubmit,
     draftRestored,
     saveError,
@@ -76,12 +74,6 @@ export default function ConsentPage({
                     : paragraph}
                 </p>
               ))}
-              {section.dynamicList ? (
-                <ul>
-                  <li><strong>{uiText("consent.entryFeeLabel")}</strong> {paymentAmountLabel}</li>
-                  <li><strong>{uiText("consent.rewardDrawLabel")}</strong> {uiText("consent.rewardDrawMessage", { reward: rewardAmountLabel })}</li>
-                </ul>
-              ) : null}
               {section.items?.length ? (
                 <ul>
                   {section.items.map((item) => <li key={item}>{item}</li>)}

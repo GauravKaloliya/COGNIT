@@ -76,15 +76,12 @@ from app.services import (
     clamp_time_spent_seconds,
     normalize_engagement_counts,
     dynamic_too_fast_threshold as compute_dynamic_too_fast_threshold,
-    evaluate_priority_and_rewards,
-    ensure_submission_workflow_state,
     enqueue_submit_post_commit_tasks,
     StateTransitionError,
     emit_domain_event,
     extract_expected_terms,
     extract_survey_metrics,
     fetch_attention_check,
-    fetch_latest_success_payment_id,
     fetch_next_survey_index,
     fetch_submission_image_target,
     fetch_submission_participant,
@@ -92,7 +89,6 @@ from app.services import (
     has_duplicate_non_survey_submission,
     insert_attention_event_record,
     insert_submission_record,
-    link_payment_submission,
     lock_submission_participant,
     match_attention_terms,
     normalize_for_attention,
@@ -107,7 +103,6 @@ from app.services.submission_processing_service import (
     evaluate_attention_result,
     merge_submission_engagement,
 )
-from middleware.payment_flow import require_payment_completed
 
 
 # ────────────────────────────────────────────────
@@ -124,7 +119,6 @@ logger = logging.getLogger(__name__)
 # ────────────────────────────────────────────────
 
 @submission_bp.route(SUBMIT_ROUTE, methods=[HTTP_METHOD_POST])
-@require_payment_completed
 @limiter.limit(SUBMIT_RATE_LIMIT)
 @track_performance
 @require_idempotency_key
@@ -217,9 +211,9 @@ def submit():
             return create_error_response("NF_SUBMISSION_PARTICIPANT_NOT_FOUND")
         if not p_row[1]:
             return create_error_response("AUTH_CONSENT_REQUIRED")
-        try:
-            ensure_submission_workflow_state(p_row[4], p_row[5])
-        except StateTransitionError as workflow_err:
+        current_stage = str(p_row[4] or "")
+        if current_stage not in {"survey", "finished"}:
+            workflow_err = StateTransitionError(f"Submission not allowed when stage='{current_stage}'")
             log_event(
                 logger,
                 OBS_EVENT_SUBMIT_BLOCKED_STATE_MACHINE,
@@ -228,14 +222,14 @@ def submit():
                 public_id=public_id,
                 reason=str(workflow_err),
             )
-            return create_error_response("PAY_SUBMISSION_WORKFLOW_INVALID_STATE")
+            return create_error_response("VAL_INVALID_STATE", {"current_stage": current_stage})
 
         participant_id = p_row[0]
         participant_meta = p_row[3] or {}
         if not isinstance(participant_meta, dict):
             participant_meta = {}
 
-        if p_row[6]:
+        if p_row[5]:
             return create_error_response("AUTH_ACCOUNT_FLAGGED")
 
         img_row = fetch_submission_image_target(db, image_id_str)
@@ -376,11 +370,6 @@ def submit():
             priority_attention_threshold=PRIORITY_ATTENTION_THRESHOLD,
         )
 
-        # Link submission to participant's latest successful payment (if any).
-        latest_success_payment_id = fetch_latest_success_payment_id(db, participant_id)
-        if latest_success_payment_id:
-            link_payment_submission(db, payment_id=latest_success_payment_id, submission_id=submission_id)
-
         # Release image reservation on successful submission (soft release).
         try:
             release_image_reservation(db, image_id=image_id_str, participant_id=participant_id)
@@ -391,7 +380,6 @@ def submit():
         enqueue_submit_post_commit_tasks(
             engine=engine,
             emit_domain_event_fn=emit_domain_event,
-            evaluate_priority_and_rewards_fn=evaluate_priority_and_rewards,
             participant_id=int(participant_id),
             submission_id=int(submission_id),
             image_id_str=str(image_id_str),

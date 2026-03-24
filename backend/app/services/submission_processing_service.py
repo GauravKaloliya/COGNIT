@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 
 from app.constants.response_keys import (
@@ -56,9 +57,9 @@ def evaluate_attention_result(
     too_fast: bool,
 ):
     attention_passed = None
-    attention_expected_terms = []
-    attention_matched_terms = []
-    attention_failure_reasons = []
+    attention_expected_terms: list[str] = []
+    attention_matched_terms: list[str] = []
+    attention_failure_reasons: list[str] = []
     description_fingerprint = None
     strict = False
 
@@ -75,7 +76,7 @@ def evaluate_attention_result(
 
     expected = attention_check_row[0].strip().lower()
     strict = bool(attention_check_row[1])
-    description_fingerprint = __import__("hashlib").sha256(normalize_for_attention(description).encode("utf-8")).hexdigest()
+    description_fingerprint = hashlib.sha256(normalize_for_attention(description).encode("utf-8")).hexdigest()
     attention_expected_terms = extract_expected_terms(expected) or [normalize_for_attention(expected)]
     attention_matched_terms = match_attention_terms(description, attention_expected_terms, strict)
     attention_passed = len(attention_matched_terms) > 0
@@ -173,9 +174,9 @@ def apply_attention_monitor(
     recent_results.append(bool(attention_passed))
 
     for result in reversed(recent_results):
-      if result:
-        break
-      consecutive_failures += 1
+        if result:
+            break
+        consecutive_failures += 1
 
     recent_attention_score = round(sum(1 for item in recent_results if item) / len(recent_results), 4)
     hard_flag_triggered = consecutive_failures >= hard_flag_consecutive_fails

@@ -7,7 +7,7 @@ import PageStatusBanners from "../components/PageStatusBanners.jsx";
 import PageActions from "../components/PageActions.jsx";
 
 export default function FinishedPage({ surveyCompleted, publicId, clearUserStorage }) {
-  const { isOnline, rewardAmountLabel, handleFinish } = useFinishedPage({ publicId, clearUserStorage });
+  const { isOnline, handleFinish } = useFinishedPage({ publicId, clearUserStorage });
 
   return (
     <div className="panel finish-panel">
@@ -27,22 +27,6 @@ export default function FinishedPage({ surveyCompleted, publicId, clearUserStora
           title={uiText("finish.thanks")}
           message={uiText("finish.responsesRecorded")}
         />
-
-        <div className="finish-reminder card">
-          <div className="card-header">
-            <h4><span className="icon-badge" aria-hidden="true">🏆</span> {uiText("finish.rewardHeading")}</h4>
-          </div>
-          <div className="card-body">
-          <ul>
-            <li>{uiText("finish.rewardBullet1", { amount: rewardAmountLabel })}</li>
-            <li>{uiText("finish.rewardBullet2")}</li>
-            <li>{uiText("finish.rewardBullet3")}</li>
-            <li>{uiText("finish.rewardBullet4")}</li>
-            <li>{uiText("finish.rewardBullet5")}</li>
-          </ul>
-          </div>
-        </div>
-
         <p className="debrief">{uiText("finish.debrief")}</p>
 
         <PageActions sticky inline>

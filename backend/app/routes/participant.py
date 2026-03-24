@@ -1,6 +1,7 @@
 """Participant routes module for C.O.G.N.I.T. backend."""
 
 import logging
+from contextlib import suppress
 
 from flask import Blueprint, g, request
 from sqlalchemy import text
@@ -11,7 +12,6 @@ from app.constants.event_constants import (
     AUDIT_EVENT_PARTICIPANT_CREATED,
     HTTP_METHOD_GET,
     HTTP_METHOD_POST,
-    PAY_NOT_VERIFIED_REASON,
 )
 from app.constants.log_messages import (
     LOG_CHECK_EMAIL_FAILED,
@@ -19,7 +19,6 @@ from app.constants.log_messages import (
     LOG_CONSENT_FAILED,
     LOG_PARTICIPANT_CREATE_FAILED,
     LOG_PARTICIPANT_OPTIONS_FAILED,
-    LOG_PARTICIPANT_PAYMENT_STATUS_FAILED,
 )
 from app.utils.observability import log_event
 from app.constants.audit_details import AUDIT_DETAIL_PARTICIPANT_CREATED
@@ -27,11 +26,9 @@ from app.constants.observability_constants import OBS_EVENT_PARTICIPANT_CREATE_R
 from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
     PARTICIPANT_FIELD_USERNAME,
-    PARTICIPANT_PAYMENT_STATUS_PAID,
     PARTICIPANT_STATUS_CONSENT_RECORDED,
     PARTICIPANT_STATUS_CREATED,
 )
-from app.constants.payment_constants import PAYMENT_STATUS_SUCCESS
 from app.constants.request_keys import (
     REQUEST_KEY_EMAIL,
     REQUEST_KEY_EMAIL_UPDATE,
@@ -43,17 +40,12 @@ from app.constants.request_keys import (
 )
 from app.constants.response_keys import (
     RESPONSE_KEY_AVAILABLE,
-    RESPONSE_KEY_CURRENT_STAGE,
-    RESPONSE_KEY_DETECTED_APP,
     RESPONSE_KEY_EMAIL,
     RESPONSE_KEY_EMAIL_VERIFIED,
     RESPONSE_KEY_EXPIRES_AT,
-    RESPONSE_KEY_PAYMENT_ID,
     RESPONSE_KEY_PUBLIC_ID,
-    RESPONSE_KEY_REASON,
     RESPONSE_KEY_SESSION_ID,
     RESPONSE_KEY_STATUS,
-    RESPONSE_KEY_VERIFIED_AT,
 )
 from app.constants.route_constants import (
     CHECK_EMAIL_ROUTE,
@@ -63,7 +55,6 @@ from app.constants.route_constants import (
     EMAIL_OTP_VERIFY_ROUTE,
     PARTICIPANTS_ROUTE,
     PARTICIPANT_OPTIONS_ROUTE,
-    PARTICIPANT_PAYMENT_STATUS_ROUTE,
     PARTICIPANT_SESSION_ROUTE,
 )
 from app.config import (
@@ -73,7 +64,6 @@ from app.config import (
     EMAIL_OTP_VERIFY_RATE_LIMIT,
     PARTICIPANT_CHECK_RATE_LIMIT,
     PARTICIPANT_CREATE_RATE_LIMIT,
-    PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
     PARTICIPANT_SESSION_COOKIE_NAME,
 )
@@ -315,63 +305,10 @@ def record_consent():
         db.commit()
         return success_response(response_payload)
     except Exception as e:
-        try:
+        with suppress(Exception):
             db.rollback()
-        except Exception:
-            pass
         logger.error(LOG_CONSENT_FAILED, e, getattr(g, "request_id", None))
         return create_error_response("SYS_CONSENT_RECORD_FAILED")
-
-
-@participant_bp.route(PARTICIPANT_PAYMENT_STATUS_ROUTE)
-@limiter.limit(PARTICIPANT_PAYMENT_STATUS_RATE_LIMIT)
-@track_performance
-def get_participant_payment_status(public_id):
-    """
-    Get participant's payment status for frontend access control.
-    Returns payment verification status to prevent unauthorized survey access.
-    """
-    if not public_id:
-        return create_error_response("VAL_PARTICIPANT_STATUS_PUBLIC_ID_REQUIRED")
-    
-    try:
-        db = get_db()
-        
-        row = db.execute(text("""
-            SELECT id, payment_status, stage
-            FROM participants
-            WHERE public_id = :pub AND is_deleted = false
-        """), {"pub": public_id}).fetchone()
-        
-        if not row:
-            return create_error_response("NF_PARTICIPANT_STATUS_NOT_FOUND")
-        
-        participant_id, payment_status, stage = row
-        
-        # Check for successful payment
-        is_paid = payment_status == PARTICIPANT_PAYMENT_STATUS_PAID
-
-        # Check for any successful payment record
-        payment_row = db.execute(text("""
-            SELECT public_id, status, verified_at, detected_app
-            FROM payments
-            WHERE participant_id = :pid AND status = :payment_success_status
-            ORDER BY created_at DESC
-            LIMIT 1
-        """), {"pid": participant_id, "payment_success_status": PAYMENT_STATUS_SUCCESS}).fetchone()
-
-        return success_response({
-            "payment_status": payment_status,
-            "is_verified": bool(is_paid and payment_row),
-            RESPONSE_KEY_CURRENT_STAGE: stage,
-            RESPONSE_KEY_PAYMENT_ID: str(payment_row[0]) if payment_row else None,
-            RESPONSE_KEY_VERIFIED_AT: payment_row[2].isoformat() if payment_row and payment_row[2] else None,
-            RESPONSE_KEY_DETECTED_APP: payment_row[3] if payment_row else None,
-            RESPONSE_KEY_REASON: None if is_paid else PAY_NOT_VERIFIED_REASON,
-        })
-    except Exception as e:
-        logger.error(LOG_PARTICIPANT_PAYMENT_STATUS_FAILED, e, getattr(g, "request_id", None))
-        return create_error_response("SYS_PARTICIPANT_STATUS_FAILED")
 
 
 @participant_bp.route(PARTICIPANT_SESSION_ROUTE, methods=[HTTP_METHOD_GET])
@@ -455,13 +392,11 @@ def request_email_otp():
             enqueue_email_otp(
                 build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
                 otp_id=otp_id,
-                request_id=getattr(g, "request_id", None),
             )
         except Exception:
             try:
                 send_email_otp(
                     build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
-                    request_id=getattr(g, "request_id", None),
                 )
             except EmailOtpSendError as exc:
                 error_key = "AUTH_EMAIL_OTP_SEND_FAILED"

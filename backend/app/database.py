@@ -3,6 +3,8 @@ Database module for C.O.G.N.I.T. backend.
 Handles SQLAlchemy engine, session management, and database connection lifecycle.
 """
 
+from contextlib import suppress
+
 from flask import g
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
@@ -73,7 +75,7 @@ def get_db():
 
 
 @app.teardown_appcontext
-def teardown_db(exception):
+def teardown_db(_exception):
     """Clean up database session on application context teardown."""
     db = g.pop("db", None)
     if db is not None:
@@ -92,8 +94,5 @@ def rollback_on_exception(exception):
     db = g.get("db")
     if db is None:
         return
-    try:
+    with suppress(Exception):
         db.rollback()
-    except Exception:
-        # Never raise from teardown
-        pass

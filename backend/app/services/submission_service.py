@@ -1,7 +1,7 @@
 import re
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any
+from typing import Any
 
 from sqlalchemy import text
 
@@ -42,7 +42,10 @@ def clamp_time_spent_seconds(value) -> float:
         return 0.0
 
 
-def normalize_engagement_counts(payload: Dict[str, Any], fallback: Dict[str, Any] = None) -> Dict[str, int]:
+def normalize_engagement_counts(
+    payload: dict[str, Any],
+    fallback: dict[str, Any] | None = None,
+) -> dict[str, int]:
     fallback = fallback or {}
     tab_switch_count = safe_non_negative_int(payload.get("tab_switch_count"), 0)
     page_close_attempts = safe_non_negative_int(payload.get("page_close_attempts"), 0)
@@ -115,7 +118,6 @@ def enqueue_submit_post_commit_tasks(
     *,
     engine,
     emit_domain_event_fn,
-    evaluate_priority_and_rewards_fn,
     participant_id: int,
     submission_id: int,
     image_id_str: str,
@@ -161,7 +163,6 @@ def enqueue_submit_post_commit_tasks(
                         "quality_score": float(quality),
                     },
                 )
-                evaluate_priority_and_rewards_fn(conn, participant_id, correlation_id="")
         except Exception as exc:
             log_event(logger, OBS_EVENT_SUBMISSION_POST_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
 

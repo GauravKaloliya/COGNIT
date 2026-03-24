@@ -3,11 +3,10 @@ import { APP_STAGE_ORDER } from "../config/appFlow";
 import { uiText } from "../utils/uiText";
 
 const STEP_LABELS = {
-  "consent": "step.consent",
+  consent: "step.consent",
   "user-details": "step.details",
-  "payment": "step.payment",
-  "survey": "step.survey",
-  "finished": "step.done",
+  survey: "step.survey",
+  finished: "step.done",
 };
 
 export default function FlowStepper({ stage }) {
