@@ -28,6 +28,10 @@ from app.config import (
 )
 from app.constants.event_constants import HTTP_METHOD_POST
 from app.constants.log_messages import LOG_SUBMISSION_FAILED
+from app.constants.participant_constants import (
+    PARTICIPANT_STAGE_FINISHED,
+    PARTICIPANT_STAGE_SURVEY,
+)
 from app.utils.observability import log_event
 from app.constants.request_keys import (
     REQUEST_KEY_DESCRIPTION,
@@ -218,7 +222,7 @@ def submit():
         if not p_row[1]:
             return create_error_response("AUTH_CONSENT_REQUIRED")
         current_stage = str(p_row[4] or "")
-        if current_stage not in {"survey", "finished"}:
+        if current_stage not in {PARTICIPANT_STAGE_SURVEY, PARTICIPANT_STAGE_FINISHED}:
             workflow_err = StateTransitionError(f"Submission not allowed when stage='{current_stage}'")
             log_event(
                 logger,

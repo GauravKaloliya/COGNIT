@@ -2,8 +2,7 @@ import React from "react";
 import UserDetailsPage from "./pages/UserDetailsPage.jsx";
 import ConsentPage from "./pages/ConsentPage.jsx";
 import SurveyPage from "./pages/SurveyPage.jsx";
-import SurveyFeedPage from "./pages/SurveyFeedPage.jsx";
-import FinishedPage from "./pages/FinishedPage.jsx";
+import PostSurveyPage from "./pages/PostSurveyPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import PageSkeleton from "./components/PageSkeleton.jsx";
 import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
@@ -91,7 +90,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     publicId,
     demographics,
     setDemographics,
-    setStage,
     toasts,
     addToast,
     systemReady,
@@ -179,10 +177,11 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
       case "survey":
         if (surveyFeedbackReady) {
           return (
-            <SurveyFeedPage
+            <PostSurveyPage
               surveyCompleted={surveyCompleted}
               setSurveyFeedbackReady={setSurveyFeedbackReady}
-              setStage={setStage}
+              clearUserStorage={clearUserStorage}
+              publicId={publicId}
               fetchNextSurvey={fetchImage}
             />
           );
@@ -199,7 +198,13 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           />
         );
       case "finished":
-        return <FinishedPage surveyCompleted={surveyCompleted} publicId={publicId} clearUserStorage={clearUserStorage} />;
+        return (
+          <PostSurveyPage
+            surveyCompleted={surveyCompleted}
+            publicId={publicId}
+            clearUserStorage={clearUserStorage}
+          />
+        );
       default:
         return (
           <ConsentPage
