@@ -52,10 +52,9 @@ from app.constants.ocr_constants import (
     REGEX_AMOUNT,
     REGEX_BHIM_DATE,
     REGEX_BHIM_LABEL,
-    REGEX_GOOGLE_PAY,
-    REGEX_GPAY_APP,
     REGEX_GPAY_DATE,
     REGEX_PAID,
+    REGEX_PAID_TO,
     REGEX_PAYTM_DATE_DAY_FIRST,
     REGEX_PAYTM_DATE_MONTH_FIRST,
     REGEX_PAYTM_LABEL,
@@ -316,6 +315,41 @@ def _is_datetime_ambiguous(text: str, app: str) -> bool:
     return len(set(date_matches)) > 1
 
 
+def _has_expected_recipient_hint(text: str, expected_upi_name: str) -> bool:
+    normalized_expected = re.sub(r"[^a-z0-9\s]", " ", (expected_upi_name or "").lower())
+    tokens = [token for token in normalized_expected.split() if len(token) >= 3]
+    if not tokens:
+        return False
+    return any(token in text for token in tokens)
+
+
+def _looks_like_gpay_layout(
+    text: str,
+    *,
+    has_paytm: bool,
+    has_bhim: bool,
+    has_success: bool,
+    has_failure: bool,
+    expected_upi_name: str,
+) -> bool:
+    lower = text.lower()
+    if has_paytm or has_bhim:
+        return False
+    if any(pattern.search(lower) for pattern in DISALLOWED_APP_PATTERNS):
+        return False
+    if REGEX_PAID_TO.search(lower) is None:
+        return False
+    if REGEX_AMOUNT.search(lower) is None:
+        return False
+    if REGEX_GPAY_DATE.search(lower) is None:
+        return False
+    if REGEX_TIME_12H.search(lower) is None:
+        return False
+    if not has_success or has_failure:
+        return False
+    return _has_expected_recipient_hint(lower, expected_upi_name)
+
+
 def verify_payment_screenshot(
     image: Image.Image,
     text: str,
@@ -356,21 +390,24 @@ def verify_payment_screenshot(
 
     has_paytm = REGEX_PAYTM_LABEL.search(lower) is not None
     has_bhim = REGEX_BHIM_LABEL.search(lower) is not None
-    has_gpay = REGEX_GPAY_APP.search(lower) is not None or REGEX_GOOGLE_PAY.search(lower) is not None
-
-    if has_paytm:
-        detected_app = APP_PAYTM
-    elif has_bhim:
-        detected_app = APP_BHIM
-    elif has_gpay:
-        detected_app = APP_GPAY
-    else:
-        detected_app = APP_UNKNOWN
+    has_success = any(keyword in lower for keyword in (SUCCESS_KEYWORDS or []))
+    has_failure = any(keyword in lower for keyword in (FAILURE_KEYWORDS or []))
+    detected_app = detect_upi_app(text) or APP_UNKNOWN
 
     # Explicitly reject known non-allowed app names if present.
     if any(pattern.search(lower) for pattern in DISALLOWED_APP_PATTERNS):
         failures.append(FAILURE_UNRECOGNIZED_APP)
         return False, APP_UNKNOWN, failures
+
+    if detected_app == APP_UNKNOWN and _looks_like_gpay_layout(
+        text,
+        has_paytm=has_paytm,
+        has_bhim=has_bhim,
+        has_success=has_success,
+        has_failure=has_failure,
+        expected_upi_name=expected_upi_name,
+    ):
+        detected_app = APP_GPAY
 
     if detected_app == APP_UNKNOWN:
         failures.append(FAILURE_UNRECOGNIZED_APP)
@@ -384,10 +421,7 @@ def verify_payment_screenshot(
         return False, detected_app, failures
 
     # App-specific rules
-    if detected_app == APP_GPAY:
-        if not has_gpay:
-            failures.append(FAILURE_UNRECOGNIZED_APP)
-    elif detected_app == APP_PAYTM:
+    if detected_app == APP_PAYTM:
         if not has_paytm:
             failures.append(FAILURE_MISSING_PAYTM_LABEL)
     elif detected_app == APP_BHIM:
@@ -405,8 +439,6 @@ def verify_payment_screenshot(
         failures.append(FAILURE_INVALID_AMOUNT)
 
     # Rule 2: Payment should show a successful state and not a failure state.
-    has_success = any(keyword in lower for keyword in (SUCCESS_KEYWORDS or []))
-    has_failure = any(keyword in lower for keyword in (FAILURE_KEYWORDS or []))
     if has_failure:
         failures.append(FAILURE_FAILURE_INDICATOR)
     if not has_success:
@@ -478,11 +510,12 @@ def sanitize_extracted_text_for_storage(
     # App markers
     add_match(REGEX_PAYTM_LABEL.pattern)
     add_match(REGEX_BHIM_LABEL.pattern)
-    add_match(REGEX_GPAY_APP.pattern)
-    add_match(REGEX_GOOGLE_PAY.pattern)
+    for keyword in ALLOWED_APPS.get(APP_GPAY, []):
+        add_match(rf"\b{re.escape(keyword)}\b")
 
     # Core payment semantics
     add_match(REGEX_PAID.pattern)
+    add_match(REGEX_PAID_TO.pattern)
     add_match(REGEX_AMOUNT.pattern)
 
     # Time
