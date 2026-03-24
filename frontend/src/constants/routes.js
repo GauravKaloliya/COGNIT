@@ -14,6 +14,7 @@ export const API_ROUTES = {
   emailOtpVerify: "/email-otp/verify",
   submit: "/submit",
   createPayment: "/payments/create",
+  refreshPaymentUpi: (paymentId) => `/payments/${paymentId}/refresh-upi`,
   paymentQr: (paymentId) => `/payments/${paymentId}/qr`,
   paymentStatus: (paymentId) => `/payments/${paymentId}/status`,
   paymentToken: (paymentId) => `/payments/${paymentId}/token`,

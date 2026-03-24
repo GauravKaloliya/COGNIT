@@ -184,6 +184,19 @@ export function useSurveyPage({
     resetEngagement();
   }, [resetEngagement, setDescription, setRating, setComments, survey?.image_id]);
 
+  useEffect(() => {
+    if (!submitError) return;
+
+    if (!showValidationErrors) {
+      setSubmitError("");
+      return;
+    }
+
+    if (canSubmit) {
+      setSubmitError("");
+    }
+  }, [canSubmit, showValidationErrors, submitError]);
+
   const getSubmitTooltipText = useCallback(() => getSubmitTooltip({
     imageReady,
     submitting,
@@ -200,6 +213,21 @@ export function useSurveyPage({
     getErrorMessage,
     uiText,
   }), [comments, description, imageReady, rating, submitLocked, submitting, wordCount]);
+
+  useEffect(() => {
+    if (!showValidationErrors || submitting) return;
+    if (!submitError) return;
+
+    setSubmitError(getSubmitTooltipText());
+  }, [
+    comments,
+    description,
+    getSubmitTooltipText,
+    rating,
+    showValidationErrors,
+    submitError,
+    submitting,
+  ]);
 
   const handleSubmit = useCallback(async () => {
     if (submitting || submitLocked) return;
