@@ -91,6 +91,12 @@ export default function SurveyPage({
   const PRIORITY_FEEDBACK_TARGET = constants.priorityFeedbackTarget;
   const UI_TOTAL_STEPS = constants.uiTotalSteps;
   const COPY_PASTE_DISABLED = constants.copyPasteDisabled;
+  const visibleSubmitError = submitError
+    && submitError !== uiText("survey.submit")
+    && submitError !== uiText("survey.submitBusy")
+    && submitError !== uiText("survey.submitLocked")
+    ? submitError
+    : "";
 
   // Show loading state if we're waiting for survey data
   if (!survey || !survey.image_id || !hasUsableSurveyImage) {
@@ -360,7 +366,7 @@ export default function SurveyPage({
         </div>
       </div>
 
-      {submitError && <div className="banner warning">{submitError}</div>}
+      {visibleSubmitError && <div className="banner warning">{visibleSubmitError}</div>}
 
       <PageActions sticky className="actions survey-submit-actions survey-sticky-footer">
         <div className="submit-info-box">
