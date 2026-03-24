@@ -9,6 +9,7 @@ from flask import Flask
 from flask_cors import CORS  # type: ignore[import-untyped]
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from limits.errors import ConfigurationError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import (
@@ -71,12 +72,21 @@ CORS(
 # Rate Limiter
 # ────────────────────────────────────────────────
 
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"],
-    storage_uri=RATELIMIT_STORAGE_URI
-)
+try:
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri=RATELIMIT_STORAGE_URI,
+    )
+except ConfigurationError:
+    # Keep the app bootable even if the configured storage backend is unavailable.
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri="memory://",
+    )
 
 
 # ────────────────────────────────────────────────
