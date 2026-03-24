@@ -1,6 +1,7 @@
 """Shared audit detail templates."""
 
 AUDIT_DETAIL_PAYMENT_CREATED = "payment created"
+AUDIT_DETAIL_PAYMENT_REFRESHED = "payment refreshed with alternate upi"
 AUDIT_DETAIL_PAYMENT_REUSED = "reused existing active payment"
 AUDIT_DETAIL_PAYMENT_CREATE_FAILED = "payment creation failed: {error}"
 AUDIT_DETAIL_PARTICIPANT_CREATED = "participant created for public_id={public_id}"
