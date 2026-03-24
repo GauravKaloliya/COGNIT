@@ -52,9 +52,8 @@ REGEX_BHIM_DATE = re.compile(
 REGEX_PAYTM_LABEL = re.compile(r"\bpaytm\b", re.IGNORECASE)
 REGEX_BHIM_LABEL = re.compile(r"\bbhim\b", re.IGNORECASE)
 REGEX_PAID = re.compile(r"\bpaid\b", re.IGNORECASE)
+REGEX_PAID_TO = re.compile(r"\bpaid\s+to\b", re.IGNORECASE)
 REGEX_AMOUNT = re.compile(r"(?:₹\s*1(?:\.00)?\b|rs\.?\s*1(?:\.00)?\b)", re.IGNORECASE)
-REGEX_GPAY_APP = re.compile(r"\bgpay\b", re.IGNORECASE)
-REGEX_GOOGLE_PAY = re.compile(r"\bgoogle\s*pay\b", re.IGNORECASE)
 DISALLOWED_APP_PATTERNS = [
     re.compile(r"\bphone\s*pe\b", re.IGNORECASE),
     re.compile(r"\bphonepe\b", re.IGNORECASE),
