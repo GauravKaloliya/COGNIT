@@ -194,33 +194,31 @@ export function useAppController() {
   }, [publicId]);
 
   const handleParticipantNotFound = useCallback(() => {
-    const scope = String(publicId || "").trim() || CORE_SCOPE_ANON;
-    const keysToClear = [
-      runtimeConfig.storageKeys.publicId,
-      runtimeConfig.storageKeys.sessionId,
-      runtimeConfig.storageKeys.userDetailsSubmitted,
-      runtimeConfig.storageKeys.emailVerified,
-      runtimeConfig.storageKeys.paymentVerified,
-      runtimeConfig.storageKeys.paymentSubStage,
-      runtimeConfig.storageKeys.stage,
-    ];
-    keysToClear.forEach((key) => {
-      forEachStorageArea((area) => {
-        removeStoredKey(key, area);
-        removeStoredKey(makeScopedKey(key, scope), area);
-        removeStoredKey(makeScopedKey(key, CORE_SCOPE_ANON), area);
-      });
-    });
-
+    clearUserStorage(publicId);
     setPublicId("");
     setSessionId("");
     setUserDetailsSubmitted(false);
     setEmailVerified(false);
     setPaymentVerified(false);
+    setConsentGiven(false);
+    setDemographics({
+      username: "",
+      email: "",
+      gender_code: "",
+      age: "",
+      location: "",
+      language_code: "",
+      prior_experience: "",
+    });
+    setSurvey(null);
+    setSurveyCompleted(0);
+    setSurveyFeedbackReady(false);
+    setLastSubmissionSucceeded(false);
+    setShownImages([]);
     setPaymentSubStage(APP_FLOW.paymentSubStages.content);
     setStage(APP_FLOW.stages.userDetails);
     addToast(getErrorMessage("NF_001_0001"), "warning");
-  }, [addToast, publicId]);
+  }, [addToast, clearUserStorage, publicId]);
 
   useEffect(() => {
     if (stage === "email-verify") {
