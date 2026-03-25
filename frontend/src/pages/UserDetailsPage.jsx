@@ -9,6 +9,8 @@ import UserIdentityFields from "../components/user-details/UserIdentityFields.js
 import OtpVerificationField from "../components/user-details/OtpVerificationField.jsx";
 import UserProfileFields from "../components/user-details/UserProfileFields.jsx";
 import UserDetailsSubmitFooter from "../components/user-details/UserDetailsSubmitFooter.jsx";
+import { useRenderProfiler } from "../hooks/useRenderProfiler.js";
+import { prefetchBehaviorChunks } from "../components/app/AppStageRouter.jsx";
 
 export default function UserDetailsPage({
   publicId,
@@ -21,6 +23,8 @@ export default function UserDetailsPage({
 }) {
   const [emailFocused, setEmailFocused] = React.useState(false);
   const [emailPlaceholderIndex, setEmailPlaceholderIndex] = React.useState(0);
+  const [showDeferredTips, setShowDeferredTips] = React.useState(false);
+  const profileRender = useRenderProfiler("UserDetailsPage", 20);
   const isMobile = useIsMobile();
   const {
     constants,
@@ -37,6 +41,7 @@ export default function UserDetailsPage({
     locationPermissionState,
     userEditedLocationRef,
     isFormComplete,
+    canSubmit,
     detectLocation,
     otpDigits,
     otpLength,
@@ -55,6 +60,7 @@ export default function UserDetailsPage({
     updateField,
     draftRestored,
     retryCountdown,
+    fieldMeta,
   } = useUserDetailsPage({
     publicId,
     demographics,
@@ -68,12 +74,46 @@ export default function UserDetailsPage({
   const AGE_MAX = constants.ageMax;
   const USERNAME_MIN = constants.usernameMin;
   const LOCATION_MIN = constants.locationMin;
-  const usernameOk = (demographics.username || "").trim().length >= USERNAME_MIN;
-  const emailOk = Boolean((demographics.email || "").trim()) && !errors.email;
-  const ageOk = Boolean((demographics.age || "").trim()) && !errors.age;
-  const locationOk = (demographics.location || "").trim().length >= LOCATION_MIN && !errors.location;
-  const rawEmailDomains = uiText("user.emailDomains").split("|").map((d) => d.trim()).filter(Boolean);
-  const emailDomains = Array.from(new Set(rawEmailDomains));
+  const emailDomains = React.useMemo(() => {
+    const rawEmailDomains = uiText("user.emailDomains").split("|").map((d) => d.trim()).filter(Boolean);
+    return Array.from(new Set(rawEmailDomains));
+  }, []);
+  const fieldStatus = React.useMemo(() => ({
+    usernameOk: (demographics.username || "").trim().length >= USERNAME_MIN,
+    emailOk: Boolean((demographics.email || "").trim()) && !errors.email,
+    ageOk: Boolean((demographics.age || "").trim()) && !errors.age,
+    locationOk: (demographics.location || "").trim().length >= LOCATION_MIN && !errors.location,
+  }), [LOCATION_MIN, USERNAME_MIN, demographics.age, demographics.email, demographics.location, demographics.username, errors.age, errors.email, errors.location]);
+  const { usernameOk, emailOk, ageOk, locationOk } = fieldStatus;
+  const identityFields = React.useMemo(() => ({
+    username: demographics.username || "",
+    email: demographics.email || "",
+    usernameError: errors.username || "",
+    emailError: errors.email || "",
+  }), [demographics.email, demographics.username, errors.email, errors.username]);
+  const profileFields = React.useMemo(() => ({
+    genderCode: demographics.gender_code || "",
+    age: demographics.age || "",
+    location: demographics.location || "",
+    languageCode: demographics.language_code || "",
+    priorExperience: demographics.prior_experience || "",
+    genderError: errors.gender_code || "",
+    ageError: errors.age || "",
+    locationError: errors.location || "",
+    languageError: errors.language_code || "",
+    priorExperienceError: errors.prior_experience || "",
+  }), [
+    demographics.age,
+    demographics.gender_code,
+    demographics.language_code,
+    demographics.location,
+    demographics.prior_experience,
+    errors.age,
+    errors.gender_code,
+    errors.language_code,
+    errors.location,
+    errors.prior_experience,
+  ]);
   const emailPlaceholderDomain =
     emailDomains[emailPlaceholderIndex % emailDomains.length]
     || uiText("user.emailDefaultDomain")
@@ -83,13 +123,18 @@ export default function UserDetailsPage({
   const inputRefs = React.useRef([]);
   const toOtpDigits = (value) => String(value || "").replace(/\D/g, "");
   const OTP_STATUS = runtimeConfig.otpStatus;
-  const otpStatusMessage = otpStatus === OTP_STATUS.sending
-    ? uiText("email.requesting")
-    : otpStatus === OTP_STATUS.sent
-      ? uiText("email.sentToast")
-      : otpStatus === OTP_STATUS.verifying
-        ? uiText("email.verifying")
-        : "";
+  const deferredDraftRestored = React.useDeferredValue(draftRestored);
+  const deferredOnline = React.useDeferredValue(isOnline);
+  const deferredRetryCountdown = React.useDeferredValue(retryCountdown);
+  const otpStatusMessage = React.useMemo(() => (
+    otpStatus === OTP_STATUS.sending
+      ? uiText("email.requesting")
+      : otpStatus === OTP_STATUS.sent
+        ? uiText("email.sentToast")
+        : otpStatus === OTP_STATUS.verifying
+          ? uiText("email.verifying")
+          : ""
+  ), [OTP_STATUS.sending, OTP_STATUS.sent, OTP_STATUS.verifying, otpStatus]);
   const resendLabel = resendSeconds > 0
     ? uiText("email.resendIn", { seconds: resendSeconds })
     : uiText("email.sendAgain");
@@ -101,18 +146,7 @@ export default function UserDetailsPage({
       : submitting
         ? uiText("common.submitting")
         : uiText("common.continue");
-  const submitDisabled = (
-    !systemReady ||
-    submitting ||
-    optionsLoading ||
-    genderOptions.length === 0 ||
-    languageOptions.length === 0 ||
-    priorExperienceGroups.length === 0 ||
-    !isOnline ||
-    !isFormComplete ||
-    Object.keys(errors).length > 0 ||
-    otpStatus !== OTP_STATUS.idle
-  );
+  const submitDisabled = !systemReady || !canSubmit;
   const firstEmptyOtpIndex = otpDigits.findIndex((digit) => !digit);
   const editableOtpIndex = firstEmptyOtpIndex === -1 ? otpLength - 1 : firstEmptyOtpIndex;
   const formatOtpTimer = (seconds) => {
@@ -143,13 +177,47 @@ export default function UserDetailsPage({
     }, runtimeConfig.focusAdvanceDelayMs);
   }, [showOtpField, otpStatus, editableOtpIndex, OTP_STATUS.sending, OTP_STATUS.verifying]);
 
+  React.useEffect(() => {
+    prefetchBehaviorChunks({
+      fromStage: "user-details",
+      userDetailsLikelyComplete: isFormComplete,
+    });
+  }, [isFormComplete]);
+
+  React.useEffect(() => {
+    if (!isFormComplete) {
+      setShowDeferredTips(false);
+      return undefined;
+    }
+    let timeoutId = null;
+    let idleId = null;
+    const run = () => {
+      React.startTransition(() => {
+        setShowDeferredTips(true);
+      });
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(run, { timeout: 450 });
+    } else {
+      timeoutId = window.setTimeout(run, 220);
+    }
+    return () => {
+      if (idleId !== null && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isFormComplete]);
+
   return (
     <div className="panel panel-with-corner-status">
       <div className="page-top-actions inline">
         <PageStatusBanners
-          isOnline={isOnline}
+          isOnline={deferredOnline}
           offlineMessage={uiText("user.offlineBanner")}
-          draftRestored={draftRestored}
+          draftRestored={deferredDraftRestored}
           compact
         />
       </div>
@@ -158,72 +226,90 @@ export default function UserDetailsPage({
       <p className="page-subtitle left">
         {uiText("user.pageSubtitle")}
       </p>
-      
-      <div className={`form-grid ${showOtpField ? "has-otp" : ""}`}>
-        <UserIdentityFields
-          demographics={demographics}
-          errors={errors}
-          optionsLoading={optionsLoading}
-          checking={checking}
-          inputsLocked={inputsLocked}
-          emailInputDisabled={emailInputDisabled}
-          usernameOk={usernameOk}
-          emailOk={emailOk}
-          usernameMin={USERNAME_MIN}
-          showEmailGhost={showEmailGhost}
-          emailPlaceholderDomain={emailPlaceholderDomain}
-          emailPlaceholderIndex={emailPlaceholderIndex}
-          updateField={updateField}
-          handleFieldBlur={handleFieldBlur}
-          sanitizeUsername={sanitizeUsername}
-          setEmailFocused={setEmailFocused}
-        />
-
-        <OtpVerificationField
-          showOtpField={showOtpField}
-          otpDigits={otpDigits}
-          otpLength={otpLength}
-          otpStatus={otpStatus}
-          otpStatusConfig={OTP_STATUS}
-          otpError={otpError}
-          otpExpiryMessage={otpExpiryMessage}
-          showOtpExpiry={showOtpExpiry}
-          resendSeconds={resendSeconds}
-          otpStatusMessage={otpStatusMessage}
-          resendLabel={resendLabel}
-          canResend={canResend}
-          inputRefs={inputRefs}
-          editableOtpIndex={editableOtpIndex}
-          toOtpDigits={toOtpDigits}
-          setOtpDigit={setOtpDigit}
-          setOtpFromPaste={setOtpFromPaste}
-          handleResend={handleResend}
-          focusAdvanceDelayMs={runtimeConfig.focusAdvanceDelayMs}
-        />
-
-        <UserProfileFields
-          demographics={demographics}
-          errors={errors}
-          optionsLoading={optionsLoading}
-          inputsLocked={inputsLocked}
-          isMobile={isMobile}
-          locating={locating}
-          locationStatus={locationStatus}
-          locationPermissionState={locationPermissionState}
-          userEditedLocationRef={userEditedLocationRef}
-          genderOptions={genderOptions}
-          languageOptions={languageOptions}
-          priorExperienceGroups={priorExperienceGroups}
-          ageMin={AGE_MIN}
-          ageMax={AGE_MAX}
-          locationMin={LOCATION_MIN}
-          ageOk={ageOk}
-          locationOk={locationOk}
-          updateField={updateField}
-          handleFieldBlur={handleFieldBlur}
-          detectLocation={detectLocation}
-        />
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {otpStatusMessage || (!isOnline ? uiText("user.offlineBanner") : "")}
       </div>
+      {showDeferredTips && fieldMeta?.dirty?.email && !showOtpField ? (
+        <div className="helper-text info deferred-helper-tip">{uiText("user.emailHint")}</div>
+      ) : null}
+      
+      <React.Profiler id="user-details-form-grid" onRender={profileRender}>
+        <div className={`form-grid ${showOtpField ? "has-otp" : ""}`}>
+          <UserIdentityFields
+            username={identityFields.username}
+            email={identityFields.email}
+            usernameError={identityFields.usernameError}
+            emailError={identityFields.emailError}
+            optionsLoading={optionsLoading}
+            checking={checking}
+            inputsLocked={inputsLocked}
+            emailInputDisabled={emailInputDisabled}
+            usernameOk={usernameOk}
+            emailOk={emailOk}
+            usernameMin={USERNAME_MIN}
+            showEmailGhost={showEmailGhost}
+            emailPlaceholderDomain={emailPlaceholderDomain}
+            emailPlaceholderIndex={emailPlaceholderIndex}
+            updateField={updateField}
+            handleFieldBlur={handleFieldBlur}
+            sanitizeUsername={sanitizeUsername}
+            setEmailFocused={setEmailFocused}
+          />
+
+          <OtpVerificationField
+            showOtpField={showOtpField}
+            otpDigits={otpDigits}
+            otpLength={otpLength}
+            otpStatus={otpStatus}
+            otpStatusConfig={OTP_STATUS}
+            otpError={otpError}
+            otpExpiryMessage={otpExpiryMessage}
+            showOtpExpiry={showOtpExpiry}
+            resendSeconds={resendSeconds}
+            otpStatusMessage={otpStatusMessage}
+            resendLabel={resendLabel}
+            canResend={canResend}
+            inputRefs={inputRefs}
+            editableOtpIndex={editableOtpIndex}
+            toOtpDigits={toOtpDigits}
+            setOtpDigit={setOtpDigit}
+            setOtpFromPaste={setOtpFromPaste}
+            handleResend={handleResend}
+            focusAdvanceDelayMs={runtimeConfig.focusAdvanceDelayMs}
+          />
+
+          <UserProfileFields
+            genderCode={profileFields.genderCode}
+            age={profileFields.age}
+            location={profileFields.location}
+            languageCode={profileFields.languageCode}
+            priorExperience={profileFields.priorExperience}
+            genderError={profileFields.genderError}
+            ageError={profileFields.ageError}
+            locationError={profileFields.locationError}
+            languageError={profileFields.languageError}
+            priorExperienceError={profileFields.priorExperienceError}
+            optionsLoading={optionsLoading}
+            inputsLocked={inputsLocked}
+            isMobile={isMobile}
+            locating={locating}
+            locationStatus={locationStatus}
+            locationPermissionState={locationPermissionState}
+            userEditedLocationRef={userEditedLocationRef}
+            genderOptions={genderOptions}
+            languageOptions={languageOptions}
+            priorExperienceGroups={priorExperienceGroups}
+            ageMin={AGE_MIN}
+            ageMax={AGE_MAX}
+            locationMin={LOCATION_MIN}
+            ageOk={ageOk}
+            locationOk={locationOk}
+            updateField={updateField}
+            handleFieldBlur={handleFieldBlur}
+            detectLocation={detectLocation}
+          />
+        </div>
+      </React.Profiler>
 
       <UserDetailsSubmitFooter
         errors={errors}
@@ -232,7 +318,7 @@ export default function UserDetailsPage({
         handleSubmit={handleSubmit}
         submitLabel={submitLabel}
         isOnline={isOnline}
-        retryCountdown={retryCountdown}
+        retryCountdown={deferredRetryCountdown}
       />
     </div>
   );

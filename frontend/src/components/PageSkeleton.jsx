@@ -7,12 +7,23 @@ export default function PageSkeleton({
   variant = "generic",
   compact = false,
 }) {
+  const [showDecorativeShell, setShowDecorativeShell] = React.useState(false);
+
+  React.useEffect(() => {
+    const id = window.setTimeout(() => setShowDecorativeShell(true), 180);
+    return () => window.clearTimeout(id);
+  }, []);
+
   return (
     <div className="skeleton-page-frame" role="status" aria-live="polite">
       <div className={`skeleton-page skeleton-variant-${variant} ${compact ? "compact" : ""}`}>
-        <div className="skeleton-orb orb-a" />
-        <div className="skeleton-orb orb-b" />
-        <div className="skeleton-orb orb-c" />
+        {showDecorativeShell && (
+          <>
+            <div className="skeleton-orb orb-a" />
+            <div className="skeleton-orb orb-b" />
+            <div className="skeleton-orb orb-c" />
+          </>
+        )}
 
         <div className="skeleton-shell">
           <div className="skeleton-hero">
@@ -21,7 +32,7 @@ export default function PageSkeleton({
             <div className="skeleton-subtitle shimmer" />
           </div>
 
-          {!compact && (
+          {!compact && showDecorativeShell && (
             <div className="skeleton-grid">
               <div className="skeleton-block shimmer" />
               <div className="skeleton-block shimmer" />

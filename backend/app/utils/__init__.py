@@ -12,8 +12,6 @@ from app.utils.helpers import (
     error_response,
     success_response,
     create_error_response,
-    get_file_extension,
-    validate_image_extension,
 )
 
 
@@ -29,7 +27,5 @@ __all__ = [
     'error_response',
     'success_response',
     'create_error_response',
-    'get_file_extension',
-    'validate_image_extension',
     
 ]

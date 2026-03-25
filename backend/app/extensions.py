@@ -4,7 +4,6 @@ Initializes and configures Flask extensions following application factory patter
 """
 
 import os
-import boto3  # type: ignore[import-untyped]
 from flask import Flask
 from flask_cors import CORS  # type: ignore[import-untyped]
 from flask_limiter import Limiter
@@ -17,11 +16,9 @@ from app.config import (
     CORS_ORIGINS,
     CORS_SUPPORTS_CREDENTIALS,
     RATELIMIT_STORAGE_URI,
-    MAX_CONTENT_LENGTH_MB,
     SESSION_COOKIE_SECURE,
     SESSION_COOKIE_SAMESITE,
 )
-from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 from app.config import TRUST_PROXY_HEADERS
 
 
@@ -40,7 +37,6 @@ app.config["SECRET_KEY"] = SECRET_KEY
 app.config["SESSION_COOKIE_SECURE"] = bool(SESSION_COOKIE_SECURE)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = SESSION_COOKIE_SAMESITE
-app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
 
 
 # ────────────────────────────────────────────────
@@ -87,15 +83,3 @@ except ConfigurationError:
         default_limits=["200 per day", "50 per hour"],
         storage_uri="memory://",
     )
-
-
-# ────────────────────────────────────────────────
-# S3 Client
-# ────────────────────────────────────────────────
-
-s3 = boto3.client(
-    "s3",
-    region_name=AWS_REGION,
-    aws_access_key_id=AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-)

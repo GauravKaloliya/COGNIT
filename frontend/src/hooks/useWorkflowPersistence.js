@@ -17,6 +17,7 @@ import {
   validateStageTransition,
   writeCoreValue,
 } from "../utils/appControllerState";
+import { SURVEY_API_FIELDS } from "../constants/fields";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 
 const CORE_STATE_STORAGE_AREA = "local";
@@ -37,6 +38,18 @@ const CORE_SCOPED_KEYS = [
   runtimeConfig.storageKeys.lastSubmissionSucceeded,
   runtimeConfig.storageKeys.shownImages,
 ];
+
+function normalizeStoredSurvey(value) {
+  if (!value || typeof value !== "object") return null;
+  const imageId = value[SURVEY_API_FIELDS.imageId] || value.imageId || null;
+  const imageUrl = value[SURVEY_API_FIELDS.url] || value[SURVEY_API_FIELDS.imageUrl] || value.imageUrl || "";
+  if (!imageId || !String(imageUrl).trim()) return null;
+  return {
+    ...value,
+    [SURVEY_API_FIELDS.imageId]: imageId,
+    [SURVEY_API_FIELDS.url]: imageUrl,
+  };
+}
 
 export function useWorkflowPersistence({
   publicId,
@@ -168,8 +181,13 @@ export function useWorkflowPersistence({
     }, publicId, { ttlMs: PII_STATE_TTL_MS });
     setDemographics((prev) => (hasAnyDemographicsValue(storedDemographics) ? storedDemographics : prev));
 
-    const storedSurvey = readCoreValue(runtimeConfig.storageKeys.survey, null, publicId);
-    setSurvey((prev) => (storedSurvey?.image_id && storedSurvey?.url ? storedSurvey : prev));
+    const storedSurvey = normalizeStoredSurvey(readCoreValue(runtimeConfig.storageKeys.survey, null, publicId));
+    if (storedSurvey) {
+      setSurvey((prev) => {
+        if (prev?.[SURVEY_API_FIELDS.imageId] && prev?.[SURVEY_API_FIELDS.url]) return prev;
+        return storedSurvey;
+      });
+    }
 
     const storedSurveyCompleted = readCoreValue(runtimeConfig.storageKeys.surveyCompleted, 0, publicId);
     setSurveyCompleted((prev) => (storedSurveyCompleted > 0 ? storedSurveyCompleted : prev));

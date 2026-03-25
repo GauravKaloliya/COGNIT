@@ -16,6 +16,80 @@ import { reportClientError } from "./errorReporter";
 
 const RATE_LIMIT_EVENT = "cognit:rate-limit";
 const MAINTENANCE_EVENT = "cognit:maintenance";
+const SAFE_GET_CACHE = new Map();
+
+function isAbortSignal(signal) {
+  return signal && typeof signal === "object" && "aborted" in signal;
+}
+
+function buildCacheKey(endpoint, options = {}) {
+  const authScope = options.credentials || "include";
+  return `${String(endpoint)}::${String(authScope)}`;
+}
+
+async function runSafeGetRequest(endpoint, options = {}) {
+  return apiFetch(endpoint, { method: REQUEST_METHODS.get, ...options });
+}
+
+function readSafeCache(cacheKey) {
+  const entry = SAFE_GET_CACHE.get(cacheKey);
+  if (!entry || typeof entry !== "object") return null;
+  return entry;
+}
+
+function writeSafeCache(cacheKey, payload) {
+  SAFE_GET_CACHE.set(cacheKey, payload);
+  return payload;
+}
+
+async function getSafeCached(endpoint, options = {}, cacheConfig = {}) {
+  const ttlMs = Math.max(0, Number(cacheConfig.ttlMs || 0));
+  const staleMs = Math.max(ttlMs, Number(cacheConfig.staleMs || ttlMs));
+  const swr = cacheConfig.swr !== false;
+  const key = cacheConfig.key || buildCacheKey(endpoint, options);
+  const now = Date.now();
+  const current = readSafeCache(key);
+
+  if (current?.inflight) {
+    return current.inflight;
+  }
+
+  const fetchAndStore = async () => {
+    const nextData = await runSafeGetRequest(endpoint, options);
+    writeSafeCache(key, {
+      data: nextData,
+      updatedAt: Date.now(),
+      freshUntil: Date.now() + ttlMs,
+      staleUntil: Date.now() + staleMs,
+      inflight: null,
+    });
+    return nextData;
+  };
+
+  if (current?.data !== undefined && now < Number(current.freshUntil || 0)) {
+    return current.data;
+  }
+
+  if (current?.data !== undefined && now < Number(current.staleUntil || 0) && swr) {
+    const revalidatePromise = fetchAndStore().catch(() => current.data);
+    writeSafeCache(key, { ...current, inflight: revalidatePromise });
+    return current.data;
+  }
+
+  const networkPromise = fetchAndStore().finally(() => {
+    const latest = readSafeCache(key);
+    if (!latest) return;
+    writeSafeCache(key, { ...latest, inflight: null });
+  });
+  writeSafeCache(key, {
+    data: current?.data,
+    updatedAt: current?.updatedAt || 0,
+    freshUntil: current?.freshUntil || 0,
+    staleUntil: current?.staleUntil || 0,
+    inflight: networkPromise,
+  });
+  return networkPromise;
+}
 
 export async function apiFetch(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
@@ -128,6 +202,12 @@ const withIdempotencyHeader = (options = {}) => {
 
 export const api = {
   get: (endpoint, options = {}) => apiFetch(endpoint, { method: REQUEST_METHODS.get, ...options }),
+  getCached: (endpoint, options = {}, cacheConfig = {}) => {
+    if (isAbortSignal(options?.signal) && options.signal.aborted) {
+      return Promise.reject(Object.assign(new Error("Request cancelled"), { code: REQUEST_CODES.aborted }));
+    }
+    return getSafeCached(endpoint, options, cacheConfig);
+  },
   post: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ ...options, method: REQUEST_METHODS.post, body: JSON.stringify(body) })),
   put: (endpoint, body, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ ...options, method: REQUEST_METHODS.put, body: JSON.stringify(body) })),
   delete: (endpoint, options = {}) => apiFetch(endpoint, withIdempotencyHeader({ ...options, method: REQUEST_METHODS.delete })),
@@ -146,7 +226,12 @@ export const endpoints = {
   },
   checkUsername: (username, options = {}) => api.get(API_ROUTES.checkUsername(username), options),
   checkEmail: (email, options = {}) => api.get(API_ROUTES.checkEmail(email), options),
-  getParticipantOptions: (options = {}) => api.get(API_ROUTES.participantOptions, options),
+  getParticipantOptions: (options = {}) => api.getCached(API_ROUTES.participantOptions, options, {
+    key: "participant-options",
+    ttlMs: 15000,
+    staleMs: 60000,
+    swr: true,
+  }),
   recordConsent: (publicId, options = {}) => {
     const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
     return api.post(API_ROUTES.consent, { public_id: safePublicId }, options);
@@ -173,7 +258,12 @@ export const endpoints = {
     const safePublicId = assertPublicId(data?.public_id, null, { message: getErrorMessage("NF_001_0001") });
     return api.post(API_ROUTES.submit, { ...data, public_id: safePublicId, turnstile_token: turnstileToken || undefined }, options);
   },
-  getParticipantSession: (options = {}) => api.get(API_ROUTES.participantSession, options),
+  getParticipantSession: (options = {}) => api.getCached(API_ROUTES.participantSession, options, {
+    key: "participant-session",
+    ttlMs: 5000,
+    staleMs: 30000,
+    swr: true,
+  }),
 };
 
 export function handleApiError(error, options = {}) {

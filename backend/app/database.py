@@ -4,9 +4,12 @@ Handles SQLAlchemy engine, session management, and database connection lifecycle
 """
 
 from contextlib import suppress
+import logging
+import time
 
 from flask import g
 from sqlalchemy import create_engine
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
 
@@ -17,6 +20,8 @@ from app.config import (
     DB_MAX_OVERFLOW,
     DB_POOL_TIMEOUT_SECONDS,
     DB_POOL_RECYCLE_SECONDS,
+    DB_SLOW_QUERY_LOG_THRESHOLD_MS,
+    ENABLE_DB_QUERY_TIMING,
 )
 from app.extensions import app
 
@@ -54,6 +59,33 @@ engine = create_engine(
     pool_pre_ping=True,
     connect_args=_database_connect_args()
 )
+
+logger = logging.getLogger(__name__)
+
+
+if ENABLE_DB_QUERY_TIMING:
+    @event.listens_for(engine, "before_cursor_execute")
+    def _before_cursor_execute(conn, _cursor, statement, _parameters, _context, _executemany):
+        conn.info["query_start_time"] = time.perf_counter()
+        conn.info["query_statement"] = statement
+
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def _after_cursor_execute(conn, _cursor, statement, _parameters, _context, _executemany):
+        start = conn.info.pop("query_start_time", None)
+        _ = conn.info.pop("query_statement", None)
+        if start is None:
+            return
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        if elapsed_ms < DB_SLOW_QUERY_LOG_THRESHOLD_MS:
+            return
+        normalized = " ".join(str(statement or "").split())
+        logger.warning(
+            "db_slow_query threshold_ms=%s duration_ms=%.1f sql=%s",
+            DB_SLOW_QUERY_LOG_THRESHOLD_MS,
+            elapsed_ms,
+            normalized[:400],
+        )
 
 
 # ────────────────────────────────────────────────
