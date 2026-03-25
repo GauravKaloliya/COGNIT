@@ -1,9 +1,11 @@
 import React from "react";
 import { uiText } from "../../utils/uiText.js";
 
-export default function UserIdentityFields({
-  demographics,
-  errors,
+function UserIdentityFields({
+  username,
+  email,
+  usernameError,
+  emailError,
   optionsLoading,
   checking,
   inputsLocked,
@@ -21,32 +23,32 @@ export default function UserIdentityFields({
 }) {
   return (
     <>
-      <div className={`form-field username-field ${errors.username ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
+      <div className={`form-field username-field ${usernameError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
         <label>{uiText("user.username")} <span className="required" aria-label="required">*</span></label>
         <input
           type="text"
-          className={errors.username ? "error-input" : ""}
+          className={usernameError ? "error-input" : ""}
           placeholder={uiText("user.usernamePlaceholder")}
-          value={demographics.username || ""}
+          value={username || ""}
           disabled={inputsLocked}
           onChange={(e) => updateField("username", sanitizeUsername(e.target.value))}
           onBlur={(e) => handleFieldBlur("username", e.target.value, true)}
         />
         {checking.username && <span className="checking-text">{uiText("user.checking")}</span>}
-        {errors.username && <span className="error-text">{errors.username}</span>}
+        {usernameError && <span className="error-text">{usernameError}</span>}
         {!usernameOk && (
           <span className="helper-text warning">{uiText("user.usernameHint", { min: usernameMin })}</span>
         )}
       </div>
 
-      <div className={`form-field email-field ${errors.email ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
+      <div className={`form-field email-field ${emailError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
         <label>{uiText("user.email")} <span className="required" aria-label="required">*</span></label>
         <div className="input-with-ghost">
           <input
             type="email"
-            className={errors.email ? "error-input" : ""}
+            className={emailError ? "error-input" : ""}
             placeholder=""
-            value={demographics.email || ""}
+            value={email || ""}
             disabled={emailInputDisabled}
             onChange={(e) => updateField("email", e.target.value)}
             onFocus={() => setEmailFocused(true)}
@@ -63,9 +65,11 @@ export default function UserIdentityFields({
           )}
         </div>
         {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
-        {errors.email && <span className="error-text">{errors.email}</span>}
+        {emailError && <span className="error-text">{emailError}</span>}
         {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
       </div>
     </>
   );
 }
+
+export default React.memo(UserIdentityFields);

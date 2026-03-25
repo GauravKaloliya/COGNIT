@@ -1,7 +1,7 @@
 import React from "react";
 import { uiText } from "../../utils/uiText.js";
 
-export default function SurveyCommentsField({
+function SurveyCommentsField({
   comments,
   setComments,
   commentsRef,
@@ -13,6 +13,7 @@ export default function SurveyCommentsField({
   preventCopyPaste,
   preventClipboardShortcuts,
   sanitizeAlphaNumericSpace,
+  onBlur,
 }) {
   return (
     <div className="field feedback-field">
@@ -41,6 +42,7 @@ export default function SurveyCommentsField({
           onDrop={copyPasteDisabled ? preventCopyPaste : undefined}
           onDragOver={copyPasteDisabled ? preventCopyPaste : undefined}
           onKeyDown={copyPasteDisabled ? preventClipboardShortcuts : undefined}
+          onBlur={onBlur}
         />
         <div className="textarea-counter">{uiText("survey.charsCount", { count: comments.length, max: maxFeedbackLength })}</div>
       </div>
@@ -58,3 +60,5 @@ export default function SurveyCommentsField({
     </div>
   );
 }
+
+export default React.memo(SurveyCommentsField);

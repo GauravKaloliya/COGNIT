@@ -1,7 +1,6 @@
 import { runtimeConfig } from "../config/runtime";
-import { readExpiringValue, writeExpiringValue } from "./storage";
+import { storageAdapters } from "./storageAdapters";
 
-const TELEMETRY_KEY = runtimeConfig.storageKeys.telemetry;
 const TELEMETRY_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const TELEMETRY_TTL_MS = runtimeConfig.uiStateTtlMs;
 
@@ -35,8 +34,7 @@ function defaultState() {
 }
 
 function loadState() {
-  const parsed = readExpiringValue(TELEMETRY_KEY, null, {
-    area: "session",
+  const parsed = storageAdapters.telemetry.read("", null, {
     schemaVersion: TELEMETRY_SCHEMA_VERSION,
     ttlMs: TELEMETRY_TTL_MS,
   });
@@ -45,8 +43,7 @@ function loadState() {
 }
 
 function saveState(state) {
-  writeExpiringValue(TELEMETRY_KEY, state, {
-    area: "session",
+  storageAdapters.telemetry.write("", state, {
     schemaVersion: TELEMETRY_SCHEMA_VERSION,
     ttlMs: TELEMETRY_TTL_MS,
   });

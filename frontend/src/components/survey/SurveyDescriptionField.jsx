@@ -1,7 +1,7 @@
 import React from "react";
 import { uiText } from "../../utils/uiText.js";
 
-export default function SurveyDescriptionField({
+function SurveyDescriptionField({
   description,
   setDescription,
   descriptionRef,
@@ -16,6 +16,7 @@ export default function SurveyDescriptionField({
   preventCopyPaste,
   preventClipboardShortcuts,
   sanitizeAlphaNumericSpace,
+  onBlur,
 }) {
   return (
     <div className="field">
@@ -45,6 +46,7 @@ export default function SurveyDescriptionField({
           onDrop={copyPasteDisabled ? preventCopyPaste : undefined}
           onDragOver={copyPasteDisabled ? preventCopyPaste : undefined}
           onKeyDown={copyPasteDisabled ? preventClipboardShortcuts : undefined}
+          onBlur={onBlur}
         />
         <div className="textarea-counter">
           {uiText("survey.wordsChars", { words: wordCount, chars: charCount, max: maxDescriptionLength })}
@@ -64,3 +66,5 @@ export default function SurveyDescriptionField({
     </div>
   );
 }
+
+export default React.memo(SurveyDescriptionField);

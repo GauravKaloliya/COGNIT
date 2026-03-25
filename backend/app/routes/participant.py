@@ -1,5 +1,7 @@
 """Participant routes module for C.O.G.N.I.T. backend."""
 
+import hashlib
+import json
 import logging
 from contextlib import suppress
 
@@ -66,6 +68,7 @@ from app.config import (
     PARTICIPANT_CREATE_RATE_LIMIT,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
     PARTICIPANT_SESSION_COOKIE_NAME,
+    PARTICIPANT_OPTIONS_CACHE_TTL_SECONDS,
 )
 from app.database import get_db
 from app.extensions import limiter
@@ -110,10 +113,12 @@ from app.utils.helpers import (
     success_response,
 )
 from app.utils.turnstile import verify_turnstile_token
+from app.utils.cache import cache
 
 
 participant_bp = Blueprint('participant', __name__)
 logger = logging.getLogger(__name__)
+PARTICIPANT_OPTIONS_CACHE_KEY = "participant_options:v1"
 
 # ────────────────────────────────────────────────
 # Routes
@@ -300,9 +305,37 @@ def get_participant_session():
 def get_participant_options():
     """Return participant form options sourced from the database."""
     try:
+        cached = cache.get_json(PARTICIPANT_OPTIONS_CACHE_KEY)
+        if cached and isinstance(cached, dict) and cached.get("payload") and cached.get("etag"):
+            etag = str(cached["etag"])
+            if request.headers.get("If-None-Match") == etag:
+                return ("", 304, {
+                    "ETag": etag,
+                    "Cache-Control": f"public, max-age={PARTICIPANT_OPTIONS_CACHE_TTL_SECONDS}",
+                })
+            response = success_response(cached["payload"])
+            response.headers["ETag"] = etag
+            response.headers["Cache-Control"] = f"public, max-age={PARTICIPANT_OPTIONS_CACHE_TTL_SECONDS}"
+            return response
+
         db = get_db()
         payload = fetch_participant_options(db)
-        return success_response(payload)
+        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        etag = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        cache.set_json(
+            PARTICIPANT_OPTIONS_CACHE_KEY,
+            {"payload": payload, "etag": etag},
+            ttl_seconds=PARTICIPANT_OPTIONS_CACHE_TTL_SECONDS,
+        )
+        if request.headers.get("If-None-Match") == etag:
+            return ("", 304, {
+                "ETag": etag,
+                "Cache-Control": f"public, max-age={PARTICIPANT_OPTIONS_CACHE_TTL_SECONDS}",
+            })
+        response = success_response(payload)
+        response.headers["ETag"] = etag
+        response.headers["Cache-Control"] = f"public, max-age={PARTICIPANT_OPTIONS_CACHE_TTL_SECONDS}"
+        return response
     except Exception as e:
         logger.error(LOG_PARTICIPANT_OPTIONS_FAILED, e, getattr(g, "request_id", None))
         return create_error_response("SYS_PARTICIPANT_OPTIONS_FAILED")
@@ -358,6 +391,7 @@ def request_email_otp():
             enqueue_email_otp(
                 build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
                 otp_id=otp_id,
+                idempotency_key=f"email-otp-request:{public_id}:{otp_id}",
             )
         except Exception:
             try:
