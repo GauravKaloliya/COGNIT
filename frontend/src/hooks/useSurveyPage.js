@@ -11,6 +11,7 @@ import { useSurveyEngagement } from "./useSurveyEngagement";
 import { buildSurveyImageState, getSubmitTooltip } from "../utils/surveyPageHelpers";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 import { useStableSelector } from "./useStableSelector";
+import { preloadTurnstileScript, prefetchTurnstileToken } from "../utils/turnstile";
 
 export { sanitizeAlphaNumericSpace } from "../utils/surveyPageHelpers";
 
@@ -96,6 +97,7 @@ export function useSurveyPage({
   const submitUnlockTimeoutRef = useRef(null);
   const imageLoadTimeoutRef = useRef(null);
   const prefetchTriggeredRef = useRef(false);
+  const turnstilePrefetchTriggeredRef = useRef(false);
   const {
     engagementData,
     setEngagementData,
@@ -281,6 +283,28 @@ export function useSurveyPage({
     prefetchTriggeredRef.current = true;
     void onWarmNextSurvey();
   }, [comments, description, isOnline, minimumMet, onWarmNextSurvey, submitting, survey?.image_id]);
+
+  useEffect(() => {
+    if (!isOnline) return;
+    preloadTurnstileScript().catch(() => {
+      // Non-blocking warmup only.
+    });
+  }, [isOnline]);
+
+  useEffect(() => {
+    if (!isOnline || submitting) return;
+    if (turnstilePrefetchTriggeredRef.current) return;
+    const typingSignal = (description.trim().length >= 24) || (comments.trim().length >= 12) || rating > 0;
+    if (!typingSignal) return;
+    turnstilePrefetchTriggeredRef.current = true;
+    prefetchTurnstileToken("submission_submit").catch(() => {
+      turnstilePrefetchTriggeredRef.current = false;
+    });
+  }, [comments, description, isOnline, rating, submitting]);
+
+  useEffect(() => {
+    turnstilePrefetchTriggeredRef.current = false;
+  }, [survey?.image_id]);
 
   const {
     draftRestored,

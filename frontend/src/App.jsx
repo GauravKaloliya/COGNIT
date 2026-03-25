@@ -58,8 +58,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     systemReady,
     systemError,
     systemChecking,
-    online,
-    lastSyncAt,
     retryHealthCheck,
     survey,
     surveyCompleted,
@@ -229,8 +227,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
         darkMode={darkMode}
         toggleDarkMode={toggleDarkMode}
         isMobile={isMobile}
-        online={online}
-        lastSyncAt={lastSyncAt}
         storageOk={storageOk}
         stage={stage}
       >

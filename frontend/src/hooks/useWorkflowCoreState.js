@@ -20,6 +20,15 @@ const CORE_SCOPE_ANON = "anon";
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
 const SESSION_ALIVE_KEY = runtimeConfig.storageKeys.sessionAlive;
 const EXPIRED_STORAGE_PREFIXES = Object.values(runtimeConfig.storageKeys);
+const SESSION_CRITICAL_BASE_KEYS = new Set([
+  runtimeConfig.storageKeys.publicId,
+  runtimeConfig.storageKeys.stage,
+  runtimeConfig.storageKeys.sessionId,
+  runtimeConfig.storageKeys.consentGiven,
+  runtimeConfig.storageKeys.userDetailsSubmitted,
+  runtimeConfig.storageKeys.emailVerified,
+  runtimeConfig.storageKeys.demographics,
+]);
 
 export function useWorkflowCoreState({ addToast }) {
   const [publicId, setPublicId] = useState(() => (
@@ -51,27 +60,38 @@ export function useWorkflowCoreState({ addToast }) {
   useEffect(() => {
     if (expiryNoticeShownRef.current) return;
     const now = Date.now();
-    let expiredFound = false;
+    let expiredFoundForCurrentSession = false;
+    const currentScope = getScopeId(publicId);
     const matchesPrefix = (key) => EXPIRED_STORAGE_PREFIXES.some((prefix) =>
       key === prefix || key.startsWith(`${prefix}:`) || key.startsWith(`${prefix}_`)
     );
+    const isCurrentSessionCriticalKey = (key) => {
+      if (!key) return false;
+      if (key === runtimeConfig.storageKeys.publicId) return true;
+      const [baseKey, scopedPart] = String(key).split(":");
+      if (!SESSION_CRITICAL_BASE_KEYS.has(baseKey)) return false;
+      if (!scopedPart) return false;
+      return scopedPart === currentScope;
+    };
     ALL_STORAGE_AREAS.forEach((area) => {
       forEachStoredKey(area, (key) => {
         if (!key || !matchesPrefix(key)) return;
         const meta = readStoredMeta(key, area);
         if (!meta || typeof meta.expiresAt !== "number") return;
         if (now <= meta.expiresAt) return;
+        if (isCurrentSessionCriticalKey(key)) {
+          expiredFoundForCurrentSession = true;
+        }
         removeStoredKey(key, area);
-        expiredFound = true;
       });
     });
-    if (expiredFound) {
+    if (expiredFoundForCurrentSession) {
       expiryNoticeShownRef.current = true;
       // Expired keys should be cleaned independently. Do not hard-reset all
       // in-memory workflow state just because a non-critical key expired.
       addToast(uiText("app.sessionExpired"), "info");
     }
-  }, [addToast]);
+  }, [addToast, publicId]);
 
   const clearUserStorage = useCallback((scopeOverride = null) => {
     let darkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
