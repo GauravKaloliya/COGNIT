@@ -8,8 +8,6 @@ export default function AppContainer({
   darkMode,
   toggleDarkMode,
   isMobile,
-  online,
-  lastSyncAt,
   storageOk,
   stage,
   children,
@@ -30,21 +28,6 @@ export default function AppContainer({
           >
             <ThemeToggleIcon darkMode={darkMode} />
           </DSButton>
-          <div className="header-status">
-            <div className={`status-dot ${online ? "online" : "offline"}`}>
-              {online ? uiText("status.online") : uiText("status.offline")}
-            </div>
-            <div className="header-status-text">
-              <span className="header-status-line">
-                {online ? uiText("status.onlineReady") : uiText("status.offlineSubmissions")}
-              </span>
-              <span className="header-status-line">
-                {lastSyncAt
-                  ? uiText("status.lastSync", { time: new Date(lastSyncAt).toLocaleTimeString() })
-                  : uiText("status.neverSynced")}
-              </span>
-            </div>
-          </div>
         </div>
       </header>
 

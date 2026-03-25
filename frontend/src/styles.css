@@ -1066,6 +1066,7 @@ body.dark .consent-fade {
     box-shadow var(--transition-base),
     background-color var(--transition-base),
     transform var(--transition-base);
+  color: var(--muted);
 }
 .flow-step.done {
   border-color: color-mix(in srgb, var(--success) 22%, transparent 78%);
@@ -1086,6 +1087,27 @@ body.dark .consent-fade {
   font-weight: var(--font-semibold);
   letter-spacing: 0;
   line-height: 1.2;
+}
+
+body.dark .flow-stepper {
+  background: color-mix(in srgb, var(--panel) 78%, var(--border-light) 22%);
+}
+
+body.dark .flow-step {
+  color: color-mix(in srgb, var(--text) 62%, var(--muted) 38%);
+}
+
+body.dark .flow-step.done {
+  border-color: color-mix(in srgb, var(--success) 42%, transparent 58%);
+  background: color-mix(in srgb, var(--panel) 86%, var(--success) 14%);
+  color: color-mix(in srgb, var(--success) 72%, white 28%);
+}
+
+body.dark .flow-step.active {
+  border-color: color-mix(in srgb, var(--primary) 64%, #cfe0ff 36%);
+  background: color-mix(in srgb, var(--panel) 90%, black 10%);
+  box-shadow: 0 4px 14px rgba(24, 119, 242, 0.24);
+  color: var(--text);
 }
 @media (min-width: 768px) {
   .flow-stepper-wrap {
@@ -2520,7 +2542,8 @@ body.dark .counts {
 }
 
 body.dark .toast.success {
-  background: rgba(39, 174, 96, 0.15);
+  background: #1c2a24;
+  color: #eaf7ef;
 }
 
 .toast.error {
@@ -2529,7 +2552,8 @@ body.dark .toast.success {
 }
 
 body.dark .toast.error {
-  background: rgba(231, 76, 60, 0.15);
+  background: #2f1f22;
+  color: #fdeeee;
 }
 
 .toast.warning {
@@ -2538,7 +2562,8 @@ body.dark .toast.error {
 }
 
 body.dark .toast.warning {
-  background: rgba(230, 126, 34, 0.15);
+  background: #33281e;
+  color: #fff3e3;
 }
 
 .toast-action {
@@ -3086,7 +3111,19 @@ body.dark .toast.warning {
 
 .survey-feedback-finish {
   border: 2px solid var(--error);
-  color: var(--error);
+  background: var(--error);
+  color: #fff;
+  transition: none;
+}
+
+.survey-feedback-finish:hover:not(:disabled),
+.survey-feedback-finish:focus-visible:not(:disabled),
+.survey-feedback-finish:active:not(:disabled) {
+  border-color: var(--error);
+  background: var(--error);
+  color: #fff;
+  box-shadow: none;
+  transform: none;
 }
 
 @media (max-width: 479px) {

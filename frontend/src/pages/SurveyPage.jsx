@@ -47,7 +47,6 @@ export default function SurveyPage({
     canSubmit,
     currentStep,
     minimumMet,
-    isOnline,
     submitLocked,
     descriptionRef,
     commentsRef,
@@ -60,7 +59,6 @@ export default function SurveyPage({
     getSubmitTooltip,
     preventCopyPaste,
     preventClipboardShortcuts,
-    draftRestored,
     saveError,
     optimisticMessage,
     touchField,
@@ -88,7 +86,6 @@ export default function SurveyPage({
     && submitError !== uiText("survey.submitLocked")
     ? submitError
     : "";
-  const deferredDraftRestored = React.useDeferredValue(draftRestored);
   const deferredSaveError = React.useDeferredValue(saveError);
 
   React.useEffect(() => {
@@ -146,12 +143,9 @@ export default function SurveyPage({
   return (
     <div className="panel survey-page-panel">
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {optimisticMessage || visibleSubmitError || (!isOnline ? uiText("survey.offlineBanner") : "")}
+        {optimisticMessage || visibleSubmitError}
       </div>
       <PageStatusBanners
-        isOnline={isOnline}
-        offlineMessage={uiText("survey.offlineBanner")}
-        draftRestored={deferredDraftRestored}
         saveError={deferredSaveError}
       />
       <div className="meta meta-step-top">
@@ -227,7 +221,6 @@ export default function SurveyPage({
         submitting={submitting}
         canSubmit={canSubmit}
         submitLocked={submitLocked}
-        isOnline={isOnline}
         handleSubmit={handleSubmit}
         getSubmitTooltip={getSubmitTooltip}
       />
