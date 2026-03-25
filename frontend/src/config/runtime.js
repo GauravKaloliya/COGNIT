@@ -59,14 +59,7 @@ export const runtimeConfig = {
   },
   emailPlaceholderRotateMs: toInt(import.meta.env.VITE_EMAIL_PLACEHOLDER_ROTATE_MS, 1800),
   focusAdvanceDelayMs: 0,
-  allowedEmailDomains: toList(import.meta.env.VITE_ALLOWED_EMAIL_DOMAINS, [
-    "gmail.com",
-    "outlook.com",
-    "hotmail.com",
-    "icloud.com",
-    "me.com",
-    "mac.com",
-  ]),
+  allowedEmailDomains: toList(import.meta.env.VITE_ALLOWED_EMAIL_DOMAINS, []),
   storageKeys: {
     activeTabLock: "cognit_active_tab_lock_v1",
     darkMode: "darkMode",

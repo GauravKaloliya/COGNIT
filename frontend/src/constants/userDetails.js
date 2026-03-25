@@ -20,17 +20,8 @@ export const USER_DETAILS_ERROR_CODE_TO_FIELD = {
   DUP_001_0002: USER_DETAIL_FIELDS.email,
 };
 
-export const GEOLOCATION_MODES = {
-  auto: "auto",
-  manual: "manual",
-};
-
 export const GEOLOCATION_ERROR_CODES = {
   permissionDenied: 1,
-};
-
-export const USER_DETAILS_STATUS = {
-  pendingFlag: "1",
 };
 
 export const REVERSE_GEOCODE_FIELDS = {

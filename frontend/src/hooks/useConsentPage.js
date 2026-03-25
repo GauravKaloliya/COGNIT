@@ -91,7 +91,7 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
       return;
     }
     if (!systemReady) {
-      setError(getErrorMessage("SYS_002_0003"));
+      setError(getErrorMessage("UI_001_0001"));
       return;
     }
 
