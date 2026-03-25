@@ -127,7 +127,7 @@ export function useAppController() {
     isActiveTabOwner,
   });
 
-  const { systemReady, systemError, systemChecking, online, lastSyncAt, retryHealthCheck } = systemHealth;
+  const { systemReady, systemError, systemChecking, retryHealthCheck } = systemHealth;
 
   useEffect(() => () => {
     cancelInFlightRequests?.();
@@ -257,8 +257,6 @@ export function useAppController() {
     systemReady,
     systemError,
     systemChecking,
-    online,
-    lastSyncAt,
     retryHealthCheck,
     survey,
     surveyCompleted,

@@ -4,9 +4,13 @@ import { scheduleTimeout } from "./timing";
 import { uiText } from "./uiText.js";
 
 let scriptPromise = null;
-const TURNSTILE_MAX_ATTEMPTS = 2;
+const PREFETCHED_TOKEN_CACHE = new Map();
+const PREFETCH_INFLIGHT = new Map();
 
 const TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+const TURNSTILE_TIMEOUT_MS = runtimeConfig.turnstileClientTimeoutMs;
+const TURNSTILE_MAX_ATTEMPTS = runtimeConfig.turnstileClientMaxAttempts;
+const TURNSTILE_PREFETCH_TTL_MS = runtimeConfig.turnstilePrefetchTtlMs;
 
 const isLocalhost = () => {
   if (typeof window === "undefined") return false;
@@ -43,15 +47,35 @@ const ensureTurnstileScript = () => {
   return scriptPromise;
 };
 
-const TURNSTILE_TIMEOUT_MS = 8000;
-
 export const isTurnstileRequired = () => {
   if (!runtimeConfig.turnstileEnabled) return false;
   if (import.meta.env.DEV || isLocalhost()) return false;
   return true;
 };
 
-export const getTurnstileToken = async (action = "submit") => {
+const readPrefetchedToken = (action, { consume = false } = {}) => {
+  const cached = PREFETCHED_TOKEN_CACHE.get(action);
+  if (!cached) return "";
+  if (!cached.token || Date.now() > Number(cached.expiresAt || 0)) {
+    PREFETCHED_TOKEN_CACHE.delete(action);
+    return "";
+  }
+  if (consume) {
+    PREFETCHED_TOKEN_CACHE.delete(action);
+  }
+  return cached.token;
+};
+
+const savePrefetchedToken = (action, token) => {
+  const safeToken = String(token || "").trim();
+  if (!safeToken) return;
+  PREFETCHED_TOKEN_CACHE.set(action, {
+    token: safeToken,
+    expiresAt: Date.now() + TURNSTILE_PREFETCH_TTL_MS,
+  });
+};
+
+const requestTurnstileToken = async (action = "submit") => {
   if (!isTurnstileRequired()) {
     // Local development should never block on Turnstile.
     return "";
@@ -82,7 +106,7 @@ export const getTurnstileToken = async (action = "submit") => {
       container.style.opacity = "0";
       document.body.appendChild(container);
 
-      return await Promise.race([
+      const token = await Promise.race([
         new Promise((resolve, reject) => {
           let widgetId = null;
           const cleanup = () => {
@@ -152,6 +176,7 @@ export const getTurnstileToken = async (action = "submit") => {
           scheduleTimeout(() => reject(new Error(uiText("turnstile.executionTimedOut"))), TURNSTILE_TIMEOUT_MS)
         ),
       ]);
+      return String(token || "").trim();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(uiText("turnstile.unavailable"));
       await reportClientError({
@@ -169,4 +194,37 @@ export const getTurnstileToken = async (action = "submit") => {
   }
   if (isLocalhost()) return "";
   throw lastError instanceof Error ? lastError : new Error(uiText("turnstile.unavailable"));
+};
+
+export const preloadTurnstileScript = async () => {
+  if (!isTurnstileRequired()) return;
+  await ensureTurnstileScript();
+};
+
+export const prefetchTurnstileToken = async (action = "submit") => {
+  if (!isTurnstileRequired()) return "";
+  const cached = readPrefetchedToken(action);
+  if (cached) return cached;
+  const inflight = PREFETCH_INFLIGHT.get(action);
+  if (inflight) return inflight;
+  const task = requestTurnstileToken(action)
+    .then((token) => {
+      savePrefetchedToken(action, token);
+      return token;
+    })
+    .finally(() => {
+      PREFETCH_INFLIGHT.delete(action);
+    });
+  PREFETCH_INFLIGHT.set(action, task);
+  return task;
+};
+
+export const getTurnstileToken = async (action = "submit", options = {}) => {
+  const { preferPrefetched = true, consumePrefetched = true } = options || {};
+  if (!isTurnstileRequired()) return "";
+  if (preferPrefetched) {
+    const prefetched = readPrefetchedToken(action, { consume: consumePrefetched });
+    if (prefetched) return prefetched;
+  }
+  return requestTurnstileToken(action);
 };
