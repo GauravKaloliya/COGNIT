@@ -1,11 +1,13 @@
 import React from "react";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
+import OfflinePage from "./components/OfflinePage.jsx";
 import DSButton from "./components/design/DSButton.jsx";
 import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
 import AppContainer from "./components/app/AppContainer.jsx";
 import AppStageRouter, { prefetchLikelyNextChunks } from "./components/app/AppStageRouter.jsx";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { uiText } from "./utils/uiText.js";
+import { telemetryIncrement, telemetryInteraction, telemetryUpdateScrollDepth } from "./utils/clientTelemetry.js";
 import { useAppController } from "./hooks/useAppController";
 import { useIsMobile } from "./hooks/useIsMobile.js";
 
@@ -44,6 +46,7 @@ const ConfettiLayer = React.lazy(() => import("./components/feedback/ConfettiLay
 
 export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const {
+    isOnline,
     isActiveTabOwner,
     stage,
     publicId,
@@ -80,6 +83,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const [showBackToTop, setShowBackToTop] = React.useState(false);
   const deferredToasts = React.useDeferredValue(toasts);
   const deferredConfetti = React.useDeferredValue(showConfetti);
+  const offlineResetDoneRef = React.useRef(false);
 
   React.useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
@@ -96,6 +100,45 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   }, []);
 
   React.useEffect(() => {
+    let rafId = null;
+    const scheduleScrollTelemetry = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        telemetryUpdateScrollDepth();
+      });
+    };
+    const onClick = () => telemetryInteraction("click");
+    const onKeydown = () => telemetryInteraction("keypress");
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        telemetryIncrement("tab_switches");
+      }
+    };
+    const onBeforeUnload = () => telemetryIncrement("page_close_attempts");
+    const onOffline = () => telemetryIncrement("network_disconnects");
+
+    window.addEventListener("scroll", scheduleScrollTelemetry, { passive: true });
+    window.addEventListener("click", onClick, { passive: true });
+    window.addEventListener("keydown", onKeydown);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("offline", onOffline);
+
+    return () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener("scroll", scheduleScrollTelemetry);
+      window.removeEventListener("click", onClick);
+      window.removeEventListener("keydown", onKeydown);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  React.useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
     if (!media.matches) return;
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
@@ -105,6 +148,29 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     if (!systemReady) return;
     prefetchLikelyNextChunks(stage);
   }, [stage, systemReady]);
+
+  React.useEffect(() => {
+    if (!isOnline) {
+      if (!offlineResetDoneRef.current) {
+        clearUserStorage?.(publicId);
+        offlineResetDoneRef.current = true;
+      }
+      return;
+    }
+    offlineResetDoneRef.current = false;
+  }, [clearUserStorage, isOnline, publicId]);
+
+  if (!isOnline) {
+    return (
+      <ErrorBoundary onError={() => {}}>
+        <OfflinePage
+          onRetry={() => window.location.reload()}
+          darkMode={darkMode}
+          onToggleDarkMode={toggleDarkMode}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   if (!isActiveTabOwner) {
     return (

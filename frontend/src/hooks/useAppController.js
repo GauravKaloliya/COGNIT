@@ -14,6 +14,22 @@ import { useActiveTabOwnership } from "./useActiveTabOwnership";
 import { useWorkflowCoreState } from "./useWorkflowCoreState";
 import { useWorkflowPersistence } from "./useWorkflowPersistence";
 
+function rethrowWithMetadata(error, fallbackCode, fallbackMessage) {
+  const message = getDisplayErrorMessage(error, fallbackCode) || fallbackMessage || getErrorMessage(fallbackCode);
+  const wrappedError = new Error(message);
+  wrappedError.code = error?.code || fallbackCode;
+  wrappedError.category = error?.category || String(wrappedError.code || "SYS").split("_")[0] || "SYS";
+  wrappedError.field = error?.field;
+  wrappedError.fields = error?.fields;
+  wrappedError.status = Number(error?.status) || 0;
+  wrappedError.details = error?.details;
+  wrappedError.requestId = error?.requestId;
+  wrappedError.severity = error?.severity;
+  wrappedError.action = error?.action;
+  wrappedError.retryable = error?.retryable;
+  throw wrappedError;
+}
+
 export function useAppController() {
   const isOnline = useOnlineStatus();
   const { toasts, addToast, dismissToast } = useToastState();
@@ -150,7 +166,7 @@ export function useAppController() {
       return participant;
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
-      throw new Error(getDisplayErrorMessage(error, "SYS_002_0022"));
+      rethrowWithMetadata(error, "SYS_002_0022");
     } finally {
       if (submitFlowAbortRef.current === controller) {
         submitFlowAbortRef.current = null;
@@ -167,12 +183,18 @@ export function useAppController() {
     try {
       const consentPublicId = publicIdOverride || publicId;
       if (!consentPublicId) {
-        throw new Error(getErrorMessage("NF_001_0001"));
+        const missingPublicIdError = new Error(getErrorMessage("NF_001_0001"));
+        missingPublicIdError.code = "NF_001_0001";
+        missingPublicIdError.category = "NF";
+        missingPublicIdError.status = 404;
+        missingPublicIdError.retryable = false;
+        missingPublicIdError.action = "redirect";
+        throw missingPublicIdError;
       }
       return await endpoints.recordConsent(consentPublicId, { signal: controller.signal });
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
-      throw new Error(getDisplayErrorMessage(error, "SYS_002_0002"));
+      rethrowWithMetadata(error, "SYS_002_0002");
     } finally {
       if (submitFlowAbortRef.current === controller) {
         submitFlowAbortRef.current = null;
