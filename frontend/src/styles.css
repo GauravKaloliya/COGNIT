@@ -4071,7 +4071,7 @@ canvas {
   }
 
   .dark-mode-toggle {
-    min-width: var(--mobile-touch-target);
+    min-width: 36px;
   }
 
   .brand {
