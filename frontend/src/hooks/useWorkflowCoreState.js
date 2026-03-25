@@ -3,6 +3,7 @@ import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import {
   ALL_STORAGE_AREAS,
+  forEachStoredKey,
   forEachStorageArea,
   getStoredValue,
   makeScopedKey,
@@ -53,16 +54,14 @@ export function useWorkflowCoreState({ addToast }) {
       key === prefix || key.startsWith(`${prefix}:`) || key.startsWith(`${prefix}_`)
     );
     ALL_STORAGE_AREAS.forEach((area) => {
-      const storage = area === CORE_STATE_STORAGE_AREA ? localStorage : sessionStorage;
-      for (let i = storage.length - 1; i >= 0; i -= 1) {
-        const key = storage.key(i);
-        if (!key || !matchesPrefix(key)) continue;
+      forEachStoredKey(area, (key) => {
+        if (!key || !matchesPrefix(key)) return;
         const meta = readStoredMeta(key, area);
-        if (!meta || typeof meta.expiresAt !== "number") continue;
-        if (now <= meta.expiresAt) continue;
+        if (!meta || typeof meta.expiresAt !== "number") return;
+        if (now <= meta.expiresAt) return;
         removeStoredKey(key, area);
         expiredFound = true;
-      }
+      });
     });
     if (expiredFound) {
       expiryNoticeShownRef.current = true;
@@ -128,6 +127,7 @@ export function useWorkflowCoreState({ addToast }) {
       runtimeConfig.storageKeys.desktopLocationSession,
       runtimeConfig.storageKeys.reverseGeocodeState,
       runtimeConfig.storageKeys.telemetry,
+      runtimeConfig.storageKeys.clientErrorQueue,
       runtimeConfig.storageKeys.telemetryBlocked,
       runtimeConfig.storageKeys.sessionAlive,
     ];
@@ -145,14 +145,12 @@ export function useWorkflowCoreState({ addToast }) {
     ].filter(Boolean);
     prefixesToClear.forEach((prefix) => {
       forEachStorageArea((area) => {
-        const storage = area === CORE_STATE_STORAGE_AREA ? localStorage : sessionStorage;
-        for (let i = storage.length - 1; i >= 0; i -= 1) {
-          const key = storage.key(i);
-          if (!key) continue;
+        forEachStoredKey(area, (key) => {
+          if (!key) return;
           if (key.startsWith(`${prefix}_`)) {
             removeStoredKey(key, area);
           }
-        }
+        });
       });
     });
 

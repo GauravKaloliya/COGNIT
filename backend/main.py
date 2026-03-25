@@ -4,6 +4,7 @@ Flask application factory and route registration.
 """
 
 import logging
+import atexit
 
 from flask import request, g
 
@@ -38,13 +39,13 @@ from app.utils.helpers import create_error_response, success_response
 from app.utils.app_runtime import (
     finalize_response,
     get_health_response,
-    handle_payload_too_large,
     initialize_request_context,
     redirect_to_api_docs_endpoints,
     render_api_docs_page,
 )
 from app.routes import participant_bp, image_bp, submission_bp
-from app.utils.observability import log_event
+from app.utils.observability import log_event_async
+from app.utils.durable_event_queue import enqueue_durable_event, start_durable_event_worker, stop_durable_event_worker
 from app.config import (
     ROOT_RATE_LIMIT,
     DOCS_RATE_LIMIT,
@@ -59,6 +60,8 @@ configure_logging()
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
+start_durable_event_worker()
+atexit.register(stop_durable_event_worker)
 # ────────────────────────────────────────────────
 # Register Blueprints
 # ────────────────────────────────────────────────
@@ -81,12 +84,6 @@ def log_request():
 def log_response(response):
     """Log outgoing responses for debugging."""
     return finalize_response(response, logger)
-
-
-@app.errorhandler(413)
-def handle_request_too_large(_error):
-    """Return JSON response for oversized uploads."""
-    return handle_payload_too_large(app)
 
 
 @app.errorhandler(404)
@@ -182,18 +179,17 @@ def api_docs_examples():
 @limiter.limit(ROOT_RATE_LIMIT)
 def client_error():
     payload = request.json or {}
-    log_event(
-        logger,
-        OBS_EVENT_CLIENT_ERROR,
-        level=logging.ERROR,
-        message=payload.get(REQUEST_KEY_ERROR_MESSAGE),
-        stack=payload.get(REQUEST_KEY_ERROR_STACK),
-        context=payload.get(REQUEST_KEY_ERROR_CONTEXT),
-        route=payload.get(REQUEST_KEY_ERROR_ROUTE),
-        tag=payload.get(REQUEST_KEY_ERROR_TAG),
-        meta=payload.get(REQUEST_KEY_ERROR_META),
-        request_id=getattr(g, "request_id", None),
-    )
+    enqueue_durable_event(OBS_EVENT_CLIENT_ERROR, {
+        "message": payload.get(REQUEST_KEY_ERROR_MESSAGE),
+        "stack": payload.get(REQUEST_KEY_ERROR_STACK),
+        "context": payload.get(REQUEST_KEY_ERROR_CONTEXT),
+        "route": payload.get(REQUEST_KEY_ERROR_ROUTE),
+        "tag": payload.get(REQUEST_KEY_ERROR_TAG),
+        "meta": payload.get(REQUEST_KEY_ERROR_META),
+        "request_id": getattr(g, "request_id", None),
+        "level": "error",
+    }, idempotency_key=f"client-error:{getattr(g, 'request_id', '')}:{payload.get(REQUEST_KEY_ERROR_TAG) or ''}")
+    log_event_async(logger, "client_error_queued", level=logging.INFO, request_id=getattr(g, "request_id", None))
     return success_response({"received": True})
 
 

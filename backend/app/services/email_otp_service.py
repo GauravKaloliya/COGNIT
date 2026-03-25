@@ -29,6 +29,10 @@ from app.config import (
     EMAIL_OTP_JWT_TTL_SECONDS,
     EMAIL_OTP_HTML_TEMPLATE,
     SECRET_KEY,
+    ASYNC_EXECUTOR_WORKERS_EMAIL_OTP,
+    EMAIL_OTP_ASYNC_BASE_BACKOFF_MS,
+    EMAIL_OTP_ASYNC_MAX_BACKOFF_MS,
+    EMAIL_OTP_ASYNC_MAX_ATTEMPTS,
 )
 from app.services.email_otp_query_service import (
     QUERY_FETCH_LATEST_EMAIL_OTP,
@@ -47,7 +51,10 @@ from app.database import engine
 
 OTP_DIGITS = "0123456789"
 logger = logging.getLogger(__name__)
-EMAIL_OTP_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="email-otp")
+EMAIL_OTP_EXECUTOR = ThreadPoolExecutor(
+    max_workers=ASYNC_EXECUTOR_WORKERS_EMAIL_OTP,
+    thread_name_prefix="email-otp",
+)
 
 
 class EmailOtpSendError(RuntimeError):
@@ -181,16 +188,41 @@ def send_email_otp(payload: dict) -> None:
         raise EmailOtpSendError(kind="request_error", detail=str(exc)) from exc
 
 
-def enqueue_email_otp(payload: dict, *, otp_id: int) -> None:
+def enqueue_email_otp(payload: dict, *, otp_id: int, idempotency_key: str | None = None) -> None:
+    token = str(idempotency_key or "").strip()
+    if not token:
+        token = f"email-otp:{int(otp_id)}"
+    idempotency_key = token[:128]
+
+    def _backoff_seconds(attempt: int) -> float:
+        delay_ms = min(
+            int(EMAIL_OTP_ASYNC_MAX_BACKOFF_MS),
+            int(EMAIL_OTP_ASYNC_BASE_BACKOFF_MS) * (2 ** max(0, int(attempt) - 1)),
+        )
+        return max(0.05, delay_ms / 1000.0)
+
     def _send() -> None:
-        try:
-            send_email_otp(payload)
-        except Exception:
+        attempts = max(1, int(EMAIL_OTP_ASYNC_MAX_ATTEMPTS))
+        for attempt in range(1, attempts + 1):
             try:
-                with engine.begin() as conn:
-                    conn.execute(QUERY_MARK_OTP_USED, {"id": int(otp_id)})
-            except Exception:
-                pass
+                send_email_otp(payload)
+                return
+            except Exception as exc:
+                logger.warning(
+                    "email_otp_async_send_failed idempotency=%s attempt=%s/%s error=%s",
+                    idempotency_key,
+                    attempt,
+                    attempts,
+                    str(exc),
+                )
+                if attempt >= attempts:
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(QUERY_MARK_OTP_USED, {"id": int(otp_id)})
+                    except Exception:
+                        pass
+                    return
+                time.sleep(_backoff_seconds(attempt))
 
     EMAIL_OTP_EXECUTOR.submit(_send)
 

@@ -5,6 +5,7 @@ import PageActions from "../PageActions.jsx";
 
 export default function SurveySubmitFooter({
   visibleSubmitError,
+  optimisticMessage,
   submitting,
   canSubmit,
   submitLocked,
@@ -15,6 +16,7 @@ export default function SurveySubmitFooter({
   return (
     <>
       {visibleSubmitError && <div className="banner warning">{visibleSubmitError}</div>}
+      {!visibleSubmitError && optimisticMessage ? <div className="banner info">{optimisticMessage}</div> : null}
 
       <PageActions sticky className="actions survey-submit-actions survey-sticky-footer">
         <div className="submit-info-box">

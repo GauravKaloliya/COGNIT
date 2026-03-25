@@ -1,7 +1,7 @@
 import React from "react";
 import { uiText } from "../../utils/uiText.js";
 
-export default function SurveyRatingField({ rating, setRating, imageReady }) {
+function SurveyRatingField({ rating, setRating, imageReady, onBlur }) {
   return (
     <div className="field effort-rating">
       <label>
@@ -16,6 +16,7 @@ export default function SurveyRatingField({ rating, setRating, imageReady }) {
               value={val}
               checked={rating === val}
               onChange={() => setRating(val)}
+              onBlur={onBlur}
               disabled={!imageReady}
             />
             <span className="rating-label">{val}</span>
@@ -29,3 +30,5 @@ export default function SurveyRatingField({ rating, setRating, imageReady }) {
     </div>
   );
 }
+
+export default React.memo(SurveyRatingField);

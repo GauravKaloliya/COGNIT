@@ -21,9 +21,6 @@ from app.config import (
     ATTENTION_FLAG_THRESHOLD,
     ATTENTION_MIN_DISTINCT_WORDS,
     ATTENTION_MIN_CHAR_LENGTH,
-    PRIORITY_WORD_THRESHOLD,
-    PRIORITY_ROUNDS_THRESHOLD,
-    PRIORITY_ATTENTION_THRESHOLD,
     SUBMIT_RATE_LIMIT,
 )
 from app.constants.event_constants import HTTP_METHOD_POST
@@ -99,7 +96,6 @@ from app.services import (
     release_image_reservation,
     update_participant_attention_flag,
     update_participant_metadata,
-    upsert_participant_activity_stats,
 )
 from app.services.submission_processing_service import (
     apply_attention_monitor,
@@ -370,16 +366,6 @@ def submit():
                 soft_flag_triggered=soft_flag_triggered,
             )
 
-        upsert_participant_activity_stats(
-            db,
-            participant_id=participant_id,
-            word_count=word_count,
-            survey_round_increment=1 if is_survey else 0,
-            priority_word_threshold=PRIORITY_WORD_THRESHOLD,
-            priority_rounds_threshold=PRIORITY_ROUNDS_THRESHOLD,
-            priority_attention_threshold=PRIORITY_ATTENTION_THRESHOLD,
-        )
-
         # Release image reservation on successful submission (soft release).
         try:
             release_image_reservation(db, image_id=image_id_str, participant_id=participant_id)
@@ -398,6 +384,7 @@ def submit():
             survey_index=survey_index,
             quality=float(quality),
             word_count=int(word_count),
+            idempotency_key=str(idempotency_key or ""),
         )
 
         response_payload = build_submission_response_payload(

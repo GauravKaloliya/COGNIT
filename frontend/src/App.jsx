@@ -3,7 +3,7 @@ import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import DSButton from "./components/design/DSButton.jsx";
 import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
 import AppContainer from "./components/app/AppContainer.jsx";
-import AppStageRouter from "./components/app/AppStageRouter.jsx";
+import AppStageRouter, { prefetchLikelyNextChunks } from "./components/app/AppStageRouter.jsx";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { uiText } from "./utils/uiText.js";
 import { useAppController } from "./hooks/useAppController";
@@ -39,45 +39,8 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function Toasts({ toasts, onDismiss }) {
-  return (
-    <div className="toast-container">
-      {toasts.map((toast) => (
-        <div key={toast.id} className={`toast ${toast.type}`}>
-          <span>{toast.message}</span>
-          <div className="toast-actions">
-            {toast.action && (
-              <DSButton
-                variant="ghost"
-                className="toast-action"
-                onClick={() => {
-                  toast.action.onClick();
-                  onDismiss(toast.id);
-                }}
-              >
-                {toast.action.label}
-              </DSButton>
-            )}
-            <DSButton variant="ghost" onClick={() => onDismiss(toast.id)} aria-label={uiText("toast.dismiss")}>
-              ×
-            </DSButton>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Confetti({ show }) {
-  if (!show) return null;
-  return (
-    <div className="confetti">
-      {Array.from({ length: 24 }).map((_, index) => (
-        <span key={index} className={`confetti-piece piece-${index % 6}`} />
-      ))}
-    </div>
-  );
-}
+const ToastLayer = React.lazy(() => import("./components/feedback/ToastLayer.jsx"));
+const ConfettiLayer = React.lazy(() => import("./components/feedback/ConfettiLayer.jsx"));
 
 export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const {
@@ -103,6 +66,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     isFetchingImage,
     showConfetti,
     fetchImage,
+    prefetchNextImage,
     handleSubmit,
     claimActiveTabLock,
     dismissToast,
@@ -114,6 +78,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   } = useAppController();
   const isMobile = useIsMobile();
   const [showBackToTop, setShowBackToTop] = React.useState(false);
+  const deferredToasts = React.useDeferredValue(toasts);
+  const deferredConfetti = React.useDeferredValue(showConfetti);
 
   React.useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
@@ -133,6 +99,11 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     const media = window.matchMedia("(max-width: 767px)");
     if (!media.matches) return;
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+  }, [stage, systemReady]);
+
+  React.useEffect(() => {
+    if (!systemReady) return;
+    prefetchLikelyNextChunks(stage);
   }, [stage, systemReady]);
 
   if (!isActiveTabOwner) {
@@ -215,6 +186,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           setSurveyFeedbackReady={setSurveyFeedbackReady}
           clearUserStorage={clearUserStorage}
           fetchImage={fetchImage}
+          prefetchNextImage={prefetchNextImage}
           handleSubmit={handleSubmit}
           imageError={imageError}
           isFetchingImage={isFetchingImage}
@@ -232,8 +204,12 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
         </DSButton>
       )}
 
-      <Confetti show={showConfetti} />
-      <Toasts toasts={toasts} onDismiss={dismissToast} />
+      <React.Suspense fallback={null}>
+        <ConfettiLayer show={deferredConfetti} />
+      </React.Suspense>
+      <React.Suspense fallback={null}>
+        <ToastLayer toasts={deferredToasts} onDismiss={dismissToast} />
+      </React.Suspense>
     </ErrorBoundary>
   );
 }

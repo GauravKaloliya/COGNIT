@@ -20,16 +20,10 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
     const ttlMs = runtimeConfig.uiStateTtlMs;
 
     // Preserve dark mode preference across resets.
-    let storedDarkMode = null;
-    storedDarkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, { area: "local", schemaVersion, ttlMs });
-    if (typeof storedDarkMode !== "boolean") {
-      storedDarkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, { area: "session", schemaVersion, ttlMs });
-    }
+    const storedDarkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, { area: "local", schemaVersion, ttlMs });
 
     const existingPublicId =
-      readExpiringValue(runtimeConfig.storageKeys.publicId, "", { area: "local", schemaVersion, ttlMs }) ||
-      readExpiringValue(runtimeConfig.storageKeys.publicId, "", { area: "session", schemaVersion, ttlMs }) ||
-      "";
+      readExpiringValue(runtimeConfig.storageKeys.publicId, "", { area: "local", schemaVersion, ttlMs }) || "";
     const scopes = ["anon"];
     if (existingPublicId) scopes.push(existingPublicId);
 
@@ -53,6 +47,15 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
       runtimeConfig.storageKeys.surveyPendingSubmit,
       runtimeConfig.storageKeys.surveyFeedPendingContinue,
       runtimeConfig.storageKeys.surveyFeedPendingFinish,
+      runtimeConfig.storageKeys.participantOptions,
+      runtimeConfig.storageKeys.autoLocationPrompt,
+      runtimeConfig.storageKeys.autoLocationSuccess,
+      runtimeConfig.storageKeys.desktopLocationSession,
+      runtimeConfig.storageKeys.reverseGeocodeState,
+      runtimeConfig.storageKeys.telemetry,
+      runtimeConfig.storageKeys.clientErrorQueue,
+      runtimeConfig.storageKeys.telemetryBlocked,
+      runtimeConfig.storageKeys.sessionAlive,
     ];
 
     keysToClear.forEach((key) => {

@@ -5,72 +5,43 @@ from __future__ import annotations
 import random
 import logging
 import time
-from typing import Any, Optional
-from urllib.parse import unquote, urlparse
+from typing import Any
 
 from app.config import (
     IMAGE_PICK_ATTEMPTS_ATTENTION,
     IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
+    IMAGE_POOL_CACHE_TTL_SECONDS,
     IMAGE_RESERVATION_TTL_SECONDS,
-    IMAGE_VALIDATE_URL_AVAILABILITY,
-    S3_BUCKET_NAME,
 )
-from app.extensions import s3
 from app.services.image_query_service import (
     QUERY_CLEANUP_STALE_RESERVATIONS,
     QUERY_LOAD_IMAGE_POOL,
     QUERY_RESERVE_IMAGE,
 )
+from app.utils.cache import cache
 from app.utils.observability import log_event
-from app.constants.observability_constants import OBS_EVENT_IMAGE_CLEANUP_FAILED, OBS_EVENT_IMAGE_EXTRACT_KEY_FAILED, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, OBS_EVENT_IMAGE_RESERVE_FAILED, OBS_EVENT_IMAGE_URL_HEAD_FAILED
+from app.constants.observability_constants import OBS_EVENT_IMAGE_CLEANUP_FAILED, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, OBS_EVENT_IMAGE_RESERVE_FAILED
 
 ImagePoolItem = tuple[Any, str, bool, bool]
 IMAGE_RESERVATION_CLEANUP_EXPIRES_AT = 0.0
 logger = logging.getLogger(__name__)
-
-
-def extract_s3_key_if_cognit_url(image_url: str) -> Optional[str]:
-    """Return S3 object key when URL points to configured bucket, else None."""
-    if not image_url:
-        return None
-    try:
-        parsed = urlparse(image_url)
-        if parsed.scheme not in ("http", "https"):
-            return None
-        if parsed.netloc.startswith(f"{S3_BUCKET_NAME}.s3"):
-            return unquote(parsed.path.lstrip("/"))
-        return None
-    except Exception as exc:
-        log_event(logger, OBS_EVENT_IMAGE_EXTRACT_KEY_FAILED, level=logging.WARNING, error=str(exc))
-        return None
-
-
-def is_image_url_available(image_url: str) -> bool:
-    """Best-effort availability check to avoid returning broken image URLs."""
-    if not IMAGE_VALIDATE_URL_AVAILABILITY:
-        return bool(image_url)
-    if not image_url:
-        return False
-    key = extract_s3_key_if_cognit_url(image_url)
-    if key:
-        try:
-            s3.head_object(Bucket=S3_BUCKET_NAME, Key=key)
-            ok = True
-        except Exception as exc:
-            log_event(logger, OBS_EVENT_IMAGE_URL_HEAD_FAILED, level=logging.WARNING, error=str(exc))
-            ok = False
-    else:
-        ok = True
-    return bool(ok)
-
+IMAGE_POOL_CACHE_KEY = "image_pool:v1"
 
 def load_image_pool(db) -> tuple[list[ImagePoolItem], list[ImagePoolItem], list[ImagePoolItem]]:
+    cached = cache.get_json(IMAGE_POOL_CACHE_KEY)
+    if cached and isinstance(cached, dict):
+        attention_rows = [tuple(item) for item in cached.get("attention_rows", [])]
+        non_attention_rows = [tuple(item) for item in cached.get("non_attention_rows", [])]
+        all_rows = [tuple(item) for item in cached.get("all_rows", [])]
+        if all_rows:
+            return attention_rows, non_attention_rows, all_rows
+
     rows = db.execute(QUERY_LOAD_IMAGE_POOL).fetchall()
     attention_rows: list[ImagePoolItem] = []
     non_attention_rows: list[ImagePoolItem] = []
     all_rows: list[ImagePoolItem] = []
     for image_id, image_url, is_attention in rows:
-        if not is_image_url_available(image_url):
+        if not image_url:
             continue
         item = (image_id, image_url, True, bool(is_attention))
         all_rows.append(item)
@@ -78,6 +49,15 @@ def load_image_pool(db) -> tuple[list[ImagePoolItem], list[ImagePoolItem], list[
             attention_rows.append(item)
         else:
             non_attention_rows.append(item)
+    cache.set_json(
+        IMAGE_POOL_CACHE_KEY,
+        {
+            "attention_rows": attention_rows,
+            "non_attention_rows": non_attention_rows,
+            "all_rows": all_rows,
+        },
+        ttl_seconds=IMAGE_POOL_CACHE_TTL_SECONDS,
+    )
     return attention_rows, non_attention_rows, all_rows
 
 

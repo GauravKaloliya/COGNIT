@@ -1,5 +1,6 @@
 import re
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -18,10 +19,25 @@ from app.constants.observability_constants import (
     OBS_EVENT_SUBMISSION_POST_COMMIT_ENQUEUE_FAILED,
     OBS_EVENT_SUBMISSION_POST_COMMIT_FAILED,
 )
+from app.config import (
+    ASYNC_EXECUTOR_WORKERS_SUBMISSION_POST_COMMIT,
+    SUBMISSION_POST_COMMIT_ASYNC_BASE_BACKOFF_MS,
+    SUBMISSION_POST_COMMIT_ASYNC_MAX_BACKOFF_MS,
+    SUBMISSION_POST_COMMIT_ASYNC_MAX_ATTEMPTS,
+)
 from app.utils.observability import log_event
 
-SUBMIT_POST_COMMIT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="submit-post-commit")
+SUBMIT_POST_COMMIT_EXECUTOR = ThreadPoolExecutor(
+    max_workers=ASYNC_EXECUTOR_WORKERS_SUBMISSION_POST_COMMIT,
+    thread_name_prefix="submit-post-commit",
+)
 logger = logging.getLogger(__name__)
+
+
+def _bounded_backoff(attempt: int, base_backoff_ms: int, max_backoff_ms: int) -> float:
+    exponent = max(0, int(attempt) - 1)
+    delay_ms = min(int(max_backoff_ms), int(base_backoff_ms) * (2 ** exponent))
+    return max(0.05, delay_ms / 1000.0)
 
 
 def safe_non_negative_int(value, default: int = 0) -> int:
@@ -126,45 +142,68 @@ def enqueue_submit_post_commit_tasks(
     survey_index,
     quality: float,
     word_count: int,
+    idempotency_key: str = "",
 ):
     """Run non-critical side effects outside the request transaction."""
     def _run():
-        try:
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO audit_log (
-                        event_type, participant_id, endpoint, http_method, status_code,
-                        ip_hash, user_agent, details, request_id
-                    ) VALUES (
-                        :ev, :pid, :ep, :meth, :st, :iph, :ua, :det, :rid
+        attempts = max(1, int(SUBMISSION_POST_COMMIT_ASYNC_MAX_ATTEMPTS))
+        for attempt in range(1, attempts + 1):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        INSERT INTO audit_log (
+                            event_type, participant_id, endpoint, http_method, status_code,
+                            ip_hash, user_agent, details, request_id
+                        ) VALUES (
+                            :ev, :pid, :ep, :meth, :st, :iph, :ua, :det, :rid
+                        )
+                    """), {
+                        "ev": AUDIT_EVENT_SUBMISSION,
+                        "pid": participant_id,
+                        "ep": SUBMIT_ROUTE,
+                        "meth": HTTP_METHOD_POST,
+                        "st": 200,
+                        "iph": "0" * 64,
+                        "ua": "",
+                        "det": f"wc={word_count} q={quality:.3f} survey={is_survey}",
+                        "rid": None,
+                    })
+                    emit_domain_event_fn(
+                        conn,
+                        event_type=DOMAIN_EVENT_SUBMISSION_SAVED,
+                        correlation_id=idempotency_key[:128],
+                        participant_id=participant_id,
+                        payload={
+                            "submission_id": int(submission_id),
+                            "image_id": image_id_str,
+                            "is_survey": bool(is_survey),
+                            "is_attention_check": bool(is_attention),
+                            "survey_index": survey_index,
+                            "quality_score": float(quality),
+                            "idempotency_key": idempotency_key[:128],
+                            "attempt": attempt,
+                        },
                     )
-                """), {
-                    "ev": AUDIT_EVENT_SUBMISSION,
-                    "pid": participant_id,
-                    "ep": SUBMIT_ROUTE,
-                    "meth": HTTP_METHOD_POST,
-                    "st": 200,
-                    "iph": "0" * 64,
-                    "ua": "",
-                    "det": f"wc={word_count} q={quality:.3f} survey={is_survey}",
-                    "rid": None,
-                })
-                emit_domain_event_fn(
-                    conn,
-                    event_type=DOMAIN_EVENT_SUBMISSION_SAVED,
-                    correlation_id="",
-                    participant_id=participant_id,
-                    payload={
-                        "submission_id": int(submission_id),
-                        "image_id": image_id_str,
-                        "is_survey": bool(is_survey),
-                        "is_attention_check": bool(is_attention),
-                        "survey_index": survey_index,
-                        "quality_score": float(quality),
-                    },
+                return
+            except Exception as exc:
+                log_event(
+                    logger,
+                    OBS_EVENT_SUBMISSION_POST_COMMIT_FAILED,
+                    level=logging.WARNING,
+                    error=str(exc),
+                    attempt=attempt,
+                    max_attempts=attempts,
+                    idempotency_key=idempotency_key[:32],
                 )
-        except Exception as exc:
-            log_event(logger, OBS_EVENT_SUBMISSION_POST_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
+                if attempt >= attempts:
+                    return
+                time.sleep(
+                    _bounded_backoff(
+                        attempt,
+                        SUBMISSION_POST_COMMIT_ASYNC_BASE_BACKOFF_MS,
+                        SUBMISSION_POST_COMMIT_ASYNC_MAX_BACKOFF_MS,
+                    )
+                )
 
     try:
         SUBMIT_POST_COMMIT_EXECUTOR.submit(_run)

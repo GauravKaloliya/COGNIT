@@ -69,8 +69,6 @@ def configure_logging(log_level=None):
     if SUPPRESS_ACCESS_LOGS:
         werkzeug_logger.disabled = True
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("botocore").setLevel(logging.WARNING)
-    logging.getLogger("boto3").setLevel(logging.WARNING)
 
     _logging_already_configured = True
 

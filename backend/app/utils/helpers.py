@@ -14,8 +14,6 @@ from sqlalchemy import text
 from app.config import (
     ERROR_CODES,
     TOO_FAST_SECONDS,
-    ALLOWED_IMAGE_EXTENSIONS,
-    CONTENT_TYPE_MAP,
     ENABLE_AUDIT_LOGGING,
     IP_HASH_SALT,
     TRUST_PROXY_HEADERS,
@@ -187,7 +185,7 @@ def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
     category = error_def.get("category", "SYS")
     retryable = kwargs.get("retryable")
     if retryable is None:
-        retryable = status >= 500 or category in {"RATE", "PAY"}
+        retryable = status >= 500 or category == "RATE"
 
     base_message = error_def["message"].format(**kwargs) if kwargs else error_def["message"]
     request_id = getattr(g, "request_id", None)
@@ -264,27 +262,3 @@ def create_error_response(
 ) -> tuple[Response, int]:
     """Project-wide error response helper."""
     return error_response(error_key, details=details, **kwargs)
-
-
-# ────────────────────────────────────────────────
-# File Validation Utilities
-# ────────────────────────────────────────────────
-
-def get_file_extension(filename: str) -> str:
-    """Extract file extension from filename."""
-    if not filename:
-        return ""
-    return filename.split('.')[-1].lower() if '.' in filename else ""
-
-
-def validate_image_extension(filename: str) -> tuple[bool, str, str]:
-    """
-    Validate image file extension.
-    
-    Returns:
-        Tuple of (is_valid, extension, content_type)
-    """
-    ext = get_file_extension(filename)
-    if ext not in ALLOWED_IMAGE_EXTENSIONS:
-        return False, ext, ""
-    return True, ext, CONTENT_TYPE_MAP.get(ext, "image/jpeg")

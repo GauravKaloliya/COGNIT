@@ -1,0 +1,28 @@
+"""Survey and attention-scoring config section."""
+
+from __future__ import annotations
+
+import os
+
+from .env import bool_env, int_env
+
+
+MIN_WORD_COUNT = int(os.getenv("MIN_WORD_COUNT", "60"))
+MIN_DESCRIPTION_LENGTH = int(os.getenv("MIN_DESCRIPTION_LENGTH", "60"))
+MAX_DESCRIPTION_LENGTH = int(os.getenv("MAX_DESCRIPTION_LENGTH", "10000"))
+MIN_FEEDBACK_LENGTH = int(os.getenv("MIN_FEEDBACK_LENGTH", "5"))
+MAX_FEEDBACK_LENGTH = int(os.getenv("MAX_FEEDBACK_LENGTH", "2000"))
+MIN_RATING = int(os.getenv("MIN_RATING", "1"))
+MAX_RATING = int(os.getenv("MAX_RATING", "10"))
+TOO_FAST_SECONDS = float(os.getenv("TOO_FAST_SECONDS", "5.0"))
+
+ATTENTION_FLAG_THRESHOLD = 0.60
+ATTENTION_FLAG_MIN_CHECKS = 3
+ATTENTION_HARD_FLAG_CONSEC_FAILS = 2
+ATTENTION_MIN_DISTINCT_WORDS = 12
+ATTENTION_MIN_CHAR_LENGTH = 120
+ATTENTION_INTERVAL = 3
+
+IMAGE_PICK_ATTEMPTS_ATTENTION = int_env("IMAGE_PICK_ATTEMPTS_ATTENTION", 4, min_value=1, max_value=50)
+IMAGE_PICK_ATTEMPTS_NON_ATTENTION = int_env("IMAGE_PICK_ATTEMPTS_NON_ATTENTION", 4, min_value=1, max_value=50)
+FORCE_ATTENTION_IMAGES = bool_env("FORCE_ATTENTION_IMAGES", False)

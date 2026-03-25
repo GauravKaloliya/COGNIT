@@ -157,16 +157,6 @@ def finalize_response(response, logger: logging.Logger):
     return _apply_security_headers(response, logger)
 
 
-def handle_payload_too_large(app):
-    max_bytes = int(app.config.get("MAX_CONTENT_LENGTH", 5 * 1024 * 1024))
-    max_mb = max(1, round(max_bytes / (1024 * 1024)))
-    return create_error_response(
-        "VAL_FILE_TOO_LARGE",
-        details={"max_mb": max_mb, "reason": "payload_too_large"},
-        max_mb=max_mb,
-    )
-
-
 def get_health_response(logger: logging.Logger):
     try:
         with engine.connect() as conn:

@@ -123,23 +123,6 @@ QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG = text("""
     WHERE participant_id = :pid
 """)
 
-QUERY_UPSERT_PARTICIPANT_ACTIVITY_STATS = text("""
-    INSERT INTO participant_activity_stats (
-        participant_id, total_words, total_submissions, survey_rounds
-    ) VALUES (:pid, :w, 1, :sr)
-    ON CONFLICT (participant_id) DO UPDATE SET
-        total_words       = participant_activity_stats.total_words + :w,
-        total_submissions = participant_activity_stats.total_submissions + 1,
-        survey_rounds     = participant_activity_stats.survey_rounds + :sr,
-        priority_eligible = (
-            (participant_activity_stats.total_words + :w) >= :wth OR
-            (participant_activity_stats.survey_rounds + :sr) >= :rth
-        ) AND COALESCE(
-            (SELECT attention_score FROM participant_attention_stats WHERE participant_id = :pid),
-            1.0
-        ) >= :ath
-""")
-
 QUERY_RELEASE_IMAGE_RESERVATION = text("""
     UPDATE image_reservations
     SET released_at = CURRENT_TIMESTAMP
@@ -243,17 +226,6 @@ def update_participant_attention_flag(db, *, participant_id: int, hard_flag_trig
         "pid": int(participant_id),
         "hard_flag": bool(hard_flag_triggered),
         "soft_flag": bool(soft_flag_triggered),
-    })
-
-
-def upsert_participant_activity_stats(db, *, participant_id: int, word_count: int, survey_round_increment: int, priority_word_threshold: int, priority_rounds_threshold: int, priority_attention_threshold: float):
-    db.execute(QUERY_UPSERT_PARTICIPANT_ACTIVITY_STATS, {
-        "pid": int(participant_id),
-        "w": int(word_count),
-        "sr": int(survey_round_increment),
-        "wth": int(priority_word_threshold),
-        "rth": int(priority_rounds_threshold),
-        "ath": float(priority_attention_threshold),
     })
 
 

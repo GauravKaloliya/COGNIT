@@ -179,14 +179,6 @@ ERROR_CODES_TEMPLATE: Dict[str, Dict[str, Any]] = {
         "category": "VAL",
         "field": "image_id"
     },
-    "VAL_FILE_TOO_LARGE": {
-        "code": "VAL_003_0005",
-        "message": "The file is too large. Please upload a smaller image.",
-        "status": 413,
-        "category": "VAL",
-        "field": "image_base64",
-        "reason": "image_too_large"
-    },
     "VAL_AGE_INVALID": {
         "code": "VAL_001_0004",
         "message": "Age must be between 13 and 100.",
