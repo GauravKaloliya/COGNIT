@@ -5,7 +5,6 @@ import { createFallbackUuid } from "../constants/ids";
 import { makeScopedKey, readExpiringValue, writeExpiringValue } from "./storage";
 
 const CORE_STATE_STORAGE_AREA = "local";
-const CORE_STATE_STORAGE_AREA_SESSION = "session";
 const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
 const CORE_SCOPE_ANON = "anon";
@@ -19,15 +18,7 @@ export function getScopeId(publicId) {
 export function readCoreValue(baseKey, fallback, scopeId, { ttlMs } = {}) {
   const scopedKey = makeScopedKey(baseKey, getScopeId(scopeId));
   const options = { schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs: ttlMs ?? CORE_STATE_TTL_MS };
-  const localScoped = readExpiringValue(scopedKey, undefined, { area: CORE_STATE_STORAGE_AREA, ...options });
-  if (localScoped !== undefined) return localScoped;
-  const sessionScoped = readExpiringValue(scopedKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, ...options });
-  if (sessionScoped !== undefined) return sessionScoped;
-  const localUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA, ...options });
-  if (localUnscoped !== undefined) return localUnscoped;
-  const sessionUnscoped = readExpiringValue(baseKey, undefined, { area: CORE_STATE_STORAGE_AREA_SESSION, ...options });
-  if (sessionUnscoped !== undefined) return sessionUnscoped;
-  return fallback;
+  return readExpiringValue(scopedKey, fallback, { area: CORE_STATE_STORAGE_AREA, ...options });
 }
 
 export function writeCoreValue(baseKey, value, scopeId, { ttlMs } = {}) {

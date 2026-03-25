@@ -3,10 +3,12 @@ import { REQUEST_HEADERS, REQUEST_METHODS } from "../constants/request";
 import { BROWSER_EVENTS } from "../constants/browser";
 import { runtimeConfig } from "../config/runtime";
 import { getApiUrl } from "./apiBase";
-import { readJsonValue, removeStoredKey, writeJsonValue, STORAGE_AREAS } from "./storage";
+import { readExpiringValue, removeStoredKey, writeExpiringValue } from "./storage";
 
 const TELEMETRY_KEY = runtimeConfig.storageKeys.telemetry;
 const TELEMETRY_BLOCKED_KEY = runtimeConfig.storageKeys.telemetryBlocked;
+const TELEMETRY_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
+const TELEMETRY_TTL_MS = runtimeConfig.uiStateTtlMs;
 const MAX_QUEUE = runtimeConfig.clientErrorMaxQueue;
 const MAX_FIELD_LENGTH = runtimeConfig.clientErrorMaxFieldLength;
 const BASE_BACKOFF_MS = Math.max(1000, runtimeConfig.serviceRetrySeconds * 1000);
@@ -32,13 +34,29 @@ const sanitizePayload = (payload = {}) => {
   return safe;
 };
 
-const readQueue = () => readJsonValue(TELEMETRY_KEY, [], STORAGE_AREAS.session) || [];
+const readQueue = () => readExpiringValue(TELEMETRY_KEY, [], {
+  area: "session",
+  schemaVersion: TELEMETRY_SCHEMA_VERSION,
+  ttlMs: TELEMETRY_TTL_MS,
+}) || [];
 
-const writeQueue = (queue) => writeJsonValue(TELEMETRY_KEY, queue.slice(-MAX_QUEUE), STORAGE_AREAS.session);
+const writeQueue = (queue) => writeExpiringValue(TELEMETRY_KEY, queue.slice(-MAX_QUEUE), {
+  area: "session",
+  schemaVersion: TELEMETRY_SCHEMA_VERSION,
+  ttlMs: TELEMETRY_TTL_MS,
+});
 
-const readBlocked = () => readJsonValue(TELEMETRY_BLOCKED_KEY, {}, STORAGE_AREAS.session) || {};
+const readBlocked = () => readExpiringValue(TELEMETRY_BLOCKED_KEY, {}, {
+  area: "session",
+  schemaVersion: TELEMETRY_SCHEMA_VERSION,
+  ttlMs: TELEMETRY_TTL_MS,
+}) || {};
 
-const writeBlocked = (blocked) => writeJsonValue(TELEMETRY_BLOCKED_KEY, blocked || {}, STORAGE_AREAS.session);
+const writeBlocked = (blocked) => writeExpiringValue(TELEMETRY_BLOCKED_KEY, blocked || {}, {
+  area: "session",
+  schemaVersion: TELEMETRY_SCHEMA_VERSION,
+  ttlMs: TELEMETRY_TTL_MS,
+});
 
 const isBlocked = (dedupeKey, now) => {
   const blocked = readBlocked();
@@ -122,7 +140,7 @@ export const flushClientErrors = async () => {
     if (remaining.length) {
       writeQueue(remaining);
     } else {
-      removeStoredKey(TELEMETRY_KEY, STORAGE_AREAS.session);
+      removeStoredKey(TELEMETRY_KEY, "session");
     }
   } catch {
     const attempts = (next.sendAttempts || 0) + 1;
@@ -132,7 +150,7 @@ export const flushClientErrors = async () => {
       if (remaining.length) {
         writeQueue(remaining);
       } else {
-        removeStoredKey(TELEMETRY_KEY, STORAGE_AREAS.session);
+        removeStoredKey(TELEMETRY_KEY, "session");
       }
       return;
     }
