@@ -162,7 +162,6 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "query": [
             "public_id=<participant_public_id> (optional)",
             "exclude=image_001,image_002 (optional)",
-            "force_attention=1 (optional, honored only when backend env allows it)",
         ],
         "headers": [],
         "body": None,
