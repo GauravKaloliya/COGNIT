@@ -1,13 +1,9 @@
 import React from "react";
-import UserDetailsPage from "./pages/UserDetailsPage.jsx";
-import ConsentPage from "./pages/ConsentPage.jsx";
-import SurveyPage from "./pages/SurveyPage.jsx";
-import PostSurveyPage from "./pages/PostSurveyPage.jsx";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
-import PageSkeleton from "./components/PageSkeleton.jsx";
-import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
-import FlowStepper from "./components/FlowStepper.jsx";
 import DSButton from "./components/design/DSButton.jsx";
+import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
+import AppContainer from "./components/app/AppContainer.jsx";
+import AppStageRouter from "./components/app/AppStageRouter.jsx";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { uiText } from "./utils/uiText.js";
 import { useAppController } from "./hooks/useAppController";
@@ -139,84 +135,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   }, [stage, systemReady]);
 
-  const renderContent = () => {
-    if (systemChecking && !systemReady) {
-      return (
-        <PageSkeleton
-          title={uiText("status.loadingApp")}
-          subtitle={uiText("status.checkingConnectivity")}
-          variant="app"
-        />
-      );
-    }
-
-    if (systemError && !systemReady) return null;
-
-    switch (stage) {
-      case "consent":
-        return (
-          <ConsentPage
-            publicId={publicId}
-            consentGiven={consentGiven}
-            onConsentGiven={handleConsentGiven}
-            systemReady={systemReady}
-          />
-        );
-      case "user-details":
-        return (
-          <UserDetailsPage
-            publicId={publicId}
-            demographics={demographics}
-            setDemographics={setDemographics}
-            onSubmit={handleUserDetailsSubmit}
-            onEmailVerified={handleEmailVerified}
-            addToast={addToast}
-            systemReady={systemReady}
-          />
-        );
-      case "survey":
-        if (surveyFeedbackReady) {
-          return (
-            <PostSurveyPage
-              surveyCompleted={surveyCompleted}
-              setSurveyFeedbackReady={setSurveyFeedbackReady}
-              clearUserStorage={clearUserStorage}
-              publicId={publicId}
-              fetchNextSurvey={fetchImage}
-            />
-          );
-        }
-        return (
-          <SurveyPage
-            survey={survey}
-            publicId={publicId}
-            surveyCompleted={surveyCompleted}
-            onSubmit={handleSubmit}
-            fetchError={imageError}
-            onRetry={fetchImage}
-            isFetchingImage={isFetchingImage}
-          />
-        );
-      case "finished":
-        return (
-          <PostSurveyPage
-            surveyCompleted={surveyCompleted}
-            publicId={publicId}
-            clearUserStorage={clearUserStorage}
-          />
-        );
-      default:
-        return (
-          <ConsentPage
-            publicId={publicId}
-            consentGiven={consentGiven}
-            onConsentGiven={handleConsentGiven}
-            systemReady={systemReady}
-          />
-        );
-    }
-  };
-
   if (!isActiveTabOwner) {
     return (
       <ErrorBoundary onError={() => {}}>
@@ -270,51 +188,38 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
 
   return (
     <ErrorBoundary onError={handleAppError}>
-      <div className="app">
-        <header className="header">
-          <div className="brand">
-            <h1>{uiText("app.brand")}</h1>
-            {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
-          </div>
-          <div className="header-actions">
-            <DSButton
-              variant="ghost"
-              className="dark-mode-toggle"
-              onClick={toggleDarkMode}
-              title={darkMode ? uiText("app.darkModeLight") : uiText("app.darkModeDark")}
-            >
-              <ThemeToggleIcon darkMode={darkMode} />
-            </DSButton>
-            <div className="header-status">
-              <div className={`status-dot ${online ? "online" : "offline"}`}>
-                {online ? uiText("status.online") : uiText("status.offline")}
-              </div>
-              <div className="header-status-text">
-                <span className="header-status-line">
-                  {online ? uiText("status.onlineReady") : uiText("status.offlineSubmissions")}
-                </span>
-                <span className="header-status-line">
-                  {lastSyncAt
-                    ? uiText("status.lastSync", { time: new Date(lastSyncAt).toLocaleTimeString() })
-                    : uiText("status.neverSynced")}
-                </span>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {!storageOk && (
-          <div className="banner warning">
-            <span>{uiText("app.storageUnavailable")}</span>
-          </div>
-        )}
-
-        <FlowStepper stage={stage} />
-
-        <div className="route-transition">{renderContent()}</div>
-
-        <div className="branding-footer">{uiText("app.footerCredit")}</div>
-      </div>
+      <AppContainer
+        darkMode={darkMode}
+        toggleDarkMode={toggleDarkMode}
+        isMobile={isMobile}
+        online={online}
+        lastSyncAt={lastSyncAt}
+        storageOk={storageOk}
+        stage={stage}
+      >
+        <AppStageRouter
+          stage={stage}
+          systemChecking={systemChecking}
+          systemReady={systemReady}
+          publicId={publicId}
+          consentGiven={consentGiven}
+          demographics={demographics}
+          setDemographics={setDemographics}
+          handleConsentGiven={handleConsentGiven}
+          handleUserDetailsSubmit={handleUserDetailsSubmit}
+          handleEmailVerified={handleEmailVerified}
+          addToast={addToast}
+          survey={survey}
+          surveyCompleted={surveyCompleted}
+          surveyFeedbackReady={surveyFeedbackReady}
+          setSurveyFeedbackReady={setSurveyFeedbackReady}
+          clearUserStorage={clearUserStorage}
+          fetchImage={fetchImage}
+          handleSubmit={handleSubmit}
+          imageError={imageError}
+          isFetchingImage={isFetchingImage}
+        />
+      </AppContainer>
 
       {showBackToTop && (
         <DSButton
