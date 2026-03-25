@@ -37,8 +37,6 @@ def random_image():
     excluded = [x.strip() for x in exclude.split(",") if x.strip()]
     excluded_set = set(excluded)
     public_id = (request.args.get("public_id") or "").strip()
-    force_attention_raw = (request.args.get("force_attention") or "").strip().lower()
-    force_attention_requested = force_attention_raw in ("1", "true", "yes", "on")
 
     try:
         db = get_db()
@@ -67,9 +65,8 @@ def random_image():
                 """), {"pid": participant_id}).scalar() or 0
                 should_prioritize_attention = ((total_submissions + 1) % ATTENTION_INTERVAL) == 0
 
-        # Safe override to force attention images (gated by env).
-        if force_attention_requested and FORCE_ATTENTION_IMAGES:
-            force_attention = True
+        # Force attention images if env var is set.
+        force_attention = FORCE_ATTENTION_IMAGES
 
         row = select_random_image_for_participant(
             db,
