@@ -47,6 +47,12 @@ from app.services.email_otp_query_service import (
     QUERY_SELECT_PARTICIPANT_BY_PUBLIC_EMAIL,
 )
 from app.database import engine
+from app.constants.participant_constants import (
+    PARTICIPANT_STAGE_CONSENT,
+    PARTICIPANT_STAGE_FINISHED,
+    PARTICIPANT_STAGE_SURVEY,
+    PARTICIPANT_STAGE_USER_DETAILS,
+)
 
 
 OTP_DIGITS = "0123456789"
@@ -132,11 +138,21 @@ def mark_email_otp_used(db, *, otp_id: int) -> None:
 
 
 def mark_participant_email_verified(db, *, participant_id: int) -> None:
-    db.execute(QUERY_MARK_PARTICIPANT_EMAIL_VERIFIED, {"pid": participant_id})
+    db.execute(QUERY_MARK_PARTICIPANT_EMAIL_VERIFIED, {
+        "pid": participant_id,
+        "stage_consent": PARTICIPANT_STAGE_CONSENT,
+        "stage_user_details": PARTICIPANT_STAGE_USER_DETAILS,
+        "stage_survey": PARTICIPANT_STAGE_SURVEY,
+    })
 
 
 def update_participant_email(db, *, participant_id: int, email: str) -> None:
-    db.execute(QUERY_UPDATE_PARTICIPANT_EMAIL, {"pid": participant_id, "em": email})
+    db.execute(QUERY_UPDATE_PARTICIPANT_EMAIL, {
+        "pid": participant_id,
+        "em": email,
+        "stage_finished": PARTICIPANT_STAGE_FINISHED,
+        "stage_user_details": PARTICIPANT_STAGE_USER_DETAILS,
+    })
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")

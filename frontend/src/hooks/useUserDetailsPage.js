@@ -174,7 +174,15 @@ export function useUserDetailsPage({
       const effectivePublicId = requirePublicId(participant?.public_id || publicId, () => {
         addToast?.(getErrorMessage("NF_001_0001"), "warning");
       });
-      if (!effectivePublicId) throw new Error(getErrorMessage("NF_001_0001"));
+      if (!effectivePublicId) {
+        const missingPublicIdError = new Error(getErrorMessage("NF_001_0001"));
+        missingPublicIdError.code = "NF_001_0001";
+        missingPublicIdError.category = "NF";
+        missingPublicIdError.status = 404;
+        missingPublicIdError.retryable = false;
+        missingPublicIdError.action = "redirect";
+        throw missingPublicIdError;
+      }
 
       await requestOtp({
         effectivePublicId,

@@ -10,6 +10,7 @@ import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
 import { scheduleTimeout } from "../utils/timing";
 import { forEachStorageArea, makeScopedKey, removeStoredKey } from "../utils/storage";
+import { getTelemetrySnapshot } from "../utils/clientTelemetry";
 
 const normalizeSurveyPayload = (value) => {
   if (!value || typeof value !== "object") return null;
@@ -209,6 +210,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
     submitAbortRef.current = controller;
 
     try {
+      const telemetry = getTelemetrySnapshot("survey");
       const result = await endpoints.submitDescription({
         [SURVEY_API_FIELDS.publicId]: effectivePublicId,
         [SURVEY_API_FIELDS.imageId]: survey[SURVEY_API_FIELDS.imageId],
@@ -222,6 +224,14 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
         [SURVEY_API_FIELDS.tabSwitchCount]: engagementData.tabSwitchCount || 0,
         [SURVEY_API_FIELDS.pageCloseAttempts]: engagementData.pageCloseAttempts || 0,
         [SURVEY_API_FIELDS.networkDisconnects]: engagementData.networkDisconnects || 0,
+        [SURVEY_API_FIELDS.surveyTimeSpentMs]: telemetry?.survey_time_spent_ms || 0,
+        [SURVEY_API_FIELDS.surveyPageViews]: telemetry?.survey_page_views || 0,
+        [SURVEY_API_FIELDS.surveyTabSwitches]: telemetry?.survey_tab_switches || 0,
+        [SURVEY_API_FIELDS.surveyPageCloseAttempts]: telemetry?.survey_page_close_attempts || 0,
+        [SURVEY_API_FIELDS.surveyNetworkDisconnects]: telemetry?.survey_network_disconnects || 0,
+        [SURVEY_API_FIELDS.surveyMaxScrollDepthPct]: telemetry?.survey_max_scroll_depth_pct || 0,
+        [SURVEY_API_FIELDS.surveyClicks]: telemetry?.survey_clicks || 0,
+        [SURVEY_API_FIELDS.surveyKeypresses]: telemetry?.survey_keypresses || 0,
       }, { signal: controller.signal });
 
       const attentionStatus = result[SURVEY_API_FIELDS.attentionStatus] || {};
@@ -261,7 +271,15 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       }
       setLastSubmissionSucceeded(false);
       const errorMessage = getDisplayErrorMessage(error, "SYS_002_0006");
-      throw new Error(errorMessage);
+      const wrappedError = new Error(errorMessage);
+      wrappedError.code = error?.code;
+      wrappedError.category = error?.category;
+      wrappedError.field = error?.field;
+      wrappedError.fields = error?.fields;
+      wrappedError.status = error?.status;
+      wrappedError.details = error?.details;
+      wrappedError.requestId = error?.requestId;
+      throw wrappedError;
     } finally {
       if (submitAbortRef.current === controller) {
         submitAbortRef.current = null;

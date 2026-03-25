@@ -59,7 +59,6 @@ export default function UserDetailsPage({
     updateField,
     draftRestored,
     retryCountdown,
-    fieldMeta,
   } = useUserDetailsPage({
     publicId,
     demographics,

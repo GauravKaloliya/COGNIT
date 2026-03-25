@@ -160,7 +160,7 @@ export function parseErrorResponse(response) {
     field: error.field,
     fields: error.fields,
     details: error.details,
-    status: error.status,
+    status: error.http_status || error.status || response.http_status || response.status,
     retryable: error.retryable,
     requestId: error.request_id,
     severity: categoryInfo.severity,
