@@ -199,7 +199,7 @@ VALUES
     ('web_development', 'Web Development', 'Technical Skills', 1, 3),
     ('mobile_app_development', 'Mobile App Development', 'Technical Skills', 1, 4),
     ('database_administration', 'Database Administration', 'Technical Skills', 1, 5),
-    ('cloud_computing', 'Cloud Computing/AWS/Azure', 'Technical Skills', 1, 6),
+    ('cloud_computing', 'Cloud Computing', 'Technical Skills', 1, 6),
     ('cybersecurity', 'Cybersecurity', 'Technical Skills', 1, 7),
     ('network_administration', 'Network Administration', 'Technical Skills', 1, 8),
     ('devops_ci_cd', 'DevOps/CI-CD', 'Technical Skills', 1, 9),
@@ -213,6 +213,13 @@ VALUES
     ('cooking_culinary', 'Cooking/Culinary', 'General Skills', 2, 7),
     ('none', 'None', 'Other', 99, 1)
 ON CONFLICT (code) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_genders_active_sort
+    ON genders (active, sort_order, display_name);
+CREATE INDEX IF NOT EXISTS idx_languages_active_name
+    ON languages (active, name);
+CREATE INDEX IF NOT EXISTS idx_prior_experiences_active_sort
+    ON prior_experiences (active, group_sort_order, sort_order, display_name);
 
 -- =====================================================================
 -- MAIN TABLES
@@ -265,6 +272,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_email    ON participan
 CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (public_id);
 CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_participants_public_not_deleted
+    ON participants (public_id, is_deleted);
+CREATE INDEX IF NOT EXISTS idx_participants_email_not_deleted
+    ON participants (email, is_deleted) WHERE email IS NOT NULL;
 
 COMMENT ON COLUMN participants.stage IS
     'App-owned participant progression stage used by frontend/backends to coordinate flow.';
@@ -286,6 +297,10 @@ CREATE TABLE IF NOT EXISTS email_otps (
 
 CREATE INDEX IF NOT EXISTS idx_email_otps_public_email ON email_otps (public_id, email);
 CREATE INDEX IF NOT EXISTS idx_email_otps_expires_at ON email_otps (expires_at);
+CREATE INDEX IF NOT EXISTS idx_email_otps_public_email_created
+    ON email_otps (public_id, email, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_otps_active_lookup
+    ON email_otps (public_id, email, is_used, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_participants_consent       ON participants (consent_given);
 CREATE INDEX IF NOT EXISTS idx_participants_active        ON participants (is_deleted) WHERE is_deleted = false;
 
@@ -398,6 +413,10 @@ CREATE TRIGGER trg_sync_attention_stats_from_submission
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_created ON submissions (participant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_quality ON submissions (participant_id, quality_score DESC, created_at DESC) WHERE is_survey = true;
 CREATE INDEX IF NOT EXISTS idx_submissions_attention ON submissions (is_attention_check, attention_passed);
+CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey
+    ON submissions (participant_id, is_survey, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_participant_image_non_survey
+    ON submissions (participant_id, image_id, created_at DESC) WHERE is_survey = false;
 
 -- =====================================================================
 -- ATTENTION EVENTS (IMMUTABLE AUDIT)
@@ -424,6 +443,9 @@ CREATE INDEX IF NOT EXISTS idx_attention_events_passed
     ON attention_events (attention_passed, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_attention_events_fingerprint
     ON attention_events (content_fingerprint) WHERE content_fingerprint IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attention_events_image_fingerprint
+    ON attention_events (image_id, content_fingerprint, created_at DESC)
+    WHERE content_fingerprint IS NOT NULL;
 
 -- Immutable audit protections for append-only attention events.
 CREATE TRIGGER trg_attention_events_no_update
@@ -460,49 +482,6 @@ CREATE TRIGGER trg_attention_stats_updated
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE INDEX IF NOT EXISTS idx_attention_flagged_score ON participant_attention_stats (is_flagged, attention_score DESC) INCLUDE (participant_id);
-
-CREATE TABLE IF NOT EXISTS participant_activity_stats (
-    participant_id  BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
-    total_words        BIGINT NOT NULL DEFAULT 0,
-    total_submissions  INTEGER NOT NULL DEFAULT 0,
-    survey_rounds      INTEGER NOT NULL DEFAULT 0,
-    priority_eligible  BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER trg_activity_stats_updated
-    BEFORE UPDATE ON participant_activity_stats
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX IF NOT EXISTS idx_activity_priority_eligible ON participant_activity_stats (priority_eligible);
-
-CREATE TABLE IF NOT EXISTS priority_participants (
-    id                        BIGSERIAL PRIMARY KEY,
-    participant_id            BIGINT NOT NULL UNIQUE REFERENCES participants(id) ON DELETE CASCADE,
-    total_words               BIGINT NOT NULL DEFAULT 0 CHECK (total_words >= 0),
-    completed_rounds          INTEGER NOT NULL DEFAULT 0 CHECK (completed_rounds >= 0),
-    total_tab_switch          INTEGER NOT NULL DEFAULT 0 CHECK (total_tab_switch >= 0),
-    total_page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (total_page_close_attempts >= 0),
-    total_network_disconnects INTEGER NOT NULL DEFAULT 0 CHECK (total_network_disconnects >= 0),
-    avg_time_spent_seconds    NUMERIC(10,2) DEFAULT 0 CHECK (avg_time_spent_seconds >= 0),
-    avg_feedback_length       NUMERIC(10,2) DEFAULT 0 CHECK (avg_feedback_length >= 0),
-    avg_rating                NUMERIC(5,2)  DEFAULT 0 CHECK (avg_rating >= 0),
-    avg_quality_score         NUMERIC(5,4)  DEFAULT 0 CHECK (avg_quality_score BETWEEN 0 AND 1),
-    is_eligible               BOOLEAN NOT NULL DEFAULT FALSE,
-    reason_code               VARCHAR(60),
-    metadata                  JSONB NOT NULL DEFAULT '{}',
-    last_evaluated_at         TIMESTAMPTZ,
-    created_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER trg_priority_participants_updated
-    BEFORE UPDATE ON priority_participants
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE INDEX IF NOT EXISTS idx_priority_participants_eligible
-    ON priority_participants (is_eligible, avg_quality_score DESC, completed_rounds DESC);
 
 -- =====================================================================
 -- SECURITY / AUDIT
@@ -564,10 +543,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_unique
     ON idempotency_keys (endpoint, idempotency_key, participant_public_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_unique_endpoint_key_hash
     ON idempotency_keys (endpoint, idempotency_key, request_hash);
+CREATE INDEX IF NOT EXISTS idx_idempotency_lookup_active
+    ON idempotency_keys (endpoint, idempotency_key, participant_public_id, created_at DESC)
+    WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_idempotency_created
     ON idempotency_keys (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_idempotency_deleted
     ON idempotency_keys (deleted_at);
+
+-- =====================================================================
+-- DURABLE EVENT QUEUE
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS durable_event_queue (
+    id              BIGSERIAL PRIMARY KEY,
+    event_type      VARCHAR(120) NOT NULL,
+    payload         JSONB NOT NULL DEFAULT '{}',
+    status          VARCHAR(20) NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('queued', 'processing', 'retry', 'done', 'dead')),
+    attempt_count   INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    max_attempts    INTEGER NOT NULL DEFAULT 8 CHECK (max_attempts > 0),
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_error      TEXT,
+    processed_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_durable_event_queue_updated_at
+    BEFORE UPDATE ON durable_event_queue
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_durable_queue_ready
+    ON durable_event_queue (status, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_durable_queue_event_created
+    ON durable_event_queue (event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_durable_queue_dead
+    ON durable_event_queue (status, updated_at DESC)
+    WHERE status = 'dead';
 
 -- =====================================================================
 -- PERFORMANCE METRICS (optional but useful)
@@ -579,8 +591,11 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
     status_code       SMALLINT,
     request_size_bytes  INTEGER,
     response_size_bytes INTEGER,
+    slo_target_ms     INTEGER NOT NULL DEFAULT 1200 CHECK (slo_target_ms > 0),
+    slo_breached      BOOLEAN NOT NULL DEFAULT FALSE,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_perf_created  ON performance_metrics (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_perf_endpoint ON performance_metrics (endpoint, created_at);
+CREATE INDEX IF NOT EXISTS idx_perf_slo_breached ON performance_metrics (slo_breached, created_at DESC);

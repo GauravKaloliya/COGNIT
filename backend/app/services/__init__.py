@@ -29,7 +29,6 @@ from .submission_query_service import (
     release_image_reservation,
     update_participant_attention_flag,
     update_participant_metadata,
-    upsert_participant_activity_stats,
 )
 from .participant_service import (
     collect_missing_participant_fields,
@@ -95,7 +94,6 @@ __all__ = [
     "release_image_reservation",
     "update_participant_attention_flag",
     "update_participant_metadata",
-    "upsert_participant_activity_stats",
     "collect_missing_participant_fields",
     "fetch_participant_options",
     "find_existing_participant_conflict",

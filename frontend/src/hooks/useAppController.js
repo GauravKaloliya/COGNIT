@@ -70,6 +70,7 @@ export function useAppController() {
     isFetchingImage,
     showConfetti,
     fetchImage,
+    prefetchNextImage,
     handleSubmit,
     cancelInFlightRequests,
   } = surveyFlow;
@@ -237,6 +238,7 @@ export function useAppController() {
     isFetchingImage,
     showConfetti,
     fetchImage,
+    prefetchNextImage,
     handleSubmit,
     claimActiveTabLock,
     dismissToast,

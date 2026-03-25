@@ -35,6 +35,8 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
   const [isFetchingImage, setIsFetchingImage] = useState(false);
   const inFlightRef = useRef(false);
   const imageAbortRef = useRef(null);
+  const prefetchAbortRef = useRef(null);
+  const prefetchedSurveyRef = useRef(null);
   const submitAbortRef = useRef(null);
 
   useEffect(() => {
@@ -77,6 +79,20 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
     // unless caller explicitly asks to clear current survey.
     if (!clearCurrent && survey?.[SURVEY_API_FIELDS.imageId] && typeof survey?.[SURVEY_API_FIELDS.url] === "string" && survey[SURVEY_API_FIELDS.url].trim()) {
       return survey;
+    }
+    if (clearCurrent && prefetchedSurveyRef.current) {
+      const prefetched = prefetchedSurveyRef.current;
+      prefetchedSurveyRef.current = null;
+      setShownImages((prev) => (
+        prev.includes(prefetched[SURVEY_API_FIELDS.imageId])
+          ? prev
+          : [...prev, prefetched[SURVEY_API_FIELDS.imageId]]
+      ));
+      setSurvey(prefetched);
+      setImageError(null);
+      setSurveyFeedbackReady(false);
+      setLastSubmissionSucceeded(false);
+      return prefetched;
     }
 
     if (inFlightRef.current) {
@@ -138,6 +154,42 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       setIsFetchingImage(false);
     }
   }, [addToast, publicId, shownImages, survey]);
+
+  const prefetchNextImage = useCallback(async () => {
+    if (!publicId) return null;
+    if (inFlightRef.current) return null;
+    if (prefetchedSurveyRef.current?.[SURVEY_API_FIELDS.imageId]) return prefetchedSurveyRef.current;
+    if (prefetchAbortRef.current) {
+      prefetchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    prefetchAbortRef.current = controller;
+    try {
+      const excluded = [
+        ...shownImages,
+        survey?.[SURVEY_API_FIELDS.imageId],
+      ].filter(Boolean);
+      const data = await endpoints.getRandomImage(excluded, publicId, { signal: controller.signal });
+      const normalizedData = normalizeSurveyPayload(data);
+      if (!normalizedData?.[SURVEY_API_FIELDS.imageId] || !normalizedData?.[SURVEY_API_FIELDS.url]) return null;
+      prefetchedSurveyRef.current = normalizedData;
+      try {
+        if (typeof window !== "undefined") {
+          const img = new Image();
+          img.src = normalizedData[SURVEY_API_FIELDS.url];
+        }
+      } catch {
+        // Ignore browser preloading failures.
+      }
+      return normalizedData;
+    } catch {
+      return null;
+    } finally {
+      if (prefetchAbortRef.current === controller) {
+        prefetchAbortRef.current = null;
+      }
+    }
+  }, [publicId, shownImages, survey]);
 
   const handleSubmit = useCallback(async (formData) => {
     const engagementData = formData.engagementData || {};
@@ -222,6 +274,10 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       imageAbortRef.current.abort();
       imageAbortRef.current = null;
     }
+    if (prefetchAbortRef.current) {
+      prefetchAbortRef.current.abort();
+      prefetchAbortRef.current = null;
+    }
     if (submitAbortRef.current) {
       submitAbortRef.current.abort();
       submitAbortRef.current = null;
@@ -244,6 +300,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
     isFetchingImage,
     showConfetti,
     fetchImage,
+    prefetchNextImage,
     handleSubmit,
     cancelInFlightRequests,
   };

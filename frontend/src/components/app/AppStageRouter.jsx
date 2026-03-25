@@ -1,12 +1,42 @@
 import React from "react";
-import ConsentPage from "../../pages/ConsentPage.jsx";
-import UserDetailsPage from "../../pages/UserDetailsPage.jsx";
-import SurveyPage from "../../pages/SurveyPage.jsx";
-import PostSurveyPage from "../../pages/PostSurveyPage.jsx";
 import PageSkeleton from "../PageSkeleton.jsx";
 import { uiText } from "../../utils/uiText.js";
 
-export default function AppStageRouter({
+const loadConsentPage = () => import("../../pages/ConsentPage.jsx");
+const loadUserDetailsPage = () => import("../../pages/UserDetailsPage.jsx");
+const loadSurveyPage = () => import("../../pages/SurveyPage.jsx");
+const loadPostSurveyPage = () => import("../../pages/PostSurveyPage.jsx");
+
+const ConsentPage = React.lazy(loadConsentPage);
+const UserDetailsPage = React.lazy(loadUserDetailsPage);
+const SurveyPage = React.lazy(loadSurveyPage);
+const PostSurveyPage = React.lazy(loadPostSurveyPage);
+
+export function prefetchLikelyNextChunks(stage) {
+  if (stage === "user-details") {
+    void loadSurveyPage();
+    return;
+  }
+  if (stage === "survey") {
+    void loadPostSurveyPage();
+  }
+}
+
+export function prefetchBehaviorChunks({
+  fromStage,
+  userDetailsLikelyComplete = false,
+  surveyLikelyComplete = false,
+} = {}) {
+  if (fromStage === "user-details" && userDetailsLikelyComplete) {
+    void loadSurveyPage();
+    return;
+  }
+  if (fromStage === "survey" && surveyLikelyComplete) {
+    void loadPostSurveyPage();
+  }
+}
+
+function AppStageRouter({
   stage,
   systemChecking,
   systemReady,
@@ -24,10 +54,84 @@ export default function AppStageRouter({
   setSurveyFeedbackReady,
   clearUserStorage,
   fetchImage,
+  prefetchNextImage,
   handleSubmit,
   imageError,
   isFetchingImage,
 }) {
+  const renderStage = () => {
+    if (stage === "consent") {
+      return (
+        <ConsentPage
+          publicId={publicId}
+          consentGiven={consentGiven}
+          onConsentGiven={handleConsentGiven}
+          systemReady={systemReady}
+        />
+      );
+    }
+
+    if (stage === "user-details") {
+      return (
+        <UserDetailsPage
+          publicId={publicId}
+          demographics={demographics}
+          setDemographics={setDemographics}
+          onSubmit={handleUserDetailsSubmit}
+          onEmailVerified={handleEmailVerified}
+          addToast={addToast}
+          systemReady={systemReady}
+        />
+      );
+    }
+
+    if (stage === "survey" && surveyFeedbackReady) {
+      return (
+        <PostSurveyPage
+          surveyCompleted={surveyCompleted}
+          setSurveyFeedbackReady={setSurveyFeedbackReady}
+          clearUserStorage={clearUserStorage}
+          publicId={publicId}
+          fetchNextSurvey={fetchImage}
+        />
+      );
+    }
+
+    if (stage === "survey") {
+      return (
+        <SurveyPage
+          survey={survey}
+          publicId={publicId}
+          surveyCompleted={surveyCompleted}
+          onSubmit={handleSubmit}
+          fetchError={imageError}
+          onRetry={fetchImage}
+          onWarmNextSurvey={prefetchNextImage}
+          isFetchingImage={isFetchingImage}
+        />
+      );
+    }
+
+    if (stage === "finished") {
+      return (
+        <PostSurveyPage
+          surveyCompleted={surveyCompleted}
+          publicId={publicId}
+          clearUserStorage={clearUserStorage}
+        />
+      );
+    }
+
+    return (
+      <ConsentPage
+        publicId={publicId}
+        consentGiven={consentGiven}
+        onConsentGiven={handleConsentGiven}
+        systemReady={systemReady}
+      />
+    );
+  };
+
   if (systemChecking && !systemReady) {
     return (
       <PageSkeleton
@@ -38,73 +142,19 @@ export default function AppStageRouter({
     );
   }
 
-  if (stage === "consent") {
-    return (
-      <ConsentPage
-        publicId={publicId}
-        consentGiven={consentGiven}
-        onConsentGiven={handleConsentGiven}
-        systemReady={systemReady}
-      />
-    );
-  }
-
-  if (stage === "user-details") {
-    return (
-      <UserDetailsPage
-        publicId={publicId}
-        demographics={demographics}
-        setDemographics={setDemographics}
-        onSubmit={handleUserDetailsSubmit}
-        onEmailVerified={handleEmailVerified}
-        addToast={addToast}
-        systemReady={systemReady}
-      />
-    );
-  }
-
-  if (stage === "survey" && surveyFeedbackReady) {
-    return (
-      <PostSurveyPage
-        surveyCompleted={surveyCompleted}
-        setSurveyFeedbackReady={setSurveyFeedbackReady}
-        clearUserStorage={clearUserStorage}
-        publicId={publicId}
-        fetchNextSurvey={fetchImage}
-      />
-    );
-  }
-
-  if (stage === "survey") {
-    return (
-      <SurveyPage
-        survey={survey}
-        publicId={publicId}
-        surveyCompleted={surveyCompleted}
-        onSubmit={handleSubmit}
-        fetchError={imageError}
-        onRetry={fetchImage}
-        isFetchingImage={isFetchingImage}
-      />
-    );
-  }
-
-  if (stage === "finished") {
-    return (
-      <PostSurveyPage
-        surveyCompleted={surveyCompleted}
-        publicId={publicId}
-        clearUserStorage={clearUserStorage}
-      />
-    );
-  }
-
   return (
-    <ConsentPage
-      publicId={publicId}
-      consentGiven={consentGiven}
-      onConsentGiven={handleConsentGiven}
-      systemReady={systemReady}
-    />
+    <React.Suspense
+      fallback={(
+        <PageSkeleton
+          title={uiText("status.loadingApp")}
+          subtitle={uiText("status.checkingConnectivity")}
+          variant="app"
+        />
+      )}
+    >
+      {renderStage()}
+    </React.Suspense>
   );
 }
+
+export default React.memo(AppStageRouter);
