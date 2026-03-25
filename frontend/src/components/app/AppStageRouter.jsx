@@ -1,6 +1,7 @@
 import React from "react";
 import PageSkeleton from "../PageSkeleton.jsx";
 import { uiText } from "../../utils/uiText.js";
+import { telemetryPageView } from "../../utils/clientTelemetry.js";
 
 const loadConsentPage = () => import("../../pages/ConsentPage.jsx");
 const loadUserDetailsPage = () => import("../../pages/UserDetailsPage.jsx");
@@ -131,6 +132,19 @@ function AppStageRouter({
       />
     );
   };
+
+  const activePageName = React.useMemo(() => {
+    if (stage === "consent") return "consent";
+    if (stage === "user-details") return "user-details";
+    if (stage === "survey" && surveyFeedbackReady) return "post-survey";
+    if (stage === "survey") return "survey";
+    if (stage === "finished") return "finished";
+    return "consent";
+  }, [stage, surveyFeedbackReady]);
+
+  React.useEffect(() => {
+    telemetryPageView(activePageName);
+  }, [activePageName]);
 
   if (systemChecking && !systemReady) {
     return (

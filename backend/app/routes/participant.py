@@ -28,6 +28,8 @@ from app.constants.observability_constants import OBS_EVENT_PARTICIPANT_CREATE_R
 from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
     PARTICIPANT_FIELD_USERNAME,
+    PARTICIPANT_STAGE_CONSENT,
+    PARTICIPANT_STAGE_USER_DETAILS,
     PARTICIPANT_STATUS_CONSENT_RECORDED,
     PARTICIPANT_STATUS_CREATED,
 )
@@ -268,10 +270,19 @@ def record_consent():
         db = get_db()
         row = db.execute(text("""
             UPDATE participants
-            SET consent_given = true, consent_at = CURRENT_TIMESTAMP
+            SET consent_given = true,
+                consent_at = CURRENT_TIMESTAMP,
+                stage = CASE
+                    WHEN stage = :consent_stage THEN :user_details_stage
+                    ELSE stage
+                END
             WHERE public_id = :pub AND is_deleted = false
             RETURNING id
-        """), {"pub": public_id}).fetchone()
+        """), {
+            "pub": public_id,
+            "consent_stage": PARTICIPANT_STAGE_CONSENT,
+            "user_details_stage": PARTICIPANT_STAGE_USER_DETAILS,
+        }).fetchone()
         if not row:
             return create_error_response("NF_CONSENT_PARTICIPANT_NOT_FOUND")
         pid = row[0]
@@ -451,6 +462,8 @@ def verify_email_otp():
             return create_error_response("AUTH_EMAIL_MISMATCH")
         participant_id, stored_email, email_verified = participant_row
         if email_verified:
+            mark_participant_email_verified(db, participant_id=int(participant_id))
+            db.commit()
             return success_response({
                 RESPONSE_KEY_EMAIL: stored_email,
                 RESPONSE_KEY_EMAIL_VERIFIED: True,
