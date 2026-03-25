@@ -29,7 +29,7 @@ class ErrorBoundary extends React.Component {
       return (
         <div className="panel">
           <h1>{getErrorMessage("SYS_001_0001")}</h1>
-          <p>{getErrorMessage("SYS_002_0023")}</p>
+          <p>{getErrorMessage("UI_001_0003")}</p>
           {this.state.error?.message && <p className="error-text">{this.state.error.message}</p>}
           {this.state.error?.stack && <pre className="error-details-pre">{this.state.error.stack}</pre>}
         </div>
