@@ -6,6 +6,7 @@ import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
 import { APP_ROUTES } from "../constants/routes";
 import { APP_FLOW } from "../config/appFlow";
+import { clearAllSurveyDraftsForUser } from "../utils/surveyDraft";
 
 const SURVEY_FEED_PENDING_CONTINUE_KEY = runtimeConfig.storageKeys.surveyFeedPendingContinue;
 const SURVEY_FEED_PENDING_FINISH_KEY = runtimeConfig.storageKeys.surveyFeedPendingFinish;
@@ -53,6 +54,7 @@ export function usePostSurveyPage({
         setContinueError(uiText("survey.feedLoadFailed"));
         return;
       }
+      clearAllSurveyDraftsForUser(publicId);
       setSurveyFeedbackReady(false);
       setStage?.(APP_FLOW.stages.survey);
     } catch (error) {
@@ -60,7 +62,7 @@ export function usePostSurveyPage({
     } finally {
       setLoadingNext(false);
     }
-  }, [fetchNextSurvey, isOnline, loadingNext, setStage, setSurveyFeedbackReady]);
+  }, [fetchNextSurvey, isOnline, loadingNext, publicId, setStage, setSurveyFeedbackReady]);
 
   const handleSurveyFinish = useCallback(() => {
     if (!isOnline) {

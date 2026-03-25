@@ -2,7 +2,6 @@ import React from "react";
 import { useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
 import { runtimeConfig } from "../config/runtime";
-import PageStatusBanners from "../components/PageStatusBanners.jsx";
 import { sanitizeUsername } from "../utils/userDetailsHelpers";
 import { useIsMobile } from "../hooks/useIsMobile.js";
 import UserIdentityFields from "../components/user-details/UserIdentityFields.jsx";
@@ -27,7 +26,6 @@ export default function UserDetailsPage({
   const isMobile = useIsMobile();
   const {
     constants,
-    isOnline,
     genderOptions,
     languageOptions,
     priorExperienceGroups,
@@ -57,8 +55,6 @@ export default function UserDetailsPage({
     handleSubmit,
     handleFieldBlur,
     updateField,
-    draftRestored,
-    retryCountdown,
   } = useUserDetailsPage({
     publicId,
     demographics,
@@ -121,9 +117,6 @@ export default function UserDetailsPage({
   const inputRefs = React.useRef([]);
   const toOtpDigits = (value) => String(value || "").replace(/\D/g, "");
   const OTP_STATUS = runtimeConfig.otpStatus;
-  const deferredDraftRestored = React.useDeferredValue(draftRestored);
-  const deferredOnline = React.useDeferredValue(isOnline);
-  const deferredRetryCountdown = React.useDeferredValue(retryCountdown);
   const otpStatusMessage = React.useMemo(() => (
     otpStatus === OTP_STATUS.sending
       ? uiText("email.requesting")
@@ -184,21 +177,12 @@ export default function UserDetailsPage({
 
   return (
     <div className="panel panel-with-corner-status">
-      <div className="page-top-actions inline">
-        <PageStatusBanners
-          isOnline={deferredOnline}
-          offlineMessage={uiText("user.offlineBanner")}
-          draftRestored={deferredDraftRestored}
-          compact
-        />
-      </div>
-      {null}
       <h2>{uiText("user.pageTitle")}</h2>
       <p className="page-subtitle left">
         {uiText("user.pageSubtitle")}
       </p>
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {otpStatusMessage || (!isOnline ? uiText("user.offlineBanner") : "")}
+        {otpStatusMessage}
       </div>
 
       <React.Profiler id="user-details-form-grid" onRender={profileRender}>
@@ -285,8 +269,6 @@ export default function UserDetailsPage({
         submitDisabled={submitDisabled}
         handleSubmit={handleSubmit}
         submitLabel={submitLabel}
-        isOnline={isOnline}
-        retryCountdown={deferredRetryCountdown}
       />
     </div>
   );

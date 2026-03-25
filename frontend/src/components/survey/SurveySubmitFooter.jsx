@@ -8,7 +8,6 @@ export default function SurveySubmitFooter({
   submitting,
   canSubmit,
   submitLocked,
-  isOnline,
   handleSubmit,
   getSubmitTooltip,
 }) {
@@ -23,7 +22,7 @@ export default function SurveySubmitFooter({
         <DSButton
           className={`primary ${submitting ? "wiggle" : ""}`}
           onClick={handleSubmit}
-          disabled={!canSubmit || submitLocked || !isOnline}
+          disabled={!canSubmit || submitLocked}
           title={getSubmitTooltip()}
         >
           {submitting ? (

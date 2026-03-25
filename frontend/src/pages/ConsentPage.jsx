@@ -6,7 +6,6 @@ import { uiText } from "../utils/uiText.js";
 import { CONSENT_CONTENT } from "../content/consentContent";
 import DSButton from "../components/design/DSButton.jsx";
 import PageStatusBanners from "../components/PageStatusBanners.jsx";
-import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
 import PageActions from "../components/PageActions.jsx";
 
 export default function ConsentPage({ 
@@ -22,11 +21,8 @@ export default function ConsentPage({
     error,
     setError,
     submitting,
-    isOnline,
     handleSubmit,
-    draftRestored,
     saveError,
-    retryCountdown,
   } = useConsentPage({ publicId, consentGiven, onConsentGiven, systemReady });
 
   if (submitting) {
@@ -45,9 +41,6 @@ export default function ConsentPage({
         <div className="page-top-banners" />
       </div>
       <PageStatusBanners
-        isOnline={isOnline}
-        offlineMessage={uiText("consent.offlineBanner")}
-        draftRestored={draftRestored}
         saveError={saveError}
         compact
       />
@@ -122,7 +115,6 @@ export default function ConsentPage({
             if (error) setError(null);
           }}
           id="consent-check"
-          disabled={!isOnline}
         />
         <label htmlFor="consent-check">
           <strong>{CONSENT_CONTENT.checkboxTitle}</strong>
@@ -139,24 +131,10 @@ export default function ConsentPage({
         <DSButton
           className="primary"
           onClick={handleSubmit}
-          disabled={!systemReady || submitting || !consentChecked || !isOnline}
+          disabled={!systemReady || submitting || !consentChecked}
         >
-          {submitting
-            ? uiText("common.processing")
-            : !isOnline && retryCountdown > 0
-              ? uiText("common.tryAgainIn", { seconds: retryCountdown })
-              : !isOnline
-                ? uiText("consent.offlineSubmit")
-                : uiText("common.continue")}
-          {!isOnline && <ButtonRetryBadge seconds={retryCountdown} />}
+          {submitting ? uiText("common.processing") : uiText("common.continue")}
         </DSButton>
-        {!isOnline && (
-          <div className="helper-text">
-            {retryCountdown > 0
-              ? uiText("common.tryAgainIn", { seconds: retryCountdown })
-              : uiText("consent.offlineBanner")}
-          </div>
-        )}
       </PageActions>
     </div>
   );
