@@ -18,6 +18,20 @@ const isLocalhost = () => {
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+const isTurnstileRetryableError = (error) => {
+  if (!error || typeof error.message !== "string") return false;
+  const m = String(error.message).toLowerCase();
+  return [
+    uiText("turnstile.loadTimedOut").toLowerCase(),
+    uiText("turnstile.executionTimedOut").toLowerCase(),
+    uiText("turnstile.executionFailed").toLowerCase(),
+    uiText("turnstile.notInitialized").toLowerCase(),
+    uiText("turnstile.unavailable").toLowerCase(),
+  ].includes(m);
+};
+
 const ensureTurnstileScript = () => {
   if (typeof window === "undefined") {
     return Promise.reject(new Error(uiText("turnstile.unavailableBrowser")));
@@ -186,10 +200,16 @@ const requestTurnstileToken = async (action = "submit") => {
         tag: "turnstile_client_error",
         meta: { action, attempt },
       });
-      if (attempt < TURNSTILE_MAX_ATTEMPTS) {
-        scriptPromise = null;
-        continue;
+
+      const shouldRetry = attempt < TURNSTILE_MAX_ATTEMPTS && isTurnstileRetryableError(lastError);
+      if (!shouldRetry) {
+        break;
       }
+
+      scriptPromise = null;
+      const backoff = Math.min(1000 * attempt, 2000);
+      await sleep(backoff);
+      continue;
     }
   }
   if (isLocalhost()) return "";

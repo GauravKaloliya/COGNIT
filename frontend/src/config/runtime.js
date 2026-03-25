@@ -46,7 +46,7 @@ export const runtimeConfig = {
   turnstileEnabled: toBool(import.meta.env.VITE_TURNSTILE_ENABLED, false),
   turnstileSiteKey: String(import.meta.env.VITE_TURNSTILE_SITE_KEY || "").trim(),
   turnstileClientTimeoutMs: 4500,
-  turnstileClientMaxAttempts: 1,
+  turnstileClientMaxAttempts: 3,
   turnstilePrefetchTtlMs: 45000,
   emailOtpLength: 6,
   emailOtpExpirySeconds: 300,
