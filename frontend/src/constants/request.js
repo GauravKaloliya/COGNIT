@@ -39,8 +39,3 @@ export const REQUEST_SEVERITY = {
   info: "info",
   error: "error",
 };
-
-export const NETWORK_ERROR_HINTS = {
-  timeout: "timeout",
-  fetch: "fetch",
-};

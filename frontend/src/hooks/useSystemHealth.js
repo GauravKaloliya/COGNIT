@@ -131,7 +131,7 @@ export function useSystemHealth({ isActiveTabOwner = true }) {
         if (cancelled) return;
         markProbeFailure();
         setSystemReady(false);
-        setSystemError(err.name === ERROR_NAMES.abort ? getErrorMessage("SYS_002_0008") : getErrorMessage("SYS_002_0001"));
+        setSystemError(err.name === ERROR_NAMES.abort ? getErrorMessage("UI_001_0004") : getErrorMessage("SYS_002_0001"));
         healthBackoffRef.current = Math.min(4, healthBackoffRef.current * 2);
       } finally {
         healthAbortRef.current = null;

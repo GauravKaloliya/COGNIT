@@ -366,7 +366,7 @@ export function useSurveyPage({
     }
 
     if (!survey || !survey.image_id) {
-      setSubmitError(getErrorMessage("SYS_002_0004"));
+      setSubmitError(getErrorMessage("UI_001_0002"));
       unlockSubmit(runtimeConfig.submitUnlockInvalidDelayMs);
       return;
     }
