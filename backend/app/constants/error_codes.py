@@ -207,6 +207,13 @@ ERROR_CODES_TEMPLATE: Dict[str, Dict[str, Any]] = {
         "category": "VAL",
         "field": "prior_experience"
     },
+    "VAL_EMAIL_INVALID": {
+        "code": "VAL_001_0002",
+        "message": "Please enter a valid email address.",
+        "status": 400,
+        "category": "VAL",
+        "field": "email"
+    },
     "VAL_DESC_LENGTH": {
         "code": "VAL_002_0001",
         "message": "Description must be {min_description_length}-{max_description_length} characters long.",
@@ -234,6 +241,13 @@ ERROR_CODES_TEMPLATE: Dict[str, Dict[str, Any]] = {
         "status": 400,
         "category": "VAL",
         "field": "description"
+    },
+    "VAL_INVALID_STATE": {
+        "code": "VAL_003_0025",
+        "message": "Participant is not in a valid stage for this action.",
+        "status": 409,
+        "category": "VAL",
+        "field": "stage"
     },
     "DUP_USERNAME": {
         "code": "DUP_001_0001",
@@ -346,12 +360,6 @@ ERROR_CODES_TEMPLATE: Dict[str, Dict[str, Any]] = {
         "message": "Human verification failed while submitting the response. Please retry.",
         "status": 403,
         "category": "AUTH"
-    },
-    "NF_CONSENT": {
-        "code": "NF_001_0004",
-        "message": "Consent record not found.",
-        "status": 404,
-        "category": "NF"
     },
     "NF_ROUTE_NOT_FOUND": {
         "code": "NF_001_0005",

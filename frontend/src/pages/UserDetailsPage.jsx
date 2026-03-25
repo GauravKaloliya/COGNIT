@@ -75,7 +75,9 @@ export default function UserDetailsPage({
   const USERNAME_MIN = constants.usernameMin;
   const LOCATION_MIN = constants.locationMin;
   const emailDomains = React.useMemo(() => {
-    const rawEmailDomains = uiText("user.emailDomains").split("|").map((d) => d.trim()).filter(Boolean);
+    const rawEmailDomains = (runtimeConfig.allowedEmailDomains || [])
+      .map((d) => String(d || "").trim())
+      .filter(Boolean);
     return Array.from(new Set(rawEmailDomains));
   }, []);
   const fieldStatus = React.useMemo(() => ({
@@ -116,8 +118,6 @@ export default function UserDetailsPage({
   ]);
   const emailPlaceholderDomain =
     emailDomains[emailPlaceholderIndex % emailDomains.length]
-    || uiText("user.emailDefaultDomain")
-    || runtimeConfig.allowedEmailDomains[0]
     || "";
   const showEmailGhost = !emailFocused && !(demographics.email || "").trim();
   const inputRefs = React.useRef([]);

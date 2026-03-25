@@ -188,8 +188,6 @@ const TEXT = {
     "user.usernamePlaceholder": "Enter your username",
     "user.usernameHint": "Minimum {min} characters, letters/numbers/underscore",
     "user.email": "Email",
-    "user.emailDomains": "gmail.com|outlook.com|hotmail.com|icloud.com",
-    "user.emailDefaultDomain": "gmail.com",
     "user.emailGhostPrefix": "yourname@",
     "user.emailHint": "Use a valid email format",
     "user.gender": "Gender",
