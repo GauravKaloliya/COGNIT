@@ -32,7 +32,7 @@ export function useWorkflowCoreState({ addToast }) {
   const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => readCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, false, scopeId));
   const [emailVerified, setEmailVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.emailVerified, false, scopeId));
   const [sessionHydrated, setSessionHydrated] = useState(false);
-  const [frontendSessionExpired, setFrontendSessionExpired] = useState(false);
+  const [frontendSessionExpired] = useState(false);
   const [demographics, setDemographics] = useState(
     readCoreValue(runtimeConfig.storageKeys.demographics, {
       username: "",
@@ -65,23 +65,9 @@ export function useWorkflowCoreState({ addToast }) {
     });
     if (expiredFound) {
       expiryNoticeShownRef.current = true;
-      setFrontendSessionExpired(true);
-      setPublicId("");
-      setSessionId("");
-      setStage(APP_FLOW.stages.consent);
-      setConsentGiven(false);
-      setUserDetailsSubmitted(false);
-      setEmailVerified(false);
-      setDemographics({
-        username: "",
-        email: "",
-        gender_code: "",
-        age: "",
-        location: "",
-        language_code: "",
-        prior_experience: "",
-      });
-      addToast(uiText("app.sessionExpired"), "warning");
+      // Expired keys should be cleaned independently. Do not hard-reset all
+      // in-memory workflow state just because a non-critical key expired.
+      addToast(uiText("app.sessionExpired"), "info");
     }
   }, [addToast]);
 
