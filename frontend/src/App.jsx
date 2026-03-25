@@ -52,6 +52,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     publicId,
     demographics,
     setDemographics,
+    setStage,
     toasts,
     addToast,
     systemReady,
@@ -62,7 +63,6 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     retryHealthCheck,
     survey,
     surveyCompleted,
-    surveyFeedbackReady,
     setSurveyFeedbackReady,
     consentGiven,
     imageError,
@@ -248,8 +248,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           addToast={addToast}
           survey={survey}
           surveyCompleted={surveyCompleted}
-          surveyFeedbackReady={surveyFeedbackReady}
           setSurveyFeedbackReady={setSurveyFeedbackReady}
+          setStage={setStage}
           clearUserStorage={clearUserStorage}
           fetchImage={fetchImage}
           prefetchNextImage={prefetchNextImage}

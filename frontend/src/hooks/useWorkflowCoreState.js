@@ -12,7 +12,7 @@ import {
   removeStoredKey,
   writeExpiringValue,
 } from "../utils/storage";
-import { APP_FLOW } from "../config/appFlow";
+import { APP_FLOW, normalizeAppStage } from "../config/appFlow";
 import { getScopeId, readCoreValue } from "../utils/appControllerState";
 
 const CORE_STATE_STORAGE_AREA = "local";
@@ -27,7 +27,9 @@ export function useWorkflowCoreState({ addToast }) {
   ));
   const scopeId = getScopeId(publicId);
   const [sessionId, setSessionId] = useState(() => readCoreValue(runtimeConfig.storageKeys.sessionId, "", scopeId));
-  const [stage, setStage] = useState(() => readCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, scopeId));
+  const [stage, setStage] = useState(() => normalizeAppStage(
+    readCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, scopeId)
+  ));
   const [consentGiven, setConsentGiven] = useState(() => readCoreValue(runtimeConfig.storageKeys.consentGiven, false, scopeId));
   const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => readCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, false, scopeId));
   const [emailVerified, setEmailVerified] = useState(() => readCoreValue(runtimeConfig.storageKeys.emailVerified, false, scopeId));
@@ -164,8 +166,9 @@ export function useWorkflowCoreState({ addToast }) {
   }, [publicId]);
 
   useEffect(() => {
-    if (stage === "email-verify") {
-      setStage(APP_FLOW.stages.userDetails);
+    const normalizedStage = normalizeAppStage(stage);
+    if (normalizedStage !== stage) {
+      setStage(normalizedStage);
     }
   }, [stage]);
 

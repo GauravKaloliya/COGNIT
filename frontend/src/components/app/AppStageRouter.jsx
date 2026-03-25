@@ -2,6 +2,7 @@ import React from "react";
 import PageSkeleton from "../PageSkeleton.jsx";
 import { uiText } from "../../utils/uiText.js";
 import { telemetryPageView } from "../../utils/clientTelemetry.js";
+import { normalizeAppStage } from "../../config/appFlow.js";
 
 const loadConsentPage = () => import("../../pages/ConsentPage.jsx");
 const loadUserDetailsPage = () => import("../../pages/UserDetailsPage.jsx");
@@ -20,6 +21,10 @@ export function prefetchLikelyNextChunks(stage) {
   }
   if (stage === "survey") {
     void loadPostSurveyPage();
+    return;
+  }
+  if (stage === "post-survey") {
+    void loadSurveyPage();
   }
 }
 
@@ -51,8 +56,8 @@ function AppStageRouter({
   addToast,
   survey,
   surveyCompleted,
-  surveyFeedbackReady,
   setSurveyFeedbackReady,
+  setStage,
   clearUserStorage,
   fetchImage,
   prefetchNextImage,
@@ -60,8 +65,10 @@ function AppStageRouter({
   imageError,
   isFetchingImage,
 }) {
+  const normalizedStage = normalizeAppStage(stage);
+
   const renderStage = () => {
-    if (stage === "consent") {
+    if (normalizedStage === "consent") {
       return (
         <ConsentPage
           publicId={publicId}
@@ -72,7 +79,7 @@ function AppStageRouter({
       );
     }
 
-    if (stage === "user-details") {
+    if (normalizedStage === "user-details") {
       return (
         <UserDetailsPage
           publicId={publicId}
@@ -86,19 +93,7 @@ function AppStageRouter({
       );
     }
 
-    if (stage === "survey" && surveyFeedbackReady) {
-      return (
-        <PostSurveyPage
-          surveyCompleted={surveyCompleted}
-          setSurveyFeedbackReady={setSurveyFeedbackReady}
-          clearUserStorage={clearUserStorage}
-          publicId={publicId}
-          fetchNextSurvey={fetchImage}
-        />
-      );
-    }
-
-    if (stage === "survey") {
+    if (normalizedStage === "survey") {
       return (
         <SurveyPage
           survey={survey}
@@ -113,10 +108,13 @@ function AppStageRouter({
       );
     }
 
-    if (stage === "finished") {
+    if (normalizedStage === "post-survey") {
       return (
         <PostSurveyPage
           surveyCompleted={surveyCompleted}
+          setStage={setStage}
+          setSurveyFeedbackReady={setSurveyFeedbackReady}
+          fetchNextSurvey={fetchImage}
           publicId={publicId}
           clearUserStorage={clearUserStorage}
         />
@@ -134,13 +132,12 @@ function AppStageRouter({
   };
 
   const activePageName = React.useMemo(() => {
-    if (stage === "consent") return "consent";
-    if (stage === "user-details") return "user-details";
-    if (stage === "survey" && surveyFeedbackReady) return "post-survey";
-    if (stage === "survey") return "survey";
-    if (stage === "finished") return "finished";
+    if (normalizedStage === "consent") return "consent";
+    if (normalizedStage === "user-details") return "user-details";
+    if (normalizedStage === "survey") return "survey";
+    if (normalizedStage === "post-survey") return "post-survey";
     return "consent";
-  }, [stage, surveyFeedbackReady]);
+  }, [normalizedStage]);
 
   React.useEffect(() => {
     telemetryPageView(activePageName);

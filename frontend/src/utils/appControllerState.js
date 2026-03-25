@@ -1,5 +1,5 @@
 import { runtimeConfig } from "../config/runtime";
-import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
+import { APP_FLOW, APP_STAGE_ORDER, normalizeAppStage } from "../config/appFlow";
 import { REGEX_PATTERNS } from "../constants/patterns";
 import { createFallbackUuid } from "../constants/ids";
 import { makeScopedKey, readExpiringValue, writeExpiringValue } from "./storage";
@@ -36,16 +36,18 @@ export function createClientId() {
 }
 
 export function validateStageTransition(currentStage, targetStage) {
-  const currentIndex = APP_STAGE_ORDER.indexOf(currentStage);
-  const targetIndex = APP_STAGE_ORDER.indexOf(targetStage);
+  const normalizedCurrent = normalizeAppStage(currentStage);
+  const normalizedTarget = normalizeAppStage(targetStage);
+  const currentIndex = APP_STAGE_ORDER.indexOf(normalizedCurrent);
+  const targetIndex = APP_STAGE_ORDER.indexOf(normalizedTarget);
   if (targetIndex <= currentIndex) return true;
-  switch (currentStage) {
+  switch (normalizedCurrent) {
     case APP_FLOW.stages.consent:
-      return targetStage === APP_FLOW.stages.userDetails;
+      return normalizedTarget === APP_FLOW.stages.userDetails;
     case APP_FLOW.stages.userDetails:
-      return targetStage === APP_FLOW.stages.survey;
+      return normalizedTarget === APP_FLOW.stages.survey;
     case APP_FLOW.stages.survey:
-      return targetStage === APP_FLOW.stages.finished;
+      return normalizedTarget === APP_FLOW.stages.postSurvey;
     default:
       return false;
   }
@@ -92,11 +94,13 @@ export function deriveMaxAllowedStage({
   surveyFeedbackReady,
   lastSubmissionSucceeded,
 }) {
+  const normalizedCurrent = normalizeAppStage(currentStage);
   if (!consentGiven) return APP_FLOW.stages.consent;
   if (!hasParticipant || !userDetailsSubmitted || !demographicsComplete) return APP_FLOW.stages.userDetails;
   if (!emailVerified) return APP_FLOW.stages.userDetails;
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;
   if (surveyCompleted < MIN_SURVEYS_BEFORE_FINISH) return APP_FLOW.stages.survey;
-  if (currentStage === APP_FLOW.stages.finished) return APP_FLOW.stages.finished;
+  if (surveyFeedbackReady && lastSubmissionSucceeded) return APP_FLOW.stages.postSurvey;
+  if (normalizedCurrent === APP_FLOW.stages.postSurvey && surveyFeedbackReady) return APP_FLOW.stages.postSurvey;
   return APP_FLOW.stages.survey;
 }
