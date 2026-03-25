@@ -1854,7 +1854,17 @@ textarea {
 }
 
 .ghost:focus-visible {
-  outline: none;1) !important;
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dark-mode-toggle {
+  padding: var(--space-1) !important;
   font-size: 16px;
   min-width: 36px;
   min-height: 36px;
@@ -1869,17 +1879,7 @@ textarea {
 
 .dark-mode-toggle .dark-mode-emoji {
   display: block;
-  font-size: 16
-
-.dark-mode-toggle svg {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-
-.dark-mode-toggle .dark-mode-emoji {
-  display: block;
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
 }
 
