@@ -11,7 +11,10 @@
     "build": "vite build",
     "lint": "eslint src --ext .js,.jsx",
     "preview": "vite preview",
-    "vercel-build": "vite build"
+    "vercel-build": "vite build",
+    "vercel:build": "vite build",
+    "vercel:dev": "vite --host 0.0.0.0 --port ${PORT:-5173}",
+    "vercel:preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
