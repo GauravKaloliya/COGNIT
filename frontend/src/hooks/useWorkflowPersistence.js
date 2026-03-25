@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { endpoints } from "../utils/api.js";
 import { runtimeConfig } from "../config/runtime";
-import { APP_FLOW, APP_STAGE_ORDER } from "../config/appFlow";
+import { APP_FLOW, APP_STAGE_ORDER, normalizeAppStage } from "../config/appFlow";
 import {
   makeScopedKey,
   readExpiringValue,
@@ -163,7 +163,7 @@ export function useWorkflowPersistence({
     const sessionStored = readScoped(runtimeConfig.storageKeys.sessionId, "", CORE_STATE_TTL_MS);
     setSessionId((prev) => (sessionStored.hasValue ? sessionStored.value : prev));
     const stageStored = readScoped(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, CORE_STATE_TTL_MS);
-    setStage((prev) => (stageStored.hasValue ? stageStored.value : prev));
+    setStage((prev) => (stageStored.hasValue ? normalizeAppStage(stageStored.value) : prev));
     const consentStored = readScoped(runtimeConfig.storageKeys.consentGiven, false, CORE_STATE_TTL_MS);
     setConsentGiven((prev) => (consentStored.hasValue ? consentStored.value : prev));
     const userDetailsStored = readScoped(runtimeConfig.storageKeys.userDetailsSubmitted, false, CORE_STATE_TTL_MS);
@@ -195,6 +195,7 @@ export function useWorkflowPersistence({
     const storedSurveyFeedbackReady = readCoreValue(runtimeConfig.storageKeys.surveyFeedbackReady, false, publicId);
     if (storedSurveyFeedbackReady) {
       setSurveyFeedbackReady(true);
+      setStage((prev) => (prev === APP_FLOW.stages.survey ? APP_FLOW.stages.postSurvey : prev));
     }
 
     const storedLastSubmissionSucceeded = readCoreValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, false, publicId);
@@ -223,8 +224,9 @@ export function useWorkflowPersistence({
 
   useEffect(() => {
     if (!sessionHydrated) return;
+    const normalizedStage = normalizeAppStage(stage);
     const maxAllowedStage = deriveMaxAllowedStage({
-      currentStage: stage,
+      currentStage: normalizedStage,
       consentGiven,
       hasParticipant: Boolean(publicId),
       userDetailsSubmitted,
@@ -234,13 +236,13 @@ export function useWorkflowPersistence({
       surveyFeedbackReady,
       lastSubmissionSucceeded,
     });
-    const currentIndex = APP_STAGE_ORDER.indexOf(stage);
+    const currentIndex = APP_STAGE_ORDER.indexOf(normalizedStage);
     const maxAllowedIndex = APP_STAGE_ORDER.indexOf(maxAllowedStage);
     if (maxAllowedIndex >= 0) {
       if (currentIndex > maxAllowedIndex) {
         setStage(maxAllowedStage);
       } else if (currentIndex >= 0 && currentIndex < maxAllowedIndex) {
-        let nextStage = stage;
+        let nextStage = normalizedStage;
         let nextIndex = currentIndex;
         while (nextIndex < maxAllowedIndex) {
           const candidate = APP_STAGE_ORDER[nextIndex + 1];
@@ -248,10 +250,13 @@ export function useWorkflowPersistence({
           nextStage = candidate;
           nextIndex += 1;
         }
-        if (nextStage !== stage) {
+        if (nextStage !== normalizedStage) {
           setStage(nextStage);
         }
       }
+    }
+    if (normalizedStage !== stage) {
+      setStage(normalizedStage);
     }
     if (surveyFeedbackReady && !lastSubmissionSucceeded) {
       setSurveyFeedbackReady(false);

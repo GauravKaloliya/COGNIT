@@ -13,10 +13,10 @@ export default function PostSurveyPage({
   publicId = "",
   clearUserStorage = null,
   setSurveyFeedbackReady = null,
+  setStage = null,
   fetchNextSurvey = null,
 }) {
   const {
-    minWords: MIN_WORDS,
     loadingNext,
     continueError,
     isOnline,
@@ -30,6 +30,7 @@ export default function PostSurveyPage({
     publicId,
     clearUserStorage,
     setSurveyFeedbackReady,
+    setStage,
     fetchNextSurvey,
   });
 
@@ -58,21 +59,10 @@ export default function PostSurveyPage({
         <PanelState
           variant="success"
           icon="✓"
-          title={uiText("survey.feedComplete")}
-          message={uiText("survey.feedCompleteMessage", { count: surveyCompleted, suffix: surveyCompleted === 1 ? "" : "s" })}
-        />
-        <PanelState
-          variant="success"
-          icon="✓"
           title={uiText("finish.thanks")}
           message={uiText("finish.responsesRecorded")}
         />
         <p className="debrief">{uiText("finish.debrief")}</p>
-        <div className="survey-feedback-tip">
-          <p>
-            <em>{uiText("survey.feedTip", { minWords: MIN_WORDS })}</em>
-          </p>
-        </div>
         <PageActions sticky inline className="survey-feedback-actions">
           <DSButton
             className="primary"

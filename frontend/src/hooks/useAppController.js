@@ -87,7 +87,7 @@ export function useAppController() {
     showConfetti,
     fetchImage,
     prefetchNextImage,
-    handleSubmit,
+    handleSubmit: submitSurvey,
     cancelInFlightRequests,
   } = surveyFlow;
 
@@ -230,6 +230,14 @@ export function useAppController() {
       setStage(APP_FLOW.stages.survey);
     }
   }, [setEmailVerified, setStage]);
+
+  const handleSubmit = useCallback(async (formData) => {
+    const result = await submitSurvey(formData);
+    if (validateStageTransition(APP_FLOW.stages.survey, APP_FLOW.stages.postSurvey)) {
+      setStage(APP_FLOW.stages.postSurvey);
+    }
+    return result;
+  }, [setStage, submitSurvey]);
 
   const handleAppError = useCallback(() => addToast(getErrorMessage("SYS_002_0017"), "error"), [addToast]);
 
