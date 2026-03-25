@@ -14,18 +14,13 @@ import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, schedu
 export { sanitizeAlphaNumericSpace } from "../utils/surveyPageHelpers";
 
 const MIN_WORDS = runtimeConfig.minWords;
-const PRIORITY_WORD_TARGET = runtimeConfig.priorityDescWordTarget;
 const MIN_DESCRIPTION_LENGTH = runtimeConfig.minDescriptionLength;
 const MAX_DESCRIPTION_LENGTH = runtimeConfig.maxDescriptionLength;
 const MIN_FEEDBACK_LENGTH = runtimeConfig.minFeedbackLength;
 const MAX_FEEDBACK_LENGTH = runtimeConfig.maxFeedbackLength;
-const PRIORITY_FEEDBACK_TARGET = runtimeConfig.priorityFeedbackTarget;
 const UI_TOTAL_STEPS = runtimeConfig.surveyUiTotalSteps;
 const COPY_PASTE_DISABLED = runtimeConfig.disableCopyPaste;
 const SURVEY_PENDING_SUBMIT_KEY = runtimeConfig.storageKeys.surveyPendingSubmit;
-
-export const DESCRIPTION_NOTES = uiText("survey.descriptionNotes").split("|");
-export const FEEDBACK_NOTES = uiText("survey.feedbackNotes").split("|");
 
 export function useSurveyPage({
   survey,
@@ -66,22 +61,12 @@ export function useSurveyPage({
   } = useSurveyEngagement({ copyPasteDisabled: COPY_PASTE_DISABLED });
   const wordCount = description.trim() ? description.trim().split(/\s+/).length : 0;
   const charCount = description.length;
-  const feedbackCount = comments.trim().length;
   const descriptionValid = description.length >= MIN_DESCRIPTION_LENGTH && description.length <= MAX_DESCRIPTION_LENGTH;
   const commentsValid = comments.trim().length >= MIN_FEEDBACK_LENGTH && comments.trim().length <= MAX_FEEDBACK_LENGTH;
   const imageReady = imageLoaded && !imageError;
   const canSubmit = wordCount >= MIN_WORDS && rating !== 0 && commentsValid && descriptionValid && !submitting && imageReady;
-  const wordProgress = Math.min(100, Math.round((wordCount / PRIORITY_WORD_TARGET) * 100));
-  const feedbackProgress = Math.min(100, Math.round((feedbackCount / PRIORITY_FEEDBACK_TARGET) * 100));
-  const wordShortfall = Math.max(0, PRIORITY_WORD_TARGET - wordCount);
-  const feedbackShortfall = Math.max(0, PRIORITY_FEEDBACK_TARGET - feedbackCount);
-  const descriptionPriorityReady = wordCount >= PRIORITY_WORD_TARGET;
-  const feedbackPriorityReady = feedbackCount >= PRIORITY_FEEDBACK_TARGET;
-  const descriptionNoteIndex = Math.min(9, Math.floor(wordProgress / 10));
-  const feedbackNoteIndex = Math.min(9, Math.floor(feedbackProgress / 10));
   const currentStep = Math.max(1, surveyCompleted + 1);
   const minimumMet = wordCount >= MIN_WORDS && comments.trim().length >= MIN_FEEDBACK_LENGTH && rating > 0;
-  const priorityMet = descriptionPriorityReady && feedbackPriorityReady;
   const { imageSrc, hasUsableSurveyImage } = useMemo(
     () => buildSurveyImageState(survey),
     [survey]
@@ -385,12 +370,10 @@ export function useSurveyPage({
 
   const constants = useMemo(() => ({
     minWords: MIN_WORDS,
-    priorityWordTarget: PRIORITY_WORD_TARGET,
     minDescriptionLength: MIN_DESCRIPTION_LENGTH,
     maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
     minFeedbackLength: MIN_FEEDBACK_LENGTH,
     maxFeedbackLength: MAX_FEEDBACK_LENGTH,
-    priorityFeedbackTarget: PRIORITY_FEEDBACK_TARGET,
     uiTotalSteps: UI_TOTAL_STEPS,
     copyPasteDisabled: COPY_PASTE_DISABLED,
   }), []);
@@ -416,19 +399,9 @@ export function useSurveyPage({
     retryCountdown,
     wordCount,
     charCount,
-    feedbackCount,
     canSubmit,
-    wordProgress,
-    feedbackProgress,
-    wordShortfall,
-    feedbackShortfall,
-    descriptionPriorityReady,
-    feedbackPriorityReady,
-    descriptionNoteIndex,
-    feedbackNoteIndex,
     currentStep,
     minimumMet,
-    priorityMet,
     isOnline,
     submitLocked,
     descriptionRef,

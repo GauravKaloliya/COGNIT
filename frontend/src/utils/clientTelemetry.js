@@ -1,6 +1,9 @@
 import { runtimeConfig } from "../config/runtime";
+import { readExpiringValue, writeExpiringValue } from "./storage";
 
 const TELEMETRY_KEY = runtimeConfig.storageKeys.telemetry;
+const TELEMETRY_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
+const TELEMETRY_TTL_MS = runtimeConfig.uiStateTtlMs;
 
 function nowMs() {
   return Date.now();
@@ -32,23 +35,21 @@ function defaultState() {
 }
 
 function loadState() {
-  try {
-    const raw = sessionStorage.getItem(TELEMETRY_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return defaultState();
-    return { ...defaultState(), ...parsed };
-  } catch {
-    return defaultState();
-  }
+  const parsed = readExpiringValue(TELEMETRY_KEY, null, {
+    area: "session",
+    schemaVersion: TELEMETRY_SCHEMA_VERSION,
+    ttlMs: TELEMETRY_TTL_MS,
+  });
+  if (!parsed || typeof parsed !== "object") return defaultState();
+  return { ...defaultState(), ...parsed };
 }
 
 function saveState(state) {
-  try {
-    sessionStorage.setItem(TELEMETRY_KEY, JSON.stringify(state));
-  } catch {
-    // Ignore storage write failures.
-  }
+  writeExpiringValue(TELEMETRY_KEY, state, {
+    area: "session",
+    schemaVersion: TELEMETRY_SCHEMA_VERSION,
+    ttlMs: TELEMETRY_TTL_MS,
+  });
 }
 
 let telemetryState = loadState();

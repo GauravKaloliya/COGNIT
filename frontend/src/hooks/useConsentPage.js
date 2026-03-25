@@ -18,25 +18,7 @@ const getConsentPendingKey = (scope) => makeScopedKey(CONSENT_PENDING_KEY, scope
 const readConsentDraft = (scope) => {
   const key = getConsentDraftKey(scope);
   const opts = { schemaVersion: CONSENT_DRAFT_SCHEMA_VERSION, ttlMs: CONSENT_DRAFT_TTL_MS };
-  const localScoped = readExpiringValue(key, false, { ...opts, area: "local" }) === true;
-  if (localScoped) return true;
-
-  // Backward-compatible migration: consent draft used to live in sessionStorage and/or unscoped keys.
-  const legacy =
-    (readExpiringValue(key, false, { ...opts, area: "session" }) === true) ||
-    (readExpiringValue(CONSENT_DRAFT_KEY, false, { ...opts, area: "local" }) === true) ||
-    (readExpiringValue(CONSENT_DRAFT_KEY, false, { ...opts, area: "session" }) === true);
-  if (legacy) {
-    try {
-      writeExpiringValue(key, true, { ...opts, area: "local" });
-      removeStoredKey(key, "session");
-      removeStoredKey(CONSENT_DRAFT_KEY, "local");
-      removeStoredKey(CONSENT_DRAFT_KEY, "session");
-    } catch {
-      // Ignore migration failures.
-    }
-  }
-  return legacy;
+  return readExpiringValue(key, false, { ...opts, area: "local" }) === true;
 };
 
 const writeConsentDraft = (scope, checked) => {
@@ -124,7 +106,6 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
     try {
       await onConsentGiven();
       forEachStorageArea((area) => {
-        removeStoredKey(CONSENT_DRAFT_KEY, area);
         removeStoredKey(getConsentDraftKey(scope), area);
       });
     } catch (err) {

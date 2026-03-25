@@ -1,15 +1,14 @@
 import React from "react";
 import { useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
-import DSButton from "../components/design/DSButton.jsx";
 import { runtimeConfig } from "../config/runtime";
 import PageStatusBanners from "../components/PageStatusBanners.jsx";
-import ButtonRetryBadge from "../components/ButtonRetryBadge.jsx";
-import PageActions from "../components/PageActions.jsx";
-import RefreshIcon from "../components/icons/RefreshIcon.jsx";
-import LoadingSpinner from "../components/icons/LoadingSpinner.jsx";
 import { sanitizeUsername } from "../utils/userDetailsHelpers";
 import { useIsMobile } from "../hooks/useIsMobile.js";
+import UserIdentityFields from "../components/user-details/UserIdentityFields.jsx";
+import OtpVerificationField from "../components/user-details/OtpVerificationField.jsx";
+import UserProfileFields from "../components/user-details/UserProfileFields.jsx";
+import UserDetailsSubmitFooter from "../components/user-details/UserDetailsSubmitFooter.jsx";
 
 export default function UserDetailsPage({
   publicId,
@@ -161,293 +160,80 @@ export default function UserDetailsPage({
       </p>
       
       <div className={`form-grid ${showOtpField ? "has-otp" : ""}`}>
-        <div className={`form-field username-field ${errors.username ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.username")} <span className="required" aria-label="required">*</span></label>
-          <input
-            type="text"
-            className={errors.username ? 'error-input' : ''}
-            placeholder={uiText("user.usernamePlaceholder")}
-            value={demographics.username || ''}
-            disabled={inputsLocked}
-            onChange={(e) => updateField('username', sanitizeUsername(e.target.value))}
-            onBlur={(e) => handleFieldBlur('username', e.target.value, true)}
-          />
-          {checking.username && <span className="checking-text">{uiText("user.checking")}</span>}
-          {errors.username && <span className="error-text">{errors.username}</span>}
-          {!usernameOk && (
-            <span className="helper-text warning">{uiText("user.usernameHint", { min: USERNAME_MIN })}</span>
-          )}
-        </div>
+        <UserIdentityFields
+          demographics={demographics}
+          errors={errors}
+          optionsLoading={optionsLoading}
+          checking={checking}
+          inputsLocked={inputsLocked}
+          emailInputDisabled={emailInputDisabled}
+          usernameOk={usernameOk}
+          emailOk={emailOk}
+          usernameMin={USERNAME_MIN}
+          showEmailGhost={showEmailGhost}
+          emailPlaceholderDomain={emailPlaceholderDomain}
+          emailPlaceholderIndex={emailPlaceholderIndex}
+          updateField={updateField}
+          handleFieldBlur={handleFieldBlur}
+          sanitizeUsername={sanitizeUsername}
+          setEmailFocused={setEmailFocused}
+        />
 
-        <div className={`form-field email-field ${errors.email ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.email")} <span className="required" aria-label="required">*</span></label>
-          <div className="input-with-ghost">
-            <input
-              type="email"
-              className={errors.email ? 'error-input' : ''}
-              placeholder=""
-              value={demographics.email || ''}
-              disabled={emailInputDisabled}
-              onChange={(e) => updateField('email', e.target.value)}
-              onFocus={() => setEmailFocused(true)}
-              onBlur={(e) => {
-                setEmailFocused(false);
-                handleFieldBlur('email', e.target.value, true);
-              }}
-            />
-            {showEmailGhost && (
-              <span className="ghost-placeholder simple">
-                <span className="ghost-prefix">{uiText("user.emailGhostPrefix")}</span>
-                <span key={emailPlaceholderIndex} className="ghost-domain simple-animate">{emailPlaceholderDomain}</span>
-              </span>
-            )}
-          </div>
-          {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
-          {errors.email && <span className="error-text">{errors.email}</span>}
-          {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
-        </div>
+        <OtpVerificationField
+          showOtpField={showOtpField}
+          otpDigits={otpDigits}
+          otpLength={otpLength}
+          otpStatus={otpStatus}
+          otpStatusConfig={OTP_STATUS}
+          otpError={otpError}
+          otpExpiryMessage={otpExpiryMessage}
+          showOtpExpiry={showOtpExpiry}
+          resendSeconds={resendSeconds}
+          otpStatusMessage={otpStatusMessage}
+          resendLabel={resendLabel}
+          canResend={canResend}
+          inputRefs={inputRefs}
+          editableOtpIndex={editableOtpIndex}
+          toOtpDigits={toOtpDigits}
+          setOtpDigit={setOtpDigit}
+          setOtpFromPaste={setOtpFromPaste}
+          handleResend={handleResend}
+          focusAdvanceDelayMs={runtimeConfig.focusAdvanceDelayMs}
+        />
 
-        {showOtpField && (
-          <div className="form-field otp-field">
-            <label>{uiText("email.otpLabel")} <span className="required" aria-label="required">*</span></label>
-
-            <div className="otp-row">
-              <div className="otp-inputs" role="group" aria-label={uiText("email.otpLabel")}>
-                {otpDigits.map((digit, index) => (
-                  <input
-                    key={`otp-${index}`}
-                    ref={(el) => {
-                      inputRefs.current[index] = el;
-                    }}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    className="otp-input"
-                    maxLength={1}
-                    value={digit}
-                    disabled={otpStatus === OTP_STATUS.verifying || otpStatus === OTP_STATUS.sending}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      const digitsOnly = toOtpDigits(raw);
-
-                      if (index !== editableOtpIndex) {
-                        inputRefs.current[editableOtpIndex]?.focus();
-                        return;
-                      }
-
-                      setOtpDigit(index, digitsOnly);
-                      if (digitsOnly && index < otpLength - 1) {
-                        window.setTimeout(() => inputRefs.current[index + 1]?.focus(), runtimeConfig.focusAdvanceDelayMs);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Backspace") {
-                        e.preventDefault();
-                        if (index !== editableOtpIndex) {
-                          inputRefs.current[editableOtpIndex]?.focus();
-                          return;
-                        }
-                        // Allow clearing only the current editable digit (no going back).
-                        setOtpDigit(index, "");
-                        return;
-                      }
-                      if (e.key === "ArrowLeft") {
-                        e.preventDefault();
-                        inputRefs.current[editableOtpIndex]?.focus();
-                        return;
-                      }
-                      if (e.key === "ArrowRight") {
-                        e.preventDefault();
-                        inputRefs.current[editableOtpIndex]?.focus();
-                      }
-                    }}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      const pasted = e.clipboardData.getData("text");
-                      const digitsOnly = toOtpDigits(pasted);
-                      if (!digitsOnly) return;
-                      setOtpFromPaste(0, digitsOnly);
-                      const nextIndex = Math.min(otpLength - 1, digitsOnly.length - 1);
-                      window.setTimeout(() => inputRefs.current[nextIndex]?.focus(), runtimeConfig.focusAdvanceDelayMs);
-                    }}
-                    onFocus={() => {
-                      if (index !== editableOtpIndex) inputRefs.current[editableOtpIndex]?.focus();
-                    }}
-                    aria-label={`${uiText("email.otpLabel")} ${index + 1}`}
-                  />
-                ))}
-              </div>
-
-              <DSButton
-                className="otp-resend-btn"
-                variant="ghost"
-                type="button"
-                onClick={canResend ? handleResend : undefined}
-                aria-disabled={!canResend}
-                aria-label={resendLabel}
-                title={resendLabel}
-              >
-                {otpStatus === OTP_STATUS.sending ? <LoadingSpinner /> : <RefreshIcon />}
-              </DSButton>
-            </div>
-
-            {otpError && <span className="error-text">{otpError}</span>}
-            {showOtpExpiry && <span className="helper-text warning">{otpExpiryMessage}</span>}
-            {resendSeconds > 0 && (
-              <span className="helper-text">{uiText("email.resendIn", { seconds: resendSeconds })}</span>
-            )}
-            {otpStatusMessage && <span className="checking-text">{otpStatusMessage}</span>}
-          </div>
-        )}
-
-        <div className={`form-field gender-field ${errors.gender_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.gender")} <span className="required" aria-label="required">*</span></label>
-          <select
-            className={errors.gender_code ? 'error-input' : ''}
-            value={demographics.gender_code || ''}
-            disabled={optionsLoading || genderOptions.length === 0 || inputsLocked}
-            onChange={(e) => updateField('gender_code', e.target.value)}
-            onBlur={(e) => handleFieldBlur('gender_code', e.target.value)}
-          >
-            <option value="" disabled>{uiText("user.genderPlaceholder")}</option>
-            {genderOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          {optionsLoading && <span className="checking-text">{uiText("user.checking")}</span>}
-          {errors.gender_code && <span className="error-text">{errors.gender_code}</span>}
-        </div>
-
-        <div className={`form-field age-field ${errors.age ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.age")} <span className="required" aria-label="required">*</span></label>
-          <input
-            type="number"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            className={`number-left${errors.age ? ' error-input' : ''}`}
-            min={AGE_MIN}
-            max={AGE_MAX}
-            placeholder={uiText("user.agePlaceholderRange", { min: AGE_MIN, max: AGE_MAX })}
-            value={demographics.age || ''}
-            disabled={inputsLocked}
-            onChange={(e) => {
-              const value = e.target.value.replace(/\D/g, '');
-              updateField('age', value);
-            }}
-            onBlur={(e) => {
-              handleFieldBlur('age', e.target.value);
-            }}
-          />
-          {errors.age && <span className="error-text">{errors.age}</span>}
-          {!ageOk && (
-            <span className="helper-text warning">{uiText("user.ageHint", { min: AGE_MIN, max: AGE_MAX })}</span>
-          )}
-        </div>
-
-        <div className={`form-field location-field ${errors.location ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.location")} <span className="required" aria-label="required">*</span></label>
-          <input
-            type="text"
-            className={errors.location ? 'error-input' : ''}
-            placeholder={
-              locating
-                ? uiText("user.locationPlaceholderDetecting")
-                : uiText("user.locationPlaceholderManual")
-            }
-            value={demographics.location || ''}
-            disabled={locating || inputsLocked}
-            readOnly={locating || inputsLocked}
-            onChange={(e) => {
-              userEditedLocationRef.current = true;
-              updateField("location", e.target.value);
-            }}
-            onBlur={(e) => {
-              handleFieldBlur("location", e.target.value);
-            }}
-          />
-          {!isMobile && locationPermissionState !== "granted" && !locating && (
-            <DSButton
-              type="button"
-              variant="ghost"
-              className="location-permission-btn"
-              disabled={inputsLocked}
-              onClick={() => detectLocation("manual")}
-            >
-              {uiText("user.enableLocation")}
-            </DSButton>
-          )}
-          {!isMobile && locationStatus && <span className="checking-text">{locationStatus}</span>}
-          {!isMobile && locationPermissionState === "denied" && (
-            <span className="helper-text warning">{uiText("user.locationPermissionHelp")}</span>
-          )}
-          {errors.location && <span className="error-text">{errors.location}</span>}
-          {!locationOk && (
-            <span className="helper-text warning">{uiText("user.locationHint", { min: LOCATION_MIN })}</span>
-          )}
-        </div>
-
-        <div className={`form-field language-field ${errors.language_code ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.language")} <span className="required" aria-label="required">*</span></label>
-          <select
-            className={errors.language_code ? 'error-input' : ''}
-            value={demographics.language_code || ''}
-            disabled={optionsLoading || languageOptions.length === 0 || inputsLocked}
-            onChange={(e) => updateField('language_code', e.target.value)}
-            onBlur={(e) => handleFieldBlur('language_code', e.target.value)}
-          >
-            <option value="" disabled>{uiText("user.languagePlaceholder")}</option>
-            {languageOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          {optionsLoading && <span className="checking-text">{uiText("user.checking")}</span>}
-          {errors.language_code && <span className="error-text">{errors.language_code}</span>}
-        </div>
-
-        <div className={`form-field prior-experience-field ${errors.prior_experience ? 'error' : ''} ${optionsLoading ? 'loading' : ''}`}>
-          <label>{uiText("user.priorExperience")} <span className="required" aria-label="required">*</span></label>
-          <select
-            className={errors.prior_experience ? 'error-input' : ''}
-            value={demographics.prior_experience || ''}
-            disabled={inputsLocked}
-            onChange={(e) => updateField('prior_experience', e.target.value)}
-            onBlur={(e) => handleFieldBlur('prior_experience', e.target.value)}
-          >
-            <option value="" disabled>{uiText("user.priorExperiencePlaceholder")}</option>
-            {priorExperienceGroups.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.options.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          {errors.prior_experience && <span className="error-text">{errors.prior_experience}</span>}
-        </div>
+        <UserProfileFields
+          demographics={demographics}
+          errors={errors}
+          optionsLoading={optionsLoading}
+          inputsLocked={inputsLocked}
+          isMobile={isMobile}
+          locating={locating}
+          locationStatus={locationStatus}
+          locationPermissionState={locationPermissionState}
+          userEditedLocationRef={userEditedLocationRef}
+          genderOptions={genderOptions}
+          languageOptions={languageOptions}
+          priorExperienceGroups={priorExperienceGroups}
+          ageMin={AGE_MIN}
+          ageMax={AGE_MAX}
+          locationMin={LOCATION_MIN}
+          ageOk={ageOk}
+          locationOk={locationOk}
+          updateField={updateField}
+          handleFieldBlur={handleFieldBlur}
+          detectLocation={detectLocation}
+        />
       </div>
 
-      <PageActions sticky>
-        {errors.general && <span className="error-text">{errors.general}</span>}
-        {!showOtpField && (
-          <>
-            <DSButton
-              variant="primary"
-              onClick={handleSubmit}
-              disabled={submitDisabled}
-            >
-              {submitLabel}
-              {!isOnline && <ButtonRetryBadge seconds={retryCountdown} />}
-            </DSButton>
-            {!isOnline && (
-              <div className="helper-text">
-                {retryCountdown > 0
-                  ? uiText("common.tryAgainIn", { seconds: retryCountdown })
-                  : uiText("user.offlineBanner")}
-              </div>
-            )}
-          </>
-        )}
-      </PageActions>
+      <UserDetailsSubmitFooter
+        errors={errors}
+        showOtpField={showOtpField}
+        submitDisabled={submitDisabled}
+        handleSubmit={handleSubmit}
+        submitLabel={submitLabel}
+        isOnline={isOnline}
+        retryCountdown={retryCountdown}
+      />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { runtimeConfig } from "../config/runtime";
-import { readJsonValue, removeStoredKey, writeJsonValue } from "./storage";
+import { readExpiringValue, writeExpiringValue } from "./storage";
 
 export const SURVEY_DRAFT_SCHEMA_VERSION = runtimeConfig.surveyDraftSchemaVersion;
+export const SURVEY_DRAFT_TTL_MS = runtimeConfig.uiStateTtlMs;
 
 export const getSurveyDraftKey = (publicId, imageId) => {
   const prefix = runtimeConfig.storageKeys.surveyDraftPrefix;
@@ -15,33 +16,19 @@ export const getActiveSurveyDraftKey = (publicId) => {
 
 export const readSurveyDraft = (key) => {
   if (!key) return null;
-
-  const unwrap = (value) => {
-    if (!value || typeof value !== "object") return null;
-    if ("__schema_version" in value && "expires_at" in value && "data" in value) return value.data || null;
-    return value;
-  };
-
-  const local = unwrap(readJsonValue(key, null, "local"));
-  if (local) return local;
-
-  const session = unwrap(readJsonValue(key, null, "session"));
-  if (session) {
-    try {
-      writeJsonValue(key, session, "local");
-      removeStoredKey(key, "session");
-    } catch {
-      // Ignore migration failures.
-    }
-  }
-  return session || null;
+  const value = readExpiringValue(key, null, {
+    area: "local",
+    schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
+    ttlMs: SURVEY_DRAFT_TTL_MS,
+  });
+  return value && typeof value === "object" ? value : null;
 };
 
 export const writeSurveyDraft = (key, data) => {
   if (!key) return;
-  writeJsonValue(key, {
-    __schema_version: SURVEY_DRAFT_SCHEMA_VERSION,
-    saved_at: Date.now(),
-    data,
-  }, "local");
+  writeExpiringValue(key, data, {
+    area: "local",
+    schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
+    ttlMs: SURVEY_DRAFT_TTL_MS,
+  });
 };

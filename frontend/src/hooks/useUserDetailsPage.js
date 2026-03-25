@@ -43,40 +43,42 @@ const REVERSE_GEOCODE_STATE_KEY = runtimeConfig.storageKeys.reverseGeocodeState;
 const REVERSE_GEOCODE_MIN_INTERVAL_MS = 10000;
 const REVERSE_GEOCODE_MAX_BACKOFF_MS = 60000;
 const REVERSE_GEOCODE_TTL_MS = runtimeConfig.reverseGeocodeTtlMs;
+const REVERSE_GEOCODE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const USER_DETAILS_PENDING_KEY = runtimeConfig.storageKeys.userDetailsPending;
 const DEMOGRAPHICS_KEY = runtimeConfig.storageKeys.demographics;
 const EMAIL_OTP_STATE_KEY = runtimeConfig.storageKeys.emailOtpState;
-const DESKTOP_LOCATION_SESSION_KEY = "desktop_location_session_v1";
+const DESKTOP_LOCATION_SESSION_KEY = runtimeConfig.storageKeys.desktopLocationSession;
+const DESKTOP_LOCATION_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
+const DESKTOP_LOCATION_TTL_MS = runtimeConfig.uiStateTtlMs;
 const EMAIL_OTP_TTL_MS = Math.max(
   30000,
   (runtimeConfig.emailOtpExpirySeconds || 300) * 1000
 );
 
 function readDesktopLocationSession() {
-  try {
-    const raw = sessionStorage.getItem(DESKTOP_LOCATION_SESSION_KEY);
-    if (!raw) return { prompted: false, permission: "unknown", value: "" };
-    const parsed = JSON.parse(raw);
-    return {
-      prompted: parsed?.prompted === true,
-      permission: typeof parsed?.permission === "string" ? parsed.permission : "unknown",
-      value: typeof parsed?.value === "string" ? parsed.value : "",
-    };
-  } catch {
-    return { prompted: false, permission: "unknown", value: "" };
-  }
+  const parsed = readExpiringValue(DESKTOP_LOCATION_SESSION_KEY, null, {
+    area: "session",
+    schemaVersion: DESKTOP_LOCATION_SCHEMA_VERSION,
+    ttlMs: DESKTOP_LOCATION_TTL_MS,
+  });
+  if (!parsed || typeof parsed !== "object") return { prompted: false, permission: "unknown", value: "" };
+  return {
+    prompted: parsed?.prompted === true,
+    permission: typeof parsed?.permission === "string" ? parsed.permission : "unknown",
+    value: typeof parsed?.value === "string" ? parsed.value : "",
+  };
 }
 
 function writeDesktopLocationSession(patch) {
-  try {
-    const current = readDesktopLocationSession();
-    sessionStorage.setItem(DESKTOP_LOCATION_SESSION_KEY, JSON.stringify({
-      ...current,
-      ...patch,
-    }));
-  } catch {
-    // Ignore sessionStorage failures.
-  }
+  const current = readDesktopLocationSession();
+  writeExpiringValue(DESKTOP_LOCATION_SESSION_KEY, {
+    ...current,
+    ...patch,
+  }, {
+    area: "session",
+    schemaVersion: DESKTOP_LOCATION_SCHEMA_VERSION,
+    ttlMs: DESKTOP_LOCATION_TTL_MS,
+  });
 }
 
 export function useUserDetailsPage({
@@ -171,47 +173,25 @@ export function useUserDetailsPage({
   }, []);
 
   useEffect(() => {
-    const storedMeta =
-      readStoredMeta(scopedDemographicsKey, "local") ||
-      readStoredMeta(DEMOGRAPHICS_KEY, "local");
+    const storedMeta = readStoredMeta(scopedDemographicsKey, "local");
     if (storedMeta) {
       setDraftRestored(true);
     }
   }, [scopedDemographicsKey]);
 
   useEffect(() => {
-    const opts = { ttlMs: EMAIL_OTP_TTL_MS, schemaVersion: runtimeConfig.uiStateSchemaVersion };
-    const readOtp = () => {
-      const scopedLocal = readExpiringValue(scopedOtpKey, null, { ...opts, area: "local" });
-      if (scopedLocal) return { value: scopedLocal, source: { key: scopedOtpKey, area: "local" } };
-      const unscopedLocal = readExpiringValue(EMAIL_OTP_STATE_KEY, null, { ...opts, area: "local" });
-      if (unscopedLocal) return { value: unscopedLocal, source: { key: EMAIL_OTP_STATE_KEY, area: "local" } };
-      const scopedSession = readExpiringValue(scopedOtpKey, null, { ...opts, area: "session" });
-      if (scopedSession) return { value: scopedSession, source: { key: scopedOtpKey, area: "session" } };
-      const unscopedSession = readExpiringValue(EMAIL_OTP_STATE_KEY, null, { ...opts, area: "session" });
-      if (unscopedSession) return { value: unscopedSession, source: { key: EMAIL_OTP_STATE_KEY, area: "session" } };
-      return null;
-    };
-
-    const stored = readOtp();
-    const storedOtp = stored?.value;
+    const storedOtp = readExpiringValue(scopedOtpKey, null, {
+      ttlMs: EMAIL_OTP_TTL_MS,
+      schemaVersion: runtimeConfig.uiStateSchemaVersion,
+      area: "local",
+    });
     if (!storedOtp || typeof storedOtp !== "object") return;
 
     if (storedOtp.otpStatus === OTP_STATUS.verified) {
       forEachStorageArea((area) => {
-        removeStoredKey(EMAIL_OTP_STATE_KEY, area);
         removeStoredKey(scopedOtpKey, area);
       });
       return;
-    }
-
-    if (stored?.source && stored.source.key !== scopedOtpKey) {
-      try {
-        writeExpiringValue(scopedOtpKey, storedOtp, { ...opts, area: "local" });
-        removeStoredKey(stored.source.key, stored.source.area);
-      } catch {
-        // Ignore migration failures.
-      }
     }
 
     if (storedOtp.publicId) submittedPublicIdRef.current = String(storedOtp.publicId);
@@ -241,7 +221,7 @@ export function useUserDetailsPage({
         setOtpExpirySeconds(remaining);
       }
     }
-  }, [otpLength, scopedOtpKey]);
+  }, [scopedOtpKey]);
 
   useEffect(() => {
     if (!otpExpiresAt || otpStatus === OTP_STATUS.verified || otpStatus === OTP_STATUS.idle) {
@@ -437,25 +417,15 @@ export function useUserDetailsPage({
 
         try {
           const now = Date.now();
-          let reverseState = { next_allowed_at: 0, fail_count: 0 };
-          try {
-            const raw = sessionStorage.getItem(REVERSE_GEOCODE_STATE_KEY);
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              if (parsed && typeof parsed === "object") {
-                if (parsed[REVERSE_GEOCODE_FIELDS.expiresAt] && now > Number(parsed[REVERSE_GEOCODE_FIELDS.expiresAt])) {
-                  reverseState = { next_allowed_at: 0, fail_count: 0 };
-                } else {
-                  reverseState = {
-                    [REVERSE_GEOCODE_FIELDS.nextAllowedAt]: Number(parsed[REVERSE_GEOCODE_FIELDS.nextAllowedAt] || 0),
-                    [REVERSE_GEOCODE_FIELDS.failCount]: Number(parsed[REVERSE_GEOCODE_FIELDS.failCount] || 0),
-                  };
-                }
-              }
-            }
-          } catch {
-            // Ignore malformed cache
-          }
+          const storedReverseState = readExpiringValue(REVERSE_GEOCODE_STATE_KEY, null, {
+            area: "session",
+            schemaVersion: REVERSE_GEOCODE_SCHEMA_VERSION,
+            ttlMs: REVERSE_GEOCODE_TTL_MS,
+          });
+          const reverseState = {
+            [REVERSE_GEOCODE_FIELDS.nextAllowedAt]: Number(storedReverseState?.[REVERSE_GEOCODE_FIELDS.nextAllowedAt] || 0),
+            [REVERSE_GEOCODE_FIELDS.failCount]: Number(storedReverseState?.[REVERSE_GEOCODE_FIELDS.failCount] || 0),
+          };
           if (now < reverseState[REVERSE_GEOCODE_FIELDS.nextAllowedAt]) {
             setManualLocationAllowed(true);
             if (locationAttemptedRef.current) setLocationStatus(uiText("user.locationFallback"));
@@ -480,31 +450,33 @@ export function useUserDetailsPage({
             if (composed.length >= LOCATION_MIN_LENGTH) {
               detectedLocation = composed;
             }
-            sessionStorage.setItem(REVERSE_GEOCODE_STATE_KEY, JSON.stringify({
+            writeExpiringValue(REVERSE_GEOCODE_STATE_KEY, {
               [REVERSE_GEOCODE_FIELDS.nextAllowedAt]: now + REVERSE_GEOCODE_MIN_INTERVAL_MS,
               [REVERSE_GEOCODE_FIELDS.failCount]: 0,
-              [REVERSE_GEOCODE_FIELDS.expiresAt]: now + REVERSE_GEOCODE_TTL_MS,
-            }));
+            }, {
+              area: "session",
+              schemaVersion: REVERSE_GEOCODE_SCHEMA_VERSION,
+              ttlMs: REVERSE_GEOCODE_TTL_MS,
+            });
           }
         } catch {
           const now = Date.now();
-          let failCount = 0;
-          try {
-            const raw = sessionStorage.getItem(REVERSE_GEOCODE_STATE_KEY);
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              failCount = Number(parsed?.[REVERSE_GEOCODE_FIELDS.failCount] || 0);
-            }
-          } catch {
-            failCount = 0;
-          }
+          const storedReverseState = readExpiringValue(REVERSE_GEOCODE_STATE_KEY, null, {
+            area: "session",
+            schemaVersion: REVERSE_GEOCODE_SCHEMA_VERSION,
+            ttlMs: REVERSE_GEOCODE_TTL_MS,
+          });
+          const failCount = Number(storedReverseState?.[REVERSE_GEOCODE_FIELDS.failCount] || 0);
           const nextFailCount = Math.min(5, failCount + 1);
           const backoffMs = Math.min(REVERSE_GEOCODE_MAX_BACKOFF_MS, REVERSE_GEOCODE_MIN_INTERVAL_MS * (2 ** nextFailCount));
-          sessionStorage.setItem(REVERSE_GEOCODE_STATE_KEY, JSON.stringify({
+          writeExpiringValue(REVERSE_GEOCODE_STATE_KEY, {
             [REVERSE_GEOCODE_FIELDS.nextAllowedAt]: now + backoffMs,
             [REVERSE_GEOCODE_FIELDS.failCount]: nextFailCount,
-            [REVERSE_GEOCODE_FIELDS.expiresAt]: now + REVERSE_GEOCODE_TTL_MS,
-          }));
+          }, {
+            area: "session",
+            schemaVersion: REVERSE_GEOCODE_SCHEMA_VERSION,
+            ttlMs: REVERSE_GEOCODE_TTL_MS,
+          });
         } finally {
           reverseGeocodeAbortRef.current = null;
         }
@@ -873,7 +845,6 @@ export function useUserDetailsPage({
       await endpoints.verifyEmailOtp(effectivePublicId, normalizedEmail, normalizedOtp);
       setOtpStatus(OTP_STATUS.verified);
       forEachStorageArea((area) => {
-        removeStoredKey(EMAIL_OTP_STATE_KEY, area);
         removeStoredKey(scopedOtpKey, area);
       });
       addToast?.(uiText("email.verifiedToast"), "success");
@@ -967,7 +938,6 @@ export function useUserDetailsPage({
   useEffect(() => {
     if (otpStatus === OTP_STATUS.idle) {
       forEachStorageArea((area) => {
-        removeStoredKey(EMAIL_OTP_STATE_KEY, area);
         removeStoredKey(scopedOtpKey, area);
       });
       otpExpiresAtRef.current = null;
@@ -992,9 +962,6 @@ export function useUserDetailsPage({
       ttlMs: EMAIL_OTP_TTL_MS,
       schemaVersion: runtimeConfig.uiStateSchemaVersion,
     });
-    // Clear any legacy/unscoped copies.
-    removeStoredKey(EMAIL_OTP_STATE_KEY, "session");
-    removeStoredKey(EMAIL_OTP_STATE_KEY, "local");
   }, [
     demographics.email,
     emailEditable,
