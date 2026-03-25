@@ -198,7 +198,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
             )}
             <h2>{uiText("app.anotherTabTitle")}</h2>
             <p className="status-message">{uiText("app.anotherTabMessage")}</p>
-            <DSButton variant="primary" onClick={() => claimActiveTabLock()}>
+            <DSButton variant="primary" onClick={() => claimActiveTabLock(true)}>
               {uiText("app.reclaimTab")}
             </DSButton>
           </div>
