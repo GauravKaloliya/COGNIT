@@ -6,7 +6,7 @@ const STEP_LABELS = {
   consent: "step.consent",
   "user-details": "step.details",
   survey: "step.survey",
-  finished: "step.done",
+  "post-survey": "step.done",
 };
 
 export default function FlowStepper({ stage }) {
