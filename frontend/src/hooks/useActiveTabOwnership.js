@@ -17,7 +17,7 @@ export function useActiveTabOwnership() {
   const tabIdRef = useRef(createClientId());
   const [isActiveTabOwner, setIsActiveTabOwner] = useState(true);
 
-  const claimActiveTabLock = useCallback(() => {
+  const claimActiveTabLock = useCallback((force = false) => {
     const now = Date.now();
     const tabId = tabIdRef.current;
     try {
@@ -26,7 +26,8 @@ export function useActiveTabOwnership() {
         schemaVersion: ACTIVE_TAB_LOCK_SCHEMA_VERSION,
         ttlMs: ACTIVE_TAB_LOCK_TTL_MS,
       });
-      if (!parsed) {
+
+      if (force || !parsed) {
         writeExpiringValue(ACTIVE_TAB_LOCK_KEY, {
           [ACTIVE_TAB_LOCK_FIELDS.tabId]: tabId,
           [ACTIVE_TAB_LOCK_FIELDS.updatedAt]: now,
