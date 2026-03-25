@@ -968,9 +968,6 @@ body.dark .banner.error {
 .helper-text.info {
   color: var(--color-info);
 }
-.deferred-helper-tip {
-  margin-bottom: var(--space-2);
-}
 .button-badge {
   margin-left: var(--space-2);
   padding: 0.15rem 0.45rem;

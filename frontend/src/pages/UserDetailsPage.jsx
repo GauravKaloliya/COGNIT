@@ -23,7 +23,6 @@ export default function UserDetailsPage({
 }) {
   const [emailFocused, setEmailFocused] = React.useState(false);
   const [emailPlaceholderIndex, setEmailPlaceholderIndex] = React.useState(0);
-  const [showDeferredTips, setShowDeferredTips] = React.useState(false);
   const profileRender = useRenderProfiler("UserDetailsPage", 20);
   const isMobile = useIsMobile();
   const {
@@ -184,33 +183,6 @@ export default function UserDetailsPage({
     });
   }, [isFormComplete]);
 
-  React.useEffect(() => {
-    if (!isFormComplete) {
-      setShowDeferredTips(false);
-      return undefined;
-    }
-    let timeoutId = null;
-    let idleId = null;
-    const run = () => {
-      React.startTransition(() => {
-        setShowDeferredTips(true);
-      });
-    };
-    if (typeof window.requestIdleCallback === "function") {
-      idleId = window.requestIdleCallback(run, { timeout: 450 });
-    } else {
-      timeoutId = window.setTimeout(run, 220);
-    }
-    return () => {
-      if (idleId !== null && typeof window.cancelIdleCallback === "function") {
-        window.cancelIdleCallback(idleId);
-      }
-      if (timeoutId !== null) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [isFormComplete]);
-
   return (
     <div className="panel panel-with-corner-status">
       <div className="page-top-actions inline">
@@ -229,10 +201,7 @@ export default function UserDetailsPage({
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {otpStatusMessage || (!isOnline ? uiText("user.offlineBanner") : "")}
       </div>
-      {showDeferredTips && fieldMeta?.dirty?.email && !showOtpField ? (
-        <div className="helper-text info deferred-helper-tip">{uiText("user.emailHint")}</div>
-      ) : null}
-      
+
       <React.Profiler id="user-details-form-grid" onRender={profileRender}>
         <div className={`form-grid ${showOtpField ? "has-otp" : ""}`}>
           <UserIdentityFields
