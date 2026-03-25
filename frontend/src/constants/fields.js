@@ -18,5 +18,13 @@ export const SURVEY_API_FIELDS = {
   tabSwitchCount: "tab_switch_count",
   pageCloseAttempts: "page_close_attempts",
   networkDisconnects: "network_disconnects",
+  surveyTimeSpentMs: "survey_time_spent_ms",
+  surveyPageViews: "survey_page_views",
+  surveyTabSwitches: "survey_tab_switches",
+  surveyPageCloseAttempts: "survey_page_close_attempts",
+  surveyNetworkDisconnects: "survey_network_disconnects",
+  surveyMaxScrollDepthPct: "survey_max_scroll_depth_pct",
+  surveyClicks: "survey_clicks",
+  surveyKeypresses: "survey_keypresses",
   failureReasons: "failure_reasons",
 };

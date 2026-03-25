@@ -224,7 +224,6 @@ export default function SurveyPage({
 
       <SurveySubmitFooter
         visibleSubmitError={visibleSubmitError}
-        optimisticMessage={optimisticMessage}
         submitting={submitting}
         canSubmit={canSubmit}
         submitLocked={submitLocked}

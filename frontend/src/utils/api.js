@@ -18,6 +18,34 @@ const RATE_LIMIT_EVENT = "cognit:rate-limit";
 const MAINTENANCE_EVENT = "cognit:maintenance";
 const SAFE_GET_CACHE = new Map();
 
+function createStructuredError({
+  message,
+  code = "SYS_001_0001",
+  category,
+  severity = REQUEST_SEVERITY.error,
+  action = REQUEST_ACTIONS.retry,
+  status = 0,
+  retryable,
+  field,
+  fields,
+  details,
+  requestId,
+}) {
+  const resolvedCategory = category || String(code || "SYS").split("_")[0] || REQUEST_CATEGORIES.system;
+  const error = new Error(String(message || getErrorMessage(code)));
+  error.code = code;
+  error.category = resolvedCategory;
+  error.severity = severity;
+  error.action = action;
+  error.status = Number(status) || 0;
+  error.retryable = typeof retryable === "boolean" ? retryable : action === REQUEST_ACTIONS.retry;
+  error.field = field;
+  error.fields = fields;
+  error.details = details;
+  error.requestId = requestId;
+  return error;
+}
+
 function isAbortSignal(signal) {
   return signal && typeof signal === "object" && "aborted" in signal;
 }
@@ -217,7 +245,15 @@ export const endpoints = {
   createParticipant: async (data, options = {}) => {
     const turnstileToken = await getTurnstileToken("register_submit");
     if (isTurnstileRequired() && !String(turnstileToken || "").trim()) {
-      throw new Error(getErrorMessage("BOT_001_0002"));
+      throw createStructuredError({
+        code: "BOT_001_0002",
+        message: getErrorMessage("BOT_001_0002"),
+        category: "BOT",
+        severity: REQUEST_SEVERITY.error,
+        action: REQUEST_ACTIONS.retry,
+        status: 400,
+        retryable: true,
+      });
     }
     const payload = { ...(data || {}) };
     delete payload.public_id;
@@ -253,7 +289,15 @@ export const endpoints = {
   submitDescription: async (data, options = {}) => {
     const turnstileToken = await getTurnstileToken("submission_submit");
     if (isTurnstileRequired() && !String(turnstileToken || "").trim()) {
-      throw new Error(getErrorMessage("BOT_001_0005"));
+      throw createStructuredError({
+        code: "BOT_001_0005",
+        message: getErrorMessage("BOT_001_0005"),
+        category: "BOT",
+        severity: REQUEST_SEVERITY.error,
+        action: REQUEST_ACTIONS.retry,
+        status: 400,
+        retryable: true,
+      });
     }
     const safePublicId = assertPublicId(data?.public_id, null, { message: getErrorMessage("NF_001_0001") });
     return api.post(API_ROUTES.submit, { ...data, public_id: safePublicId, turnstile_token: turnstileToken || undefined }, options);

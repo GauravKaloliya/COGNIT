@@ -81,6 +81,7 @@ export function useSurveyPage({
   const [isZoomed, setIsZoomed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [submitErrorSource, setSubmitErrorSource] = useState("none");
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -261,6 +262,7 @@ export function useSurveyPage({
     setImageError(false);
     setIsZoomed(false);
     setSubmitError("");
+    setSubmitErrorSource("none");
     setOptimisticMessage("");
     setShowValidationErrors(false);
     setDescription("");
@@ -301,17 +303,20 @@ export function useSurveyPage({
   });
 
   useEffect(() => {
+    if (submitErrorSource !== "validation") return;
     if (!submitError) return;
 
     if (!showValidationErrors) {
       setSubmitError("");
+      setSubmitErrorSource("none");
       return;
     }
 
     if (canSubmit) {
       setSubmitError("");
+      setSubmitErrorSource("none");
     }
-  }, [canSubmit, showValidationErrors, submitError]);
+  }, [canSubmit, showValidationErrors, submitError, submitErrorSource]);
 
   const getSubmitTooltipText = useCallback(() => getSubmitTooltip({
     imageReady,
@@ -331,6 +336,7 @@ export function useSurveyPage({
   }), [comments, description, imageReady, rating, submitLocked, submitting, wordCount]);
 
   useEffect(() => {
+    if (submitErrorSource !== "validation") return;
     if (!showValidationErrors || submitting) return;
     if (!submitError) return;
 
@@ -342,6 +348,7 @@ export function useSurveyPage({
     rating,
     showValidationErrors,
     submitError,
+    submitErrorSource,
     submitting,
   ]);
 
@@ -349,6 +356,7 @@ export function useSurveyPage({
     if (submitting || submitLocked) return;
     if (!isOnline) {
       setSubmitError(uiText("survey.offlineSubmit"));
+      setSubmitErrorSource("server");
       setPendingFlag(SURVEY_PENDING_SUBMIT_KEY);
       return;
     }
@@ -361,18 +369,21 @@ export function useSurveyPage({
     });
     if (!canSubmit) {
       setSubmitError(getSubmitTooltipText());
+      setSubmitErrorSource("validation");
       unlockSubmit(runtimeConfig.submitUnlockInvalidDelayMs);
       return;
     }
 
     if (!survey || !survey.image_id) {
       setSubmitError(getErrorMessage("UI_001_0002"));
+      setSubmitErrorSource("server");
       unlockSubmit(runtimeConfig.submitUnlockInvalidDelayMs);
       return;
     }
 
     setSubmitting(true);
     setSubmitError("");
+    setSubmitErrorSource("none");
     startTransition(() => {
       setOptimisticMessage(uiText("common.submitting"));
     });
@@ -396,8 +407,9 @@ export function useSurveyPage({
       });
     } catch (error) {
       setSubmitError(getDisplayErrorMessage(error, "SYS_002_0006"));
+      setSubmitErrorSource("server");
       startTransition(() => {
-        setOptimisticMessage(uiText("common.retry"));
+        setOptimisticMessage("");
       });
     } finally {
       setSubmitting(false);
@@ -483,7 +495,10 @@ export function useSurveyPage({
   useNavigationBlocker({
     enabled: submitting || submitLocked,
     message: uiText("survey.navigationBlocked"),
-    onBlocked: setSubmitError,
+    onBlocked: (message) => {
+      setSubmitError(message);
+      setSubmitErrorSource("server");
+    },
   });
 
   const constants = useMemo(() => ({

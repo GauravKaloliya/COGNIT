@@ -70,7 +70,11 @@ QUERY_MARK_OTP_USED = text("""
 QUERY_MARK_PARTICIPANT_EMAIL_VERIFIED = text("""
     UPDATE participants
     SET email_verified = true,
-        email_verified_at = CURRENT_TIMESTAMP
+        email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
+        stage = CASE
+            WHEN stage IN (:stage_consent, :stage_user_details) THEN :stage_survey
+            ELSE stage
+        END
     WHERE id = :pid
 """)
 
@@ -79,6 +83,10 @@ QUERY_UPDATE_PARTICIPANT_EMAIL = text("""
     SET email = :em,
         email_verified = false,
         email_verified_at = NULL,
+        stage = CASE
+            WHEN stage = :stage_finished THEN stage
+            ELSE :stage_user_details
+        END,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = :pid
 """)
