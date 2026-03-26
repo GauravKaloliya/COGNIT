@@ -21,7 +21,7 @@ export function useSurveyDraftPersistence({
   publicId,
   surveyImageId,
   isOnline,
-  draftState,
+  surveySession,
   onRestore,
 }) {
   const [saveError, setSaveError] = useState("");
@@ -29,12 +29,12 @@ export function useSurveyDraftPersistence({
   const activeDraftKey = useMemo(() => getActiveSurveyDraftKey(publicId), [publicId]);
   const initialDraftRef = useRef("");
   const restoredDraftKeyRef = useRef("");
-  const latestDraftStateRef = useRef(draftState);
-  latestDraftStateRef.current = draftState;
+  const latestDraftStateRef = useRef(surveySession);
+  latestDraftStateRef.current = surveySession;
 
   const { markValueSaved, resetSavedValue } = useDebouncedPersistence({
     enabled: Boolean(isOnline && draftKey && surveyImageId),
-    value: draftState,
+    value: surveySession,
     delayMs: 500,
     onSchedule: () => setSaveError(""),
     onWrite: (nextDraftState) => {
@@ -66,12 +66,12 @@ export function useSurveyDraftPersistence({
     if (!surveyImageId || !draftKey || restoredDraftKeyRef.current === draftKey) return;
     const savedDraft = readSurveyDraft(draftKey) || readSurveyDraft(activeDraftKey);
     if (!savedDraft) return;
-    if (safeSerialize(draftState) !== initialDraftRef.current) return;
+    if (safeSerialize(surveySession) !== initialDraftRef.current) return;
     restoredDraftKeyRef.current = draftKey;
     initialDraftRef.current = safeSerialize(savedDraft);
     markValueSaved(savedDraft);
     onRestore?.(savedDraft);
-  }, [activeDraftKey, draftKey, draftState, markValueSaved, onRestore, surveyImageId]);
+  }, [activeDraftKey, draftKey, surveySession, markValueSaved, onRestore, surveyImageId]);
 
   const clearDrafts = useCallback(() => {
     if (draftKey) {

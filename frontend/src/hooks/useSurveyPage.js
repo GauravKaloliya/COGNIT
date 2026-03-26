@@ -2,20 +2,19 @@ import { startTransition, useCallback, useEffect, useMemo, useRef, useState } fr
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { getDisplayErrorMessage } from "../utils/appError.js";
 import { runtimeConfig } from "../config/runtime";
-import { clearPendingFlag, getPendingFlag, setPendingFlag } from "../utils/storage";
 import { uiText } from "../utils/uiText";
 import { useNavigationBlocker } from "./useNavigationBlocker";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useSurveyDraftPersistence } from "./useSurveyDraftPersistence";
 import { useSurveyEngagement } from "./useSurveyEngagement";
+import { queuePendingSurveySubmit, useSurveyPageEffects } from "./useSurveyPageEffects";
 import {
   buildSurveyImageState,
   countAlphaNumericChars,
   countAlphaNumericWords,
   getSubmitTooltip,
 } from "../utils/surveyPageHelpers";
-import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
-import { preloadTurnstileScript, prefetchTurnstileToken } from "../utils/turnstile";
+import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { REQUEST_CODES } from "../constants/request";
 
 export { sanitizeAlphaNumericSpace } from "../utils/surveyPageHelpers";
@@ -29,7 +28,6 @@ const MIN_RATING = runtimeConfig.minRating;
 const MAX_RATING = runtimeConfig.maxRating;
 const UI_TOTAL_STEPS = runtimeConfig.surveyUiTotalSteps;
 const COPY_PASTE_DISABLED = runtimeConfig.disableCopyPaste;
-const SURVEY_PENDING_SUBMIT_KEY = runtimeConfig.storageKeys.surveyPendingSubmit;
 const PAUSE_THRESHOLD_SECONDS = 1.5;
 const EMPTY_TYPING_DYNAMICS = {
   firstInputAtSeconds: null,
@@ -91,20 +89,21 @@ export function useSurveyPage({
   const typingDynamicsRef = useRef(EMPTY_TYPING_DYNAMICS);
 
   const {
+    engagementState,
+    engagementRefs,
+    engagementActions,
+    clipboardHandlers,
+  } = useSurveyEngagement({ copyPasteDisabled: COPY_PASTE_DISABLED });
+  const {
     engagementData,
-    setEngagementData,
-    engagementDataRef,
     elapsed,
-    setElapsed,
-    elapsedRef,
-    setTimerActive,
     descriptionRef,
     commentsRef,
     surveyStartTime,
-    preventCopyPaste,
-    preventClipboardShortcuts,
-    resetEngagement,
-  } = useSurveyEngagement({ copyPasteDisabled: COPY_PASTE_DISABLED });
+  } = engagementState;
+  const { engagementDataRef, elapsedRef } = engagementRefs;
+  const { setEngagementData, setElapsed, setTimerActive, resetEngagement } = engagementActions;
+  const { preventCopyPaste, preventClipboardShortcuts } = clipboardHandlers;
 
   const surveyImageId = getSurveyImageId(survey);
   const { imageSrc, hasUsableSurveyImage } = useMemo(() => buildSurveyImageState(survey), [survey]);
@@ -242,6 +241,28 @@ export function useSurveyPage({
     }
   }, [setElapsed, setEngagementData, surveyStartTime]);
 
+  const surveySession = useMemo(() => ({
+    imageId: surveyImageId,
+    description,
+    difficultyRating,
+    confidenceScore,
+    comments,
+    elapsed,
+    startedAtSeconds: surveyStartTime.current / runtimeConfig.msPerSecond,
+    engagementData,
+    typingDynamics,
+  }), [
+    comments,
+    confidenceScore,
+    description,
+    difficultyRating,
+    elapsed,
+    engagementData,
+    surveyImageId,
+    surveyStartTime,
+    typingDynamics,
+  ]);
+
   const {
     saveError,
     clearDrafts,
@@ -250,17 +271,7 @@ export function useSurveyPage({
     publicId,
     surveyImageId,
     isOnline,
-    draftState: {
-      imageId: surveyImageId,
-      description,
-      difficultyRating,
-      confidenceScore,
-      comments,
-      elapsed,
-      startedAtSeconds: surveyStartTime.current / runtimeConfig.msPerSecond,
-      engagementData,
-      typingDynamics,
-    },
+    surveySession,
     onRestore: restoreDraft,
   });
 
@@ -348,155 +359,12 @@ export function useSurveyPage({
 
   const touchField = useCallback(() => {}, []);
 
-  useEffect(() => {
-    const previousSurveyImageId = previousSurveyImageIdRef.current;
-    previousSurveyImageIdRef.current = surveyImageId;
-    if (!surveyImageId) return;
-    if (!previousSurveyImageId) return;
-    if (previousSurveyImageId === surveyImageId) return;
-    resetFormState();
-  }, [resetFormState, surveyImageId]);
-
-  useEffect(() => () => {
-    if (submitUnlockTimeoutRef.current) {
-      clearScheduledTimeout(submitUnlockTimeoutRef.current);
-    }
-    if (imageLoadTimeoutRef.current) {
-      clearScheduledTimeout(imageLoadTimeoutRef.current);
-    }
-    if (accountFlaggedTimeoutRef.current) {
-      clearScheduledTimeout(accountFlaggedTimeoutRef.current);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!retryDisabled || runtimeConfig.serviceRetrySeconds <= 0) {
-      setRetryCountdown(0);
-      return undefined;
-    }
-    const intervalId = scheduleInterval(() => {
-      setRetryCountdown((prev) => Math.max(0, prev - 1));
-    }, runtimeConfig.msPerSecond);
-    return () => clearScheduledInterval(intervalId);
-  }, [retryDisabled]);
-
-  useEffect(() => {
-    if (retryDisabled && retryCountdown === 0) {
-      setRetryDisabled(false);
-    }
-  }, [retryCountdown, retryDisabled]);
-
-  useEffect(() => {
-    if (!publicId || !surveyImageId) return undefined;
-
-    const flushLatestDraft = () => {
-      flushDraft(buildCurrentDraftState());
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        flushLatestDraft();
-      }
-    };
-
-    window.addEventListener("beforeunload", flushLatestDraft);
-    window.addEventListener("pagehide", flushLatestDraft);
-    window.addEventListener("offline", flushLatestDraft);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    return () => {
-      window.removeEventListener("beforeunload", flushLatestDraft);
-      window.removeEventListener("pagehide", flushLatestDraft);
-      window.removeEventListener("offline", flushLatestDraft);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [buildCurrentDraftState, flushDraft, publicId, surveyImageId]);
-
-  useEffect(() => {
-    if (imageLoadTimeoutRef.current) {
-      clearScheduledTimeout(imageLoadTimeoutRef.current);
-      imageLoadTimeoutRef.current = null;
-    }
-    if (!imageSrc || !surveyImageId || imageLoaded || imageError || fetchError || isFetchingImage) {
-      return undefined;
-    }
-    imageLoadTimeoutRef.current = scheduleTimeout(() => {
-      setImageError(true);
-      setImageLoaded(false);
-      setTimerActive(false);
-    }, 10000);
-    return () => {
-      if (imageLoadTimeoutRef.current) {
-        clearScheduledTimeout(imageLoadTimeoutRef.current);
-        imageLoadTimeoutRef.current = null;
-      }
-    };
-  }, [fetchError, imageError, imageLoaded, imageSrc, isFetchingImage, setTimerActive, surveyImageId]);
-
-  useEffect(() => {
-    if (!imageSrc || !surveyImageId || imageLoaded || imageError) return;
-    const imageEl = imageElementRef.current;
-    if (!imageEl || !imageEl.complete) return;
-    if (Number(imageEl.naturalWidth || 0) > 0) {
-      handleImageLoad();
-      return;
-    }
-    handleImageError();
-  }, [handleImageError, handleImageLoad, imageError, imageLoaded, imageSrc, surveyImageId]);
-
-  useEffect(() => {
-    if (!isOnline || submitting || typeof onWarmNextSurvey !== "function" || !surveyImageId || prefetchTriggeredRef.current) {
-      return;
-    }
-    if (description.trim().length < 32 && comments.trim().length < 16 && !minimumMet) return;
-    prefetchTriggeredRef.current = true;
-    void onWarmNextSurvey();
-  }, [comments, description, isOnline, minimumMet, onWarmNextSurvey, submitting, surveyImageId]);
-
-  useEffect(() => {
-    if (!isOnline) return;
-    preloadTurnstileScript().catch(() => {
-      // Non-blocking warmup only.
-    });
-  }, [isOnline]);
-
-  useEffect(() => {
-    if (!isOnline || submitting || turnstilePrefetchTriggeredRef.current) return;
-    if (
-      description.trim().length < 24
-      && comments.trim().length < 12
-      && difficultyRating === 0
-      && confidenceScore === 0
-    ) {
-      return;
-    }
-    turnstilePrefetchTriggeredRef.current = true;
-    prefetchTurnstileToken("submission_submit").catch(() => {
-      turnstilePrefetchTriggeredRef.current = false;
-    });
-  }, [comments, confidenceScore, description, difficultyRating, isOnline, submitting]);
-
-  useEffect(() => {
-    if (!lastSubmitErrorWasValidationRef.current) return;
-    if (!showValidationErrors) {
-      setSubmitError("");
-      lastSubmitErrorWasValidationRef.current = false;
-      return;
-    }
-    if (canSubmit) {
-      setSubmitError("");
-      lastSubmitErrorWasValidationRef.current = false;
-      return;
-    }
-    setSubmitError(getSubmitTooltipText());
-  }, [canSubmit, getSubmitTooltipText, showValidationErrors]);
-
   const handleSubmit = useCallback(async () => {
     if (submitting || submitLocked) return;
 
     if (!isOnline) {
       setSubmitError(uiText("survey.offlineSubmit"));
-      setPendingFlag(SURVEY_PENDING_SUBMIT_KEY);
+      queuePendingSurveySubmit();
       return;
     }
 
@@ -631,44 +499,53 @@ export function useSurveyPage({
     setValidationError,
   ]);
 
-  useEffect(() => {
-    if (!isOnline || submitting || submitLocked || !canSubmit) return;
-    if (!getPendingFlag(SURVEY_PENDING_SUBMIT_KEY)) return;
-    clearPendingFlag(SURVEY_PENDING_SUBMIT_KEY);
-    void handleSubmit();
-  }, [canSubmit, handleSubmit, isOnline, submitLocked, submitting]);
-
-  useEffect(() => {
-    const onKeyboardSubmit = (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-        event.preventDefault();
-        void handleSubmit();
-      }
-    };
-    window.addEventListener("keydown", onKeyboardSubmit);
-    return () => window.removeEventListener("keydown", onKeyboardSubmit);
-  }, [handleSubmit]);
-
-  useEffect(() => {
-    const onRatingAndZoomKeys = (event) => {
-      const activeTag = String(document.activeElement?.tagName || "").toLowerCase();
-      if (event.key === "Escape" && isZoomed) {
-        setIsZoomed(false);
-        return;
-      }
-      if (!imageReady || activeTag === "textarea" || activeTag === "input") return;
-      if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-        event.preventDefault();
-        setDifficultyRating((prev) => Math.min(MAX_RATING, Math.max(MIN_RATING, prev + 1)));
-      }
-      if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
-        event.preventDefault();
-        setDifficultyRating((prev) => Math.max(MIN_RATING, prev > 0 ? prev - 1 : MIN_RATING));
-      }
-    };
-    window.addEventListener("keydown", onRatingAndZoomKeys);
-    return () => window.removeEventListener("keydown", onRatingAndZoomKeys);
-  }, [imageReady, isZoomed]);
+  useSurveyPageEffects({
+    surveyImageId,
+    resetFormState,
+    previousSurveyImageIdRef,
+    submitUnlockTimeoutRef,
+    imageLoadTimeoutRef,
+    accountFlaggedTimeoutRef,
+    retryDisabled,
+    retryCountdown,
+    setRetryDisabled,
+    setRetryCountdown,
+    publicId,
+    flushDraft,
+    buildCurrentDraftState,
+    imageSrc,
+    imageLoaded,
+    imageError,
+    fetchError,
+    isFetchingImage,
+    setImageError,
+    setImageLoaded,
+    setTimerActive,
+    imageElementRef,
+    handleImageLoad,
+    handleImageError,
+    isOnline,
+    submitting,
+    onWarmNextSurvey,
+    minimumMet,
+    description,
+    comments,
+    difficultyRating,
+    confidenceScore,
+    prefetchTriggeredRef,
+    turnstilePrefetchTriggeredRef,
+    lastSubmitErrorWasValidationRef,
+    showValidationErrors,
+    canSubmit,
+    setSubmitError,
+    getSubmitTooltipText,
+    handleSubmit,
+    submitLocked,
+    isZoomed,
+    setIsZoomed,
+    setDifficultyRating,
+    imageReady,
+  });
 
   useNavigationBlocker({
     enabled: submitting || submitLocked,
@@ -690,52 +567,58 @@ export function useSurveyPage({
 
   return {
     constants,
-    description,
-    setDescription: updateDescription,
-    rating: difficultyRating,
-    setRating: setDifficultyRating,
-    difficultyRating,
-    setDifficultyRating,
-    confidenceScore,
-    setConfidenceScore,
-    comments,
-    setComments: updateComments,
-    isZoomed,
-    setIsZoomed,
-    submitting,
-    submitError,
-    showValidationErrors,
-    elapsed,
-    imageLoaded,
-    imageError,
-    retryExhausted: Boolean(imageError || (!hasUsableSurveyImage && fetchError)),
-    imagePanelErrorMessage: imageError ? uiText("survey.imageRestoreFailed") : uiText("survey.feedLoadFailed"),
-    imageReady,
-    retryDisabled,
-    retryCountdown,
-    wordCount,
-    charCount,
-    commentsCharCount,
-    canSubmit,
-    currentStep,
-    minimumMet,
-    submitLocked,
-    formDisabled,
-    inputsDisabled,
-    descriptionRef,
-    commentsRef,
-    imageElementRef,
-    imageSrc,
-    hasUsableSurveyImage,
-    handleRetryImage,
-    handleSubmit,
-    handleImageLoad,
-    handleImageError,
-    getSubmitTooltip: getSubmitTooltipText,
-    preventCopyPaste,
-    preventClipboardShortcuts,
-    saveError,
-    optimisticMessage,
-    touchField,
+    formState: {
+      description,
+      difficultyRating,
+      confidenceScore,
+      comments,
+      wordCount,
+      charCount,
+      commentsCharCount,
+      canSubmit,
+      currentStep,
+      minimumMet,
+      showValidationErrors,
+      submitError,
+      submitting,
+      submitLocked,
+      formDisabled,
+      inputsDisabled,
+      elapsed,
+      saveError,
+      optimisticMessage,
+    },
+    mediaState: {
+      isZoomed,
+      imageLoaded,
+      imageError,
+      imageReady,
+      retryDisabled,
+      retryCountdown,
+      retryExhausted: Boolean(imageError || (!hasUsableSurveyImage && fetchError)),
+      imagePanelErrorMessage: imageError ? uiText("survey.imageRestoreFailed") : uiText("survey.feedLoadFailed"),
+      imageSrc,
+      hasUsableSurveyImage,
+      imageElementRef,
+    },
+    fieldRefs: {
+      descriptionRef,
+      commentsRef,
+    },
+    handlers: {
+      setDescription: updateDescription,
+      setDifficultyRating,
+      setConfidenceScore,
+      setComments: updateComments,
+      setIsZoomed,
+      handleRetryImage,
+      handleSubmit,
+      handleImageLoad,
+      handleImageError,
+      getSubmitTooltip: getSubmitTooltipText,
+      preventCopyPaste,
+      preventClipboardShortcuts,
+      touchField,
+    },
   };
 }

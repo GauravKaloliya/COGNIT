@@ -43,32 +43,41 @@ export function prefetchBehaviorChunks({
 }
 
 function AppStageRouter({
-  stage,
-  systemChecking,
-  systemReady,
-  publicId,
-  storageScope,
-  sessionHydrated,
-  consentGiven,
-  demographics,
-  setDemographics,
-  handleConsentGiven,
-  handleUserDetailsSubmit,
-  handleEmailVerified,
-  handleAccountFlagged,
-  addToast,
-  survey,
-  surveyCompleted,
-  setSurveyFeedbackReady,
-  setStage,
-  clearUserStorage,
-  resetWorkflowToConsent,
-  fetchImage,
-  prefetchNextImage,
-  handleSubmit,
-  imageError,
-  isFetchingImage,
+  appState,
+  workflowState,
+  surveyState,
+  systemState,
+  actions,
 }) {
+  const {
+    stage,
+    publicId,
+    storageScope,
+    sessionHydrated,
+    consentGiven,
+  } = appState;
+  const { demographics } = workflowState;
+  const {
+    survey,
+    surveyCompleted,
+    imageError,
+    isFetchingImage,
+    isTransitioningToNext,
+  } = surveyState;
+  const { systemChecking, systemReady } = systemState;
+  const {
+    setDemographics,
+    handleConsentGiven,
+    handleUserDetailsSubmit,
+    handleEmailVerified,
+    handleAccountFlagged,
+    addToast,
+    clearUserStorage,
+    resetWorkflowToConsent,
+    fetchImage,
+    prefetchNextImage,
+    handleSubmit,
+  } = actions;
   const normalizedStage = normalizeAppStage(stage);
 
   const renderStage = () => {
@@ -112,6 +121,7 @@ function AppStageRouter({
           onRetry={fetchImage}
           onWarmNextSurvey={prefetchNextImage}
           isFetchingImage={isFetchingImage}
+          isTransitioningToNext={isTransitioningToNext}
         />
       );
     }
@@ -120,8 +130,6 @@ function AppStageRouter({
       return (
         <PostSurveyPage
           surveyCompleted={surveyCompleted}
-          setStage={setStage}
-          setSurveyFeedbackReady={setSurveyFeedbackReady}
           publicId={publicId}
           clearUserStorage={clearUserStorage}
           resetWorkflowToConsent={resetWorkflowToConsent}

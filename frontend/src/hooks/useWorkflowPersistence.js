@@ -26,29 +26,34 @@ function normalizeSurvey(value) {
 }
 
 export function useWorkflowPersistence({
-  publicId,
+  workflowState,
   preAuthId,
-  setPublicId,
+  updateWorkflowState,
   scopeId,
-  sessionId,
-  setSessionId,
-  stage,
-  consentGiven,
-  userDetailsSubmitted,
-  emailVerified,
   sessionHydrated,
   setSessionHydrated,
-  demographics,
   isOnline,
-  survey,
-  surveyCompleted,
-  surveyFeedbackReady,
-  lastSubmissionSucceeded,
-  shownImages,
+  surveyState,
 }) {
   const migratedScopePairRef = useRef("");
   const migrationOwnerIdRef = useRef(`tab_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
   const canPersist = Boolean(sessionHydrated && scopeId);
+  const {
+    publicId,
+    sessionId,
+    stage,
+    consentGiven,
+    userDetailsSubmitted,
+    emailVerified,
+    demographics,
+  } = workflowState;
+  const {
+    survey,
+    surveyCompleted,
+    surveyFeedbackReady,
+    lastSubmissionSucceeded,
+    shownImages,
+  } = surveyState;
 
   useEffect(() => {
     if (publicId) {
@@ -61,8 +66,12 @@ export function useWorkflowPersistence({
       try {
         const session = await endpoints.getParticipantSession();
         if (cancelled) return;
-        if (session?.public_id) setPublicId(session.public_id);
-        if (session?.session_id) setSessionId(session.session_id);
+        if (session?.public_id || session?.session_id) {
+          updateWorkflowState({
+            ...(session?.public_id ? { publicId: session.public_id } : {}),
+            ...(session?.session_id ? { sessionId: session.session_id } : {}),
+          });
+        }
       } catch {
         // Storage-first boot should still continue even when cookies fail.
       } finally {
@@ -74,7 +83,7 @@ export function useWorkflowPersistence({
     return () => {
       cancelled = true;
     };
-  }, [publicId, setPublicId, setSessionHydrated, setSessionId]);
+  }, [publicId, setSessionHydrated, updateWorkflowState]);
 
   useEffect(() => {
     saveStoredValue(runtimeConfig.storageKeys.publicId, publicId, { area: CORE_STATE_STORAGE_AREA });

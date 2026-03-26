@@ -44,6 +44,15 @@ QUERY_LOCK_PARTICIPANT = text("""
     FOR UPDATE
 """)
 
+QUERY_FETCH_SUBMISSION_COUNTS = text("""
+    SELECT
+        COUNT(*) AS total_submissions,
+        COUNT(*) FILTER (WHERE is_attention_check = true) AS attention_submissions,
+        COUNT(*) FILTER (WHERE is_attention_check IS DISTINCT FROM true) AS survey_submissions
+    FROM submissions
+    WHERE participant_id = :pid
+""")
+
 QUERY_NEXT_SURVEY_INDEX = text("""
     SELECT COALESCE(MAX(survey_index), 0) + 1
     FROM submissions
@@ -255,6 +264,21 @@ def fetch_submission_image_target(db, image_id: str):
 
 def lock_submission_participant(db, participant_id: int):
     db.execute(QUERY_LOCK_PARTICIPANT, {"pid": int(participant_id)})
+
+
+def fetch_submission_counts(db, *, participant_id: int) -> dict[str, int]:
+    row = db.execute(QUERY_FETCH_SUBMISSION_COUNTS, {"pid": int(participant_id)}).fetchone()
+    if not row:
+        return {
+            "total_submissions": 0,
+            "attention_submissions": 0,
+            "survey_submissions": 0,
+        }
+    return {
+        "total_submissions": int(row[0] or 0),
+        "attention_submissions": int(row[1] or 0),
+        "survey_submissions": int(row[2] or 0),
+    }
 
 
 def fetch_next_survey_index(db, participant_id: int) -> int:

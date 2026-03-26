@@ -4,15 +4,12 @@ import { clearPendingFlag, getPendingFlag, setPendingFlag } from "../utils/stora
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { APP_ROUTES } from "../constants/routes";
-import { APP_FLOW } from "../config/appFlow";
 const SURVEY_FEED_PENDING_FINISH_KEY = runtimeConfig.storageKeys.surveyFeedPendingFinish;
 
 export function usePostSurveyPage({
   publicId,
   clearUserStorage,
   resetWorkflowToConsent,
-  setSurveyFeedbackReady,
-  setStage,
 }) {
   const [pendingFinish, setPendingFinish] = useState(false);
   const isOnline = useOnlineStatus();
@@ -28,14 +25,12 @@ export function usePostSurveyPage({
       return;
     }
     if (typeof resetWorkflowToConsent === "function") {
-      resetWorkflowToConsent(publicId, { clearAll: true, preserveDarkMode: false });
+      resetWorkflowToConsent(publicId, { clearAll: true, preserveDarkMode: true });
     } else {
-      setSurveyFeedbackReady(false);
-      setStage?.(APP_FLOW.stages.consent);
-      clearUserStorage?.(publicId, { clearAll: true, preserveDarkMode: false });
+      clearUserStorage?.(publicId, { clearAll: true, preserveDarkMode: true });
     }
     window.location.replace(APP_ROUTES.home);
-  }, [clearUserStorage, isOnline, publicId, resetWorkflowToConsent, setStage, setSurveyFeedbackReady]);
+  }, [clearUserStorage, isOnline, publicId, resetWorkflowToConsent]);
 
   useEffect(() => {
     if (!isOnline) return;
