@@ -420,10 +420,4 @@ SELECT
     (SELECT COUNT(*) FROM ground_updated)  AS ground_updated_rows,
     (SELECT COUNT(*) FROM ground_inserted) AS ground_inserted_rows;
 
-INSERT INTO image_ground_truths (image_id, object)
-SELECT image_id, object
-FROM ground_truth_labels
-WHERE is_present = TRUE
-ON CONFLICT (image_id, object) DO NOTHING;
-
 COMMIT;

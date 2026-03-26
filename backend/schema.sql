@@ -371,11 +371,6 @@ CREATE TABLE IF NOT EXISTS attention_checks (
         DEFERRABLE INITIALLY DEFERRED
 );
 
--- If an older schema already exists, widen the column so seed data (comma-separated tags)
--- can be stored safely.
-ALTER TABLE attention_checks
-    ALTER COLUMN expected_word TYPE TEXT;
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attention_checks_active_unique
     ON attention_checks (image_id) WHERE is_active = true;
 
@@ -389,17 +384,6 @@ CREATE TABLE IF NOT EXISTS ground_truth_labels (
 
 CREATE INDEX IF NOT EXISTS idx_ground_truth_labels_image
     ON ground_truth_labels (image_id);
-
-CREATE TABLE IF NOT EXISTS image_ground_truths (
-    image_id   BIGINT REFERENCES images(id) ON DELETE CASCADE,
-    object     TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT image_ground_truths_pk PRIMARY KEY (image_id, object)
-);
-
-CREATE INDEX IF NOT EXISTS idx_image_ground_truths_image
-    ON image_ground_truths (image_id);
 
 CREATE TABLE IF NOT EXISTS image_reservations (
     image_public_id VARCHAR(64) PRIMARY KEY REFERENCES images(image_id) ON DELETE CASCADE,

@@ -271,8 +271,9 @@ def compute_alignment(user_objects: set[str], gt_objects: set[str]):
 def get_ground_truth_objects(db, image_id: int) -> set[str]:
     rows = db.execute(text("""
         SELECT object
-        FROM image_ground_truths
+        FROM ground_truth_labels
         WHERE image_id = :image_id
+          AND is_present = TRUE
     """), {"image_id": int(image_id)}).fetchall()
     return {row[0] for row in rows or []}
 
