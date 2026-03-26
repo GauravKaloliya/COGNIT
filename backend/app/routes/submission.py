@@ -124,6 +124,7 @@ from app.services import (
     normalize_objects,
     normalize_for_attention,
     release_image_reservation,
+    release_all_participant_reservations,
     update_participant_attention_flag,
     update_participant_metadata,
     update_participant_stage,
@@ -376,16 +377,14 @@ def submit():
                 },
             )
 
-        survey_index = fetch_next_survey_index(db, participant_id) if is_survey_image else None
+        survey_index = fetch_next_survey_index(db, participant_id)
 
         ac_row = fetch_attention_check(db, image_id_fk)
 
         is_attention = ac_row is not None
         is_survey = bool(is_survey_image and not is_attention)
-        if not is_survey:
-            survey_index = None
-            if has_duplicate_non_survey_submission(db, participant_id=participant_id, image_id_fk=image_id_fk):
-                return create_error_response("DUP_SUBMISSION")
+        if not is_survey and has_duplicate_non_survey_submission(db, participant_id=participant_id, image_id_fk=image_id_fk):
+            return create_error_response("DUP_SUBMISSION")
         submitted_step = STEP_ATTENTION if is_attention else STEP_SURVEY
         expected_step = expected_step_for_submission_count(sequence_order, total_submissions)
         if expected_step is not None and submitted_step != expected_step:
@@ -611,6 +610,8 @@ def submit():
         # Release image reservation on successful submission (soft release).
         try:
             release_image_reservation(db, image_id=image_id_str, participant_id=participant_id)
+            if next_total_submissions >= REQUIRED_SUBMISSIONS:
+                release_all_participant_reservations(db, participant_id=participant_id)
         except Exception:
             log_event(logger, OBS_EVENT_SUBMISSION_RELEASE_RESERVATION_FAILED, level=logging.WARNING)
 

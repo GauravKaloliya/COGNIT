@@ -170,34 +170,8 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
   }, [publicId, sessionId, shownImages, survey]);
 
   const prefetchNextImage = useCallback(async () => {
-    const activeContext = resolveActiveParticipantContext(publicId, sessionId);
-    if (!activeContext.publicId || prefetchedSurveyRef.current) return prefetchedSurveyRef.current;
-    if (prefetchAbortRef.current) {
-      prefetchAbortRef.current.abort();
-    }
-    const controller = new AbortController();
-    prefetchAbortRef.current = controller;
-    try {
-      const excluded = [...shownImages, survey?.[SURVEY_API_FIELDS.imageId]].filter(Boolean);
-      const response = await endpoints.getRandomImage(excluded, activeContext.publicId, { signal: controller.signal });
-      const nextSurvey = normalizeSurvey(response);
-      if (!nextSurvey) return null;
-      prefetchedSurveyRef.current = nextSurvey;
-      try {
-        const image = new Image();
-        image.src = nextSurvey[SURVEY_API_FIELDS.url];
-      } catch {
-        // Ignore preloading failures.
-      }
-      return nextSurvey;
-    } catch {
-      return null;
-    } finally {
-      if (prefetchAbortRef.current === controller) {
-        prefetchAbortRef.current = null;
-      }
-    }
-  }, [publicId, sessionId, shownImages, survey]);
+    return null;
+  }, []);
 
   const handleSubmit = useCallback(async (formData) => {
     const activeContext = resolveActiveParticipantContext(publicId, sessionId);

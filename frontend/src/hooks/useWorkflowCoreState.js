@@ -222,12 +222,36 @@ export function useWorkflowCoreState({ addToast }) {
     });
   }, []);
 
-  const clearUserStorage = useCallback((scopeOverride = null) => {
-    const preservedDarkMode = readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
-      area: "local",
-      schemaVersion: runtimeConfig.uiStateSchemaVersion,
-      ttlMs: runtimeConfig.uiStateTtlMs,
-    });
+  const clearUserStorage = useCallback((scopeOverride = null, options = {}) => {
+    const clearAll = options?.clearAll === true;
+    const preserveDarkMode = options?.preserveDarkMode !== false;
+    const preservedDarkMode = preserveDarkMode
+      ? readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
+        area: "local",
+        schemaVersion: runtimeConfig.uiStateSchemaVersion,
+        ttlMs: runtimeConfig.uiStateTtlMs,
+      })
+      : null;
+
+    if (clearAll) {
+      forEachStorageArea((area) => {
+        forEachStoredKey(area, (key) => {
+          if (key) {
+            removeStoredKey(key, area);
+          }
+        });
+      });
+
+      if (typeof preservedDarkMode === "boolean") {
+        writeExpiringValue(runtimeConfig.storageKeys.darkMode, preservedDarkMode, {
+          area: "local",
+          schemaVersion: runtimeConfig.uiStateSchemaVersion,
+          ttlMs: runtimeConfig.uiStateTtlMs,
+        });
+      }
+      return;
+    }
+
     const targetScope = getScopeId(scopeOverride || publicId);
     const keysToClear = [
       runtimeConfig.storageKeys.activeTabLock,

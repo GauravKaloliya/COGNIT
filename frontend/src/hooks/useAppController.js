@@ -318,8 +318,8 @@ export function useAppController() {
     }
   }, [setEmailVerified, setStage]);
 
-  const resetWorkflowToConsent = useCallback((scopeOverride = null) => {
-    clearUserStorage(scopeOverride || publicId);
+  const resetWorkflowToConsent = useCallback((scopeOverride = null, options = {}) => {
+    clearUserStorage(scopeOverride || publicId, options);
     setPublicId("");
     setSessionId("");
     setConsentGiven(false);

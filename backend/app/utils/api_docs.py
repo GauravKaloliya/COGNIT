@@ -219,7 +219,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "Requires a valid participant public_id and a participant that is already consented.",
             "Stores both survey output and engagement telemetry.",
             "Backend determines whether a submission is survey vs attention from image assignment; client flags are not required.",
-            "`survey_index` is validated against backend progression and should be treated as backend-owned sequencing.",
+            "`survey_index` is backend-owned simple submission order for the participant across both attention-check and survey images.",
             "Protected with idempotency because duplicate submission writes are materially harmful.",
         ],
     },

@@ -444,7 +444,7 @@ CREATE TABLE IF NOT EXISTS submissions (
         REFERENCES participant_sessions(id, participant_id),
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
     CONSTRAINT chk_attention_passed_consistent CHECK (NOT (is_attention_check = true AND attention_passed IS NULL)),
-    CONSTRAINT chk_survey_fields_symmetric CHECK ((survey_index IS NULL) = (is_survey = false))
+    CONSTRAINT chk_submission_sequence_positive CHECK (survey_index IS NULL OR survey_index > 0)
 );
 
 -- Derived stats trigger kept intentionally small and local to submissions.
@@ -465,7 +465,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey
     ON submissions (participant_id, is_survey, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey_index_desc
     ON submissions (participant_id, survey_index DESC)
-    WHERE is_survey = true AND survey_index IS NOT NULL;
+    WHERE survey_index IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_image_non_survey
     ON submissions (participant_id, image_id, created_at DESC) WHERE is_survey = false;
 

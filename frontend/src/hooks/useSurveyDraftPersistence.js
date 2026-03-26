@@ -44,6 +44,18 @@ export function useSurveyDraftPersistence({
     onError: () => setSaveError(uiText("autosave.failed")),
   });
 
+  const flushDraft = useCallback((nextDraftState = latestDraftStateRef.current) => {
+    if (!draftKey || !surveyImageId || !nextDraftState) return;
+    try {
+      writeSurveyDraft(draftKey, nextDraftState);
+      if (activeDraftKey) writeSurveyDraft(activeDraftKey, nextDraftState);
+      markValueSaved(nextDraftState);
+      setSaveError("");
+    } catch {
+      setSaveError(uiText("autosave.failed"));
+    }
+  }, [activeDraftKey, draftKey, markValueSaved, surveyImageId]);
+
   useEffect(() => {
     restoredDraftKeyRef.current = "";
     initialDraftRef.current = safeSerialize(latestDraftStateRef.current);
@@ -76,5 +88,6 @@ export function useSurveyDraftPersistence({
   return {
     saveError,
     clearDrafts,
+    flushDraft,
   };
 }

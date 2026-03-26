@@ -15,7 +15,9 @@ from app.config import (
 )
 from app.services.image_query_service import (
     QUERY_CLEANUP_STALE_RESERVATIONS,
+    QUERY_FETCH_ACTIVE_PARTICIPANT_RESERVATION,
     QUERY_LOAD_IMAGE_POOL,
+    QUERY_RELEASE_PARTICIPANT_RESERVATIONS,
     QUERY_RESERVE_IMAGE,
 )
 from app.utils.cache import cache
@@ -79,6 +81,11 @@ def pick_from_pool(rows: list[ImagePoolItem], excluded_set, attempts):
 def reserve_image(db, image_id: str, participant_id: int | None, now_ts):
     try:
         row = db.execute(QUERY_RESERVE_IMAGE, {"iid": image_id, "pid": participant_id, "now": now_ts}).fetchone()
+        if participant_id is not None:
+            db.execute(
+                QUERY_RELEASE_PARTICIPANT_RESERVATIONS,
+                {"pid": int(participant_id), "keep_image_id": str(image_id)},
+            )
         return bool(row)
     except Exception as exc:
         log_event(logger, OBS_EVENT_IMAGE_RESERVE_FAILED, level=logging.WARNING, error=str(exc))
@@ -98,8 +105,21 @@ def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
         log_event(logger, OBS_EVENT_IMAGE_CLEANUP_FAILED, level=logging.WARNING, error=str(exc))
 
 
+def fetch_active_reserved_image(db, participant_id: int | None):
+    if participant_id is None:
+        return None
+    row = db.execute(
+        QUERY_FETCH_ACTIVE_PARTICIPANT_RESERVATION,
+        {"pid": int(participant_id)},
+    ).fetchone()
+    return tuple(row) if row else None
+
+
 def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int):
     cleanup_stale_reservations(db)
+    active_reserved = fetch_active_reserved_image(db, participant_id)
+    if active_reserved:
+        return active_reserved
     attention_pool, non_attention_pool, _all_pool = load_image_pool(db)
     row: ImagePoolItem | None = None
     target_pool = attention_pool if should_prioritize_attention else non_attention_pool

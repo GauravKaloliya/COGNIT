@@ -48,7 +48,6 @@ QUERY_NEXT_SURVEY_INDEX = text("""
     SELECT COALESCE(MAX(survey_index), 0) + 1
     FROM submissions
     WHERE participant_id = :pid
-      AND is_survey = true
 """)
 
 QUERY_DUPLICATE_NON_SURVEY_SUBMISSION = text("""
@@ -216,9 +215,20 @@ QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG = text("""
 
 QUERY_RELEASE_IMAGE_RESERVATION = text("""
     UPDATE image_reservations
-    SET released_at = CURRENT_TIMESTAMP
+    SET
+        released_at = CURRENT_TIMESTAMP,
+        expires_at = CURRENT_TIMESTAMP
     WHERE image_public_id = :img
       AND participant_id = :pid
+      AND released_at IS NULL
+""")
+
+QUERY_RELEASE_ALL_PARTICIPANT_RESERVATIONS = text("""
+    UPDATE image_reservations
+    SET
+        released_at = CURRENT_TIMESTAMP,
+        expires_at = CURRENT_TIMESTAMP
+    WHERE participant_id = :pid
       AND released_at IS NULL
 """)
 
@@ -404,3 +414,7 @@ def update_participant_attention_flag(db, *, participant_id: int, hard_flag_trig
 
 def release_image_reservation(db, *, image_id: str, participant_id: int):
     db.execute(QUERY_RELEASE_IMAGE_RESERVATION, {"img": str(image_id), "pid": int(participant_id)})
+
+
+def release_all_participant_reservations(db, *, participant_id: int):
+    db.execute(QUERY_RELEASE_ALL_PARTICIPANT_RESERVATIONS, {"pid": int(participant_id)})

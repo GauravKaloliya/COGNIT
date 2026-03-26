@@ -16,19 +16,41 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
   const commentsRef = useRef(null);
   const surveyStartTime = useRef(Date.now());
   const timerIntervalRef = useRef(null);
+  const engagementDataRef = useRef(EMPTY_ENGAGEMENT);
+  const elapsedRef = useRef(0);
+
+  const updateEngagementData = useCallback((updater) => {
+    const nextValue = typeof updater === "function" ? updater(engagementDataRef.current) : updater;
+    engagementDataRef.current = nextValue;
+    setEngagementData(nextValue);
+  }, []);
+
+  const updateElapsed = useCallback((updater) => {
+    const nextValue = typeof updater === "function" ? updater(elapsedRef.current) : updater;
+    elapsedRef.current = nextValue;
+    setElapsed(nextValue);
+  }, []);
+
+  useEffect(() => {
+    engagementDataRef.current = engagementData;
+  }, [engagementData]);
+
+  useEffect(() => {
+    elapsedRef.current = elapsed;
+  }, [elapsed]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.hidden) {
-        setEngagementData((prev) => ({ ...prev, tabSwitchCount: prev.tabSwitchCount + 1 }));
+        updateEngagementData((prev) => ({ ...prev, tabSwitchCount: prev.tabSwitchCount + 1 }));
       }
     };
     const onBeforeUnload = (event) => {
-      setEngagementData((prev) => ({ ...prev, pageCloseAttempts: prev.pageCloseAttempts + 1 }));
+      updateEngagementData((prev) => ({ ...prev, pageCloseAttempts: prev.pageCloseAttempts + 1 }));
       delete event.returnValue;
     };
     const onOffline = () => {
-      setEngagementData((prev) => ({ ...prev, networkDisconnects: prev.networkDisconnects + 1 }));
+      updateEngagementData((prev) => ({ ...prev, networkDisconnects: prev.networkDisconnects + 1 }));
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -39,7 +61,7 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("offline", onOffline);
     };
-  }, []);
+  }, [updateEngagementData]);
 
   useEffect(() => {
     if (!timerActive) {
@@ -51,7 +73,7 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
     }
 
     timerIntervalRef.current = scheduleInterval(() => {
-      setElapsed((prev) => prev + 1);
+      updateElapsed((prev) => prev + 1);
     }, runtimeConfig.surveyTimerTickMs);
 
     return () => {
@@ -60,7 +82,7 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
         timerIntervalRef.current = null;
       }
     };
-  }, [timerActive]);
+  }, [timerActive, updateElapsed]);
 
   const preventCopyPaste = useCallback((event) => {
     if (!copyPasteDisabled) return;
@@ -97,8 +119,10 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
   }, [copyPasteDisabled, preventCopyPaste]);
 
   const resetEngagement = useCallback(() => {
+    elapsedRef.current = 0;
     setElapsed(0);
     setTimerActive(false);
+    engagementDataRef.current = EMPTY_ENGAGEMENT;
     setEngagementData(EMPTY_ENGAGEMENT);
     surveyStartTime.current = Date.now();
     if (timerIntervalRef.current) {
@@ -109,9 +133,11 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
 
   return {
     engagementData,
-    setEngagementData,
+    setEngagementData: updateEngagementData,
+    engagementDataRef,
     elapsed,
-    setElapsed,
+    setElapsed: updateElapsed,
+    elapsedRef,
     timerActive,
     setTimerActive,
     descriptionRef,
