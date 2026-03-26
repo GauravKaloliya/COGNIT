@@ -8,6 +8,7 @@ function SurveyCommentsField({
   showValidationErrors,
   minFeedbackLength,
   maxFeedbackLength,
+  commentsCharCount,
   imageReady,
   disabled = false,
   copyPasteDisabled,
@@ -16,6 +17,13 @@ function SurveyCommentsField({
   sanitizeAlphaNumericSpace,
   onBlur,
 }) {
+  React.useLayoutEffect(() => {
+    const element = commentsRef?.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  }, [comments, commentsRef]);
+
   return (
     <div className="field feedback-field">
       <label>{uiText("survey.commentsLabel")} <span className="required" aria-label="required">*</span></label>
@@ -23,19 +31,18 @@ function SurveyCommentsField({
         <textarea
           ref={commentsRef}
           className={showValidationErrors && comments.length > 0 && (
-            comments.length < minFeedbackLength ||
-            comments.length > maxFeedbackLength
+            commentsCharCount < minFeedbackLength ||
+            commentsCharCount > maxFeedbackLength
           ) ? "error-input" : ""}
           value={comments}
           onChange={(e) => {
             const value = sanitizeAlphaNumericSpace(e.target.value);
-            if (value.length <= maxFeedbackLength) {
+            if (commentsCharCount === undefined || value.replace(/[^a-zA-Z0-9]+/g, "").length <= maxFeedbackLength) {
               setComments(value);
             }
           }}
           placeholder={uiText("survey.commentsPlaceholder")}
           disabled={disabled || !imageReady}
-          maxLength={maxFeedbackLength}
           onCopy={copyPasteDisabled ? preventCopyPaste : undefined}
           onCut={copyPasteDisabled ? preventCopyPaste : undefined}
           onPaste={copyPasteDisabled ? preventCopyPaste : undefined}
@@ -45,18 +52,18 @@ function SurveyCommentsField({
           onKeyDown={copyPasteDisabled ? preventClipboardShortcuts : undefined}
           onBlur={onBlur}
         />
-        <div className="textarea-counter">{uiText("survey.charsCount", { count: comments.length, max: maxFeedbackLength })}</div>
+        <div className="textarea-counter">{uiText("survey.charsCount", { count: commentsCharCount, max: maxFeedbackLength })}</div>
       </div>
       <div className="counts">
-        <span className={showValidationErrors && comments.length < minFeedbackLength ? "warning" : ""}>
-          {uiText("survey.feedbackMin", { count: comments.length })}
+        <span className={showValidationErrors && commentsCharCount < minFeedbackLength ? "warning" : ""}>
+          {uiText("survey.feedbackMin", { count: commentsCharCount })}
         </span>
         <span className="ok">{uiText("survey.feedbackMinimum")}</span>
       </div>
-      <div className={`helper-text ${comments.length >= minFeedbackLength ? "ok" : "warning"}`}>
-        {comments.length >= minFeedbackLength
+      <div className={`helper-text ${commentsCharCount >= minFeedbackLength ? "ok" : "warning"}`}>
+        {commentsCharCount >= minFeedbackLength
           ? uiText("survey.feedbackGood")
-          : uiText("survey.feedbackRemainingMin", { remaining: minFeedbackLength - comments.length })}
+          : uiText("survey.feedbackRemainingMin", { remaining: minFeedbackLength - commentsCharCount })}
       </div>
     </div>
   );

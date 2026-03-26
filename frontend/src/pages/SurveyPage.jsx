@@ -45,6 +45,7 @@ export default function SurveyPage({
     retryCountdown,
     wordCount,
     charCount,
+    commentsCharCount,
     canSubmit,
     currentStep,
     minimumMet,
@@ -212,6 +213,7 @@ export default function SurveyPage({
           showValidationErrors={showValidationErrors}
           minFeedbackLength={MIN_FEEDBACK_LENGTH}
           maxFeedbackLength={MAX_FEEDBACK_LENGTH}
+          commentsCharCount={commentsCharCount}
           imageReady={imageReady}
           disabled={formDisabled}
           copyPasteDisabled={COPY_PASTE_DISABLED}
