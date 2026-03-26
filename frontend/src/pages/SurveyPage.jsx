@@ -21,56 +21,16 @@ export default function SurveyPage({
   onWarmNextSurvey = null,
   fetchError = null,
   isFetchingImage = false,
+  isTransitioningToNext = false,
 }) {
   const profileRender = useRenderProfiler("SurveyPage", 20);
   const [showDeferredDecorations, setShowDeferredDecorations] = React.useState(false);
   const {
     constants,
-    description,
-    setDescription,
-    difficultyRating,
-    setDifficultyRating,
-    confidenceScore,
-    setConfidenceScore,
-    comments,
-    setComments,
-    isZoomed,
-    setIsZoomed,
-    submitting,
-    submitError,
-    showValidationErrors,
-    elapsed,
-    imageLoaded,
-    imageError,
-    imageReady,
-    retryExhausted,
-    imagePanelErrorMessage,
-    retryDisabled,
-    retryCountdown,
-    wordCount,
-    charCount,
-    commentsCharCount,
-    canSubmit,
-    currentStep,
-    minimumMet,
-    submitLocked,
-    formDisabled,
-    inputsDisabled,
-    descriptionRef,
-    commentsRef,
-    imageElementRef,
-    imageSrc,
-    hasUsableSurveyImage,
-    handleSubmit,
-    handleImageLoad,
-    handleImageError,
-    handleRetryImage,
-    getSubmitTooltip,
-    preventCopyPaste,
-    preventClipboardShortcuts,
-    saveError,
-    optimisticMessage,
-    touchField,
+    formState,
+    mediaState,
+    fieldRefs,
+    handlers,
   } = useSurveyPage({
     survey,
     publicId,
@@ -82,6 +42,56 @@ export default function SurveyPage({
     fetchError,
     isFetchingImage,
   });
+  const {
+    description,
+    difficultyRating,
+    confidenceScore,
+    comments,
+    submitting,
+    submitError,
+    showValidationErrors,
+    elapsed,
+    wordCount,
+    charCount,
+    commentsCharCount,
+    canSubmit,
+    currentStep,
+    minimumMet,
+    submitLocked,
+    formDisabled,
+    inputsDisabled,
+    saveError,
+    optimisticMessage,
+  } = formState;
+  const {
+    isZoomed,
+    imageLoaded,
+    imageError,
+    imageReady,
+    retryExhausted,
+    imagePanelErrorMessage,
+    retryDisabled,
+    retryCountdown,
+    imageElementRef,
+    imageSrc,
+    hasUsableSurveyImage,
+  } = mediaState;
+  const { descriptionRef, commentsRef } = fieldRefs;
+  const {
+    setDescription,
+    setDifficultyRating,
+    setConfidenceScore,
+    setComments,
+    setIsZoomed,
+    handleSubmit,
+    handleImageLoad,
+    handleImageError,
+    handleRetryImage,
+    getSubmitTooltip,
+    preventCopyPaste,
+    preventClipboardShortcuts,
+    touchField,
+  } = handlers;
 
   const MIN_WORDS = constants.minWords;
   const MIN_DESCRIPTION_LENGTH = constants.minDescriptionLength;
@@ -137,7 +147,7 @@ export default function SurveyPage({
   }, [minimumMet]);
 
   // Show loading state if we're waiting for survey data
-  if (!survey || !surveyImageId || !hasUsableSurveyImage) {
+  if (isTransitioningToNext || !survey || !surveyImageId || !hasUsableSurveyImage) {
     const retryLabel = retryDisabled && retryCountdown > 0
       ? uiText("common.tryAgainIn", { seconds: retryCountdown })
       : uiText("common.retry");

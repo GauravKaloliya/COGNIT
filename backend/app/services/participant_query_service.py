@@ -24,6 +24,21 @@ QUERY_INSERT_PARTICIPANT = text("""
     RETURNING id
 """)
 
+QUERY_RECORD_PARTICIPANT_CONSENT = text("""
+    UPDATE participants
+    SET consent_given = true,
+        consent_at = CURRENT_TIMESTAMP
+    WHERE public_id = :pub AND is_deleted = false
+    RETURNING id, stage
+""")
+
+QUERY_UPDATE_PARTICIPANT_STAGE = text("""
+    UPDATE participants
+    SET stage = :stage,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = :pid
+""")
+
 QUERY_GET_EXISTING_SESSION_ID = text("""
     SELECT session_id
     FROM participants

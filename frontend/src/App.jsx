@@ -46,41 +46,29 @@ const ConfettiLayer = React.lazy(() => import("./components/feedback/ConfettiLay
 
 export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const {
+    appState,
+    workflowState,
+    surveyState,
+    systemState,
+    toastState,
+    actions,
+  } = useAppController();
+  const {
     isOnline,
     isActiveTabOwner,
     stage,
     publicId,
-    storageScope,
-    sessionHydrated,
-    demographics,
-    setDemographics,
-    setStage,
-    toasts,
-    addToast,
-    systemReady,
-    systemError,
-    systemChecking,
+  } = appState;
+  const { showConfetti } = surveyState;
+  const { systemReady, systemError, systemChecking } = systemState;
+  const { toasts } = toastState;
+  const {
     retryHealthCheck,
-    survey,
-    surveyCompleted,
-    setSurveyFeedbackReady,
-    consentGiven,
-    imageError,
-    isFetchingImage,
-    showConfetti,
-    fetchImage,
-    prefetchNextImage,
-    handleSubmit,
     claimActiveTabLock,
     dismissToast,
-    handleConsentGiven,
-    handleUserDetailsSubmit,
-    handleEmailVerified,
-    handleAccountFlagged,
-    resetWorkflowToConsent,
     handleAppError,
     clearUserStorage,
-  } = useAppController();
+  } = actions;
   const isMobile = useIsMobile();
   const [showBackToTop, setShowBackToTop] = React.useState(false);
   const deferredToasts = React.useDeferredValue(toasts);
@@ -227,41 +215,21 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
 
   return (
     <ErrorBoundary onError={handleAppError}>
-      <AppContainer
-        darkMode={darkMode}
-        toggleDarkMode={toggleDarkMode}
-        isMobile={isMobile}
-        storageOk={storageOk}
-        stage={stage}
-      >
-        <AppStageRouter
+        <AppContainer
+          darkMode={darkMode}
+          toggleDarkMode={toggleDarkMode}
+          isMobile={isMobile}
+          storageOk={storageOk}
           stage={stage}
-          systemChecking={systemChecking}
-          systemReady={systemReady}
-          publicId={publicId}
-          storageScope={storageScope}
-          sessionHydrated={sessionHydrated}
-          consentGiven={consentGiven}
-          demographics={demographics}
-          setDemographics={setDemographics}
-          handleConsentGiven={handleConsentGiven}
-          handleUserDetailsSubmit={handleUserDetailsSubmit}
-          handleEmailVerified={handleEmailVerified}
-          handleAccountFlagged={handleAccountFlagged}
-          addToast={addToast}
-          survey={survey}
-          surveyCompleted={surveyCompleted}
-          setSurveyFeedbackReady={setSurveyFeedbackReady}
-          setStage={setStage}
-          clearUserStorage={clearUserStorage}
-          resetWorkflowToConsent={resetWorkflowToConsent}
-          fetchImage={fetchImage}
-          prefetchNextImage={prefetchNextImage}
-          handleSubmit={handleSubmit}
-          imageError={imageError}
-          isFetchingImage={isFetchingImage}
-        />
-      </AppContainer>
+        >
+          <AppStageRouter
+            appState={appState}
+            workflowState={workflowState}
+            surveyState={surveyState}
+            systemState={systemState}
+            actions={actions}
+          />
+        </AppContainer>
 
       {showBackToTop && (
         <DSButton

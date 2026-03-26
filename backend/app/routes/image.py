@@ -7,9 +7,9 @@ from flask import request, g
 from sqlalchemy import text
 
 from app.constants.log_messages import LOG_RANDOM_IMAGE_FAILED
-from app.constants.participant_constants import PARTICIPANT_STAGE_SURVEY
 from app.constants.route_constants import IMAGES_RANDOM_ROUTE
 from app.database import get_db
+from app.services.state_machine_service import StateTransitionError, require_participant_stage
 from app.utils.helpers import create_error_response, success_response
 from app.utils.decorators import track_performance
 from app.services.image_service import (
@@ -56,9 +56,15 @@ def random_image():
             participant_row = db.execute(
                 text(
                     """
-                    SELECT id, extra_metadata, stage
+                    SELECT
+                        p.id,
+                        p.extra_metadata,
+                        p.stage,
+                        COUNT(s.id) AS total_submissions
                     FROM participants
+                    LEFT JOIN submissions s ON s.participant_id = p.id
                     WHERE public_id = :pub AND is_deleted = false
+                    GROUP BY p.id, p.extra_metadata, p.stage
                     """
                 ),
                 {"pub": public_id},
@@ -67,16 +73,18 @@ def random_image():
                 participant_id = int(participant_row[0])
                 participant_meta = participant_row[1] if isinstance(participant_row[1], dict) else {}
                 participant_stage = str(participant_row[2] or "")
-                if participant_stage != PARTICIPANT_STAGE_SURVEY:
+                try:
+                    participant_stage = require_participant_stage(
+                        participant_stage,
+                        allowed_stages={"survey"},
+                        event="random_image",
+                    )
+                except StateTransitionError:
                     return create_error_response(
                         "VAL_INVALID_STATE",
                         {"current_stage": participant_stage},
                     )
-                total_submissions = db.execute(text("""
-                    SELECT COUNT(*) FROM submissions
-                    WHERE participant_id = :pid
-                """), {"pid": participant_id}).scalar() or 0
-                total_submissions = int(total_submissions)
+                total_submissions = int(participant_row[3] or 0)
 
                 if total_submissions >= REQUIRED_SUBMISSIONS:
                     return create_error_response(

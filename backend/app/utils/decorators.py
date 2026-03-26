@@ -262,9 +262,10 @@ def track_performance(f):
 
         try:
             resp = f(*args, **kwargs)
-            duration_ms = int((time.perf_counter() - start) * 1000)
-            response_time_seconds = duration_ms / 1000.0
-            slo_breached = duration_ms > API_LATENCY_SLO_MS
+            elapsed_seconds = max(0.0, time.perf_counter() - start)
+            response_time_seconds = round(elapsed_seconds, 6)
+            duration_ms = elapsed_seconds * 1000.0
+            slo_breached = duration_ms > float(API_LATENCY_SLO_MS)
             status = 200
             if isinstance(resp, tuple) and len(resp) > 1 and isinstance(resp[1], int):
                 status = resp[1]
@@ -297,7 +298,7 @@ def track_performance(f):
                         user_agent=user_agent,
                         ip_hash=ip_hash,
                         audit_event_type="request_complete",
-                        audit_details=f"duration_seconds={response_time_seconds:.3f}",
+                        audit_details=f"duration_seconds={response_time_seconds:.6f}",
                     )
             except Exception:
                 log_event(logger, OBS_EVENT_METRICS_EMIT_FAILED, level=logging.WARNING)
@@ -309,7 +310,7 @@ def track_performance(f):
                     level=logging.WARNING,
                     endpoint=request_path,
                     status_code=status,
-                    duration_ms=duration_ms,
+                    duration_ms=round(duration_ms, 3),
                     target_ms=API_LATENCY_SLO_MS,
                 )
                 if hasattr(response_obj, "headers"):
@@ -317,9 +318,10 @@ def track_performance(f):
                     response_obj.headers.setdefault("X-Api-Slo-Breached", "1")
             return resp
         except Exception as exc:
-            duration_ms = int((time.perf_counter() - start) * 1000)
-            response_time_seconds = duration_ms / 1000.0
-            slo_breached = duration_ms > API_LATENCY_SLO_MS
+            elapsed_seconds = max(0.0, time.perf_counter() - start)
+            response_time_seconds = round(elapsed_seconds, 6)
+            duration_ms = elapsed_seconds * 1000.0
+            slo_breached = duration_ms > float(API_LATENCY_SLO_MS)
             if request_path != "/health":
                 try:
                     _enqueue_request_observability(
@@ -335,7 +337,7 @@ def track_performance(f):
                         user_agent=user_agent,
                         ip_hash=ip_hash,
                         audit_event_type="request_failed",
-                        audit_details=f"duration_seconds={response_time_seconds:.3f}; error={type(exc).__name__}",
+                        audit_details=f"duration_seconds={response_time_seconds:.6f}; error={type(exc).__name__}",
                     )
                 except Exception:
                     log_event(logger, OBS_EVENT_METRICS_EMIT_FAILED, level=logging.WARNING)

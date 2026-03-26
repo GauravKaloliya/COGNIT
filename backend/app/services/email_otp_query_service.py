@@ -3,7 +3,7 @@
 from sqlalchemy import text
 
 QUERY_SELECT_PARTICIPANT_BY_PUBLIC_EMAIL = text("""
-    SELECT id, email, email_verified
+    SELECT id, email, email_verified, stage
     FROM participants
     WHERE public_id = :pub
       AND email = :em
@@ -12,7 +12,7 @@ QUERY_SELECT_PARTICIPANT_BY_PUBLIC_EMAIL = text("""
 """)
 
 QUERY_SELECT_PARTICIPANT_BY_PUBLIC_ID = text("""
-    SELECT id, email, email_verified
+    SELECT id, email, email_verified, stage
     FROM participants
     WHERE public_id = :pub
       AND is_deleted = false
@@ -70,11 +70,7 @@ QUERY_MARK_OTP_USED = text("""
 QUERY_MARK_PARTICIPANT_EMAIL_VERIFIED = text("""
     UPDATE participants
     SET email_verified = true,
-        email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
-        stage = CASE
-            WHEN stage IN (:stage_consent, :stage_user_details) THEN :stage_survey
-            ELSE stage
-        END
+        email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP)
     WHERE id = :pid
 """)
 
@@ -83,10 +79,6 @@ QUERY_UPDATE_PARTICIPANT_EMAIL = text("""
     SET email = :em,
         email_verified = false,
         email_verified_at = NULL,
-        stage = CASE
-            WHEN stage = :stage_post_survey THEN stage
-            ELSE :stage_user_details
-        END,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = :pid
 """)

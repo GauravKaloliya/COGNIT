@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { getDisplayErrorMessage } from "../utils/appError";
@@ -12,20 +12,13 @@ import { scheduleTimeout } from "../utils/timing";
 import { forEachStorageArea, getStoredValue, makeScopedKey, removeStoredKey } from "../utils/storage";
 import { getTelemetrySnapshot } from "../utils/clientTelemetry";
 import { readCoreValue } from "../utils/appControllerState";
-
-function normalizeSurvey(value) {
-  if (!value || typeof value !== "object") return null;
-  const imageId = String(value[SURVEY_API_FIELDS.imageId] || value.image_id || value.imageId || "").trim();
-  const imageUrl = String(
-    value[SURVEY_API_FIELDS.url] || value[SURVEY_API_FIELDS.imageUrl] || value.image_url || value.imageUrl || ""
-  ).trim();
-  if (!imageId || !imageUrl) return null;
-  return {
-    ...value,
-    [SURVEY_API_FIELDS.imageId]: imageId,
-    [SURVEY_API_FIELDS.url]: imageUrl,
-  };
-}
+import { APP_FLOW } from "../config/appFlow";
+import {
+  createSurveyState,
+  normalizeSurvey,
+  surveyStateReducer,
+  SURVEY_EVENT_TYPES,
+} from "../utils/surveyStateMachine";
 
 function readStoredSurvey(publicId) {
   if (!publicId) return null;
@@ -44,26 +37,20 @@ function resolveActiveParticipantContext(publicId, sessionId) {
   };
 }
 
-function areSurveysEqual(left, right) {
-  const normalizedLeft = normalizeSurvey(left);
-  const normalizedRight = normalizeSurvey(right);
-  if (!normalizedLeft && !normalizedRight) return true;
-  if (!normalizedLeft || !normalizedRight) return false;
-  return (
-    normalizedLeft[SURVEY_API_FIELDS.imageId] === normalizedRight[SURVEY_API_FIELDS.imageId]
-    && normalizedLeft[SURVEY_API_FIELDS.url] === normalizedRight[SURVEY_API_FIELDS.url]
+export function useSurveyFlow({
+  publicId,
+  sessionId,
+  addToast,
+  initial,
+  stage,
+  systemReady,
+  sessionHydrated,
+}) {
+  const [surveyState, dispatchSurvey] = useReducer(
+    surveyStateReducer,
+    initial,
+    createSurveyState
   );
-}
-
-export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
-  const [survey, setSurvey] = useState(() => normalizeSurvey(initial?.survey));
-  const [surveyCompleted, setSurveyCompleted] = useState(() => Math.max(0, Number(initial?.surveyCompleted) || 0));
-  const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(initial?.surveyFeedbackReady === true);
-  const [lastSubmissionSucceeded, setLastSubmissionSucceeded] = useState(initial?.lastSubmissionSucceeded === true);
-  const [shownImages, setShownImages] = useState(() => (Array.isArray(initial?.shownImages) ? initial.shownImages : []));
-  const [imageError, setImageError] = useState(null);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const [isFetchingImage, setIsFetchingImage] = useState(false);
 
   const prefetchedSurveyRef = useRef(null);
   const imageAbortRef = useRef(null);
@@ -74,45 +61,26 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
 
   useEffect(() => {
     const restoredSurvey = normalizeSurvey(initialRef.current?.survey) || readStoredSurvey(publicId);
-    if (restoredSurvey) {
-      setSurvey((prev) => (areSurveysEqual(prev, restoredSurvey) ? prev : restoredSurvey));
-      setImageError(null);
-      setShownImages((prev) => (
-        prev.includes(restoredSurvey[SURVEY_API_FIELDS.imageId])
-          ? prev
-          : [...prev, restoredSurvey[SURVEY_API_FIELDS.imageId]]
-      ));
-    }
-    if (Number.isFinite(initialRef.current?.surveyCompleted)) {
-      setSurveyCompleted((prev) => Math.max(prev, Number(initialRef.current.surveyCompleted) || 0));
-    }
-    if (initialRef.current?.surveyFeedbackReady === true) {
-      setSurveyFeedbackReady(true);
-    }
-    if (initialRef.current?.lastSubmissionSucceeded === true) {
-      setLastSubmissionSucceeded(true);
-    }
-    if (Array.isArray(initialRef.current?.shownImages) && initialRef.current.shownImages.length > 0) {
-      setShownImages((prev) => (prev.length > 0 ? prev : initialRef.current.shownImages));
-    }
+    dispatchSurvey({
+      type: SURVEY_EVENT_TYPES.HYDRATE,
+      survey: restoredSurvey,
+      surveyCompleted: initialRef.current?.surveyCompleted,
+      surveyFeedbackReady: initialRef.current?.surveyFeedbackReady,
+      lastSubmissionSucceeded: initialRef.current?.lastSubmissionSucceeded,
+      shownImages: initialRef.current?.shownImages,
+    });
   }, [publicId]);
 
   const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
-    const currentSurvey = normalizeSurvey(survey);
+    const currentSurvey = normalizeSurvey(surveyState.survey);
     if (!clearCurrent && currentSurvey) {
-      setImageError(null);
+      dispatchSurvey({ type: SURVEY_EVENT_TYPES.FETCH_FAILED, imageError: null, keepSurvey: true });
       return currentSurvey;
     }
 
     const storedSurvey = !clearCurrent ? readStoredSurvey(publicId) : null;
     if (storedSurvey) {
-      setSurvey(storedSurvey);
-      setImageError(null);
-      setShownImages((prev) => (
-        prev.includes(storedSurvey[SURVEY_API_FIELDS.imageId])
-          ? prev
-          : [...prev, storedSurvey[SURVEY_API_FIELDS.imageId]]
-      ));
+      dispatchSurvey({ type: SURVEY_EVENT_TYPES.HYDRATE, survey: storedSurvey });
       return storedSurvey;
     }
 
@@ -129,34 +97,25 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
     }
     const controller = new AbortController();
     imageAbortRef.current = controller;
-    setIsFetchingImage(true);
-    setSurveyFeedbackReady(false);
-    setLastSubmissionSucceeded(false);
-    setImageError(null);
-    if (clearCurrent) {
-      setSurvey(null);
-    }
+    dispatchSurvey({ type: SURVEY_EVENT_TYPES.FETCH_STARTED, clearCurrent });
 
     try {
-      const response = await endpoints.getRandomImage(shownImages, effectivePublicId, { signal: controller.signal });
+      const response = await endpoints.getRandomImage(surveyState.shownImages, effectivePublicId, { signal: controller.signal });
       const nextSurvey = normalizeSurvey(response);
       if (!nextSurvey) {
         throw new Error(getErrorMessage("SYS_002_0016"));
       }
-      setSurvey(nextSurvey);
-      setShownImages((prev) => [...prev, nextSurvey[SURVEY_API_FIELDS.imageId]]);
+      dispatchSurvey({ type: SURVEY_EVENT_TYPES.FETCH_SUCCEEDED, survey: nextSurvey });
       return nextSurvey;
     } catch (error) {
       if (error?.code === REQUEST_CODES.aborted || controller.signal.aborted) {
         return null;
       }
-      if (currentSurvey && !clearCurrent) {
-        setSurvey(currentSurvey);
-        setImageError(null);
-      } else {
-        setSurvey(null);
-        setImageError("image_unavailable");
-      }
+      dispatchSurvey({
+        type: SURVEY_EVENT_TYPES.FETCH_FAILED,
+        keepSurvey: Boolean(currentSurvey && !clearCurrent),
+        imageError: currentSurvey && !clearCurrent ? null : "image_unavailable",
+      });
       if (throwOnError) {
         throw error;
       }
@@ -165,9 +124,30 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
       if (imageAbortRef.current === controller) {
         imageAbortRef.current = null;
       }
-      setIsFetchingImage(false);
     }
-  }, [publicId, sessionId, shownImages, survey]);
+  }, [publicId, sessionId, surveyState.shownImages, surveyState.survey]);
+
+  useEffect(() => {
+    if (!sessionHydrated || !systemReady || stage !== APP_FLOW.stages.survey) return;
+    if (!publicId || surveyState.surveyFeedbackReady) return;
+    if (normalizeSurvey(surveyState.survey)) return;
+
+    const storedSurvey = readStoredSurvey(publicId);
+    if (storedSurvey) {
+      dispatchSurvey({ type: SURVEY_EVENT_TYPES.HYDRATE, survey: storedSurvey });
+      return;
+    }
+
+    void fetchImage({ clearCurrent: false });
+  }, [
+    fetchImage,
+    publicId,
+    sessionHydrated,
+    stage,
+    surveyState.survey,
+    surveyState.surveyFeedbackReady,
+    systemReady,
+  ]);
 
   const prefetchNextImage = useCallback(async () => {
     return null;
@@ -178,7 +158,7 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
     const effectivePublicId = requirePublicId(activeContext.publicId, () => {
       addToast(getErrorMessage("NF_001_0001"), TOAST_VARIANTS.warning);
     });
-    if (!effectivePublicId || !survey?.[SURVEY_API_FIELDS.imageId]) {
+    if (!effectivePublicId || !surveyState.survey?.[SURVEY_API_FIELDS.imageId]) {
       throw new Error(getErrorMessage("NF_001_0001"));
     }
 
@@ -193,14 +173,14 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
       const response = await endpoints.submitDescription({
         [SURVEY_API_FIELDS.publicId]: effectivePublicId,
         [SURVEY_API_FIELDS.sessionId]: activeContext.sessionId || undefined,
-        [SURVEY_API_FIELDS.imageId]: survey[SURVEY_API_FIELDS.imageId],
+        [SURVEY_API_FIELDS.imageId]: surveyState.survey[SURVEY_API_FIELDS.imageId],
         description: formData.description,
         rating: formData.rating,
         feedback: formData.comments,
         [SURVEY_API_FIELDS.timeSpentSeconds]: formData.timeSpentSeconds,
-        [SURVEY_API_FIELDS.isSurvey]: survey?.[SURVEY_API_FIELDS.isSurvey] === true,
-        [SURVEY_API_FIELDS.isAttentionCheck]: survey?.[SURVEY_API_FIELDS.isAttentionCheck] === true,
-        [SURVEY_API_FIELDS.surveyIndex]: surveyCompleted + 1,
+        [SURVEY_API_FIELDS.isSurvey]: surveyState.survey?.[SURVEY_API_FIELDS.isSurvey] === true,
+        [SURVEY_API_FIELDS.isAttentionCheck]: surveyState.survey?.[SURVEY_API_FIELDS.isAttentionCheck] === true,
+        [SURVEY_API_FIELDS.surveyIndex]: surveyState.surveyCompleted + 1,
         [SURVEY_API_FIELDS.tabSwitchCount]: formData.engagementData?.tabSwitchCount || 0,
         [SURVEY_API_FIELDS.pageCloseAttempts]: formData.engagementData?.pageCloseAttempts || 0,
         [SURVEY_API_FIELDS.networkDisconnects]: formData.engagementData?.networkDisconnects || 0,
@@ -226,11 +206,8 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
       }, { signal: controller.signal });
 
       addToast(uiText("survey.saved"), TOAST_VARIANTS.success);
-      setShowConfetti(true);
-      scheduleTimeout(() => setShowConfetti(false), runtimeConfig.confettiDurationMs);
-      setSurveyCompleted((prev) => prev + 1);
-      setLastSubmissionSucceeded(true);
-      setSurveyFeedbackReady(true);
+      dispatchSurvey({ type: SURVEY_EVENT_TYPES.SUBMIT_SUCCEEDED });
+      scheduleTimeout(() => dispatchSurvey({ type: SURVEY_EVENT_TYPES.HIDE_CONFETTI }), runtimeConfig.confettiDurationMs);
 
       const scope = String(publicId || "").trim();
       forEachStorageArea((area) => {
@@ -245,7 +222,7 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
       if (error?.code === REQUEST_CODES.aborted || controller.signal.aborted) {
         return;
       }
-      setLastSubmissionSucceeded(false);
+      dispatchSurvey({ type: SURVEY_EVENT_TYPES.SUBMIT_FAILED });
       const wrappedError = new Error(getDisplayErrorMessage(error, "SYS_002_0006"));
       wrappedError.code = error?.code;
       wrappedError.category = error?.category;
@@ -260,7 +237,7 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
         submitAbortRef.current = null;
       }
     }
-  }, [addToast, publicId, sessionId, survey, surveyCompleted]);
+  }, [addToast, publicId, sessionId, surveyState.survey, surveyState.surveyCompleted]);
 
   const cancelInFlightRequests = useCallback(() => {
     [imageAbortRef, prefetchAbortRef, submitAbortRef].forEach((ref) => {
@@ -272,20 +249,21 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
   }, []);
 
   return {
-    survey,
-    setSurvey,
-    surveyCompleted,
-    setSurveyCompleted,
-    surveyFeedbackReady,
-    setSurveyFeedbackReady,
-    lastSubmissionSucceeded,
-    setLastSubmissionSucceeded,
-    shownImages,
-    setShownImages,
-    imageError,
-    setImageError,
-    isFetchingImage,
-    showConfetti,
+    surveyState,
+    survey: surveyState.survey,
+    surveyCompleted: surveyState.surveyCompleted,
+    surveyFeedbackReady: surveyState.surveyFeedbackReady,
+    lastSubmissionSucceeded: surveyState.lastSubmissionSucceeded,
+    shownImages: surveyState.shownImages,
+    imageError: surveyState.imageError,
+    isFetchingImage: surveyState.isFetchingImage,
+    isTransitioningToNext: surveyState.isTransitioningToNext,
+    showConfetti: surveyState.showConfetti,
+    surveyActions: {
+      resetSession: (nextState = null) => dispatchSurvey({ type: SURVEY_EVENT_TYPES.RESET, nextState }),
+      prepareNextSurvey: () => dispatchSurvey({ type: SURVEY_EVENT_TYPES.PREPARE_NEXT_SURVEY }),
+      hydrateSurvey: (snapshot) => dispatchSurvey({ type: SURVEY_EVENT_TYPES.HYDRATE, ...(snapshot || {}) }),
+    },
     fetchImage,
     prefetchNextImage,
     handleSubmit,

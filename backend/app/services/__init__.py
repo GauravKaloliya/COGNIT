@@ -39,7 +39,6 @@ from .submission_query_service import (
     release_image_reservation,
     update_participant_attention_flag,
     update_participant_metadata,
-    update_participant_stage,
 )
 from .participant_service import (
     collect_missing_participant_fields,
@@ -53,6 +52,11 @@ from .participant_service import (
     is_valid_prior_experience_code,
     is_valid_public_id,
     set_participant_cookies,
+)
+from .participant_state_service import (
+    apply_participant_stage_event,
+    record_participant_consent,
+    update_participant_stage,
 )
 from .email_otp_service import (
     build_email_otp_payload,
@@ -79,6 +83,19 @@ from .state_machine_service import (
     StateTransitionError,
 )
 from .domain_event_service import emit_domain_event
+from .submission_workflow_service import (
+    SubmissionWorkflowError,
+    process_submission_workflow,
+)
+from .participant_workflow_service import (
+    ParticipantWorkflowResult,
+    create_participant_workflow,
+)
+from .email_otp_workflow_service import (
+    EmailOtpWorkflowResult,
+    request_email_otp_workflow,
+    verify_email_otp_workflow,
+)
 
 __all__ = [
     "build_request_hash",
@@ -115,7 +132,6 @@ __all__ = [
     "release_image_reservation",
     "update_participant_attention_flag",
     "update_participant_metadata",
-    "update_participant_stage",
     "collect_missing_participant_fields",
     "fetch_participant_options",
     "find_existing_participant_conflict",
@@ -127,6 +143,9 @@ __all__ = [
     "is_valid_prior_experience_code",
     "is_valid_public_id",
     "set_participant_cookies",
+    "apply_participant_stage_event",
+    "record_participant_consent",
+    "update_participant_stage",
     "build_email_otp_payload",
     "enqueue_email_otp",
     "EmailOtpSendError",
@@ -148,4 +167,11 @@ __all__ = [
     "send_email_otp",
     "StateTransitionError",
     "emit_domain_event",
+    "SubmissionWorkflowError",
+    "process_submission_workflow",
+    "ParticipantWorkflowResult",
+    "create_participant_workflow",
+    "EmailOtpWorkflowResult",
+    "request_email_otp_workflow",
+    "verify_email_otp_workflow",
 ]

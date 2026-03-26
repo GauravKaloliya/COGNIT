@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import {
@@ -14,20 +14,17 @@ import {
 } from "../utils/storage";
 import { APP_FLOW, normalizeAppStage } from "../config/appFlow";
 import { getScopeId, readCoreValue } from "../utils/appControllerState";
+import {
+  createWorkflowState,
+  EMPTY_DEMOGRAPHICS,
+  workflowStateReducer,
+  WORKFLOW_EVENT_TYPES,
+} from "../utils/workflowStateMachine";
 
 const CORE_STATE_STORAGE_AREA = "local";
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
 const SESSION_ALIVE_KEY = runtimeConfig.storageKeys.sessionAlive;
 const EXPIRED_STORAGE_PREFIXES = Object.values(runtimeConfig.storageKeys);
-const EMPTY_DEMOGRAPHICS = {
-  username: "",
-  email: "",
-  gender_code: "",
-  age: "",
-  location: "",
-  language_code: "",
-  prior_experience: "",
-};
 const RESTORE_BASE_KEYS = [
   runtimeConfig.storageKeys.stage,
   runtimeConfig.storageKeys.consentGiven,
@@ -160,19 +157,41 @@ function removeExpiredStorage(addToast, publicId) {
 
 export function useWorkflowCoreState({ addToast }) {
   const initialSnapshot = findBestStoredSnapshot();
-  const [publicId, setPublicId] = useState(() => initialSnapshot?.publicId || "");
+  const [workflowState, dispatchWorkflow] = useReducer(
+    workflowStateReducer,
+    initialSnapshot,
+    createWorkflowState
+  );
   const [preAuthId, setPreAuthId] = useState(() => (
     getStoredValue(runtimeConfig.storageKeys.preAuthId, "", { area: CORE_STATE_STORAGE_AREA }) || ""
   ));
-  const [sessionId, setSessionId] = useState(() => initialSnapshot?.sessionId || "");
-  const [stage, setStage] = useState(() => initialSnapshot?.stage || APP_FLOW.stages.consent);
-  const [consentGiven, setConsentGiven] = useState(() => initialSnapshot?.consentGiven === true);
-  const [userDetailsSubmitted, setUserDetailsSubmitted] = useState(() => initialSnapshot?.userDetailsSubmitted === true);
-  const [emailVerified, setEmailVerified] = useState(() => initialSnapshot?.emailVerified === true);
   const [sessionHydrated, setSessionHydrated] = useState(Boolean(initialSnapshot?.publicId));
   const [frontendSessionExpired] = useState(false);
-  const [demographics, setDemographics] = useState(() => initialSnapshot?.demographics || EMPTY_DEMOGRAPHICS);
-  const scopeId = getScopeId(publicId);
+  const scopeId = getScopeId(workflowState.publicId);
+  const publicId = workflowState.publicId;
+
+  const updateWorkflowState = useCallback((patch) => {
+    dispatchWorkflow({
+      type: WORKFLOW_EVENT_TYPES.PATCH,
+      patch,
+    });
+  }, []);
+
+  const resetWorkflowState = useCallback((nextState) => {
+    dispatchWorkflow({
+      type: WORKFLOW_EVENT_TYPES.RESET_TO_CONSENT,
+      nextState: {
+        publicId: "",
+        sessionId: "",
+        stage: APP_FLOW.stages.consent,
+        consentGiven: false,
+        userDetailsSubmitted: false,
+        emailVerified: false,
+        demographics: EMPTY_DEMOGRAPHICS,
+        ...(nextState || {}),
+      },
+    });
+  }, []);
 
   useEffect(() => {
     removeExpiredStorage(addToast, publicId);
@@ -182,26 +201,46 @@ export function useWorkflowCoreState({ addToast }) {
     if (!publicId) return;
     const snapshot = buildScopeSnapshot(publicId);
     if (!snapshot) return;
-    setSessionId(snapshot.sessionId || "");
-    setStage(snapshot.stage);
-    setConsentGiven(snapshot.consentGiven);
-    setUserDetailsSubmitted(snapshot.userDetailsSubmitted);
-    setEmailVerified(snapshot.emailVerified);
-    setDemographics(snapshot.demographics || EMPTY_DEMOGRAPHICS);
+    dispatchWorkflow({
+      type: WORKFLOW_EVENT_TYPES.HYDRATE_SCOPE,
+      snapshot: {
+        publicId,
+        sessionId: snapshot.sessionId || "",
+        stage: snapshot.stage,
+        consentGiven: snapshot.consentGiven,
+        userDetailsSubmitted: snapshot.userDetailsSubmitted,
+        emailVerified: snapshot.emailVerified,
+        demographics: snapshot.demographics || EMPTY_DEMOGRAPHICS,
+      },
+    });
   }, [publicId]);
 
   useEffect(() => {
     const bestSnapshot = findBestStoredSnapshot();
     if (!bestSnapshot?.publicId || bestSnapshot.publicId === publicId) return;
-    setPublicId(bestSnapshot.publicId);
+    dispatchWorkflow({
+      type: WORKFLOW_EVENT_TYPES.HYDRATE_SCOPE,
+      snapshot: {
+        publicId: bestSnapshot.publicId,
+        sessionId: bestSnapshot.sessionId || "",
+        stage: bestSnapshot.stage,
+        consentGiven: bestSnapshot.consentGiven,
+        userDetailsSubmitted: bestSnapshot.userDetailsSubmitted,
+        emailVerified: bestSnapshot.emailVerified,
+        demographics: bestSnapshot.demographics || EMPTY_DEMOGRAPHICS,
+      },
+    });
   }, [publicId]);
 
   useEffect(() => {
-    const normalizedStage = normalizeAppStage(stage);
-    if (normalizedStage !== stage) {
-      setStage(normalizedStage);
+    const normalizedStage = normalizeAppStage(workflowState.stage);
+    if (normalizedStage !== workflowState.stage) {
+      dispatchWorkflow({
+        type: WORKFLOW_EVENT_TYPES.PATCH,
+        patch: { stage: normalizedStage },
+      });
     }
-  }, [stage]);
+  }, [workflowState.stage]);
 
   useEffect(() => {
     if (preAuthId) return;
@@ -317,26 +356,23 @@ export function useWorkflowCoreState({ addToast }) {
   }, [publicId]);
 
   return {
+    workflowState,
+    dispatchWorkflow,
+    updateWorkflowState,
+    resetWorkflowState,
     publicId,
-    setPublicId,
     preAuthId,
     setPreAuthId,
     scopeId,
-    sessionId,
-    setSessionId,
-    stage,
-    setStage,
-    consentGiven,
-    setConsentGiven,
-    userDetailsSubmitted,
-    setUserDetailsSubmitted,
-    emailVerified,
-    setEmailVerified,
+    sessionId: workflowState.sessionId,
+    stage: workflowState.stage,
+    consentGiven: workflowState.consentGiven,
+    userDetailsSubmitted: workflowState.userDetailsSubmitted,
+    emailVerified: workflowState.emailVerified,
     sessionHydrated,
     setSessionHydrated,
     frontendSessionExpired,
-    demographics,
-    setDemographics,
+    demographics: workflowState.demographics,
     clearUserStorage,
   };
 }
