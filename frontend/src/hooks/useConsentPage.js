@@ -12,31 +12,41 @@ const CONSENT_DRAFT_TTL_MS = runtimeConfig.consentDraftTtlMs;
 const CONSENT_DRAFT_KEY = runtimeConfig.storageKeys.consentDraft;
 const CONSENT_PENDING_KEY = runtimeConfig.storageKeys.consentPending;
 
-const getConsentDraftKey = (scope) => makeScopedKey(CONSENT_DRAFT_KEY, scope);
-const getConsentPendingKey = (scope) => makeScopedKey(CONSENT_PENDING_KEY, scope);
+const getConsentDraftKey = (scope) => (scope ? makeScopedKey(CONSENT_DRAFT_KEY, scope) : null);
+const getConsentPendingKey = (scope) => (scope ? makeScopedKey(CONSENT_PENDING_KEY, scope) : null);
 
 const readConsentDraft = (scope) => {
   const key = getConsentDraftKey(scope);
+  if (!key) return false;
   const opts = { schemaVersion: CONSENT_DRAFT_SCHEMA_VERSION, ttlMs: CONSENT_DRAFT_TTL_MS };
   return readExpiringValue(key, false, { ...opts, area: "local" }) === true;
 };
 
 const writeConsentDraft = (scope, checked) => {
-  writeExpiringValue(getConsentDraftKey(scope), checked === true, {
+  const key = getConsentDraftKey(scope);
+  if (!key) return;
+  writeExpiringValue(key, checked === true, {
     area: "local",
     schemaVersion: CONSENT_DRAFT_SCHEMA_VERSION,
     ttlMs: CONSENT_DRAFT_TTL_MS,
   });
 };
 
-export function useConsentPage({ publicId, consentGiven = false, onConsentGiven, systemReady }) {
-  const scope = String(publicId || "").trim() || "anon";
+export function useConsentPage({
+  storageScope,
+  consentGiven = false,
+  onConsentGiven,
+  systemReady,
+  sessionHydrated = false,
+}) {
+  const scope = String(storageScope || "").trim();
+  const canPersistScoped = Boolean(sessionHydrated && scope);
   const [consentChecked, setConsentChecked] = useState(() => (
-    consentGiven || readConsentDraft(scope)
+    consentGiven || (canPersistScoped ? readConsentDraft(scope) : false)
   ));
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [draftRestored] = useState(() => readConsentDraft(scope));
+  const [draftRestored] = useState(() => (canPersistScoped ? readConsentDraft(scope) : false));
   const [saveError, setSaveError] = useState("");
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const isOnline = useOnlineStatus();
@@ -50,11 +60,15 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
   useEffect(() => {
     if (consentGiven) {
       setConsentChecked(true);
+      return;
     }
-  }, [consentGiven]);
+    if (canPersistScoped) {
+      setConsentChecked(readConsentDraft(scope));
+    }
+  }, [canPersistScoped, consentGiven, scope]);
 
   useEffect(() => {
-    if (!isOnline) return;
+    if (!isOnline || !canPersistScoped) return;
     setSaveError("");
     if (draftSaveTimeoutRef.current) {
       clearScheduledTimeout(draftSaveTimeoutRef.current);
@@ -66,7 +80,7 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
         setSaveError(uiText("autosave.failed"));
       }
     }, 700);
-  }, [consentChecked, isOnline, scope]);
+  }, [canPersistScoped, consentChecked, isOnline, scope]);
 
   useEffect(() => () => {
     if (draftSaveTimeoutRef.current) clearScheduledTimeout(draftSaveTimeoutRef.current);
@@ -86,7 +100,10 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
   const handleSubmit = useCallback(async () => {
     if (!isOnline) {
       setError(uiText("consent.offlineSubmit"));
-      setPendingFlag(getConsentPendingKey(scope));
+      const pendingKey = canPersistScoped ? getConsentPendingKey(scope) : null;
+      if (pendingKey) {
+        setPendingFlag(pendingKey);
+      }
       setPendingSubmit(true);
       return;
     }
@@ -106,23 +123,28 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
     try {
       await onConsentGiven();
       forEachStorageArea((area) => {
-        removeStoredKey(getConsentDraftKey(scope), area);
+        const draftKey = canPersistScoped ? getConsentDraftKey(scope) : null;
+        if (draftKey) {
+          removeStoredKey(draftKey, area);
+        }
       });
     } catch (err) {
       setError(resolveConsentError(err));
     } finally {
       setSubmitting(false);
     }
-  }, [consentChecked, isOnline, onConsentGiven, resolveConsentError, scope, systemReady]);
+  }, [canPersistScoped, consentChecked, isOnline, onConsentGiven, resolveConsentError, scope, systemReady]);
 
   useEffect(() => {
     if (!isOnline || submitting) return;
-    const pending = getPendingFlag(getConsentPendingKey(scope));
+    const pendingKey = canPersistScoped ? getConsentPendingKey(scope) : null;
+    if (!pendingKey) return;
+    const pending = getPendingFlag(pendingKey);
     if (!pending || !consentChecked) return;
-    clearPendingFlag(getConsentPendingKey(scope));
+    clearPendingFlag(pendingKey);
     setPendingSubmit(false);
     handleSubmit();
-  }, [consentChecked, handleSubmit, isOnline, scope, submitting]);
+  }, [canPersistScoped, consentChecked, handleSubmit, isOnline, scope, submitting]);
 
   return {
     consentChecked,

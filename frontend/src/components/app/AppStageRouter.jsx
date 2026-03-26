@@ -47,6 +47,8 @@ function AppStageRouter({
   systemChecking,
   systemReady,
   publicId,
+  storageScope,
+  sessionHydrated,
   consentGiven,
   demographics,
   setDemographics,
@@ -73,7 +75,8 @@ function AppStageRouter({
     if (normalizedStage === "consent") {
       return (
         <ConsentPage
-          publicId={publicId}
+          storageScope={storageScope}
+          sessionHydrated={sessionHydrated}
           consentGiven={consentGiven}
           onConsentGiven={handleConsentGiven}
           systemReady={systemReady}
@@ -84,7 +87,9 @@ function AppStageRouter({
     if (normalizedStage === "user-details") {
       return (
         <UserDetailsPage
+          storageScope={storageScope}
           publicId={publicId}
+          sessionHydrated={sessionHydrated}
           demographics={demographics}
           setDemographics={setDemographics}
           onSubmit={handleUserDetailsSubmit}
@@ -126,7 +131,8 @@ function AppStageRouter({
 
     return (
       <ConsentPage
-        publicId={publicId}
+        storageScope={storageScope}
+        sessionHydrated={sessionHydrated}
         consentGiven={consentGiven}
         onConsentGiven={handleConsentGiven}
         systemReady={systemReady}

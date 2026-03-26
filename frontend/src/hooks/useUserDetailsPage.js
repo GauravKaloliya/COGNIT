@@ -29,15 +29,18 @@ const OTP_STATUS = runtimeConfig.otpStatus;
 const USER_DETAILS_PENDING_KEY = runtimeConfig.storageKeys.userDetailsPending;
 
 export function useUserDetailsPage({
+  storageScope,
   publicId,
+  sessionHydrated = false,
   demographics,
   setDemographics,
   onSubmit,
   onEmailVerified,
   addToast,
 }) {
-  const scope = String(publicId || "").trim() || "anon";
-  const scopedUserDetailsPendingKey = makeScopedKey(USER_DETAILS_PENDING_KEY, scope);
+  const scope = String(storageScope || "").trim();
+  const canPersistScoped = Boolean(sessionHydrated && scope);
+  const scopedUserDetailsPendingKey = canPersistScoped ? makeScopedKey(USER_DETAILS_PENDING_KEY, scope) : null;
   const isOnline = useOnlineStatus();
   const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
@@ -61,6 +64,7 @@ export function useUserDetailsPage({
     demographics,
     setDemographics,
     scope,
+    canPersist: canPersistScoped,
   });
 
   const { optionLists, optionsLoading } = useParticipantOptions({
@@ -88,6 +92,7 @@ export function useUserDetailsPage({
 
   const verification = useUserDetailsVerification({
     scope,
+    canPersist: canPersistScoped,
     publicId,
     demographicsEmail: demographics.email,
     isOnline,
@@ -131,7 +136,9 @@ export function useUserDetailsPage({
   const handleSubmit = useCallback(async () => {
     if (!isOnline) {
       setGeneralError(uiText("user.offlineSubmit"));
-      setPendingFlag(scopedUserDetailsPendingKey);
+      if (canPersistScoped && scopedUserDetailsPendingKey) {
+        setPendingFlag(scopedUserDetailsPendingKey);
+      }
       setPendingSubmit(true);
       return;
     }
@@ -226,6 +233,7 @@ export function useUserDetailsPage({
     }
   }, [
     addToast,
+    canPersistScoped,
     clearGeneralError,
     demographics.email,
     demographics.username,
@@ -243,12 +251,13 @@ export function useUserDetailsPage({
 
   useEffect(() => {
     if (!isOnline || submitting) return;
+    if (!canPersistScoped || !scopedUserDetailsPendingKey) return;
     const pending = getPendingFlag(scopedUserDetailsPendingKey) === true;
     if (!pending) return;
     removeStoredKey(scopedUserDetailsPendingKey);
     setPendingSubmit(false);
     void handleSubmit();
-  }, [handleSubmit, isOnline, scopedUserDetailsPendingKey, submitting]);
+  }, [canPersistScoped, handleSubmit, isOnline, scopedUserDetailsPendingKey, submitting]);
 
   const requiredFields = useMemo(() => ([
     USER_DETAIL_FIELDS.username,
