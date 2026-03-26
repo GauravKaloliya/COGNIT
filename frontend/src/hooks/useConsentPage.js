@@ -5,7 +5,7 @@ import { clearPendingFlag, forEachStorageArea, getPendingFlag, makeScopedKey, re
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useRetryCountdown } from "./useRetryCountdown";
-import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
+import { useDebouncedPersistence } from "./useDebouncedPersistence";
 
 const CONSENT_DRAFT_SCHEMA_VERSION = runtimeConfig.consentDraftSchemaVersion;
 const CONSENT_DRAFT_TTL_MS = runtimeConfig.consentDraftTtlMs;
@@ -41,17 +41,36 @@ export function useConsentPage({
 }) {
   const scope = String(storageScope || "").trim();
   const canPersistScoped = Boolean(sessionHydrated && scope);
-  const [consentChecked, setConsentChecked] = useState(() => (
+  const [consentChecked, setConsentCheckedState] = useState(() => (
     consentGiven || (canPersistScoped ? readConsentDraft(scope) : false)
   ));
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [draftRestored] = useState(() => (canPersistScoped ? readConsentDraft(scope) : false));
+  const [draftRestored, setDraftRestored] = useState(() => (canPersistScoped ? readConsentDraft(scope) : false));
   const [saveError, setSaveError] = useState("");
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const isOnline = useOnlineStatus();
-  const draftSaveTimeoutRef = useRef(null);
+  const restoredScopeRef = useRef("");
+  const userTouchedConsentRef = useRef(false);
   const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
+
+  const setConsentChecked = useCallback((nextValue) => {
+    userTouchedConsentRef.current = true;
+    setConsentCheckedState(typeof nextValue === "function" ? nextValue : Boolean(nextValue));
+  }, []);
+
+  const { markValueSaved, resetSavedValue } = useDebouncedPersistence({
+    enabled: Boolean(isOnline && canPersistScoped),
+    value: consentChecked,
+    delayMs: 500,
+    onSchedule: () => setSaveError(""),
+    onWrite: (nextConsentChecked) => {
+      writeConsentDraft(scope, nextConsentChecked);
+    },
+    onError: () => {
+      setSaveError(uiText("autosave.failed"));
+    },
+  });
 
   useEffect(() => {
     document.title = uiText("consent.documentTitle");
@@ -59,32 +78,26 @@ export function useConsentPage({
 
   useEffect(() => {
     if (consentGiven) {
-      setConsentChecked(true);
+      setConsentCheckedState(true);
+      markValueSaved(true);
       return;
     }
-    if (canPersistScoped) {
-      setConsentChecked(readConsentDraft(scope));
-    }
-  }, [canPersistScoped, consentGiven, scope]);
+    if (!canPersistScoped) return;
+    if (restoredScopeRef.current === scope) return;
+    if (userTouchedConsentRef.current) return;
+
+    const restored = readConsentDraft(scope);
+    restoredScopeRef.current = scope;
+    setDraftRestored(restored === true);
+    setConsentCheckedState(restored);
+    markValueSaved(restored);
+  }, [canPersistScoped, consentGiven, markValueSaved, scope]);
 
   useEffect(() => {
-    if (!isOnline || !canPersistScoped) return;
-    setSaveError("");
-    if (draftSaveTimeoutRef.current) {
-      clearScheduledTimeout(draftSaveTimeoutRef.current);
-    }
-    draftSaveTimeoutRef.current = scheduleTimeout(() => {
-      try {
-        writeConsentDraft(scope, consentChecked);
-      } catch {
-        setSaveError(uiText("autosave.failed"));
-      }
-    }, 700);
-  }, [canPersistScoped, consentChecked, isOnline, scope]);
-
-  useEffect(() => () => {
-    if (draftSaveTimeoutRef.current) clearScheduledTimeout(draftSaveTimeoutRef.current);
-  }, []);
+    restoredScopeRef.current = "";
+    userTouchedConsentRef.current = false;
+    resetSavedValue();
+  }, [scope, resetSavedValue]);
 
   const resolveConsentError = useCallback((err) => {
     const message = err?.message || "";
@@ -128,12 +141,13 @@ export function useConsentPage({
           removeStoredKey(draftKey, area);
         }
       });
+      resetSavedValue();
     } catch (err) {
       setError(resolveConsentError(err));
     } finally {
       setSubmitting(false);
     }
-  }, [canPersistScoped, consentChecked, isOnline, onConsentGiven, resolveConsentError, scope, systemReady]);
+  }, [canPersistScoped, consentChecked, isOnline, onConsentGiven, resetSavedValue, resolveConsentError, scope, systemReady]);
 
   useEffect(() => {
     if (!isOnline || submitting) return;
