@@ -78,6 +78,22 @@ const resolveConfiguredBase = () => {
 
 export const API_BASE = resolveConfiguredBase();
 
+export const getApiOriginUrl = () => {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
+  if (!API_BASE) {
+    return `${window.location.origin}/`;
+  }
+
+  if (/^https?:\/\//i.test(API_BASE)) {
+    return `${API_BASE.replace(/\/+$/, "")}/`;
+  }
+
+  return `${window.location.origin}${API_BASE.replace(/\/+$/, "")}/`;
+};
+
 // Helper to get full API URL
 export const getApiUrl = (endpoint) => {
   // Ensure endpoint starts with / and remove any leading slashes to avoid doubles

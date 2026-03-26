@@ -15,12 +15,12 @@ export default function SurveySubmitFooter({
     <>
       {visibleSubmitError && <div className="banner warning">{visibleSubmitError}</div>}
 
-      <PageActions sticky className="actions survey-submit-actions survey-sticky-footer">
+      <PageActions sticky className={`actions survey-submit-actions survey-sticky-footer ${submitting ? "is-submitting" : ""} ${submitLocked ? "is-locked" : ""}`}>
         <div className="submit-info-box">
           <p className="submit-shortcut-hint">{uiText("survey.submitShortcut")}</p>
         </div>
         <DSButton
-          className={`primary ${submitting ? "wiggle" : ""}`}
+          className={`primary survey-submit-button ${submitting ? "wiggle is-submitting" : ""}`}
           onClick={handleSubmit}
           disabled={!canSubmit || submitLocked}
           title={getSubmitTooltip()}

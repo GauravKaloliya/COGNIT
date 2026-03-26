@@ -1,8 +1,8 @@
 {% extends "api_docs/base.html" %}
 {% block docs_content %}
-<section class="doc-section">
+<section class="doc-section panel stage-section" style="--section-index: 1">
   <h2>Examples</h2>
-  <p class="section-note">These `curl` examples are generated from the current backend route map and docs metadata. Replace placeholder ids, cookies, and tokens with real values from your environment.</p>
+  <p class="page-subtitle left">These `curl` examples are generated from the current backend route map and docs metadata. Replace placeholder ids, cookies, and tokens with real values from your environment.</p>
 
   <div class="examples-grid">
     {% for example in example_docs %}

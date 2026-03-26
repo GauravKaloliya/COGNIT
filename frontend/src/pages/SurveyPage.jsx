@@ -165,16 +165,19 @@ export default function SurveyPage({
   }
 
   return (
-    <div className="panel survey-page-panel">
+    <div className="panel survey-page-panel survey-stage-shell">
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {optimisticMessage || visibleSubmitError}
       </div>
-      <PageStatusBanners
-        saveError={deferredSaveError}
-      />
-      <div className="meta meta-step-top">
+      <div className="stage-section" style={{ "--section-index": 0 }}>
+        <PageStatusBanners
+          saveError={deferredSaveError}
+        />
+      </div>
+      <div className="meta meta-step-top stage-section" style={{ "--section-index": 1 }}>
         <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: UI_TOTAL_STEPS })}</span>
       </div>
+      <div className="stage-section parallax-deep survey-image-stage" style={{ "--section-index": 2 }}>
         <SurveyImagePanel
           imageSrc={imageSrc}
           imageLoaded={imageLoaded}
@@ -189,74 +192,83 @@ export default function SurveyPage({
         handleImageLoad={handleImageLoad}
         handleImageError={handleImageError}
       />
+      </div>
 
-      <div className="meta meta-timer-row">
+      <div className="meta meta-timer-row stage-section" style={{ "--section-index": 3 }}>
         <span className="timer">{uiText("survey.timeElapsed", { seconds: elapsed })}</span>
       </div>
 
       {minimumMet && showDeferredDecorations && (
-        <div className="survey-badges">
+        <div className="survey-badges stage-section" style={{ "--section-index": 4 }}>
           {minimumMet && <span className="status-badge met">{uiText("survey.minimumMet")}</span>}
         </div>
       )}
 
       <React.Profiler id="survey-fields" onRender={profileRender}>
-        <SurveyDescriptionField
-          description={description}
-          setDescription={setDescription}
-          descriptionRef={descriptionRef}
-          showValidationErrors={showValidationErrors}
-          minDescriptionLength={MIN_DESCRIPTION_LENGTH}
-          maxDescriptionLength={MAX_DESCRIPTION_LENGTH}
-          minWords={MIN_WORDS}
-          wordCount={wordCount}
-          charCount={charCount}
-          imageReady={imageReady}
-          disabled={inputsDisabled}
-          copyPasteDisabled={COPY_PASTE_DISABLED}
-          preventCopyPaste={preventCopyPaste}
-          preventClipboardShortcuts={preventClipboardShortcuts}
-          sanitizeAlphaNumericSpace={sanitizeAlphaNumericSpace}
-          onBlur={() => touchField("description")}
-        />
+        <div className="stage-section" style={{ "--section-index": 5 }}>
+          <SurveyDescriptionField
+            description={description}
+            setDescription={setDescription}
+            descriptionRef={descriptionRef}
+            showValidationErrors={showValidationErrors}
+            minDescriptionLength={MIN_DESCRIPTION_LENGTH}
+            maxDescriptionLength={MAX_DESCRIPTION_LENGTH}
+            minWords={MIN_WORDS}
+            wordCount={wordCount}
+            charCount={charCount}
+            imageReady={imageReady}
+            disabled={inputsDisabled}
+            copyPasteDisabled={COPY_PASTE_DISABLED}
+            preventCopyPaste={preventCopyPaste}
+            preventClipboardShortcuts={preventClipboardShortcuts}
+            sanitizeAlphaNumericSpace={sanitizeAlphaNumericSpace}
+            onBlur={() => touchField("description")}
+          />
+        </div>
 
-        <SurveyRatingField
-          difficultyRating={difficultyRating}
-          setDifficultyRating={setDifficultyRating}
-          confidenceScore={confidenceScore}
-          setConfidenceScore={setConfidenceScore}
-          imageReady={imageReady}
-          disabled={inputsDisabled}
-          onDifficultyBlur={() => touchField("difficulty")}
-          onConfidenceBlur={() => touchField("confidence")}
-        />
+        <div className="stage-section" style={{ "--section-index": 6 }}>
+          <SurveyRatingField
+            difficultyRating={difficultyRating}
+            setDifficultyRating={setDifficultyRating}
+            confidenceScore={confidenceScore}
+            setConfidenceScore={setConfidenceScore}
+            imageReady={imageReady}
+            disabled={inputsDisabled}
+            onDifficultyBlur={() => touchField("difficulty")}
+            onConfidenceBlur={() => touchField("confidence")}
+          />
+        </div>
 
-        <SurveyCommentsField
-          comments={comments}
-          setComments={setComments}
-          commentsRef={commentsRef}
-          showValidationErrors={showValidationErrors}
-          minFeedbackLength={MIN_FEEDBACK_LENGTH}
-          maxFeedbackLength={MAX_FEEDBACK_LENGTH}
-          commentsCharCount={commentsCharCount}
-          imageReady={imageReady}
-          disabled={inputsDisabled}
-          copyPasteDisabled={COPY_PASTE_DISABLED}
-          preventCopyPaste={preventCopyPaste}
-          preventClipboardShortcuts={preventClipboardShortcuts}
-          sanitizeAlphaNumericSpace={sanitizeAlphaNumericSpace}
-          onBlur={() => touchField("comments")}
-        />
+        <div className="stage-section" style={{ "--section-index": 7 }}>
+          <SurveyCommentsField
+            comments={comments}
+            setComments={setComments}
+            commentsRef={commentsRef}
+            showValidationErrors={showValidationErrors}
+            minFeedbackLength={MIN_FEEDBACK_LENGTH}
+            maxFeedbackLength={MAX_FEEDBACK_LENGTH}
+            commentsCharCount={commentsCharCount}
+            imageReady={imageReady}
+            disabled={inputsDisabled}
+            copyPasteDisabled={COPY_PASTE_DISABLED}
+            preventCopyPaste={preventCopyPaste}
+            preventClipboardShortcuts={preventClipboardShortcuts}
+            sanitizeAlphaNumericSpace={sanitizeAlphaNumericSpace}
+            onBlur={() => touchField("comments")}
+          />
+        </div>
       </React.Profiler>
 
-      <SurveySubmitFooter
-        visibleSubmitError={visibleSubmitError}
-        submitting={submitting}
-        canSubmit={canSubmit}
-        submitLocked={submitLocked || formDisabled}
-        handleSubmit={handleSubmit}
-        getSubmitTooltip={getSubmitTooltip}
-      />
+      <div className="stage-section" style={{ "--section-index": 8 }}>
+        <SurveySubmitFooter
+          visibleSubmitError={visibleSubmitError}
+          submitting={submitting}
+          canSubmit={canSubmit}
+          submitLocked={submitLocked || formDisabled}
+          handleSubmit={handleSubmit}
+          getSubmitTooltip={getSubmitTooltip}
+        />
+      </div>
     </div>
   );
 }

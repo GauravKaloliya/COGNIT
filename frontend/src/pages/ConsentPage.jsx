@@ -43,20 +43,24 @@ export default function ConsentPage({
   }
 
   return (
-    <div className="panel panel-with-corner-status">
-      <div className="page-top-actions">
+    <div className="panel panel-with-corner-status consent-page-shell">
+      <div className="page-top-actions stage-section" style={{ "--section-index": 0 }}>
         <div className="page-top-banners" />
       </div>
-      <PageStatusBanners
-        saveError={saveError}
-        compact
-      />
-      <h2 className="consent-title">{CONSENT_CONTENT.title}</h2>
-      <p className="page-subtitle left no-bottom-margin">
-        {CONSENT_CONTENT.subtitle}
-      </p>
+      <div className="stage-section" style={{ "--section-index": 1 }}>
+        <PageStatusBanners
+          saveError={saveError}
+          compact
+        />
+      </div>
+      <div className="stage-section consent-hero-block" style={{ "--section-index": 2 }}>
+        <h2 className="consent-title">{CONSENT_CONTENT.title}</h2>
+        <p className="page-subtitle left no-bottom-margin">
+          {CONSENT_CONTENT.subtitle}
+        </p>
+      </div>
       
-      <div className="welcome-info consent-content">
+      <div className="welcome-info consent-content parallax-soft stage-section" style={{ "--section-index": 3 }}>
         <div className={`consent-body ${showFullConsent ? "expanded" : "collapsed"}`}>
           {CONSENT_CONTENT.sections.map((section) => (
             <React.Fragment key={section.heading}>
@@ -105,15 +109,17 @@ export default function ConsentPage({
       </div>
       
       {error && (
-        <PanelState
-          variant="warning"
-          title={CONSENT_CONTENT.actionRequiredTitle}
-          message={error}
-          icon="!"
-        />
+        <div className="stage-section" style={{ "--section-index": 4 }}>
+          <PanelState
+            variant="warning"
+            title={CONSENT_CONTENT.actionRequiredTitle}
+            message={error}
+            icon="!"
+          />
+        </div>
       )}
       
-      <div className={`consent-checkbox ${error && !consentChecked ? 'error' : ''}`}>
+      <div className={`consent-checkbox parallax-soft stage-section ${error && !consentChecked ? 'error' : ''}`} style={{ "--section-index": 5 }}>
         <input
           type="checkbox"
           checked={consentChecked}
@@ -134,15 +140,17 @@ export default function ConsentPage({
         </label>
       </div>
       
-      <PageActions sticky>
-        <DSButton
-          className="primary"
-          onClick={handleSubmit}
-          disabled={!systemReady || submitting || !consentChecked}
-        >
-          {submitting ? uiText("common.processing") : uiText("common.continue")}
-        </DSButton>
-      </PageActions>
+      <div className="stage-section consent-actions" style={{ "--section-index": 6 }}>
+        <PageActions sticky>
+          <DSButton
+            className="primary"
+            onClick={handleSubmit}
+            disabled={!systemReady || submitting || !consentChecked}
+          >
+            {submitting ? uiText("common.processing") : uiText("common.continue")}
+          </DSButton>
+        </PageActions>
+      </div>
     </div>
   );
 }
