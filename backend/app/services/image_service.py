@@ -92,7 +92,7 @@ def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
     if now < IMAGE_RESERVATION_CLEANUP_EXPIRES_AT:
         return
     try:
-        db.execute(QUERY_CLEANUP_STALE_RESERVATIONS, {"ttl": int(max(60, ttl_value))})
+        db.execute(QUERY_CLEANUP_STALE_RESERVATIONS)
         IMAGE_RESERVATION_CLEANUP_EXPIRES_AT = now + min(60.0, max(5.0, float(ttl_value) / 4.0))
     except Exception as exc:
         log_event(logger, OBS_EVENT_IMAGE_CLEANUP_FAILED, level=logging.WARNING, error=str(exc))

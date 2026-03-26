@@ -24,9 +24,14 @@ from app.constants.route_constants import (
     EMAIL_OTP_VERIFY_ROUTE,
     HEALTH_ROUTE,
     IMAGES_RANDOM_ROUTE,
+    API_DOCS_ENDPOINTS_ROUTE,
+    API_DOCS_ERRORS_ROUTE,
+    API_DOCS_EXAMPLES_ROUTE,
+    API_DOCS_ROUTE,
     PARTICIPANTS_ROUTE,
     PARTICIPANT_OPTIONS_ROUTE,
     PARTICIPANT_SESSION_ROUTE,
+    ROOT_ROUTE,
     SUBMIT_ROUTE,
 )
 from app.extensions import app
@@ -178,11 +183,15 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "headers": ["Content-Type: application/json", "X-Idempotency-Key: <uuid>"],
         "body": {
             "public_id": "<participant_public_id>",
+            "session_id": "<participant_session_id_optional>",
             "image_id": "image_001",
             "description": "A detailed 60+ word description of the image content goes here.",
             "feedback": "The task instructions were clear.",
-            "rating": 8,
+            "rating": 4,
             "time_spent_seconds": 94,
+            "is_survey": True,
+            "is_attention_check": False,
+            "survey_index": 1,
             "tab_switch_count": 0,
             "page_close_attempts": 0,
             "network_disconnects": 0,
@@ -194,6 +203,17 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
             "survey_max_scroll_depth_pct": 100,
             "survey_clicks": 4,
             "survey_keypresses": 102,
+            "confidence_score": 4,
+            "difficulty_self_report": 3,
+            "time_before_typing_ms": 1200,
+            "edit_count": 5,
+            "backspace_count": 10,
+            "first_view_duration_ms": 1200,
+            "writing_duration_ms": 82000,
+            "avg_keystroke_interval_ms": None,
+            "keystroke_variance": None,
+            "pause_count": 0,
+            "avg_pause_duration_ms": None,
             "turnstile_token": "<turnstile-token>",
         },
         "notes": [
@@ -205,11 +225,11 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
 }
 
 _DOCS_EXCLUDED = {
-    "/",
-    "/api-docs",
-    "/api-docs/endpoints",
-    "/api-docs/errors",
-    "/api-docs/examples",
+    ROOT_ROUTE,
+    API_DOCS_ROUTE,
+    API_DOCS_ENDPOINTS_ROUTE,
+    API_DOCS_ERRORS_ROUTE,
+    API_DOCS_EXAMPLES_ROUTE,
     "/static/<path:filename>",
 }
 

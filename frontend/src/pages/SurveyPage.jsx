@@ -28,8 +28,10 @@ export default function SurveyPage({
     constants,
     description,
     setDescription,
-    rating,
-    setRating,
+    difficultyRating,
+    setDifficultyRating,
+    confidenceScore,
+    setConfidenceScore,
     comments,
     setComments,
     isZoomed,
@@ -41,6 +43,7 @@ export default function SurveyPage({
     imageLoaded,
     imageError,
     imageReady,
+    retryExhausted,
     retryDisabled,
     retryCountdown,
     wordCount,
@@ -155,14 +158,15 @@ export default function SurveyPage({
       <div className="meta meta-step-top">
         <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: Math.min(UI_TOTAL_STEPS, currentStep) })}</span>
       </div>
-      <SurveyImagePanel
-        imageSrc={imageSrc}
-        imageLoaded={imageLoaded}
-        imageError={imageError}
-        isZoomed={isZoomed}
-        setIsZoomed={setIsZoomed}
-        retryCountdown={retryCountdown}
-        retryDisabled={retryDisabled}
+        <SurveyImagePanel
+          imageSrc={imageSrc}
+          imageLoaded={imageLoaded}
+          imageError={imageError}
+          showImageError={retryExhausted}
+          isZoomed={isZoomed}
+          setIsZoomed={setIsZoomed}
+          retryCountdown={retryCountdown}
+          retryDisabled={retryDisabled}
         handleRetryImage={handleRetryImage}
         handleImageLoad={handleImageLoad}
         handleImageError={handleImageError}
@@ -199,11 +203,14 @@ export default function SurveyPage({
         />
 
         <SurveyRatingField
-          rating={rating}
-          setRating={setRating}
+          difficultyRating={difficultyRating}
+          setDifficultyRating={setDifficultyRating}
+          confidenceScore={confidenceScore}
+          setConfidenceScore={setConfidenceScore}
           imageReady={imageReady}
           disabled={formDisabled}
-          onBlur={() => touchField("rating")}
+          onDifficultyBlur={() => touchField("difficulty")}
+          onConfidenceBlur={() => touchField("confidence")}
         />
 
         <SurveyCommentsField

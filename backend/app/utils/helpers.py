@@ -27,6 +27,7 @@ from app.constants.response_keys import (
     RESPONSE_KEY_FIELD,
     RESPONSE_KEY_FIELDS,
     RESPONSE_KEY_HTTP_STATUS,
+    RESPONSE_KEY_KEY,
     RESPONSE_KEY_MESSAGE,
     RESPONSE_KEY_REQUEST_ID,
     RESPONSE_KEY_RETRYABLE,
@@ -180,7 +181,10 @@ def log_audit(
 
 def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
     """Generate strict standardized error response."""
-    error_def = ERROR_CODES.get(error_key, ERROR_CODES["SYS_INTERNAL_ERROR"])
+    resolved_key = str(error_key or "SYS_INTERNAL_ERROR")
+    if resolved_key not in ERROR_CODES:
+        resolved_key = "SYS_INTERNAL_ERROR"
+    error_def = ERROR_CODES[resolved_key]
     status = int(error_def.get("status", 500))
     category = error_def.get("category", "SYS")
     retryable = kwargs.get("retryable")
@@ -190,6 +194,7 @@ def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
     base_message = error_def["message"].format(**kwargs) if kwargs else error_def["message"]
     request_id = getattr(g, "request_id", None)
     error_payload: dict[str, Any] = {
+        RESPONSE_KEY_KEY: resolved_key,
         RESPONSE_KEY_CODE: error_def["code"],
         RESPONSE_KEY_MESSAGE: base_message,
         RESPONSE_KEY_CATEGORY: category,
@@ -223,7 +228,7 @@ def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
         method=method,
         path=path,
         route=route_rule or path,
-        error_key=error_key,
+        error_key=resolved_key,
         error_code=error_def.get("code"),
         error_status=status,
         error_category=category,
@@ -238,6 +243,7 @@ def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
     resp = jsonify(response)
     try:
         resp.headers.setdefault("X-COGNIT-Error-Status", str(status))
+        resp.headers.setdefault("X-COGNIT-Error-Key", str(resolved_key))
         resp.headers.setdefault("X-COGNIT-Error-Code", str(error_def.get("code", "")))
         resp.headers.setdefault("X-COGNIT-Error-Category", str(category))
     except Exception:

@@ -23,7 +23,7 @@ const normalizeSurveyPayload = (value) => {
   };
 };
 
-export function useSurveyFlow({ publicId, addToast, initial }) {
+export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
   const [survey, setSurvey] = useState(normalizeSurveyPayload(initial?.survey));
   const [surveyCompleted, setSurveyCompleted] = useState(initial?.surveyCompleted || 0);
   const [surveyFeedbackReady, setSurveyFeedbackReady] = useState(initial?.surveyFeedbackReady || false);
@@ -139,9 +139,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
         return null;
       }
-      const errorMessage = getDisplayErrorMessage(error, "SYS_002_0016");
-      addToast(errorMessage, "error");
-      setImageError(errorMessage);
+      setImageError("image_unavailable");
       setSurvey(null);
       if (throwOnError) {
         throw error;
@@ -154,7 +152,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
       inFlightRef.current = false;
       setIsFetchingImage(false);
     }
-  }, [addToast, publicId, shownImages, survey]);
+  }, [publicId, shownImages, survey]);
 
   const prefetchNextImage = useCallback(async () => {
     if (!publicId) return null;
@@ -211,8 +209,9 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
 
     try {
       const telemetry = getTelemetrySnapshot("survey");
-      const result = await endpoints.submitDescription({
+      const response = await endpoints.submitDescription({
         [SURVEY_API_FIELDS.publicId]: effectivePublicId,
+        [SURVEY_API_FIELDS.sessionId]: sessionId || undefined,
         [SURVEY_API_FIELDS.imageId]: survey[SURVEY_API_FIELDS.imageId],
         description: formData.description,
         rating: formData.rating,
@@ -232,6 +231,17 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
         [SURVEY_API_FIELDS.surveyMaxScrollDepthPct]: telemetry?.survey_max_scroll_depth_pct || 0,
         [SURVEY_API_FIELDS.surveyClicks]: telemetry?.survey_clicks || 0,
         [SURVEY_API_FIELDS.surveyKeypresses]: telemetry?.survey_keypresses || 0,
+        [SURVEY_API_FIELDS.confidenceScore]: formData.confidenceScore,
+        [SURVEY_API_FIELDS.difficultySelfReport]: formData.difficultySelfReport,
+        [SURVEY_API_FIELDS.timeBeforeTypingMs]: formData.timeBeforeTypingMs || 0,
+        [SURVEY_API_FIELDS.editCount]: formData.editCount || 0,
+        [SURVEY_API_FIELDS.backspaceCount]: formData.backspaceCount || 0,
+        [SURVEY_API_FIELDS.firstViewDurationMs]: formData.firstViewDurationMs || 0,
+        [SURVEY_API_FIELDS.writingDurationMs]: formData.writingDurationMs || 0,
+        [SURVEY_API_FIELDS.avgKeystrokeIntervalMs]: formData.avgKeystrokeIntervalMs ?? null,
+        [SURVEY_API_FIELDS.keystrokeVariance]: formData.keystrokeVariance ?? null,
+        [SURVEY_API_FIELDS.pauseCount]: formData.pauseCount || 0,
+        [SURVEY_API_FIELDS.avgPauseDurationMs]: formData.avgPauseDurationMs ?? null,
       }, { signal: controller.signal });
 
       addToast(uiText("survey.saved"), TOAST_VARIANTS.success);
@@ -252,6 +262,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
         removeStoredKey(makeScopedKey(runtimeConfig.storageKeys.emailOtpState, scope), area);
         removeStoredKey(makeScopedKey(runtimeConfig.storageKeys.emailOtpState, "anon"), area);
       });
+      return response;
     } catch (error) {
       if (error?.code === REQUEST_CODES.aborted || controller.signal.aborted) {
         return;
@@ -272,7 +283,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
         submitAbortRef.current = null;
       }
     }
-  }, [addToast, publicId, survey, surveyCompleted]);
+  }, [addToast, publicId, sessionId, survey, surveyCompleted]);
 
   const cancelInFlightRequests = useCallback(() => {
     if (imageAbortRef.current) {
