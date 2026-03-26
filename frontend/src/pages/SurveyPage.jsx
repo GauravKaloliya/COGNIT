@@ -156,7 +156,7 @@ export default function SurveyPage({
         saveError={deferredSaveError}
       />
       <div className="meta meta-step-top">
-        <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: Math.min(UI_TOTAL_STEPS, currentStep) })}</span>
+        <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: UI_TOTAL_STEPS })}</span>
       </div>
         <SurveyImagePanel
           imageSrc={imageSrc}

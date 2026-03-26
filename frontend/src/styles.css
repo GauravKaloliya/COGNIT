@@ -4174,6 +4174,12 @@ canvas {
   font-size: 0.85rem;
 }
 
+.survey-page-panel .effort-rating .rating-scale,
+.survey-page-panel .effort-rating .rating-labels {
+  max-width: 560px;
+  margin-inline: auto;
+}
+
 .survey-page-panel .counts {
   margin-bottom: var(--space-2);
 }

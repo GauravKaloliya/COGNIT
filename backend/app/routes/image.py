@@ -12,7 +12,6 @@ from app.constants.route_constants import IMAGES_RANDOM_ROUTE
 from app.database import get_db
 from app.utils.helpers import create_error_response, success_response
 from app.utils.decorators import track_performance
-from app.config import FORCE_ATTENTION_IMAGES
 from app.services.image_service import (
     select_random_image_for_participant,
 )
@@ -52,7 +51,6 @@ def random_image():
         now_ts = int(time.time())
 
         should_prioritize_attention = False
-        force_attention = False
         participant_id = None
         if public_id:
             participant_row = db.execute(
@@ -100,20 +98,16 @@ def random_image():
                 if expected_step == STEP_ATTENTION:
                     should_prioritize_attention = True
 
-        # Force attention images if env var is set.
-        force_attention = FORCE_ATTENTION_IMAGES or should_prioritize_attention
-
         row = select_random_image_for_participant(
             db,
             excluded_set=excluded_set,
             participant_id=participant_id,
             should_prioritize_attention=should_prioritize_attention,
             now_ts=now_ts,
-            force_attention=force_attention,
         )
 
         if not row:
-            return create_error_response("NF_NO_IMAGES_AVAILABLE") if force_attention else create_error_response("SYS_RANDOM_IMAGE_FALLBACK_FAILED")
+            return create_error_response("NF_NO_IMAGES_AVAILABLE")
 
         return success_response({
             "image_id": row[0],

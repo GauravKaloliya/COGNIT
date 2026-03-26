@@ -187,6 +187,17 @@ mapped AS (
     FROM desired d
     JOIN images i ON i.image_id = d.image_key
 ),
+deactivated AS (
+    UPDATE attention_checks ac
+    SET is_active = FALSE
+    WHERE ac.is_active = TRUE
+      AND NOT EXISTS (
+          SELECT 1
+          FROM mapped m
+          WHERE m.image_db_id = ac.image_id
+      )
+    RETURNING 1
+),
 updated AS (
     UPDATE attention_checks ac
     SET expected_word = m.expected_word,
@@ -205,6 +216,7 @@ inserted AS (
     RETURNING 1
 )
 SELECT
+    (SELECT COUNT(*) FROM deactivated) AS deactivated_rows,
     (SELECT COUNT(*) FROM updated)  AS updated_rows,
     (SELECT COUNT(*) FROM inserted) AS inserted_rows;
 
