@@ -234,20 +234,7 @@ export function useSurveyFlow({ publicId, addToast, initial }) {
         [SURVEY_API_FIELDS.surveyKeypresses]: telemetry?.survey_keypresses || 0,
       }, { signal: controller.signal });
 
-      const attentionStatus = result[SURVEY_API_FIELDS.attentionStatus] || {};
-      if (attentionStatus[SURVEY_API_FIELDS.isAttentionCheck] && result[SURVEY_API_FIELDS.attentionPassed] === false) {
-        if (attentionStatus[SURVEY_API_FIELDS.failureReasons]?.includes("too_fast_attention")) {
-          addToast(uiText("survey.attentionTooFast"), TOAST_VARIANTS.warning);
-        } else {
-          addToast(uiText("survey.attentionFailed"), TOAST_VARIANTS.warning);
-        }
-      } else {
-        addToast(uiText("survey.saved"), TOAST_VARIANTS.success);
-      }
-
-      if (attentionStatus[SURVEY_API_FIELDS.hardFlagTriggered]) {
-        addToast(uiText("survey.attentionHardFlag"), TOAST_VARIANTS.warning);
-      }
+      addToast(uiText("survey.saved"), TOAST_VARIANTS.success);
 
       setShowConfetti(true);
       scheduleTimeout(() => setShowConfetti(false), runtimeConfig.confettiDurationMs);

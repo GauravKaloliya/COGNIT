@@ -1,4 +1,3 @@
-import re
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -13,7 +12,6 @@ from app.constants.submission_patterns import (
     ATTN_TOKEN_SPLIT_RE,
     NORMALIZE_NON_ALNUM_RE,
     NORMALIZE_WHITESPACE_RE,
-    STRICT_TERM_TEMPLATE,
 )
 from app.constants.observability_constants import (
     OBS_EVENT_SUBMISSION_POST_COMMIT_ENQUEUE_FAILED,
@@ -96,19 +94,34 @@ def extract_expected_terms(raw_expected: str):
     return [token for token in clean if token]
 
 
+def _contains_term_tokens(description_tokens, term_tokens) -> bool:
+    if not term_tokens or len(term_tokens) > len(description_tokens):
+        return False
+
+    span = len(term_tokens)
+    for index in range(len(description_tokens) - span + 1):
+        if description_tokens[index:index + span] == term_tokens:
+            return True
+    return False
+
+
 def match_attention_terms(description: str, expected_terms, strict: bool):
     """Return list of expected terms found in description."""
     normalized_description = normalize_for_attention(description)
     if not normalized_description or not expected_terms:
         return []
 
+    description_tokens = normalized_description.split()
     matched = []
     for term in expected_terms:
+        normalized_term = normalize_for_attention(term)
+        if not normalized_term:
+            continue
         if strict:
-            if re.search(STRICT_TERM_TEMPLATE.format(term=re.escape(term)), normalized_description):
-                matched.append(term)
-        elif term in normalized_description:
-            matched.append(term)
+            if _contains_term_tokens(description_tokens, normalized_term.split()):
+                matched.append(normalized_term)
+        elif normalized_term in normalized_description:
+            matched.append(normalized_term)
     return matched
 
 

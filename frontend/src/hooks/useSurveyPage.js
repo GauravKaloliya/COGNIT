@@ -12,6 +12,7 @@ import { buildSurveyImageState, getSubmitTooltip } from "../utils/surveyPageHelp
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 import { useStableSelector } from "./useStableSelector";
 import { preloadTurnstileScript, prefetchTurnstileToken } from "../utils/turnstile";
+import { REQUEST_CODES } from "../constants/request";
 
 export { sanitizeAlphaNumericSpace } from "../utils/surveyPageHelpers";
 
@@ -70,6 +71,7 @@ export function useSurveyPage({
   publicId,
   surveyCompleted = 0,
   onSubmit,
+  onAccountFlagged = null,
   fetchError = null,
   onRetry = null,
   onWarmNextSurvey = null,
@@ -90,12 +92,14 @@ export function useSurveyPage({
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [submitLocked, setSubmitLocked] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState("");
+  const [formDisabled, setFormDisabled] = useState(false);
   const [fieldMeta, dispatchFieldMeta] = useReducer(surveyFieldMetaReducer, {
     dirty: {},
     touched: {},
   });
   const submitUnlockTimeoutRef = useRef(null);
   const imageLoadTimeoutRef = useRef(null);
+  const accountFlaggedTimeoutRef = useRef(null);
   const prefetchTriggeredRef = useRef(false);
   const turnstilePrefetchTriggeredRef = useRef(false);
   const {
@@ -166,10 +170,13 @@ export function useSurveyPage({
     if (imageLoadTimeoutRef.current) {
       clearScheduledTimeout(imageLoadTimeoutRef.current);
     }
+    if (accountFlaggedTimeoutRef.current) {
+      clearScheduledTimeout(accountFlaggedTimeoutRef.current);
+    }
   }, []);
 
   const handleRetryImage = useCallback(() => {
-    if (retryDisabled || isFetchingImage) return;
+    if (formDisabled || retryDisabled || isFetchingImage) return;
     if (typeof onRetry !== "function") return;
     setRetryDisabled(true);
     setRetryCountdown(runtimeConfig.serviceRetrySeconds);
@@ -177,7 +184,7 @@ export function useSurveyPage({
     setImageLoaded(false);
     setTimerActive(false);
     onRetry({ clearCurrent: true });
-  }, [isFetchingImage, onRetry, retryDisabled, setRetryCountdown, setTimerActive]);
+  }, [formDisabled, isFetchingImage, onRetry, retryDisabled, setRetryCountdown, setTimerActive]);
 
   useEffect(() => {
     if (!retryDisabled || runtimeConfig.serviceRetrySeconds <= 0) {
@@ -267,6 +274,7 @@ export function useSurveyPage({
     setSubmitErrorSource("none");
     setOptimisticMessage("");
     setShowValidationErrors(false);
+    setFormDisabled(false);
     setDescription("");
     setRating(0);
     setComments("");
@@ -412,6 +420,7 @@ export function useSurveyPage({
       setOptimisticMessage(uiText("common.submitting"));
     });
     const timeSpentSeconds = Math.round((Date.now() - surveyStartTime.current) / runtimeConfig.msPerSecond);
+    let shouldKeepLocked = false;
 
     try {
       await onSubmit({
@@ -430,6 +439,24 @@ export function useSurveyPage({
         setOptimisticMessage("");
       });
     } catch (error) {
+      if (error?.code === REQUEST_CODES.accountFlagged) {
+        shouldKeepLocked = true;
+        setFormDisabled(true);
+        setSubmitLocked(true);
+        setSubmitError(getDisplayErrorMessage(error, "SYS_002_0006"));
+        setSubmitErrorSource("server");
+        startTransition(() => {
+          setOptimisticMessage("");
+        });
+        if (accountFlaggedTimeoutRef.current) {
+          clearScheduledTimeout(accountFlaggedTimeoutRef.current);
+        }
+        accountFlaggedTimeoutRef.current = scheduleTimeout(() => {
+          onAccountFlagged?.(publicId);
+          accountFlaggedTimeoutRef.current = null;
+        }, runtimeConfig.accountFlaggedRedirectDelayMs);
+        return;
+      }
       setSubmitError(getDisplayErrorMessage(error, "SYS_002_0006"));
       setSubmitErrorSource("server");
       startTransition(() => {
@@ -437,7 +464,9 @@ export function useSurveyPage({
       });
     } finally {
       setSubmitting(false);
-      unlockSubmit(runtimeConfig.submitUnlockCompleteDelayMs);
+      if (!shouldKeepLocked) {
+        unlockSubmit(runtimeConfig.submitUnlockCompleteDelayMs);
+      }
     }
   }, [
     canSubmit,
@@ -447,7 +476,9 @@ export function useSurveyPage({
     engagementData,
     getSubmitTooltipText,
     isOnline,
+    onAccountFlagged,
     onSubmit,
+    publicId,
     rating,
     setEngagementData,
     submitLocked,
@@ -562,6 +593,7 @@ export function useSurveyPage({
     fieldMeta,
     isOnline,
     submitLocked,
+    formDisabled,
     descriptionRef,
     commentsRef,
     imageSrc,
