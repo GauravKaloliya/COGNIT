@@ -655,7 +655,7 @@ export function useSurveyPage({
     copyPasteDisabled: COPY_PASTE_DISABLED,
   }), []);
 
-  const retryExhausted = Boolean(imageError || fetchError);
+  const retryExhausted = Boolean(imageError || (!hasUsableSurveyImage && fetchError));
 
   return {
     constants,

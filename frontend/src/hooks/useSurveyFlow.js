@@ -76,11 +76,40 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
     publicId,
   ]);
 
+  // Additional hard-refresh guard: if we have a scoped publicId but in-memory
+  // survey is empty, restore directly from storage (covers hydration races).
+  useEffect(() => {
+    if (!publicId) return;
+    if (survey?.[SURVEY_API_FIELDS.imageId] && String(survey?.[SURVEY_API_FIELDS.url] || "").trim()) {
+      return;
+    }
+    const storedSurvey = normalizeSurveyPayload(
+      readCoreValue(runtimeConfig.storageKeys.survey, null, publicId)
+    );
+    if (!storedSurvey?.[SURVEY_API_FIELDS.imageId] || !String(storedSurvey?.[SURVEY_API_FIELDS.url] || "").trim()) {
+      return;
+    }
+    setSurvey(storedSurvey);
+    setImageError(null);
+    setShownImages((prev) => (
+      prev.includes(storedSurvey[SURVEY_API_FIELDS.imageId])
+        ? prev
+        : [...prev, storedSurvey[SURVEY_API_FIELDS.imageId]]
+    ));
+  }, [publicId, survey]);
+
   const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
+    const existingSurvey = survey;
+    const existingHasUsableSurvey = Boolean(
+      existingSurvey?.[SURVEY_API_FIELDS.imageId]
+      && typeof existingSurvey?.[SURVEY_API_FIELDS.url] === "string"
+      && existingSurvey[SURVEY_API_FIELDS.url].trim()
+    );
     // Keep refresh/session-resumed survey stable: do not request a new image
     // unless caller explicitly asks to clear current survey.
-    if (!clearCurrent && survey?.[SURVEY_API_FIELDS.imageId] && typeof survey?.[SURVEY_API_FIELDS.url] === "string" && survey[SURVEY_API_FIELDS.url].trim()) {
-      return survey;
+    if (!clearCurrent && existingHasUsableSurvey) {
+      setImageError(null);
+      return existingSurvey;
     }
     if (!clearCurrent) {
       // Hard refresh guard: if in-memory survey is empty due hydration timing,
@@ -95,6 +124,9 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
           }
           return storedSurvey;
         });
+        // Important: storage restore on refresh should always clear transient
+        // feed-load errors from earlier fetch attempts.
+        setImageError(null);
         setShownImages((prev) => (
           prev.includes(storedSurvey[SURVEY_API_FIELDS.imageId])
             ? prev
@@ -161,8 +193,15 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) {
         return null;
       }
-      setImageError("image_unavailable");
-      setSurvey(null);
+      // On refresh/storage races, keep already-restored survey stable instead
+      // of blanking page due a transient fetch failure.
+      if (!clearCurrent && existingHasUsableSurvey) {
+        setImageError(null);
+        setSurvey((prev) => (prev?.[SURVEY_API_FIELDS.imageId] ? prev : existingSurvey));
+      } else {
+        setImageError("image_unavailable");
+        setSurvey(null);
+      }
       if (throwOnError) {
         throw error;
       }
