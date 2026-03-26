@@ -20,6 +20,7 @@ const EMAIL_OTP_TTL_MS = Math.max(
 
 export function useUserDetailsVerification({
   scope,
+  canPersist = false,
   publicId,
   demographicsEmail,
   isOnline,
@@ -27,7 +28,7 @@ export function useUserDetailsVerification({
   onEmailVerified,
 }) {
   const otpLength = runtimeConfig.emailOtpLength;
-  const scopedOtpKey = makeScopedKey(EMAIL_OTP_STATE_KEY, scope);
+  const scopedOtpKey = canPersist && scope ? makeScopedKey(EMAIL_OTP_STATE_KEY, scope) : null;
   const [otpDigits, setOtpDigits] = useState(() => Array.from({ length: otpLength }, () => ""));
   const [otpError, setOtpError] = useState("");
   const [otpStatus, setOtpStatus] = useState(OTP_STATUS.idle);
@@ -45,6 +46,7 @@ export function useUserDetailsVerification({
   const otpValue = otpDigits.join("");
 
   useEffect(() => {
+    if (!canPersist || !scope || !scopedOtpKey) return;
     const storedOtp = storageAdapters.emailOtpState.read(scope, null, {
       ttlMs: EMAIL_OTP_TTL_MS,
       schemaVersion: runtimeConfig.uiStateSchemaVersion,
@@ -85,7 +87,7 @@ export function useUserDetailsVerification({
         setOtpExpirySeconds(remaining);
       }
     }
-  }, [scope, scopedOtpKey]);
+  }, [canPersist, scope, scopedOtpKey]);
 
   useEffect(() => {
     if (!otpExpiresAt || otpStatus === OTP_STATUS.verified || otpStatus === OTP_STATUS.idle) {
@@ -142,14 +144,17 @@ export function useUserDetailsVerification({
 
   useEffect(() => {
     if (otpStatus === OTP_STATUS.idle) {
-      forEachStorageArea((area) => {
-        removeStoredKey(scopedOtpKey, area);
-      });
+      if (scopedOtpKey) {
+        forEachStorageArea((area) => {
+          removeStoredKey(scopedOtpKey, area);
+        });
+      }
       otpExpiresAtRef.current = null;
       setOtpExpiresAt(null);
       setOtpExpirySeconds(0);
       return;
     }
+    if (!canPersist || !scope || !scopedOtpKey) return;
     if (resendCountdownActive && !resendEndsAtRef.current) {
       resendEndsAtRef.current = Date.now() + Math.max(1, resendInitialSeconds) * 1000;
     }
@@ -175,6 +180,7 @@ export function useUserDetailsVerification({
     resendInitialSeconds,
     scopedOtpKey,
     scope,
+    canPersist,
   ]);
 
   const requestOtp = useCallback(async ({
@@ -262,9 +268,11 @@ export function useUserDetailsVerification({
     try {
       await endpoints.verifyEmailOtp(effectivePublicId, normalizedEmail, normalizedOtp);
       setOtpStatus(OTP_STATUS.verified);
-      forEachStorageArea((area) => {
-        removeStoredKey(scopedOtpKey, area);
-      });
+      if (scopedOtpKey) {
+        forEachStorageArea((area) => {
+          removeStoredKey(scopedOtpKey, area);
+        });
+      }
       addToast?.(uiText("email.verifiedToast"), "success");
       onEmailVerified?.();
     } catch (error) {

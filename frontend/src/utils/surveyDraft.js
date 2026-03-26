@@ -11,13 +11,17 @@ export const SURVEY_DRAFT_SCHEMA_VERSION = runtimeConfig.surveyDraftSchemaVersio
 export const SURVEY_DRAFT_TTL_MS = runtimeConfig.uiStateTtlMs;
 
 export const getSurveyDraftKey = (publicId, imageId) => {
+  const scope = String(publicId || "").trim();
   const prefix = runtimeConfig.storageKeys.surveyDraftPrefix;
-  return imageId ? `${prefix}_${publicId || "anon"}_${imageId}` : null;
+  if (!scope || !imageId) return null;
+  return `${prefix}_${scope}_${imageId}`;
 };
 
 export const getActiveSurveyDraftKey = (publicId) => {
+  const scope = String(publicId || "").trim();
   const prefix = runtimeConfig.storageKeys.surveyDraftActivePrefix;
-  return `${prefix}_${publicId || "anon"}`;
+  if (!scope) return null;
+  return `${prefix}_${scope}`;
 };
 
 export const readSurveyDraft = (key) => {
@@ -40,11 +44,14 @@ export const writeSurveyDraft = (key, data) => {
 };
 
 export const clearAllSurveyDraftsForUser = (publicId) => {
-  const scope = String(publicId || "anon").trim() || "anon";
+  const scope = String(publicId || "").trim();
+  if (!scope) return;
   const perImagePrefix = `${runtimeConfig.storageKeys.surveyDraftPrefix}_${scope}_`;
   const activeKey = getActiveSurveyDraftKey(scope);
   forEachStorageArea((area) => {
-    removeStoredKey(activeKey, area);
+    if (activeKey) {
+      removeStoredKey(activeKey, area);
+    }
     forEachStoredKey(area, (key) => {
       if (!key) return;
       if (key.startsWith(perImagePrefix)) {

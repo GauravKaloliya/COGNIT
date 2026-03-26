@@ -50,6 +50,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     isActiveTabOwner,
     stage,
     publicId,
+    storageScope,
+    sessionHydrated,
     demographics,
     setDemographics,
     setStage,
@@ -237,6 +239,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           systemChecking={systemChecking}
           systemReady={systemReady}
           publicId={publicId}
+          storageScope={storageScope}
+          sessionHydrated={sessionHydrated}
           consentGiven={consentGiven}
           demographics={demographics}
           setDemographics={setDemographics}

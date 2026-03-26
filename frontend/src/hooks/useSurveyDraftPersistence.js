@@ -52,8 +52,10 @@ export function useSurveyDraftPersistence({
       removeStoredKey(draftKey, "session");
       removeStoredKey(draftKey, "local");
     }
-    removeStoredKey(activeDraftKey, "session");
-    removeStoredKey(activeDraftKey, "local");
+    if (activeDraftKey) {
+      removeStoredKey(activeDraftKey, "session");
+      removeStoredKey(activeDraftKey, "local");
+    }
   };
 
   return {
