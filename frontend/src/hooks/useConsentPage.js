@@ -41,6 +41,7 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const isOnline = useOnlineStatus();
   const draftSaveTimeoutRef = useRef(null);
+  const lastSavedDraftRef = useRef();
   const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
 
   useEffect(() => {
@@ -56,12 +57,16 @@ export function useConsentPage({ publicId, consentGiven = false, onConsentGiven,
   useEffect(() => {
     if (!isOnline) return;
     setSaveError("");
+    const last = lastSavedDraftRef.current;
+    const current = JSON.stringify({ checked: consentChecked });
+    if (last === current) return;
     if (draftSaveTimeoutRef.current) {
       clearScheduledTimeout(draftSaveTimeoutRef.current);
     }
     draftSaveTimeoutRef.current = scheduleTimeout(() => {
       try {
         writeConsentDraft(scope, consentChecked);
+        lastSavedDraftRef.current = current;
       } catch {
         setSaveError(uiText("autosave.failed"));
       }
