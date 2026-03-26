@@ -8,6 +8,7 @@ export default function SurveyImagePanel({
   imageLoaded,
   imageError,
   showImageError,
+  errorMessage,
   isZoomed,
   setIsZoomed,
   _retryCountdown,
@@ -20,7 +21,7 @@ export default function SurveyImagePanel({
     return (
       <div className="image-container">
         <div className="image-error">
-          <p>{uiText("survey.feedLoadFailed")}</p>
+          <p>{errorMessage || uiText("survey.imageRestoreFailed")}</p>
           <DSButton variant="primary" className="small button-top" onClick={handleRetryImage} disabled={retryDisabled}>
             {uiText("common.retry")}
           </DSButton>
