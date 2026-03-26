@@ -12,6 +12,7 @@ function SurveyDescriptionField({
   wordCount,
   charCount,
   imageReady,
+  disabled = false,
   copyPasteDisabled,
   preventCopyPaste,
   preventClipboardShortcuts,
@@ -37,7 +38,7 @@ function SurveyDescriptionField({
           }}
           placeholder={uiText("survey.descriptionPlaceholder")}
           spellCheck
-          disabled={!imageReady}
+          disabled={disabled || !imageReady}
           maxLength={maxDescriptionLength}
           onCopy={copyPasteDisabled ? preventCopyPaste : undefined}
           onCut={copyPasteDisabled ? preventCopyPaste : undefined}

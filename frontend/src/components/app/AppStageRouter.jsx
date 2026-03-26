@@ -53,12 +53,14 @@ function AppStageRouter({
   handleConsentGiven,
   handleUserDetailsSubmit,
   handleEmailVerified,
+  handleAccountFlagged,
   addToast,
   survey,
   surveyCompleted,
   setSurveyFeedbackReady,
   setStage,
   clearUserStorage,
+  resetWorkflowToConsent,
   fetchImage,
   prefetchNextImage,
   handleSubmit,
@@ -100,6 +102,7 @@ function AppStageRouter({
           publicId={publicId}
           surveyCompleted={surveyCompleted}
           onSubmit={handleSubmit}
+          onAccountFlagged={handleAccountFlagged}
           fetchError={imageError}
           onRetry={fetchImage}
           onWarmNextSurvey={prefetchNextImage}
@@ -117,6 +120,7 @@ function AppStageRouter({
           fetchNextSurvey={fetchImage}
           publicId={publicId}
           clearUserStorage={clearUserStorage}
+          resetWorkflowToConsent={resetWorkflowToConsent}
         />
       );
     }

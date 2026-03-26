@@ -231,6 +231,50 @@ export function useAppController() {
     }
   }, [setEmailVerified, setStage]);
 
+  const resetWorkflowToConsent = useCallback((scopeOverride = null) => {
+    const effectiveScope = scopeOverride || publicId;
+    clearUserStorage(effectiveScope);
+    setPublicId("");
+    setSessionId("");
+    setConsentGiven(false);
+    setUserDetailsSubmitted(false);
+    setEmailVerified(false);
+    setDemographics({
+      username: "",
+      email: "",
+      gender_code: "",
+      age: "",
+      location: "",
+      language_code: "",
+      prior_experience: "",
+    });
+    setSurvey(null);
+    setSurveyCompleted(0);
+    setSurveyFeedbackReady(false);
+    setLastSubmissionSucceeded(false);
+    setShownImages([]);
+    setStage(APP_FLOW.stages.consent);
+  }, [
+    clearUserStorage,
+    publicId,
+    setConsentGiven,
+    setDemographics,
+    setEmailVerified,
+    setLastSubmissionSucceeded,
+    setPublicId,
+    setSessionId,
+    setShownImages,
+    setStage,
+    setSurvey,
+    setSurveyCompleted,
+    setSurveyFeedbackReady,
+    setUserDetailsSubmitted,
+  ]);
+
+  const handleAccountFlagged = useCallback((scopeOverride = null) => {
+    resetWorkflowToConsent(scopeOverride);
+  }, [resetWorkflowToConsent]);
+
   const handleSubmit = useCallback(async (formData) => {
     const result = await submitSurvey(formData);
     if (validateStageTransition(APP_FLOW.stages.survey, APP_FLOW.stages.postSurvey)) {
@@ -273,6 +317,8 @@ export function useAppController() {
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleEmailVerified,
+    handleAccountFlagged,
+    resetWorkflowToConsent,
     handleAppError,
     clearUserStorage,
   };

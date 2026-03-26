@@ -74,6 +74,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     handleConsentGiven,
     handleUserDetailsSubmit,
     handleEmailVerified,
+    handleAccountFlagged,
+    resetWorkflowToConsent,
     handleAppError,
     clearUserStorage,
   } = useAppController();
@@ -241,12 +243,14 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           handleConsentGiven={handleConsentGiven}
           handleUserDetailsSubmit={handleUserDetailsSubmit}
           handleEmailVerified={handleEmailVerified}
+          handleAccountFlagged={handleAccountFlagged}
           addToast={addToast}
           survey={survey}
           surveyCompleted={surveyCompleted}
           setSurveyFeedbackReady={setSurveyFeedbackReady}
           setStage={setStage}
           clearUserStorage={clearUserStorage}
+          resetWorkflowToConsent={resetWorkflowToConsent}
           fetchImage={fetchImage}
           prefetchNextImage={prefetchNextImage}
           handleSubmit={handleSubmit}

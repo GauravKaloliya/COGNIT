@@ -14,6 +14,7 @@ const SURVEY_FEED_PENDING_FINISH_KEY = runtimeConfig.storageKeys.surveyFeedPendi
 export function usePostSurveyPage({
   publicId,
   clearUserStorage,
+  resetWorkflowToConsent,
   setSurveyFeedbackReady,
   setStage,
   fetchNextSurvey,
@@ -70,11 +71,15 @@ export function usePostSurveyPage({
       setPendingFinish(true);
       return;
     }
-    setSurveyFeedbackReady(false);
-    setStage?.(APP_FLOW.stages.consent);
-    clearUserStorage?.(publicId);
+    if (typeof resetWorkflowToConsent === "function") {
+      resetWorkflowToConsent(publicId);
+    } else {
+      setSurveyFeedbackReady(false);
+      setStage?.(APP_FLOW.stages.consent);
+      clearUserStorage?.(publicId);
+    }
     window.location.href = APP_ROUTES.home;
-  }, [clearUserStorage, isOnline, publicId, setStage, setSurveyFeedbackReady]);
+  }, [clearUserStorage, isOnline, publicId, resetWorkflowToConsent, setStage, setSurveyFeedbackReady]);
 
   useEffect(() => {
     if (!isOnline || loadingNext) return;

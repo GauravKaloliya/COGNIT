@@ -1,13 +1,13 @@
 import React from "react";
 import { uiText } from "../../utils/uiText.js";
 
-function SurveyRatingField({ rating, setRating, imageReady, onBlur }) {
+function SurveyRatingField({ rating, setRating, imageReady, disabled = false, onBlur }) {
   return (
     <div className="field effort-rating">
       <label>
         {uiText("survey.ratingLabel")} <span className="required" aria-label="required">*</span> {rating > 0 ? `${rating}/10` : ""}
       </label>
-      <div className={`rating-scale ${!imageReady ? "rating-scale-disabled" : ""}`}>
+      <div className={`rating-scale ${(!imageReady || disabled) ? "rating-scale-disabled" : ""}`}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
           <label key={val} className="rating-option">
             <input
@@ -17,7 +17,7 @@ function SurveyRatingField({ rating, setRating, imageReady, onBlur }) {
               checked={rating === val}
               onChange={() => setRating(val)}
               onBlur={onBlur}
-              disabled={!imageReady}
+              disabled={disabled || !imageReady}
             />
             <span className="rating-label">{val}</span>
           </label>
