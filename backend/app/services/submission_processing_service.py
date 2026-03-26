@@ -127,8 +127,8 @@ def merge_submission_engagement(*, normalize_engagement_counts, payload: dict, s
     network_disconnects = engagement["network_disconnects"]
 
     merged_metrics = dict(survey_metrics)
-    if merged_metrics["survey_time_spent_ms"] == 0 and time_spent_seconds is not None:
-        merged_metrics["survey_time_spent_ms"] = max(0, int(float(time_spent_seconds) * 1000))
+    if merged_metrics["survey_time_spent_seconds"] == 0 and time_spent_seconds is not None:
+        merged_metrics["survey_time_spent_seconds"] = max(0.0, float(time_spent_seconds))
     if merged_metrics["survey_page_views"] == 0:
         merged_metrics["survey_page_views"] = 1
     if merged_metrics["survey_tab_switches"] == 0:

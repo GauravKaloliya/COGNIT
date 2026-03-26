@@ -11,11 +11,11 @@ export default function SurveyImagePanel({
   errorMessage,
   isZoomed,
   setIsZoomed,
-  _retryCountdown,
   retryDisabled,
   handleRetryImage,
   handleImageLoad,
   handleImageError,
+  imageRef,
 }) {
   if (showImageError) {
     return (
@@ -34,6 +34,7 @@ export default function SurveyImagePanel({
     <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
       {!imageError ? (
         <img
+          ref={imageRef}
           key={imageSrc}
           src={imageSrc}
           alt={uiText("survey.promptAlt")}

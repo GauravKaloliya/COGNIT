@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { runtimeConfig } from "../config/runtime";
 import { clearScheduledInterval, scheduleInterval } from "../utils/timing";
 
+const EMPTY_ENGAGEMENT = {
+  tabSwitchCount: 0,
+  pageCloseAttempts: 0,
+  networkDisconnects: 0,
+};
+
 export function useSurveyEngagement({ copyPasteDisabled }) {
-  const [engagementData, setEngagementData] = useState({
-    tabSwitchCount: 0,
-    pageCloseAttempts: 0,
-    networkDisconnects: 0,
-  });
+  const [engagementData, setEngagementData] = useState(EMPTY_ENGAGEMENT);
   const [elapsed, setElapsed] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
   const descriptionRef = useRef(null);
@@ -16,37 +18,42 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
   const timerIntervalRef = useRef(null);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const onVisibilityChange = () => {
       if (document.hidden) {
         setEngagementData((prev) => ({ ...prev, tabSwitchCount: prev.tabSwitchCount + 1 }));
       }
     };
-    const handleBeforeUnload = (event) => {
+    const onBeforeUnload = (event) => {
       setEngagementData((prev) => ({ ...prev, pageCloseAttempts: prev.pageCloseAttempts + 1 }));
       delete event.returnValue;
     };
-    const handleOffline = () => {
+    const onOffline = () => {
       setEngagementData((prev) => ({ ...prev, networkDisconnects: prev.networkDisconnects + 1 }));
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    window.addEventListener("offline", handleOffline);
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("offline", onOffline);
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("offline", onOffline);
     };
   }, []);
 
   useEffect(() => {
-    if (timerActive) {
-      timerIntervalRef.current = scheduleInterval(() => {
-        setElapsed((prev) => prev + 1);
-      }, runtimeConfig.surveyTimerTickMs);
-    } else if (timerIntervalRef.current) {
-      clearScheduledInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
+    if (!timerActive) {
+      if (timerIntervalRef.current) {
+        clearScheduledInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      return undefined;
     }
+
+    timerIntervalRef.current = scheduleInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, runtimeConfig.surveyTimerTickMs);
+
     return () => {
       if (timerIntervalRef.current) {
         clearScheduledInterval(timerIntervalRef.current);
@@ -58,12 +65,11 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
   const preventCopyPaste = useCallback((event) => {
     if (!copyPasteDisabled) return;
     event.preventDefault();
-    return false;
   }, [copyPasteDisabled]);
 
   const preventClipboardShortcuts = useCallback((event) => {
     if (!copyPasteDisabled) return;
-    if ((event.ctrlKey || event.metaKey) && ["c", "x", "v", "insert"].includes(event.key.toLowerCase())) {
+    if ((event.ctrlKey || event.metaKey) && ["c", "x", "v", "insert"].includes(String(event.key || "").toLowerCase())) {
       event.preventDefault();
     }
     if (event.shiftKey && event.key === "Insert") {
@@ -72,16 +78,16 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
   }, [copyPasteDisabled]);
 
   useEffect(() => {
-    if (!copyPasteDisabled) return;
-    const refs = [descriptionRef.current, commentsRef.current].filter(Boolean);
-    refs.forEach((element) => {
+    if (!copyPasteDisabled) return undefined;
+    const elements = [descriptionRef.current, commentsRef.current].filter(Boolean);
+    elements.forEach((element) => {
       element.addEventListener("copy", preventCopyPaste);
       element.addEventListener("cut", preventCopyPaste);
       element.addEventListener("paste", preventCopyPaste);
       element.addEventListener("contextmenu", preventCopyPaste);
     });
     return () => {
-      refs.forEach((element) => {
+      elements.forEach((element) => {
         element.removeEventListener("copy", preventCopyPaste);
         element.removeEventListener("cut", preventCopyPaste);
         element.removeEventListener("paste", preventCopyPaste);
@@ -93,7 +99,7 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
   const resetEngagement = useCallback(() => {
     setElapsed(0);
     setTimerActive(false);
-    setEngagementData({ tabSwitchCount: 0, pageCloseAttempts: 0, networkDisconnects: 0 });
+    setEngagementData(EMPTY_ENGAGEMENT);
     surveyStartTime.current = Date.now();
     if (timerIntervalRef.current) {
       clearScheduledInterval(timerIntervalRef.current);

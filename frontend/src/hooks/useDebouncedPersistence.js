@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 
 function serializeValue(value) {
@@ -18,58 +18,42 @@ export function useDebouncedPersistence({
   onSchedule,
 }) {
   const timeoutRef = useRef(null);
-  const lastSavedSerializedRef = useRef(null);
-  const latestValueRef = useRef(value);
-  const latestEnabledRef = useRef(enabled);
-  const latestOnWriteRef = useRef(onWrite);
-  const latestOnErrorRef = useRef(onError);
+  const lastSavedValueRef = useRef(null);
+  const latestRef = useRef({ enabled, value, onWrite, onError, onSchedule });
+  latestRef.current = { enabled, value, onWrite, onError, onSchedule };
 
-  latestValueRef.current = value;
-  latestEnabledRef.current = enabled;
-  latestOnWriteRef.current = onWrite;
-  latestOnErrorRef.current = onError;
+  const flushPendingWrite = useCallback(() => {
+    if (!timeoutRef.current || !latestRef.current.enabled) return;
 
-  const flushPendingWrite = () => {
-    if (!timeoutRef.current || !latestEnabledRef.current) {
-      return;
-    }
-
-    const latestValue = latestValueRef.current;
+    const { value: latestValue, onWrite: latestOnWrite, onError: latestOnError } = latestRef.current;
     const serializedValue = serializeValue(latestValue);
-    if (serializedValue === lastSavedSerializedRef.current) {
-      clearScheduledTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-      return;
-    }
-
     clearScheduledTimeout(timeoutRef.current);
     timeoutRef.current = null;
 
+    if (serializedValue === lastSavedValueRef.current) return;
+
     try {
-      latestOnWriteRef.current?.(latestValue);
-      lastSavedSerializedRef.current = serializedValue;
+      latestOnWrite?.(latestValue);
+      lastSavedValueRef.current = serializedValue;
     } catch (error) {
-      latestOnErrorRef.current?.(error);
+      latestOnError?.(error);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    const handlePageHide = () => flushPendingWrite();
     const handleVisibilityChange = () => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") {
         flushPendingWrite();
       }
     };
 
-    const handleBeforeUnload = () => {
-      flushPendingWrite();
-    };
-
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", handleVisibilityChange);
     }
     if (typeof window !== "undefined") {
-      window.addEventListener("beforeunload", handleBeforeUnload);
-      window.addEventListener("pagehide", handleBeforeUnload);
+      window.addEventListener("beforeunload", handlePageHide);
+      window.addEventListener("pagehide", handlePageHide);
     }
 
     return () => {
@@ -78,45 +62,26 @@ export function useDebouncedPersistence({
         document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
       if (typeof window !== "undefined") {
-        window.removeEventListener("beforeunload", handleBeforeUnload);
-        window.removeEventListener("pagehide", handleBeforeUnload);
-      }
-      if (timeoutRef.current) {
-        clearScheduledTimeout(timeoutRef.current);
-        timeoutRef.current = null;
+        window.removeEventListener("beforeunload", handlePageHide);
+        window.removeEventListener("pagehide", handlePageHide);
       }
     };
-  }, []);
+  }, [flushPendingWrite]);
 
   useEffect(() => {
-    if (!enabled) {
-      if (timeoutRef.current) {
-        clearScheduledTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      return;
-    }
-
-    const serializedValue = serializeValue(value);
-    if (serializedValue === lastSavedSerializedRef.current) {
-      return;
-    }
-
-    onSchedule?.();
-
     if (timeoutRef.current) {
       clearScheduledTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
 
+    if (!enabled) return;
+
+    const serializedValue = serializeValue(value);
+    if (serializedValue === lastSavedValueRef.current) return;
+
+    latestRef.current.onSchedule?.();
     timeoutRef.current = scheduleTimeout(() => {
-      try {
-        onWrite(value);
-        lastSavedSerializedRef.current = serializedValue;
-      } catch (error) {
-        onError?.(error);
-      } finally {
-        timeoutRef.current = null;
-      }
+      flushPendingWrite();
     }, delayMs);
 
     return () => {
@@ -125,19 +90,19 @@ export function useDebouncedPersistence({
         timeoutRef.current = null;
       }
     };
-  }, [delayMs, enabled, onError, onSchedule, onWrite, value]);
+  }, [delayMs, enabled, flushPendingWrite, value]);
 
-  const markValueSaved = (savedValue) => {
-    lastSavedSerializedRef.current = serializeValue(savedValue);
-  };
+  const markValueSaved = useCallback((savedValue) => {
+    lastSavedValueRef.current = serializeValue(savedValue);
+  }, []);
 
-  const resetSavedValue = () => {
+  const resetSavedValue = useCallback(() => {
     if (timeoutRef.current) {
       clearScheduledTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    lastSavedSerializedRef.current = null;
-  };
+    lastSavedValueRef.current = null;
+  }, []);
 
   return {
     markValueSaved,

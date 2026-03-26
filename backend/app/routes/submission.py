@@ -40,15 +40,15 @@ from app.constants.submission_constants import (
 )
 from app.utils.observability import log_event
 from app.constants.request_keys import (
-    REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_MS,
-    REQUEST_KEY_AVG_PAUSE_DURATION_MS,
+    REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_SECONDS,
+    REQUEST_KEY_AVG_PAUSE_DURATION_SECONDS,
     REQUEST_KEY_BACKSPACE_COUNT,
     REQUEST_KEY_CONFIDENCE_SCORE,
     REQUEST_KEY_DESCRIPTION,
     REQUEST_KEY_DIFFICULTY_SELF_REPORT,
     REQUEST_KEY_EDIT_COUNT,
     REQUEST_KEY_FEEDBACK,
-    REQUEST_KEY_FIRST_VIEW_DURATION_MS,
+    REQUEST_KEY_FIRST_VIEW_DURATION_SECONDS,
     REQUEST_KEY_IDEMPOTENCY_KEY,
     REQUEST_KEY_IMAGE_ID,
     REQUEST_KEY_KEYSTROKE_VARIANCE,
@@ -65,12 +65,12 @@ from app.constants.request_keys import (
     REQUEST_KEY_SURVEY_PAGE_CLOSE_ATTEMPTS,
     REQUEST_KEY_SURVEY_PAGE_VIEWS,
     REQUEST_KEY_SURVEY_TAB_SWITCHES,
-    REQUEST_KEY_SURVEY_TIME_SPENT_MS,
+    REQUEST_KEY_SURVEY_TIME_SPENT_SECONDS,
     REQUEST_KEY_TAB_SWITCH_COUNT,
-    REQUEST_KEY_TIME_BEFORE_TYPING_MS,
+    REQUEST_KEY_TIME_BEFORE_TYPING_SECONDS,
     REQUEST_KEY_TIME_SPENT_SECONDS,
     REQUEST_KEY_TURNSTILE_TOKEN,
-    REQUEST_KEY_WRITING_DURATION_MS,
+    REQUEST_KEY_WRITING_DURATION_SECONDS,
 )
 from app.constants.route_constants import SUBMIT_ROUTE
 from app.constants.observability_constants import (
@@ -99,6 +99,7 @@ from app.services import (
     clamp_time_spent_seconds,
     normalize_engagement_counts,
     dynamic_too_fast_threshold as compute_dynamic_too_fast_threshold,
+    end_participant_session,
     enqueue_submit_post_commit_tasks,
     ensure_participant_session,
     extract_objects,
@@ -241,18 +242,18 @@ def submit():
         REQUEST_KEY_NETWORK_DISCONNECTS: d.get(REQUEST_KEY_NETWORK_DISCONNECTS),
         REQUEST_KEY_CONFIDENCE_SCORE: d.get(REQUEST_KEY_CONFIDENCE_SCORE),
         REQUEST_KEY_DIFFICULTY_SELF_REPORT: d.get(REQUEST_KEY_DIFFICULTY_SELF_REPORT),
-        REQUEST_KEY_TIME_BEFORE_TYPING_MS: d.get(REQUEST_KEY_TIME_BEFORE_TYPING_MS),
+        REQUEST_KEY_TIME_BEFORE_TYPING_SECONDS: d.get(REQUEST_KEY_TIME_BEFORE_TYPING_SECONDS),
         REQUEST_KEY_EDIT_COUNT: d.get(REQUEST_KEY_EDIT_COUNT),
         REQUEST_KEY_BACKSPACE_COUNT: d.get(REQUEST_KEY_BACKSPACE_COUNT),
-        REQUEST_KEY_FIRST_VIEW_DURATION_MS: d.get(REQUEST_KEY_FIRST_VIEW_DURATION_MS),
-        REQUEST_KEY_WRITING_DURATION_MS: d.get(REQUEST_KEY_WRITING_DURATION_MS),
-        REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_MS: d.get(REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_MS),
+        REQUEST_KEY_FIRST_VIEW_DURATION_SECONDS: d.get(REQUEST_KEY_FIRST_VIEW_DURATION_SECONDS),
+        REQUEST_KEY_WRITING_DURATION_SECONDS: d.get(REQUEST_KEY_WRITING_DURATION_SECONDS),
+        REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_SECONDS: d.get(REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_SECONDS),
         REQUEST_KEY_KEYSTROKE_VARIANCE: d.get(REQUEST_KEY_KEYSTROKE_VARIANCE),
         REQUEST_KEY_PAUSE_COUNT: d.get(REQUEST_KEY_PAUSE_COUNT),
-        REQUEST_KEY_AVG_PAUSE_DURATION_MS: d.get(REQUEST_KEY_AVG_PAUSE_DURATION_MS),
+        REQUEST_KEY_AVG_PAUSE_DURATION_SECONDS: d.get(REQUEST_KEY_AVG_PAUSE_DURATION_SECONDS),
     })
     survey_metrics = extract_survey_metrics({
-        REQUEST_KEY_SURVEY_TIME_SPENT_MS: d.get(REQUEST_KEY_SURVEY_TIME_SPENT_MS),
+        REQUEST_KEY_SURVEY_TIME_SPENT_SECONDS: d.get(REQUEST_KEY_SURVEY_TIME_SPENT_SECONDS),
         REQUEST_KEY_SURVEY_PAGE_VIEWS: d.get(REQUEST_KEY_SURVEY_PAGE_VIEWS),
         REQUEST_KEY_SURVEY_TAB_SWITCHES: d.get(REQUEST_KEY_SURVEY_TAB_SWITCHES),
         REQUEST_KEY_SURVEY_PAGE_CLOSE_ATTEMPTS: d.get(REQUEST_KEY_SURVEY_PAGE_CLOSE_ATTEMPTS),
@@ -346,7 +347,7 @@ def submit():
         if not img_row:
             return create_error_response("VAL_INVALID_IMAGE_ID")
         image_id_fk = img_row[0]
-        is_survey = bool(img_row[1])
+        is_survey_image = bool(img_row[1])
 
         lock_submission_participant(db, participant_id)
         submission_stats_row = db.execute(
@@ -375,17 +376,16 @@ def submit():
                 },
             )
 
-        if is_survey:
-            survey_index = fetch_next_survey_index(db, participant_id)
-        else:
-            survey_index = None
-
-            if has_duplicate_non_survey_submission(db, participant_id=participant_id, image_id_fk=image_id_fk):
-                return create_error_response("DUP_SUBMISSION")
+        survey_index = fetch_next_survey_index(db, participant_id) if is_survey_image else None
 
         ac_row = fetch_attention_check(db, image_id_fk)
 
         is_attention = ac_row is not None
+        is_survey = bool(is_survey_image and not is_attention)
+        if not is_survey:
+            survey_index = None
+            if has_duplicate_non_survey_submission(db, participant_id=participant_id, image_id_fk=image_id_fk):
+                return create_error_response("DUP_SUBMISSION")
         submitted_step = STEP_ATTENTION if is_attention else STEP_SURVEY
         expected_step = expected_step_for_submission_count(sequence_order, total_submissions)
         if expected_step is not None and submitted_step != expected_step:
@@ -541,6 +541,11 @@ def submit():
                 db,
                 participant_id=participant_id,
                 stage=PARTICIPANT_STAGE_POST_SURVEY,
+            )
+            end_participant_session(
+                db,
+                participant_id=participant_id,
+                participant_session_id=participant_session_id,
             )
             current_stage = PARTICIPANT_STAGE_POST_SURVEY
             stage_updated_at = datetime.now(timezone.utc)
