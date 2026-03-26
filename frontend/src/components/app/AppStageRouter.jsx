@@ -1,7 +1,7 @@
 import React from "react";
 import PageSkeleton from "../PageSkeleton.jsx";
 import { uiText } from "../../utils/uiText.js";
-import { telemetryPageView } from "../../utils/clientTelemetry.js";
+import { resetSurveyTelemetry, telemetryPageView } from "../../utils/clientTelemetry.js";
 import { normalizeAppStage } from "../../config/appFlow.js";
 
 const loadConsentPage = () => import("../../pages/ConsentPage.jsx");
@@ -155,6 +155,16 @@ function AppStageRouter({
     if (normalizedStage === "post-survey") return "post-survey";
     return "consent";
   }, [normalizedStage]);
+
+  const previousPageNameRef = React.useRef(activePageName);
+
+  React.useEffect(() => {
+    const previousPageName = previousPageNameRef.current;
+    if (activePageName === "survey" && previousPageName !== "survey") {
+      resetSurveyTelemetry("survey");
+    }
+    previousPageNameRef.current = activePageName;
+  }, [activePageName]);
 
   React.useEffect(() => {
     telemetryPageView(activePageName);

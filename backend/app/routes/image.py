@@ -61,9 +61,9 @@ def random_image():
                         p.extra_metadata,
                         p.stage,
                         COUNT(s.id) AS total_submissions
-                    FROM participants
+                    FROM participants p
                     LEFT JOIN submissions s ON s.participant_id = p.id
-                    WHERE public_id = :pub AND is_deleted = false
+                    WHERE p.public_id = :pub AND p.is_deleted = false
                     GROUP BY p.id, p.extra_metadata, p.stage
                     """
                 ),
