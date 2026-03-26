@@ -107,7 +107,7 @@ def random_image():
         )
 
         if not row:
-            return create_error_response("NF_NO_IMAGES_AVAILABLE") if should_prioritize_attention else create_error_response("SYS_RANDOM_IMAGE_FALLBACK_FAILED")
+            return create_error_response("NF_NO_IMAGES_AVAILABLE")
 
         return success_response({
             "image_id": row[0],

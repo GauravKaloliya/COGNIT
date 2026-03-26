@@ -100,23 +100,17 @@ def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
 
 def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int):
     cleanup_stale_reservations(db)
-    attention_pool, non_attention_pool, all_pool = load_image_pool(db)
+    attention_pool, non_attention_pool, _all_pool = load_image_pool(db)
     row: ImagePoolItem | None = None
-    attempt_limit = max(3, min(10, len(all_pool) or 3))
+    target_pool = attention_pool if should_prioritize_attention else non_attention_pool
+    target_attempts = IMAGE_PICK_ATTEMPTS_ATTENTION if should_prioritize_attention else IMAGE_PICK_ATTEMPTS_NON_ATTENTION
+    attempt_limit = max(3, min(10, len(target_pool) or 3))
     for _ in range(attempt_limit):
-        if should_prioritize_attention:
-            row = pick_from_pool(
-                attention_pool,
-                excluded_set,
-                IMAGE_PICK_ATTEMPTS_ATTENTION,
-            )
-
-        if not row:
-            row = pick_from_pool(
-                non_attention_pool,
-                excluded_set,
-                IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
-            )
+        row = pick_from_pool(
+            target_pool,
+            excluded_set,
+            target_attempts,
+        )
 
         if not row:
             break
