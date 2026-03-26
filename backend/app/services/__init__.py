@@ -23,6 +23,7 @@ from .submission_service import (
     compute_alignment,
 )
 from .submission_query_service import (
+    end_participant_session,
     ensure_participant_session,
     fetch_attention_check,
     fetch_participant_attention_stats,
@@ -34,6 +35,7 @@ from .submission_query_service import (
     insert_attention_event_record,
     insert_submission_record,
     lock_submission_participant,
+    release_all_participant_reservations,
     release_image_reservation,
     update_participant_attention_flag,
     update_participant_metadata,
@@ -97,6 +99,7 @@ __all__ = [
     "normalize_objects",
     "normalize_for_attention",
     "compute_alignment",
+    "end_participant_session",
     "fetch_attention_check",
     "ensure_participant_session",
     "fetch_participant_attention_stats",
@@ -108,6 +111,7 @@ __all__ = [
     "insert_attention_event_record",
     "insert_submission_record",
     "lock_submission_participant",
+    "release_all_participant_reservations",
     "release_image_reservation",
     "update_participant_attention_flag",
     "update_participant_metadata",

@@ -1,13 +1,14 @@
 import { getApiUrl } from "./apiBase";
 
 export function buildSurveyImageState(survey) {
+  const resolvedImageId = survey?.image_id || survey?.imageId || null;
   const resolvedImageUrl = survey?.url || survey?.image_url || survey?.imageUrl || "";
   const imageSrc = resolvedImageUrl
     ? (resolvedImageUrl.startsWith("http") ? resolvedImageUrl : getApiUrl(resolvedImageUrl))
     : "";
   return {
     imageSrc,
-    hasUsableSurveyImage: Boolean(survey?.image_id && imageSrc),
+    hasUsableSurveyImage: Boolean(resolvedImageId && imageSrc),
   };
 }
 

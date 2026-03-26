@@ -9,11 +9,11 @@ function nowMs() {
 }
 
 function defaultState() {
-  const now = nowMs();
+  const now = nowMs() / runtimeConfig.msPerSecond;
   return {
-    session_started_at_ms: now,
+    session_started_at_seconds: now,
     current_page: "unknown",
-    current_page_entered_at_ms: now,
+    current_page_entered_at_seconds: now,
     page_views: 0,
     tab_switches: 0,
     page_close_attempts: 0,
@@ -28,8 +28,8 @@ function defaultState() {
     survey_max_scroll_depth_pct: 0,
     survey_clicks: 0,
     survey_keypresses: 0,
-    survey_time_spent_ms: 0,
-    page_time_spent_ms_by_page: {},
+    survey_time_spent_seconds: 0,
+    page_time_spent_seconds_by_page: {},
   };
 }
 
@@ -39,7 +39,25 @@ function loadState() {
     ttlMs: TELEMETRY_TTL_MS,
   });
   if (!parsed || typeof parsed !== "object") return defaultState();
-  return { ...defaultState(), ...parsed };
+  const migrated = { ...parsed };
+  if (!Number.isFinite(migrated.session_started_at_seconds) && Number.isFinite(migrated.session_started_at_ms)) {
+    migrated.session_started_at_seconds = migrated.session_started_at_ms / runtimeConfig.msPerSecond;
+  }
+  if (!Number.isFinite(migrated.current_page_entered_at_seconds) && Number.isFinite(migrated.current_page_entered_at_ms)) {
+    migrated.current_page_entered_at_seconds = migrated.current_page_entered_at_ms / runtimeConfig.msPerSecond;
+  }
+  if (!Number.isFinite(migrated.survey_time_spent_seconds) && Number.isFinite(migrated.survey_time_spent_ms)) {
+    migrated.survey_time_spent_seconds = migrated.survey_time_spent_ms / runtimeConfig.msPerSecond;
+  }
+  if (!migrated.page_time_spent_seconds_by_page && migrated.page_time_spent_ms_by_page && typeof migrated.page_time_spent_ms_by_page === "object") {
+    migrated.page_time_spent_seconds_by_page = Object.fromEntries(
+      Object.entries(migrated.page_time_spent_ms_by_page).map(([page, value]) => [
+        page,
+        Math.max(0, Number(value || 0) / runtimeConfig.msPerSecond),
+      ])
+    );
+  }
+  return { ...defaultState(), ...migrated };
 }
 
 function saveState(state) {
@@ -57,19 +75,19 @@ function isSurveyPage(pageName) {
 }
 
 function _rollCurrentPageDuration() {
-  const now = nowMs();
+  const now = nowMs() / runtimeConfig.msPerSecond;
   const page = String(telemetryState.current_page || "unknown");
-  const entered = Number(telemetryState.current_page_entered_at_ms || now);
+  const entered = Number(telemetryState.current_page_entered_at_seconds || now);
   const delta = Math.max(0, now - entered);
-  const prev = Number(telemetryState.page_time_spent_ms_by_page?.[page] || 0);
-  telemetryState.page_time_spent_ms_by_page = {
-    ...(telemetryState.page_time_spent_ms_by_page || {}),
+  const prev = Number(telemetryState.page_time_spent_seconds_by_page?.[page] || 0);
+  telemetryState.page_time_spent_seconds_by_page = {
+    ...(telemetryState.page_time_spent_seconds_by_page || {}),
     [page]: prev + delta,
   };
   if (isSurveyPage(page)) {
-    telemetryState.survey_time_spent_ms = Number(telemetryState.survey_time_spent_ms || 0) + delta;
+    telemetryState.survey_time_spent_seconds = Number(telemetryState.survey_time_spent_seconds || 0) + delta;
   }
-  telemetryState.current_page_entered_at_ms = now;
+  telemetryState.current_page_entered_at_seconds = now;
 }
 
 export function telemetryPageView(pageName) {
@@ -132,17 +150,28 @@ export function telemetryUpdateScrollDepth() {
 }
 
 export function getTelemetrySnapshot(pageNameOverride) {
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    telemetryUpdateScrollDepth();
+  }
   _rollCurrentPageDuration();
-  const now = nowMs();
+  const now = nowMs() / runtimeConfig.msPerSecond;
   const currentPage = String(pageNameOverride || telemetryState.current_page || "unknown");
-  const totalSiteTime = Math.max(0, now - Number(telemetryState.session_started_at_ms || now));
-  const perPage = telemetryState.page_time_spent_ms_by_page || {};
+  const totalSiteTime = Math.max(0, now - Number(telemetryState.session_started_at_seconds || now));
+  const perPage = telemetryState.page_time_spent_seconds_by_page || {};
   const currentPageTime = Number(perPage[currentPage] || 0);
+  const surveyPageViews = Math.max(
+    isSurveyPage(currentPage) ? 1 : 0,
+    Number(telemetryState.survey_page_views || 0)
+  );
+  const surveyTimeSpentSeconds = Math.max(
+    isSurveyPage(currentPage) ? currentPageTime : 0,
+    Number(telemetryState.survey_time_spent_seconds || 0)
+  );
 
   return {
     current_page: currentPage,
-    current_page_time_spent_ms: currentPageTime,
-    total_site_time_spent_ms: totalSiteTime,
+    current_page_time_spent_seconds: currentPageTime,
+    total_site_time_spent_seconds: totalSiteTime,
     total_page_views: Number(telemetryState.page_views || 0),
     total_tab_switches: Number(telemetryState.tab_switches || 0),
     total_page_close_attempts: Number(telemetryState.page_close_attempts || 0),
@@ -150,8 +179,8 @@ export function getTelemetrySnapshot(pageNameOverride) {
     max_scroll_depth_pct: Number(telemetryState.max_scroll_depth_pct || 0),
     total_clicks: Number(telemetryState.clicks || 0),
     total_keypresses: Number(telemetryState.keypresses || 0),
-    survey_time_spent_ms: Number(telemetryState.survey_time_spent_ms || 0),
-    survey_page_views: Number(telemetryState.survey_page_views || 0),
+    survey_time_spent_seconds: surveyTimeSpentSeconds,
+    survey_page_views: surveyPageViews,
     survey_tab_switches: Number(telemetryState.survey_tab_switches || 0),
     survey_page_close_attempts: Number(telemetryState.survey_page_close_attempts || 0),
     survey_network_disconnects: Number(telemetryState.survey_network_disconnects || 0),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { getDisplayErrorMessage } from "../utils/appError.js";
@@ -8,7 +8,13 @@ import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { APP_FLOW, normalizeAppStage } from "../config/appFlow";
-import { readCoreValue, validateStageTransition } from "../utils/appControllerState";
+import {
+  deriveMaxAllowedStage,
+  isDemographicsComplete,
+  readCoreValue,
+  writeCoreValue,
+  validateStageTransition,
+} from "../utils/appControllerState";
 import { useToastState } from "./useToastState";
 import { useActiveTabOwnership } from "./useActiveTabOwnership";
 import { useWorkflowCoreState } from "./useWorkflowCoreState";
@@ -16,7 +22,17 @@ import { useWorkflowPersistence } from "./useWorkflowPersistence";
 import { clearAllSurveyDraftsForUser } from "../utils/surveyDraft";
 import { SURVEY_API_FIELDS } from "../constants/fields";
 
-function rethrowWithMetadata(error, fallbackCode, fallbackMessage) {
+const EMPTY_DEMOGRAPHICS = {
+  username: "",
+  email: "",
+  gender_code: "",
+  age: "",
+  location: "",
+  language_code: "",
+  prior_experience: "",
+};
+
+function wrapControllerError(error, fallbackCode, fallbackMessage) {
   const message = getDisplayErrorMessage(error, fallbackCode) || fallbackMessage || getErrorMessage(fallbackCode);
   const wrappedError = new Error(message);
   wrappedError.code = error?.code || fallbackCode;
@@ -32,13 +48,34 @@ function rethrowWithMetadata(error, fallbackCode, fallbackMessage) {
   throw wrappedError;
 }
 
+function normalizeSurvey(value) {
+  if (!value || typeof value !== "object") return null;
+  const imageId = String(value[SURVEY_API_FIELDS.imageId] || value.image_id || value.imageId || "").trim();
+  const imageUrl = String(
+    value[SURVEY_API_FIELDS.url] || value[SURVEY_API_FIELDS.imageUrl] || value.image_url || value.imageUrl || ""
+  ).trim();
+  if (!imageId || !imageUrl) return null;
+  return {
+    ...value,
+    [SURVEY_API_FIELDS.imageId]: imageId,
+    [SURVEY_API_FIELDS.url]: imageUrl,
+  };
+}
+
+function hasUsableSurvey(survey) {
+  return Boolean(
+    survey?.[SURVEY_API_FIELDS.imageId]
+    && String(survey?.[SURVEY_API_FIELDS.url] || survey?.url || survey?.image_url || survey?.imageUrl || "").trim()
+  );
+}
+
 export function useAppController() {
   const isOnline = useOnlineStatus();
   const { toasts, addToast, dismissToast } = useToastState();
   const { isActiveTabOwner, claimActiveTabLock } = useActiveTabOwnership();
-  const submitFlowAbortRef = useRef(null);
+  const submitAbortRef = useRef(null);
+  const createParticipantPromiseRef = useRef(null);
 
-  const workflow = useWorkflowCoreState({ addToast });
   const {
     publicId,
     setPublicId,
@@ -56,11 +93,11 @@ export function useAppController() {
     setEmailVerified,
     sessionHydrated,
     setSessionHydrated,
-    frontendSessionExpired,
     demographics,
     setDemographics,
     clearUserStorage,
-  } = workflow;
+  } = useWorkflowCoreState({ addToast });
+
   const storageScope = String(publicId || preAuthId || "").trim();
 
   const surveyFlow = useSurveyFlow({
@@ -104,149 +141,152 @@ export function useAppController() {
     sessionId,
     setSessionId,
     stage,
-    setStage,
     consentGiven,
-    setConsentGiven,
     userDetailsSubmitted,
-    setUserDetailsSubmitted,
     emailVerified,
-    setEmailVerified,
     sessionHydrated,
     setSessionHydrated,
-    frontendSessionExpired,
     demographics,
-    setDemographics,
     isOnline,
     survey,
-    setSurvey,
     surveyCompleted,
-    setSurveyCompleted,
     surveyFeedbackReady,
-    setSurveyFeedbackReady,
     lastSubmissionSucceeded,
-    setLastSubmissionSucceeded,
     shownImages,
-    setShownImages,
   });
 
-  const systemHealth = useSystemHealth({
+  const { systemReady, systemError, systemChecking, retryHealthCheck } = useSystemHealth({
     isActiveTabOwner,
   });
 
-  const { systemReady, systemError, systemChecking, retryHealthCheck } = systemHealth;
+  const effectiveStage = useMemo(() => deriveMaxAllowedStage({
+    currentStage: stage,
+    consentGiven,
+    hasParticipant: Boolean(publicId),
+    userDetailsSubmitted,
+    demographicsComplete: isDemographicsComplete(demographics),
+    emailVerified,
+    hasSurveyInProgress: hasUsableSurvey(survey),
+    surveyCompleted,
+    surveyFeedbackReady,
+    lastSubmissionSucceeded,
+  }), [
+    consentGiven,
+    demographics,
+    emailVerified,
+    lastSubmissionSucceeded,
+    publicId,
+    stage,
+    survey,
+    surveyCompleted,
+    surveyFeedbackReady,
+    userDetailsSubmitted,
+  ]);
 
-  const normalizeStoredSurvey = useCallback((value) => {
-    if (!value || typeof value !== "object") return null;
-    const imageId = value[SURVEY_API_FIELDS.imageId] || value.imageId || null;
-    const imageUrl = value[SURVEY_API_FIELDS.url] || value[SURVEY_API_FIELDS.imageUrl] || value.imageUrl || "";
-    if (!imageId || !String(imageUrl).trim()) return null;
-    return {
-      ...value,
-      [SURVEY_API_FIELDS.imageId]: imageId,
-      [SURVEY_API_FIELDS.url]: imageUrl,
-    };
-  }, []);
+  useEffect(() => {
+    if (!sessionHydrated || stage === effectiveStage) return;
+    setStage(effectiveStage);
+  }, [effectiveStage, sessionHydrated, setStage, stage]);
 
   useEffect(() => () => {
     cancelInFlightRequests?.();
-    if (submitFlowAbortRef.current) submitFlowAbortRef.current.abort();
+    if (submitAbortRef.current) {
+      submitAbortRef.current.abort();
+    }
   }, [cancelInFlightRequests]);
 
   useEffect(() => {
-    if (stage !== APP_FLOW.stages.survey || !systemReady || surveyFeedbackReady) return;
-    if (!sessionHydrated) return;
-    const restoredImageUrl = survey?.url || survey?.image_url || survey?.imageUrl || "";
-    if (!survey || !survey.image_id || !String(restoredImageUrl).trim()) {
-      if (!publicId) return;
-      // Refresh guard: prefer restoring scoped survey from local storage before
-      // requesting a new image from the backend.
-      const storedSurvey = normalizeStoredSurvey(
-        readCoreValue(runtimeConfig.storageKeys.survey, null, publicId)
-      );
-      if (storedSurvey) {
-        setSurvey((prev) => {
-          const prevImageId = prev?.[SURVEY_API_FIELDS.imageId] || prev?.image_id;
-          const prevImageUrl = prev?.[SURVEY_API_FIELDS.url] || prev?.url || prev?.image_url || prev?.imageUrl;
-          if (prevImageId && String(prevImageUrl || "").trim()) return prev;
-          return storedSurvey;
-        });
-        return;
-      }
-      fetchImage({ clearCurrent: false });
+    if (!sessionHydrated || !systemReady || surveyFeedbackReady || effectiveStage !== APP_FLOW.stages.survey) return;
+    if (hasUsableSurvey(survey) || !publicId) return;
+    const storedSurvey = normalizeSurvey(readCoreValue(runtimeConfig.storageKeys.survey, null, publicId));
+    if (storedSurvey) {
+      setSurvey((prev) => (hasUsableSurvey(prev) ? prev : storedSurvey));
+      return;
     }
-  }, [fetchImage, normalizeStoredSurvey, publicId, sessionHydrated, setSurvey, stage, survey, surveyFeedbackReady, systemReady]);
+    void fetchImage({ clearCurrent: false });
+  }, [effectiveStage, fetchImage, publicId, sessionHydrated, setSurvey, survey, surveyFeedbackReady, systemReady]);
 
   const createParticipant = useCallback(async () => {
-    if (submitFlowAbortRef.current) {
-      submitFlowAbortRef.current.abort();
+    if (userDetailsSubmitted && publicId) {
+      return { public_id: publicId, session_id: sessionId || "" };
     }
-    const controller = new AbortController();
-    submitFlowAbortRef.current = controller;
-    try {
-      const participant = await endpoints.createParticipant({
-        username: demographics.username,
-        email: demographics.email,
-        gender_code: demographics.gender_code,
-        age: parseInt(demographics.age),
-        location: demographics.location,
-        language_code: demographics.language_code,
-        prior_experience: demographics.prior_experience,
-      }, { signal: controller.signal });
-      if (participant?.public_id) setPublicId(participant.public_id);
-      if (participant?.session_id) setSessionId(participant.session_id);
+    if (createParticipantPromiseRef.current) {
+      return createParticipantPromiseRef.current;
+    }
+
+    const participantPromise = endpoints.createParticipant({
+      username: demographics.username,
+      email: demographics.email,
+      gender_code: demographics.gender_code,
+      age: parseInt(demographics.age, 10),
+      location: demographics.location,
+      language_code: demographics.language_code,
+      prior_experience: demographics.prior_experience,
+    }).then((participant) => {
+      const nextPublicId = String(participant?.public_id || "").trim();
+      const nextSessionId = String(participant?.session_id || "").trim();
+      if (nextPublicId) {
+        writeCoreValue(runtimeConfig.storageKeys.demographics, demographics, nextPublicId, {
+          ttlMs: runtimeConfig.piiStateTtlMs,
+        });
+        writeCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, true, nextPublicId);
+        writeCoreValue(runtimeConfig.storageKeys.consentGiven, consentGiven, nextPublicId);
+        writeCoreValue(runtimeConfig.storageKeys.emailVerified, false, nextPublicId);
+        writeCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.userDetails, nextPublicId);
+        if (nextSessionId) {
+          writeCoreValue(runtimeConfig.storageKeys.sessionId, nextSessionId, nextPublicId);
+        }
+        setPublicId(nextPublicId);
+      }
+      if (nextSessionId) setSessionId(nextSessionId);
       setUserDetailsSubmitted(true);
       return participant;
+    });
+
+    createParticipantPromiseRef.current = participantPromise;
+    try {
+      return await participantPromise;
     } catch (error) {
-      if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
-      rethrowWithMetadata(error, "SYS_002_0022");
+      wrapControllerError(error, "SYS_002_0022");
     } finally {
-      if (submitFlowAbortRef.current === controller) {
-        submitFlowAbortRef.current = null;
+      if (createParticipantPromiseRef.current === participantPromise) {
+        createParticipantPromiseRef.current = null;
       }
     }
-  }, [demographics, setPublicId, setSessionId, setUserDetailsSubmitted]);
+  }, [
+    consentGiven,
+    demographics,
+    publicId,
+    sessionId,
+    setPublicId,
+    setSessionId,
+    setUserDetailsSubmitted,
+    userDetailsSubmitted,
+  ]);
 
   const recordConsent = useCallback(async (publicIdOverride = null) => {
-    if (submitFlowAbortRef.current) {
-      submitFlowAbortRef.current.abort();
+    if (submitAbortRef.current) {
+      submitAbortRef.current.abort();
     }
     const controller = new AbortController();
-    submitFlowAbortRef.current = controller;
+    submitAbortRef.current = controller;
     try {
       const consentPublicId = publicIdOverride || publicId;
       if (!consentPublicId) {
-        const missingPublicIdError = new Error(getErrorMessage("NF_001_0001"));
-        missingPublicIdError.code = "NF_001_0001";
-        missingPublicIdError.category = "NF";
-        missingPublicIdError.status = 404;
-        missingPublicIdError.retryable = false;
-        missingPublicIdError.action = "redirect";
-        throw missingPublicIdError;
+        const error = new Error(getErrorMessage("NF_001_0001"));
+        error.code = "NF_001_0001";
+        throw error;
       }
       return await endpoints.recordConsent(consentPublicId, { signal: controller.signal });
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
-      rethrowWithMetadata(error, "SYS_002_0002");
+      wrapControllerError(error, "SYS_002_0002");
     } finally {
-      if (submitFlowAbortRef.current === controller) {
-        submitFlowAbortRef.current = null;
+      if (submitAbortRef.current === controller) {
+        submitAbortRef.current = null;
       }
     }
   }, [publicId]);
-
-  const handleUserDetailsSubmit = useCallback(async () => {
-    try {
-      const participant = await createParticipant();
-      const consentPublicId = participant?.public_id || publicId;
-      if (consentGiven) await recordConsent(consentPublicId);
-      setEmailVerified(false);
-      addToast(uiText("user.detailsSaved"), "success");
-      return participant;
-    } catch (err) {
-      addToast(err.message, "error");
-      throw err;
-    }
-  }, [addToast, consentGiven, createParticipant, publicId, recordConsent, setEmailVerified]);
 
   const handleConsentGiven = useCallback(async () => {
     setConsentGiven(true);
@@ -256,6 +296,21 @@ export function useAppController() {
     addToast(uiText("consent.saved"), "success");
   }, [addToast, setConsentGiven, setStage]);
 
+  const handleUserDetailsSubmit = useCallback(async () => {
+    try {
+      const participant = await createParticipant();
+      if (consentGiven) {
+        await recordConsent(participant?.public_id || publicId);
+      }
+      setEmailVerified(false);
+      addToast(uiText("user.detailsSaved"), "success");
+      return participant;
+    } catch (error) {
+      addToast(error.message, "error");
+      throw error;
+    }
+  }, [addToast, consentGiven, createParticipant, publicId, recordConsent, setEmailVerified]);
+
   const handleEmailVerified = useCallback(() => {
     setEmailVerified(true);
     if (validateStageTransition(APP_FLOW.stages.userDetails, APP_FLOW.stages.survey)) {
@@ -263,23 +318,14 @@ export function useAppController() {
     }
   }, [setEmailVerified, setStage]);
 
-  const resetWorkflowToConsent = useCallback((scopeOverride = null) => {
-    const effectiveScope = scopeOverride || publicId;
-    clearUserStorage(effectiveScope);
+  const resetWorkflowToConsent = useCallback((scopeOverride = null, options = {}) => {
+    clearUserStorage(scopeOverride || publicId, options);
     setPublicId("");
     setSessionId("");
     setConsentGiven(false);
     setUserDetailsSubmitted(false);
     setEmailVerified(false);
-    setDemographics({
-      username: "",
-      email: "",
-      gender_code: "",
-      age: "",
-      location: "",
-      language_code: "",
-      prior_experience: "",
-    });
+    setDemographics(EMPTY_DEMOGRAPHICS);
     setSurvey(null);
     setSurveyCompleted(0);
     setSurveyFeedbackReady(false);
@@ -309,37 +355,50 @@ export function useAppController() {
 
   const handleSubmit = useCallback(async (formData) => {
     const result = await submitSurvey(formData);
-    const backendStage = result?.workflow_status?.stage;
-    if (backendStage) {
-      const normalizedStage = normalizeAppStage(backendStage);
-      if (validateStageTransition(stage, normalizedStage)) {
-        setStage(normalizedStage);
-      }
-      if (normalizedStage === APP_FLOW.stages.postSurvey) {
-        return result;
-      }
-    }
-    const requiredSubmissions = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
-    const nextCompleted = Number(surveyCompleted || 0) + 1;
-    if (nextCompleted >= requiredSubmissions) {
-      if (validateStageTransition(APP_FLOW.stages.survey, APP_FLOW.stages.postSurvey)) {
-        setStage(APP_FLOW.stages.postSurvey);
-      }
+    const backendStage = normalizeAppStage(result?.workflow_status?.stage);
+
+    if (backendStage === APP_FLOW.stages.postSurvey) {
+      setStage(APP_FLOW.stages.postSurvey);
       return result;
     }
 
+    const nextCompleted = Number(surveyCompleted || 0) + 1;
+    const requiredSubmissions = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
+    if (nextCompleted >= requiredSubmissions) {
+      setStage(APP_FLOW.stages.postSurvey);
+      return result;
+    }
+
+    if (backendStage && validateStageTransition(stage, backendStage)) {
+      setStage(backendStage);
+    }
+
     clearAllSurveyDraftsForUser(publicId);
+    setSurvey(null);
     setSurveyFeedbackReady(false);
+    setLastSubmissionSucceeded(false);
     await fetchImage({ clearCurrent: true, throwOnError: true });
     return result;
-  }, [fetchImage, publicId, setStage, setSurveyFeedbackReady, stage, submitSurvey, surveyCompleted]);
+  }, [
+    fetchImage,
+    publicId,
+    setLastSubmissionSucceeded,
+    setStage,
+    setSurvey,
+    setSurveyFeedbackReady,
+    stage,
+    submitSurvey,
+    surveyCompleted,
+  ]);
 
-  const handleAppError = useCallback(() => addToast(getErrorMessage("SYS_002_0017"), "error"), [addToast]);
+  const handleAppError = useCallback(() => {
+    addToast(getErrorMessage("SYS_002_0017"), "error");
+  }, [addToast]);
 
   return {
     isOnline,
     isActiveTabOwner,
-    stage,
+    stage: effectiveStage,
     publicId,
     preAuthId,
     storageScope,
@@ -349,6 +408,7 @@ export function useAppController() {
     setDemographics,
     setStage,
     consentGiven,
+    userDetailsSubmitted,
     emailVerified,
     toasts,
     addToast,

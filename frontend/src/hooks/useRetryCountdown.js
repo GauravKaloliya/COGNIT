@@ -5,15 +5,16 @@ export function useRetryCountdown(active, initialSeconds) {
   const [secondsLeft, setSecondsLeft] = useState(0);
 
   useEffect(() => {
-    if (!active || !initialSeconds || initialSeconds <= 0) {
+    const duration = Math.max(0, Number(initialSeconds) || 0);
+    if (!active || duration === 0) {
       setSecondsLeft(0);
       return undefined;
     }
-    setSecondsLeft(initialSeconds);
-    const interval = scheduleInterval(() => {
+    setSecondsLeft(duration);
+    const intervalId = scheduleInterval(() => {
       setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
     }, SECOND_MS);
-    return () => clearScheduledInterval(interval);
+    return () => clearScheduledInterval(intervalId);
   }, [active, initialSeconds]);
 
   return secondsLeft;

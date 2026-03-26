@@ -121,7 +121,14 @@ def enqueue_durable_event(
 
 def _process_event(event_type: str, payload: dict[str, Any]) -> None:
     # Keep processing side effects lightweight and deterministic.
-    log_event(logger, event_type, level=logging.INFO, **(payload or {}))
+    safe_payload = dict(payload or {})
+    level = safe_payload.pop("level", logging.INFO)
+    try:
+        if isinstance(level, str):
+            level = getattr(logging, level.strip().upper(), logging.INFO)
+    except Exception:
+        level = logging.INFO
+    log_event(logger, event_type, level=level, **safe_payload)
 
 
 def _run_worker() -> None:

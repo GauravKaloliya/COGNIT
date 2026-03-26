@@ -63,6 +63,14 @@ def safe_non_negative_int(value, default: int = 0) -> int:
         return default
 
 
+def safe_non_negative_float(value, default: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+        return parsed if parsed >= 0 else default
+    except Exception:
+        return default
+
+
 def clamp_time_spent_seconds(value) -> float:
     if value is None:
         return 0.0
@@ -160,7 +168,10 @@ def alphabetic_tokens(text: str):
 def extract_survey_metrics(payload):
     metrics = payload if isinstance(payload, dict) else {}
     return {
-        "survey_time_spent_ms": safe_non_negative_int(metrics.get("survey_time_spent_ms"), 0),
+        "survey_time_spent_seconds": safe_non_negative_float(
+            metrics.get("survey_time_spent_seconds"),
+            safe_non_negative_float(metrics.get("survey_time_spent_ms"), 0.0) / 1000.0,
+        ),
         "survey_page_views": safe_non_negative_int(metrics.get("survey_page_views"), 0),
         "survey_tab_switches": safe_non_negative_int(metrics.get("survey_tab_switches"), 0),
         "survey_page_close_attempts": safe_non_negative_int(metrics.get("survey_page_close_attempts"), 0),
@@ -288,18 +299,39 @@ def extract_submission_phase_metrics(payload: dict[str, Any], *, description: st
         "difficulty_self_report": difficulty_self_report,
         "object_mentions": alignment_mentions["object_mentions"],
         "spatial_mentions": alignment_mentions["spatial_mentions"],
-        "first_view_duration_ms": safe_non_negative_int(metrics.get("first_view_duration_ms"), 0),
-        "writing_duration_ms": safe_non_negative_int(metrics.get("writing_duration_ms"), 0),
+        "first_view_duration_seconds": safe_non_negative_float(
+            metrics.get("first_view_duration_seconds"),
+            safe_non_negative_float(metrics.get("first_view_duration_ms"), 0.0) / 1000.0,
+        ),
+        "writing_duration_seconds": safe_non_negative_float(
+            metrics.get("writing_duration_seconds"),
+            safe_non_negative_float(metrics.get("writing_duration_ms"), 0.0) / 1000.0,
+        ),
     }
 
     behavior_metrics = {
-        "time_before_typing_ms": safe_non_negative_int(metrics.get("time_before_typing_ms"), 0),
+        "time_before_typing_seconds": safe_non_negative_float(
+            metrics.get("time_before_typing_seconds"),
+            safe_non_negative_float(metrics.get("time_before_typing_ms"), 0.0) / 1000.0,
+        ),
         "edit_count": safe_non_negative_int(metrics.get("edit_count"), 0),
         "backspace_count": safe_non_negative_int(metrics.get("backspace_count"), 0),
-        "avg_keystroke_interval_ms": _safe_optional_float(metrics.get("avg_keystroke_interval_ms")),
+        "avg_keystroke_interval_seconds": _safe_optional_float(metrics.get("avg_keystroke_interval_seconds"))
+        if metrics.get("avg_keystroke_interval_seconds") is not None
+        else (
+            _safe_optional_float(metrics.get("avg_keystroke_interval_ms")) / 1000.0
+            if _safe_optional_float(metrics.get("avg_keystroke_interval_ms")) is not None
+            else None
+        ),
         "keystroke_variance": _safe_optional_float(metrics.get("keystroke_variance")),
         "pause_count": safe_non_negative_int(metrics.get("pause_count"), 0),
-        "avg_pause_duration_ms": _safe_optional_float(metrics.get("avg_pause_duration_ms")),
+        "avg_pause_duration_seconds": _safe_optional_float(metrics.get("avg_pause_duration_seconds"))
+        if metrics.get("avg_pause_duration_seconds") is not None
+        else (
+            _safe_optional_float(metrics.get("avg_pause_duration_ms")) / 1000.0
+            if _safe_optional_float(metrics.get("avg_pause_duration_ms")) is not None
+            else None
+        ),
     }
     return {
         "phase_metrics": phase_metrics,

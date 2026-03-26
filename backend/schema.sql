@@ -429,7 +429,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     tab_switch_count    INTEGER NOT NULL DEFAULT 0 CHECK (tab_switch_count >= 0),
     page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (page_close_attempts >= 0),
     network_disconnects INTEGER NOT NULL DEFAULT 0 CHECK (network_disconnects >= 0),
-    survey_time_spent_ms BIGINT NOT NULL DEFAULT 0 CHECK (survey_time_spent_ms >= 0),
+    survey_time_spent_seconds REAL NOT NULL DEFAULT 0 CHECK (survey_time_spent_seconds >= 0),
     survey_page_views INTEGER NOT NULL DEFAULT 0 CHECK (survey_page_views >= 0),
     survey_tab_switches INTEGER NOT NULL DEFAULT 0 CHECK (survey_tab_switches >= 0),
     survey_page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (survey_page_close_attempts >= 0),
@@ -444,7 +444,7 @@ CREATE TABLE IF NOT EXISTS submissions (
         REFERENCES participant_sessions(id, participant_id),
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
     CONSTRAINT chk_attention_passed_consistent CHECK (NOT (is_attention_check = true AND attention_passed IS NULL)),
-    CONSTRAINT chk_survey_fields_symmetric CHECK ((survey_index IS NULL) = (is_survey = false))
+    CONSTRAINT chk_submission_sequence_positive CHECK (survey_index IS NULL OR survey_index > 0)
 );
 
 -- Derived stats trigger kept intentionally small and local to submissions.
@@ -465,7 +465,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey
     ON submissions (participant_id, is_survey, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey_index_desc
     ON submissions (participant_id, survey_index DESC)
-    WHERE is_survey = true AND survey_index IS NOT NULL;
+    WHERE survey_index IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_image_non_survey
     ON submissions (participant_id, image_id, created_at DESC) WHERE is_survey = false;
 
@@ -474,13 +474,13 @@ CREATE INDEX IF NOT EXISTS idx_submissions_participant_image_non_survey
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS submission_behavior_metrics (
     submission_id BIGINT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,
-    time_before_typing_ms BIGINT,
+    time_before_typing_seconds REAL,
     edit_count INTEGER,
     backspace_count INTEGER,
-    avg_keystroke_interval_ms REAL,
+    avg_keystroke_interval_seconds REAL,
     keystroke_variance REAL,
     pause_count INTEGER,
-    avg_pause_duration_ms REAL,
+    avg_pause_duration_seconds REAL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_submission_behavior_pause_count
@@ -493,8 +493,8 @@ CREATE TABLE IF NOT EXISTS submission_cognitive_metrics (
     submission_id BIGINT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,
     confidence_score SMALLINT CHECK (confidence_score BETWEEN 1 AND 5),
     difficulty_self_report SMALLINT CHECK (difficulty_self_report BETWEEN 1 AND 5),
-    first_view_duration_ms BIGINT NOT NULL DEFAULT 0 CHECK (first_view_duration_ms >= 0),
-    writing_duration_ms BIGINT NOT NULL DEFAULT 0 CHECK (writing_duration_ms >= 0),
+    first_view_duration_seconds REAL NOT NULL DEFAULT 0 CHECK (first_view_duration_seconds >= 0),
+    writing_duration_seconds REAL NOT NULL DEFAULT 0 CHECK (writing_duration_seconds >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_confidence
@@ -690,11 +690,11 @@ CREATE INDEX IF NOT EXISTS idx_durable_queue_dead
 CREATE TABLE IF NOT EXISTS performance_metrics (
     id                BIGSERIAL PRIMARY KEY,
     endpoint          VARCHAR(120) NOT NULL,
-    response_time_ms  INTEGER NOT NULL CHECK (response_time_ms >= 0),
+    response_time_seconds REAL NOT NULL CHECK (response_time_seconds >= 0),
     status_code       SMALLINT,
     request_size_bytes  INTEGER,
     response_size_bytes INTEGER,
-    slo_target_ms     INTEGER NOT NULL DEFAULT 1200 CHECK (slo_target_ms > 0),
+    slo_target_seconds REAL NOT NULL DEFAULT 1.2 CHECK (slo_target_seconds > 0),
     slo_breached      BOOLEAN NOT NULL DEFAULT FALSE,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -92,12 +92,17 @@ export function deriveMaxAllowedStage({
   userDetailsSubmitted,
   demographicsComplete,
   emailVerified,
+  hasSurveyInProgress = false,
   surveyCompleted,
   surveyFeedbackReady,
   lastSubmissionSucceeded,
 }) {
   const normalizedCurrent = normalizeAppStage(currentStage);
   if (!consentGiven) return APP_FLOW.stages.consent;
+  if (hasSurveyInProgress && hasParticipant && userDetailsSubmitted && emailVerified) {
+    if (surveyFeedbackReady && lastSubmissionSucceeded) return APP_FLOW.stages.postSurvey;
+    return APP_FLOW.stages.survey;
+  }
   if (!hasParticipant || !userDetailsSubmitted || !demographicsComplete) return APP_FLOW.stages.userDetails;
   if (!emailVerified) return APP_FLOW.stages.userDetails;
   if (surveyFeedbackReady && !lastSubmissionSucceeded) return APP_FLOW.stages.survey;

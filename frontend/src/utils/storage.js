@@ -40,7 +40,7 @@ const STORAGE_AREA_POLICY = {
   [runtimeConfig.storageKeys.autoLocationSuccess]: STORAGE_AREAS.session,
   [runtimeConfig.storageKeys.desktopLocationSession]: STORAGE_AREAS.session,
   [runtimeConfig.storageKeys.reverseGeocodeState]: STORAGE_AREAS.session,
-  [runtimeConfig.storageKeys.telemetry]: STORAGE_AREAS.session,
+  [runtimeConfig.storageKeys.telemetry]: STORAGE_AREAS.local,
   [runtimeConfig.storageKeys.clientErrorQueue]: STORAGE_AREAS.session,
   [runtimeConfig.storageKeys.telemetryBlocked]: STORAGE_AREAS.session,
   [runtimeConfig.storageKeys.clearOnClose]: STORAGE_AREAS.session,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { removeStoredKey } from "../utils/storage";
 import { uiText } from "../utils/uiText";
 import { useDebouncedPersistence } from "./useDebouncedPersistence";
@@ -9,6 +9,14 @@ import {
   writeSurveyDraft,
 } from "../utils/surveyDraft";
 
+function safeSerialize(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
 export function useSurveyDraftPersistence({
   publicId,
   surveyImageId,
@@ -16,21 +24,13 @@ export function useSurveyDraftPersistence({
   draftState,
   onRestore,
 }) {
-  const [draftRestored, setDraftRestored] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const draftKey = getSurveyDraftKey(publicId, surveyImageId);
-  const activeDraftKey = getActiveSurveyDraftKey(publicId);
-  const initialDraftStateRef = useRef(null);
+  const draftKey = useMemo(() => getSurveyDraftKey(publicId, surveyImageId), [publicId, surveyImageId]);
+  const activeDraftKey = useMemo(() => getActiveSurveyDraftKey(publicId), [publicId]);
+  const initialDraftRef = useRef("");
   const restoredDraftKeyRef = useRef("");
   const latestDraftStateRef = useRef(draftState);
-
-  const serializeDraftState = (value) => {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return "";
-    }
-  };
+  latestDraftStateRef.current = draftState;
 
   const { markValueSaved, resetSavedValue } = useDebouncedPersistence({
     enabled: Boolean(isOnline && draftKey && surveyImageId),
@@ -38,60 +38,56 @@ export function useSurveyDraftPersistence({
     delayMs: 500,
     onSchedule: () => setSaveError(""),
     onWrite: (nextDraftState) => {
-      writeSurveyDraft(draftKey, nextDraftState);
-      writeSurveyDraft(activeDraftKey, nextDraftState);
+      if (draftKey) writeSurveyDraft(draftKey, nextDraftState);
+      if (activeDraftKey) writeSurveyDraft(activeDraftKey, nextDraftState);
     },
-    onError: () => {
-      setSaveError(uiText("autosave.failed"));
-    },
+    onError: () => setSaveError(uiText("autosave.failed")),
   });
 
-  latestDraftStateRef.current = draftState;
+  const flushDraft = useCallback((nextDraftState = latestDraftStateRef.current) => {
+    if (!draftKey || !surveyImageId || !nextDraftState) return;
+    try {
+      writeSurveyDraft(draftKey, nextDraftState);
+      if (activeDraftKey) writeSurveyDraft(activeDraftKey, nextDraftState);
+      markValueSaved(nextDraftState);
+      setSaveError("");
+    } catch {
+      setSaveError(uiText("autosave.failed"));
+    }
+  }, [activeDraftKey, draftKey, markValueSaved, surveyImageId]);
 
   useEffect(() => {
-    setDraftRestored(false);
-    initialDraftStateRef.current = serializeDraftState(latestDraftStateRef.current);
     restoredDraftKeyRef.current = "";
+    initialDraftRef.current = safeSerialize(latestDraftStateRef.current);
     resetSavedValue();
   }, [draftKey, resetSavedValue, surveyImageId]);
 
   useEffect(() => {
-    if (!surveyImageId) return;
-
-    try {
-      const saved = readSurveyDraft(draftKey) || readSurveyDraft(activeDraftKey);
-      if (!saved) return;
-      if (restoredDraftKeyRef.current === draftKey) return;
-
-      const currentDraftSerialized = serializeDraftState(draftState);
-      if (currentDraftSerialized !== initialDraftStateRef.current) return;
-
-      restoredDraftKeyRef.current = draftKey;
-      setDraftRestored(true);
-      markValueSaved(saved);
-      onRestore?.(saved);
-    } catch {
-      // Ignore malformed draft payload and continue with fresh inputs.
-    }
+    if (!surveyImageId || !draftKey || restoredDraftKeyRef.current === draftKey) return;
+    const savedDraft = readSurveyDraft(draftKey) || readSurveyDraft(activeDraftKey);
+    if (!savedDraft) return;
+    if (safeSerialize(draftState) !== initialDraftRef.current) return;
+    restoredDraftKeyRef.current = draftKey;
+    initialDraftRef.current = safeSerialize(savedDraft);
+    markValueSaved(savedDraft);
+    onRestore?.(savedDraft);
   }, [activeDraftKey, draftKey, draftState, markValueSaved, onRestore, surveyImageId]);
 
-  const clearDrafts = () => {
+  const clearDrafts = useCallback(() => {
     if (draftKey) {
-      removeStoredKey(draftKey, "session");
       removeStoredKey(draftKey, "local");
+      removeStoredKey(draftKey, "session");
     }
     if (activeDraftKey) {
-      removeStoredKey(activeDraftKey, "session");
       removeStoredKey(activeDraftKey, "local");
+      removeStoredKey(activeDraftKey, "session");
     }
     resetSavedValue();
-  };
+  }, [activeDraftKey, draftKey, resetSavedValue]);
 
   return {
-    draftKey,
-    activeDraftKey,
-    draftRestored,
     saveError,
     clearDrafts,
+    flushDraft,
   };
 }

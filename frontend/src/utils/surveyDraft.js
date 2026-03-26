@@ -26,21 +26,28 @@ export const getActiveSurveyDraftKey = (publicId) => {
 
 export const readSurveyDraft = (key) => {
   if (!key) return null;
-  const value = readExpiringValue(key, null, {
-    area: "local",
-    schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
-    ttlMs: SURVEY_DRAFT_TTL_MS,
-  });
-  return value && typeof value === "object" ? value : null;
+  for (const area of ["session", "local"]) {
+    const value = readExpiringValue(key, null, {
+      area,
+      schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
+      ttlMs: SURVEY_DRAFT_TTL_MS,
+    });
+    if (value && typeof value === "object") {
+      return value;
+    }
+  }
+  return null;
 };
 
 export const writeSurveyDraft = (key, data) => {
   if (!key) return;
-  writeExpiringValue(key, data, {
-    area: "local",
-    schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
-    ttlMs: SURVEY_DRAFT_TTL_MS,
-  });
+  for (const area of ["local", "session"]) {
+    writeExpiringValue(key, data, {
+      area,
+      schemaVersion: SURVEY_DRAFT_SCHEMA_VERSION,
+      ttlMs: SURVEY_DRAFT_TTL_MS,
+    });
+  }
 };
 
 export const clearAllSurveyDraftsForUser = (publicId) => {

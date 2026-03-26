@@ -115,6 +115,7 @@ def save_idempotent_response(
             "request_hash": request_hash,
             "response_body": json.dumps(response_body or {}),
             "status_code": int(status_code or 200),
+            "ttl_seconds": int(IDEMPOTENCY_TTL_SECONDS),
         })
     except Exception:
         return

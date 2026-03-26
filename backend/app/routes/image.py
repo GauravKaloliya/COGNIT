@@ -109,11 +109,12 @@ def random_image():
         if not row:
             return create_error_response("NF_NO_IMAGES_AVAILABLE")
 
+        is_attention_check = bool(row[3]) if len(row) > 3 else False
         return success_response({
             "image_id": row[0],
             "url": row[1],
-            "is_survey": bool(row[2]) if len(row) > 2 else True,
-            "is_attention_check": bool(row[3]) if len(row) > 3 else False,
+            "is_survey": (bool(row[2]) if len(row) > 2 else True) and not is_attention_check,
+            "is_attention_check": is_attention_check,
         })
     except Exception as e:
         # Keep errors logged but avoid noisy prints in production.
