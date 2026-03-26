@@ -197,7 +197,7 @@ export function useSurveyPage({
     setImageError(false);
     setImageLoaded(false);
     setTimerActive(false);
-    onRetry({ clearCurrent: true });
+    onRetry({ clearCurrent: false });
   }, [formDisabled, isFetchingImage, onRetry, retryDisabled, setRetryCountdown, setTimerActive]);
 
   useEffect(() => {
@@ -656,6 +656,9 @@ export function useSurveyPage({
   }), []);
 
   const retryExhausted = Boolean(imageError || (!hasUsableSurveyImage && fetchError));
+  const imagePanelErrorMessage = imageError
+    ? uiText("survey.imageRestoreFailed")
+    : uiText("survey.feedLoadFailed");
 
   return {
     constants,
@@ -678,6 +681,7 @@ export function useSurveyPage({
     imageLoaded,
     imageError,
     retryExhausted,
+    imagePanelErrorMessage,
     imageReady,
     retryDisabled,
     retryCountdown,

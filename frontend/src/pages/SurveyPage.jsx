@@ -44,6 +44,7 @@ export default function SurveyPage({
     imageError,
     imageReady,
     retryExhausted,
+    imagePanelErrorMessage,
     retryDisabled,
     retryCountdown,
     wordCount,
@@ -93,6 +94,9 @@ export default function SurveyPage({
     && submitError !== uiText("survey.submitLocked")
     ? submitError
     : "";
+  const visibleFetchError = fetchError === "image_unavailable"
+    ? uiText("survey.feedLoadFailed")
+    : fetchError;
   const deferredSaveError = React.useDeferredValue(saveError);
 
   React.useEffect(() => {
@@ -138,7 +142,7 @@ export default function SurveyPage({
       <div className="panel status-panel">
         <AsyncStatePanel
           loading={isFetchingImage || !survey?.image_id}
-          error={fetchError || (survey?.image_id && !imageSrc ? uiText("survey.imageRestoreFailed") : "")}
+          error={visibleFetchError || (survey?.image_id && !imageSrc ? uiText("survey.imageRestoreFailed") : "")}
           retryLabel={retryLabel}
           onRetry={handleRetryImage}
           retryDisabled={retryDisabled}
@@ -163,6 +167,7 @@ export default function SurveyPage({
           imageLoaded={imageLoaded}
           imageError={imageError}
           showImageError={retryExhausted}
+          errorMessage={imagePanelErrorMessage}
           isZoomed={isZoomed}
           setIsZoomed={setIsZoomed}
           retryCountdown={retryCountdown}

@@ -76,6 +76,17 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
     publicId,
   ]);
 
+  useEffect(() => {
+    const hasUsableSurvey = Boolean(
+      survey?.[SURVEY_API_FIELDS.imageId]
+      && typeof survey?.[SURVEY_API_FIELDS.url] === "string"
+      && survey[SURVEY_API_FIELDS.url].trim()
+    );
+    if (!hasUsableSurvey) return;
+    if (imageError == null) return;
+    setImageError(null);
+  }, [imageError, survey]);
+
   // Additional hard-refresh guard: if we have a scoped publicId but in-memory
   // survey is empty, restore directly from storage (covers hydration races).
   useEffect(() => {

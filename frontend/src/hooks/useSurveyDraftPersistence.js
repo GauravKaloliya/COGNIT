@@ -22,6 +22,7 @@ export function useSurveyDraftPersistence({
   const activeDraftKey = getActiveSurveyDraftKey(publicId);
   const initialDraftStateRef = useRef(null);
   const restoredDraftKeyRef = useRef("");
+  const latestDraftStateRef = useRef(draftState);
 
   const serializeDraftState = (value) => {
     try {
@@ -45,12 +46,14 @@ export function useSurveyDraftPersistence({
     },
   });
 
+  latestDraftStateRef.current = draftState;
+
   useEffect(() => {
     setDraftRestored(false);
-    initialDraftStateRef.current = serializeDraftState(draftState);
+    initialDraftStateRef.current = serializeDraftState(latestDraftStateRef.current);
     restoredDraftKeyRef.current = "";
     resetSavedValue();
-  }, [draftKey, draftState, resetSavedValue]);
+  }, [draftKey, resetSavedValue, surveyImageId]);
 
   useEffect(() => {
     if (!surveyImageId) return;
