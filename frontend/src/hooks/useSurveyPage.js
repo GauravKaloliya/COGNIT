@@ -84,12 +84,19 @@ export function useSurveyPage({
   const prefetchTriggeredRef = useRef(false);
   const turnstilePrefetchTriggeredRef = useRef(false);
   const lastSubmitErrorWasValidationRef = useRef(false);
+  const descriptionValueRef = useRef("");
+  const commentsValueRef = useRef("");
+  const difficultyRatingRef = useRef(0);
+  const confidenceScoreRef = useRef(0);
+  const typingDynamicsRef = useRef(EMPTY_TYPING_DYNAMICS);
 
   const {
     engagementData,
     setEngagementData,
+    engagementDataRef,
     elapsed,
     setElapsed,
+    elapsedRef,
     setTimerActive,
     descriptionRef,
     commentsRef,
@@ -238,6 +245,7 @@ export function useSurveyPage({
   const {
     saveError,
     clearDrafts,
+    flushDraft,
   } = useSurveyDraftPersistence({
     publicId,
     surveyImageId,
@@ -255,6 +263,26 @@ export function useSurveyPage({
     },
     onRestore: restoreDraft,
   });
+
+  useEffect(() => {
+    descriptionValueRef.current = description;
+    commentsValueRef.current = comments;
+    difficultyRatingRef.current = difficultyRating;
+    confidenceScoreRef.current = confidenceScore;
+    typingDynamicsRef.current = typingDynamics;
+  }, [comments, confidenceScore, description, difficultyRating, typingDynamics]);
+
+  const buildCurrentDraftState = useCallback(() => ({
+    imageId: surveyImageId,
+    description: descriptionValueRef.current,
+    difficultyRating: difficultyRatingRef.current,
+    confidenceScore: confidenceScoreRef.current,
+    comments: commentsValueRef.current,
+    elapsed: elapsedRef.current,
+    startedAtSeconds: surveyStartTime.current / runtimeConfig.msPerSecond,
+    engagementData: engagementDataRef.current,
+    typingDynamics: typingDynamicsRef.current,
+  }), [elapsedRef, engagementDataRef, surveyImageId, surveyStartTime]);
 
   const getSubmitTooltipText = useCallback(() => getSubmitTooltip({
     imageReady,
@@ -357,6 +385,32 @@ export function useSurveyPage({
       setRetryDisabled(false);
     }
   }, [retryCountdown, retryDisabled]);
+
+  useEffect(() => {
+    if (!publicId || !surveyImageId) return undefined;
+
+    const flushLatestDraft = () => {
+      flushDraft(buildCurrentDraftState());
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushLatestDraft();
+      }
+    };
+
+    window.addEventListener("beforeunload", flushLatestDraft);
+    window.addEventListener("pagehide", flushLatestDraft);
+    window.addEventListener("offline", flushLatestDraft);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("beforeunload", flushLatestDraft);
+      window.removeEventListener("pagehide", flushLatestDraft);
+      window.removeEventListener("offline", flushLatestDraft);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [buildCurrentDraftState, flushDraft, publicId, surveyImageId]);
 
   useEffect(() => {
     if (imageLoadTimeoutRef.current) {
