@@ -4,6 +4,7 @@ import { runtimeConfig } from "../../config/runtime";
 import { getErrorMessage } from "../../utils/errorRegistry.js";
 import { uiText } from "../../utils/uiText";
 import { REQUEST_CODES } from "../../constants/request";
+import { ERROR_UI_EVENTS } from "../../constants/errorUiEvents";
 import { clearScheduledInterval, scheduleInterval, SECOND_MS } from "../../utils/timing";
 import { forEachStorageArea, makeScopedKey, removeStoredKey } from "../../utils/storage";
 import { requirePublicId } from "../../utils/publicId";
@@ -106,6 +107,20 @@ export function useUserDetailsVerification({
       resendEndsAtRef.current = null;
     }
   }, [resendCountdownActive, resendSeconds]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleOtpResendReady = (event) => {
+      const detail = event?.detail || {};
+      if (String(detail?.code || "") !== "AUTH_003_0002") return;
+      setOtpStatus(OTP_STATUS.verifyFailed);
+      setResendCountdownActive(false);
+      resendEndsAtRef.current = null;
+      setOtpError(detail?.message || getErrorMessage("AUTH_003_0002"));
+    };
+    window.addEventListener(ERROR_UI_EVENTS.otpResendReady, handleOtpResendReady);
+    return () => window.removeEventListener(ERROR_UI_EVENTS.otpResendReady, handleOtpResendReady);
+  }, []);
 
   useEffect(() => {
     if (!resendCountdownActive) return;

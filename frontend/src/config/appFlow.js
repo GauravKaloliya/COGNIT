@@ -21,8 +21,9 @@ export const APP_STAGE_ORDER = [
 ];
 
 export function normalizeAppStage(stage) {
-  if (APP_STAGE_ORDER.includes(stage)) {
-    return stage;
+  const value = String(stage || "").trim();
+  if (APP_STAGE_ORDER.includes(value)) {
+    return value;
   }
   return APP_FLOW.stages.consent;
 }

@@ -1,4 +1,7 @@
-{
+// Shared error contract (mirrors backend error catalog).
+// Kept in JS to allow comments, helper exports, and bundler-friendly imports.
+
+export const ERROR_CONTRACT = {
   "SYS_INTERNAL_ERROR": {
     "code": "SYS_001_0001",
     "message": "Something went wrong. Please try again.",
@@ -69,6 +72,12 @@
     "code": "SYS_002_0042",
     "message": "Failed to save submission. Please try again.",
     "status": 500,
+    "category": "SYS"
+  },
+  "REQ_ABORTED": {
+    "code": "REQ_ABORTED",
+    "message": "Request was cancelled.",
+    "status": 0,
     "category": "SYS"
   },
   "RATE_LIMIT_EXCEEDED": {
@@ -378,4 +387,25 @@
     "status": 404,
     "category": "NF"
   }
-}
+};
+
+export const SHARED_MESSAGES_EN = Object.values(ERROR_CONTRACT || {}).reduce((acc, def) => {
+  if (def && typeof def === "object" && def.code && def.message) {
+    acc[String(def.code)] = String(def.message);
+  }
+  return acc;
+}, {});
+
+export const SHARED_KEY_TO_CODE = Object.entries(ERROR_CONTRACT || {}).reduce((acc, [key, def]) => {
+  if (def && typeof def === "object" && def.code) {
+    acc[String(key)] = String(def.code);
+  }
+  return acc;
+}, {});
+
+export const SHARED_CODE_TO_KEY = Object.entries(ERROR_CONTRACT || {}).reduce((acc, [key, def]) => {
+  if (def && typeof def === "object" && def.code) {
+    acc[String(def.code)] = String(key);
+  }
+  return acc;
+}, {});

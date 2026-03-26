@@ -84,7 +84,7 @@ QUERY_UPDATE_PARTICIPANT_EMAIL = text("""
         email_verified = false,
         email_verified_at = NULL,
         stage = CASE
-            WHEN stage = :stage_finished THEN stage
+            WHEN stage = :stage_post_survey THEN stage
             ELSE :stage_user_details
         END,
         updated_at = CURRENT_TIMESTAMP

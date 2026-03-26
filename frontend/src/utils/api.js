@@ -1,5 +1,6 @@
 import { getApiUrl } from "./apiBase";
 import { parseErrorResponse, getErrorMessage } from "./errorRegistry";
+import { applyCodeSpecificErrorBehavior } from "./errorBehavior";
 import { getTurnstileToken, isTurnstileRequired } from "./turnstile";
 import { assertPublicId } from "./publicId";
 import {
@@ -12,10 +13,9 @@ import {
   REQUEST_SEVERITY,
 } from "../constants/request";
 import { API_ROUTES, APP_ROUTES } from "../constants/routes";
+import { ERROR_UI_EVENTS } from "../constants/errorUiEvents";
 import { reportClientError } from "./errorReporter";
 
-const RATE_LIMIT_EVENT = "cognit:rate-limit";
-const MAINTENANCE_EVENT = "cognit:maintenance";
 const SAFE_GET_CACHE = new Map();
 
 function createStructuredError({
@@ -151,7 +151,9 @@ export async function apiFetch(endpoint, options = {}) {
 
     const throwParsedError = (parsedError, fallbackStatus) => {
       const effectiveStatus = Number(parsedError?.status) || Number(fallbackStatus) || 0;
+      applyCodeSpecificErrorBehavior(parsedError);
       const error = new Error(parsedError.message);
+      error.key = parsedError.key;
       error.code = parsedError.code;
       error.category = parsedError.category;
       error.severity = parsedError.severity;
@@ -162,16 +164,16 @@ export async function apiFetch(endpoint, options = {}) {
       error.details = parsedError.details;
       error.originalMessage = parsedError.originalMessage;
       error.requestId = parsedError.requestId || response.headers.get(REQUEST_HEADERS.requestId) || requestId;
-      if (effectiveStatus === 503) {
+      if (effectiveStatus === 503 && typeof window !== "undefined") {
         try {
-          window.dispatchEvent(new CustomEvent(MAINTENANCE_EVENT, { detail: error }));
+          window.dispatchEvent(new CustomEvent(ERROR_UI_EVENTS.maintenance, { detail: error }));
         } catch {
           // Ignore dispatch failures outside browser contexts.
         }
       }
-      if (effectiveStatus === 429 || parsedError?.category === "RATE") {
+      if ((effectiveStatus === 429 || parsedError?.category === "RATE") && typeof window !== "undefined") {
         try {
-          window.dispatchEvent(new CustomEvent(RATE_LIMIT_EVENT, { detail: error }));
+          window.dispatchEvent(new CustomEvent(ERROR_UI_EVENTS.rateLimit, { detail: error }));
         } catch {
           // Ignore dispatch failures outside browser contexts.
         }
@@ -312,6 +314,7 @@ export const endpoints = {
 
 export function handleApiError(error, options = {}) {
   const { context, onError, onFieldError, onRetry, onRedirect, onWait } = options;
+  applyCodeSpecificErrorBehavior(error, { onRedirect });
   if (context) {
     reportClientError({
       message: error?.message || String(error || ""),

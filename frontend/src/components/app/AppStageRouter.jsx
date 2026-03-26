@@ -117,7 +117,6 @@ function AppStageRouter({
           surveyCompleted={surveyCompleted}
           setStage={setStage}
           setSurveyFeedbackReady={setSurveyFeedbackReady}
-          fetchNextSurvey={fetchImage}
           publicId={publicId}
           clearUserStorage={clearUserStorage}
           resetWorkflowToConsent={resetWorkflowToConsent}
