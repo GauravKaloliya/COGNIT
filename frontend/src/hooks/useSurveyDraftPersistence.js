@@ -17,6 +17,11 @@ function safeSerialize(value) {
   }
 }
 
+function hasMatchingSurveyImage(savedDraft, surveyImageId) {
+  if (!savedDraft || typeof savedDraft !== "object") return false;
+  return String(savedDraft.imageId || "").trim() === String(surveyImageId || "").trim();
+}
+
 export function useSurveyDraftPersistence({
   publicId,
   surveyImageId,
@@ -64,7 +69,11 @@ export function useSurveyDraftPersistence({
 
   useEffect(() => {
     if (!surveyImageId || !draftKey || restoredDraftKeyRef.current === draftKey) return;
-    const savedDraft = readSurveyDraft(draftKey) || readSurveyDraft(activeDraftKey);
+    const perImageDraft = readSurveyDraft(draftKey);
+    const activeDraft = readSurveyDraft(activeDraftKey);
+    const savedDraft = hasMatchingSurveyImage(perImageDraft, surveyImageId)
+      ? perImageDraft
+      : (hasMatchingSurveyImage(activeDraft, surveyImageId) ? activeDraft : null);
     if (!savedDraft) return;
     if (safeSerialize(surveySession) !== initialDraftRef.current) return;
     restoredDraftKeyRef.current = draftKey;

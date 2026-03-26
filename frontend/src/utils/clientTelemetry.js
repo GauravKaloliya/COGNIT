@@ -149,7 +149,7 @@ export function telemetryUpdateScrollDepth() {
   saveState(telemetryState);
 }
 
-export function getTelemetrySnapshot(pageNameOverride) {
+function buildTelemetrySnapshot(pageNameOverride) {
   if (typeof window !== "undefined" && typeof document !== "undefined") {
     telemetryUpdateScrollDepth();
   }
@@ -188,4 +188,46 @@ export function getTelemetrySnapshot(pageNameOverride) {
     survey_clicks: Number(telemetryState.survey_clicks || 0),
     survey_keypresses: Number(telemetryState.survey_keypresses || 0),
   };
+}
+
+function resetSurveyStepTelemetry(pageNameOverride) {
+  const currentPage = String(pageNameOverride || telemetryState.current_page || "unknown");
+  telemetryState.survey_page_views = 0;
+  telemetryState.survey_tab_switches = 0;
+  telemetryState.survey_page_close_attempts = 0;
+  telemetryState.survey_network_disconnects = 0;
+  telemetryState.survey_max_scroll_depth_pct = 0;
+  telemetryState.survey_clicks = 0;
+  telemetryState.survey_keypresses = 0;
+  telemetryState.survey_time_spent_seconds = 0;
+  if (isSurveyPage(currentPage)) {
+    telemetryState.page_time_spent_seconds_by_page = {
+      ...(telemetryState.page_time_spent_seconds_by_page || {}),
+      [currentPage]: 0,
+    };
+    telemetryState.current_page_entered_at_seconds = nowMs() / runtimeConfig.msPerSecond;
+  }
+  saveState(telemetryState);
+}
+
+export function resetSurveyTelemetry(pageNameOverride = "survey") {
+  _rollCurrentPageDuration();
+  resetSurveyStepTelemetry(pageNameOverride);
+}
+
+export function resetTelemetrySession(pageNameOverride = "unknown") {
+  telemetryState = defaultState();
+  telemetryState.current_page = String(pageNameOverride || "unknown");
+  telemetryState.current_page_entered_at_seconds = nowMs() / runtimeConfig.msPerSecond;
+  saveState(telemetryState);
+}
+
+export function getTelemetrySnapshot(pageNameOverride) {
+  return buildTelemetrySnapshot(pageNameOverride);
+}
+
+export function consumeSurveyTelemetrySnapshot(pageNameOverride = "survey") {
+  const snapshot = buildTelemetrySnapshot(pageNameOverride);
+  resetSurveyStepTelemetry(pageNameOverride);
+  return snapshot;
 }

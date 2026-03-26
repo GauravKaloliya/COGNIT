@@ -136,8 +136,8 @@ body.dark {
   --success: #42d392;
   --error: #ff8fab;
   --info: #7ab0ff;
-  --border: #131313;
-  --border-light: #1f1f1f;
+  --border: #2b2f38;
+  --border-light: #3a404c;
   --surface-success: rgba(66, 211, 146, 0.12);
   --surface-warning: rgba(255, 181, 74, 0.12);
   --surface-error: rgba(255, 143, 171, 0.12);
@@ -777,6 +777,7 @@ body.dark .status-dot.offline {
 @media (min-width: 768px) {
   .panel {
     background: var(--panel);
+    border: 1px solid var(--border-light);
     border-radius: var(--radius-xl);
     padding: var(--space-5) var(--space-6);
     margin-bottom: var(--space-3);
@@ -787,6 +788,12 @@ body.dark .status-dot.offline {
     transform: translateY(-2px);
     box-shadow: var(--shadow-xl);
   }
+}
+
+body.dark .panel {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.015),
+    var(--shadow-lg);
 }
 
 @media (min-width: 1024px) {
