@@ -9,6 +9,7 @@ function SurveyCommentsField({
   minFeedbackLength,
   maxFeedbackLength,
   imageReady,
+  disabled = false,
   copyPasteDisabled,
   preventCopyPaste,
   preventClipboardShortcuts,
@@ -33,7 +34,7 @@ function SurveyCommentsField({
             }
           }}
           placeholder={uiText("survey.commentsPlaceholder")}
-          disabled={!imageReady}
+          disabled={disabled || !imageReady}
           maxLength={maxFeedbackLength}
           onCopy={copyPasteDisabled ? preventCopyPaste : undefined}
           onCut={copyPasteDisabled ? preventCopyPaste : undefined}

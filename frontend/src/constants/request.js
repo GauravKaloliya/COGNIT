@@ -20,6 +20,7 @@ export const REQUEST_HEADERS = {
 
 export const REQUEST_CODES = {
   aborted: "REQ_ABORTED",
+  accountFlagged: "AUTH_001_0002",
 };
 
 export const ERROR_NAMES = {
