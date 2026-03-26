@@ -1,8 +1,8 @@
 {% extends "api_docs/base.html" %}
 {% block docs_content %}
-<section class="doc-section">
+<section class="doc-section panel stage-section" style="--section-index: 1">
   <h2>Errors</h2>
-  <p class="section-note">Source of truth: backend <code>app.config.ERROR_CODES</code>. Build client behavior around <code>error.code</code>, and keep <code>error.request_id</code> for support and trace correlation.</p>
+  <p class="page-subtitle left">Source of truth: backend <code>app.config.ERROR_CODES</code>. Build client behavior around <code>error.code</code>, and keep <code>error.request_id</code> for support and trace correlation.</p>
 
   <div class="error-grid">
     {% for group in error_groups %}

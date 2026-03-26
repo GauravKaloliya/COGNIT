@@ -19,7 +19,7 @@ export default function SurveyImagePanel({
 }) {
   if (showImageError) {
     return (
-      <div className="image-container">
+      <div className="image-container premium-image-surface">
         <div className="image-error">
           <p>{errorMessage || uiText("survey.imageRestoreFailed")}</p>
           <DSButton variant="primary" className="small button-top" onClick={handleRetryImage} disabled={retryDisabled}>
@@ -31,7 +31,7 @@ export default function SurveyImagePanel({
   }
 
   return (
-    <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
+    <div className={`image-container premium-image-surface ${isZoomed ? "zoomed" : ""} ${imageLoaded ? "is-loaded" : "is-loading"}`}>
       {!imageError ? (
         <img
           ref={imageRef}

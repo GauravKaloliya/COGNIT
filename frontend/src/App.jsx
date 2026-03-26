@@ -6,6 +6,7 @@ import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
 import AppContainer from "./components/app/AppContainer.jsx";
 import AppStageRouter, { prefetchLikelyNextChunks } from "./components/app/AppStageRouter.jsx";
 import { getErrorMessage } from "./utils/errorRegistry.js";
+import { getApiOriginUrl } from "./utils/apiBase.js";
 import { uiText } from "./utils/uiText.js";
 import { telemetryIncrement, telemetryInteraction, telemetryUpdateScrollDepth } from "./utils/clientTelemetry.js";
 import { useAppController } from "./hooks/useAppController";
@@ -74,6 +75,9 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const deferredToasts = React.useDeferredValue(toasts);
   const deferredConfetti = React.useDeferredValue(showConfetti);
   const offlineResetDoneRef = React.useRef(false);
+  const openApiDocs = React.useCallback(() => {
+    window.open(getApiOriginUrl(), "_blank", "noopener,noreferrer");
+  }, []);
 
   React.useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
@@ -95,6 +99,10 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
       if (rafId !== null) return;
       rafId = window.requestAnimationFrame(() => {
         rafId = null;
+        const scrollY = window.scrollY || window.pageYOffset || 0;
+        const scrollProgress = Math.min(scrollY / 1200, 1);
+        document.documentElement.style.setProperty("--app-scroll-y", `${scrollY.toFixed(2)}px`);
+        document.documentElement.style.setProperty("--app-scroll-progress", scrollProgress.toFixed(4));
         telemetryUpdateScrollDepth();
       });
     };
@@ -119,6 +127,8 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
       if (rafId !== null) {
         window.cancelAnimationFrame(rafId);
       }
+      document.documentElement.style.removeProperty("--app-scroll-y");
+      document.documentElement.style.removeProperty("--app-scroll-progress");
       window.removeEventListener("scroll", scheduleScrollTelemetry);
       window.removeEventListener("click", onClick);
       window.removeEventListener("keydown", onKeydown);
@@ -172,6 +182,15 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
               {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
             </div>
             <div className="header-actions">
+              <DSButton
+                variant="ghost"
+                className="api-docs-button"
+                onClick={openApiDocs}
+                title={uiText("app.apiDocs")}
+                aria-label={uiText("app.apiDocs")}
+              >
+                {uiText("app.apiDocs")}
+              </DSButton>
               <DSButton
                 variant="ghost"
                 className="dark-mode-toggle"

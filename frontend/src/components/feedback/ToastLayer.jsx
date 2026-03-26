@@ -8,7 +8,7 @@ export default function ToastLayer({ toasts, onDismiss }) {
     <div className="toast-container">
       {toasts.map((toast) => (
         <div key={toast.id} className={`toast ${toast.type}`}>
-          <span>{toast.message}</span>
+          <div className="toast-message">{toast.message}</div>
           <div className="toast-actions">
             {toast.action && (
               <DSButton

@@ -2,6 +2,7 @@ import React from "react";
 import ThemeToggleIcon from "../ThemeToggleIcon.jsx";
 import FlowStepper from "../FlowStepper.jsx";
 import DSButton from "../design/DSButton.jsx";
+import { getApiOriginUrl } from "../../utils/apiBase.js";
 import { uiText } from "../../utils/uiText.js";
 
 export default function AppContainer({
@@ -12,14 +13,27 @@ export default function AppContainer({
   stage,
   children,
 }) {
+  const openApiDocs = React.useCallback(() => {
+    window.open(getApiOriginUrl(), "_blank", "noopener,noreferrer");
+  }, []);
+
   return (
-    <div className="app">
+    <div className={`app app-stage-${stage || "consent"}`}>
       <header className="header">
         <div className="brand">
           <h1>{uiText("app.brand")}</h1>
           {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
         </div>
         <div className="header-actions">
+          <DSButton
+            variant="ghost"
+            className="api-docs-button"
+            onClick={openApiDocs}
+            title={uiText("app.apiDocs")}
+            aria-label={uiText("app.apiDocs")}
+          >
+            {uiText("app.apiDocs")}
+          </DSButton>
           <DSButton
             variant="ghost"
             className="dark-mode-toggle"
@@ -39,7 +53,7 @@ export default function AppContainer({
 
       <FlowStepper stage={stage} />
 
-      <div className="route-transition">{children}</div>
+      <div className={`route-transition stage-${stage || "consent"}`}>{children}</div>
 
       <div className="branding-footer">{uiText("app.footerCredit")}</div>
     </div>
