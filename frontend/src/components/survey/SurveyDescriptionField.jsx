@@ -19,6 +19,13 @@ function SurveyDescriptionField({
   sanitizeAlphaNumericSpace,
   onBlur,
 }) {
+  React.useLayoutEffect(() => {
+    const element = descriptionRef?.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  }, [description, descriptionRef]);
+
   return (
     <div className="field">
       <label>{uiText("survey.descriptionLabel")} <span className="required" aria-label="required">*</span></label>
@@ -26,20 +33,19 @@ function SurveyDescriptionField({
         <textarea
           ref={descriptionRef}
           className={showValidationErrors && description.length > 0 && (
-            description.length < minDescriptionLength ||
-            description.length > maxDescriptionLength
+            charCount < minDescriptionLength ||
+            charCount > maxDescriptionLength
           ) ? "error-input" : ""}
           value={description}
           onChange={(e) => {
             const value = sanitizeAlphaNumericSpace(e.target.value);
-            if (value.length <= maxDescriptionLength) {
+            if (value.replace(/[^a-zA-Z0-9]+/g, "").length <= maxDescriptionLength) {
               setDescription(value);
             }
           }}
           placeholder={uiText("survey.descriptionPlaceholder")}
           spellCheck
           disabled={disabled || !imageReady}
-          maxLength={maxDescriptionLength}
           onCopy={copyPasteDisabled ? preventCopyPaste : undefined}
           onCut={copyPasteDisabled ? preventCopyPaste : undefined}
           onPaste={copyPasteDisabled ? preventCopyPaste : undefined}

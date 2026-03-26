@@ -8,7 +8,7 @@ import { useNavigationBlocker } from "./useNavigationBlocker";
 import { useOnlineStatus } from "./useOnlineStatus";
 import { useSurveyDraftPersistence } from "./useSurveyDraftPersistence";
 import { useSurveyEngagement } from "./useSurveyEngagement";
-import { buildSurveyImageState, getSubmitTooltip } from "../utils/surveyPageHelpers";
+import { buildSurveyImageState, countAlphaNumericChars, countAlphaNumericWords, getSubmitTooltip } from "../utils/surveyPageHelpers";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 import { useStableSelector } from "./useStableSelector";
 import { preloadTurnstileScript, prefetchTurnstileToken } from "../utils/turnstile";
@@ -116,12 +116,11 @@ export function useSurveyPage({
     resetEngagement,
   } = useSurveyEngagement({ copyPasteDisabled: COPY_PASTE_DISABLED });
   const surveyDerived = useStableSelector(() => {
-    const trimmedDescription = description.trim();
-    const trimmedComments = comments.trim();
-    const wordCountValue = trimmedDescription ? trimmedDescription.split(/\s+/).length : 0;
-    const charCountValue = description.length;
+    const commentsCharCountValue = countAlphaNumericChars(comments);
+    const wordCountValue = countAlphaNumericWords(description);
+    const charCountValue = countAlphaNumericChars(description);
     const descriptionValidValue = charCountValue >= MIN_DESCRIPTION_LENGTH && charCountValue <= MAX_DESCRIPTION_LENGTH;
-    const commentsValidValue = trimmedComments.length >= MIN_FEEDBACK_LENGTH && trimmedComments.length <= MAX_FEEDBACK_LENGTH;
+    const commentsValidValue = commentsCharCountValue >= MIN_FEEDBACK_LENGTH && commentsCharCountValue <= MAX_FEEDBACK_LENGTH;
     const imageReadyValue = imageLoaded && !imageError;
     const canSubmitValue = wordCountValue >= MIN_WORDS
       && rating !== 0
@@ -132,17 +131,19 @@ export function useSurveyPage({
     return {
       wordCount: wordCountValue,
       charCount: charCountValue,
+      commentsCharCount: commentsCharCountValue,
       descriptionValid: descriptionValidValue,
       commentsValid: commentsValidValue,
       imageReady: imageReadyValue,
       canSubmit: canSubmitValue,
       currentStep: Math.max(1, surveyCompleted + 1),
-      minimumMet: wordCountValue >= MIN_WORDS && trimmedComments.length >= MIN_FEEDBACK_LENGTH && rating > 0,
+      minimumMet: wordCountValue >= MIN_WORDS && commentsCharCountValue >= MIN_FEEDBACK_LENGTH && rating > 0,
     };
   }, [comments, description, imageError, imageLoaded, rating, submitting, surveyCompleted]);
   const {
     wordCount,
     charCount,
+    commentsCharCount,
     imageReady,
     canSubmit,
     currentStep,
@@ -356,7 +357,7 @@ export function useSurveyPage({
     submitLocked,
     wordCount,
     minWords: MIN_WORDS,
-    description,
+    descriptionCharCount: charCount,
     minDescriptionLength: MIN_DESCRIPTION_LENGTH,
     maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
     rating,
@@ -587,6 +588,7 @@ export function useSurveyPage({
     retryCountdown,
     wordCount,
     charCount,
+    commentsCharCount,
     canSubmit,
     currentStep,
     minimumMet,
