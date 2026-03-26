@@ -19,12 +19,73 @@ export function useDebouncedPersistence({
 }) {
   const timeoutRef = useRef(null);
   const lastSavedSerializedRef = useRef(null);
+  const latestValueRef = useRef(value);
+  const latestEnabledRef = useRef(enabled);
+  const latestOnWriteRef = useRef(onWrite);
+  const latestOnErrorRef = useRef(onError);
 
-  useEffect(() => () => {
-    if (timeoutRef.current) {
+  latestValueRef.current = value;
+  latestEnabledRef.current = enabled;
+  latestOnWriteRef.current = onWrite;
+  latestOnErrorRef.current = onError;
+
+  const flushPendingWrite = () => {
+    if (!timeoutRef.current || !latestEnabledRef.current) {
+      return;
+    }
+
+    const latestValue = latestValueRef.current;
+    const serializedValue = serializeValue(latestValue);
+    if (serializedValue === lastSavedSerializedRef.current) {
       clearScheduledTimeout(timeoutRef.current);
       timeoutRef.current = null;
+      return;
     }
+
+    clearScheduledTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+
+    try {
+      latestOnWriteRef.current?.(latestValue);
+      lastSavedSerializedRef.current = serializedValue;
+    } catch (error) {
+      latestOnErrorRef.current?.(error);
+    }
+  };
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        flushPendingWrite();
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      flushPendingWrite();
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", handleBeforeUnload);
+      window.addEventListener("pagehide", handleBeforeUnload);
+    }
+
+    return () => {
+      flushPendingWrite();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("beforeunload", handleBeforeUnload);
+        window.removeEventListener("pagehide", handleBeforeUnload);
+      }
+      if (timeoutRef.current) {
+        clearScheduledTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -71,6 +132,10 @@ export function useDebouncedPersistence({
   };
 
   const resetSavedValue = () => {
+    if (timeoutRef.current) {
+      clearScheduledTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     lastSavedSerializedRef.current = null;
   };
 
