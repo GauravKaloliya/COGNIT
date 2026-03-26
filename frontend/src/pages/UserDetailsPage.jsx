@@ -12,7 +12,9 @@ import { useRenderProfiler } from "../hooks/useRenderProfiler.js";
 import { prefetchBehaviorChunks } from "../components/app/AppStageRouter.jsx";
 
 export default function UserDetailsPage({
+  storageScope,
   publicId,
+  sessionHydrated = false,
   demographics,
   setDemographics,
   onSubmit,
@@ -56,7 +58,9 @@ export default function UserDetailsPage({
     handleFieldBlur,
     updateField,
   } = useUserDetailsPage({
+    storageScope,
     publicId,
+    sessionHydrated,
     demographics,
     setDemographics,
     onSubmit,
