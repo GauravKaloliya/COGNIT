@@ -14,6 +14,7 @@ import { useActiveTabOwnership } from "./useActiveTabOwnership";
 import { useWorkflowCoreState } from "./useWorkflowCoreState";
 import { useWorkflowPersistence } from "./useWorkflowPersistence";
 import { clearAllSurveyDraftsForUser } from "../utils/surveyDraft";
+import { SURVEY_API_FIELDS } from "../constants/fields";
 
 function rethrowWithMetadata(error, fallbackCode, fallbackMessage) {
   const message = getDisplayErrorMessage(error, fallbackCode) || fallbackMessage || getErrorMessage(fallbackCode);
@@ -131,6 +132,18 @@ export function useAppController() {
 
   const { systemReady, systemError, systemChecking, retryHealthCheck } = systemHealth;
 
+  const normalizeStoredSurvey = useCallback((value) => {
+    if (!value || typeof value !== "object") return null;
+    const imageId = value[SURVEY_API_FIELDS.imageId] || value.imageId || null;
+    const imageUrl = value[SURVEY_API_FIELDS.url] || value[SURVEY_API_FIELDS.imageUrl] || value.imageUrl || "";
+    if (!imageId || !String(imageUrl).trim()) return null;
+    return {
+      ...value,
+      [SURVEY_API_FIELDS.imageId]: imageId,
+      [SURVEY_API_FIELDS.url]: imageUrl,
+    };
+  }, []);
+
   useEffect(() => () => {
     cancelInFlightRequests?.();
     if (submitFlowAbortRef.current) submitFlowAbortRef.current.abort();
@@ -142,9 +155,23 @@ export function useAppController() {
     const restoredImageUrl = survey?.url || survey?.image_url || survey?.imageUrl || "";
     if (!survey || !survey.image_id || !String(restoredImageUrl).trim()) {
       if (!publicId) return;
+      // Refresh guard: prefer restoring scoped survey from local storage before
+      // requesting a new image from the backend.
+      const storedSurvey = normalizeStoredSurvey(
+        readCoreValue(runtimeConfig.storageKeys.survey, null, publicId)
+      );
+      if (storedSurvey) {
+        setSurvey((prev) => {
+          const prevImageId = prev?.[SURVEY_API_FIELDS.imageId] || prev?.image_id;
+          const prevImageUrl = prev?.[SURVEY_API_FIELDS.url] || prev?.url || prev?.image_url || prev?.imageUrl;
+          if (prevImageId && String(prevImageUrl || "").trim()) return prev;
+          return storedSurvey;
+        });
+        return;
+      }
       fetchImage({ clearCurrent: false });
     }
-  }, [fetchImage, publicId, sessionHydrated, stage, survey, surveyFeedbackReady, systemReady]);
+  }, [fetchImage, normalizeStoredSurvey, publicId, sessionHydrated, setSurvey, stage, survey, surveyFeedbackReady, systemReady]);
 
   const createParticipant = useCallback(async () => {
     if (submitFlowAbortRef.current) {
