@@ -160,7 +160,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "notes": ["Consumes the OTP on success and increments attempt counters on invalid codes."],
     },
     ("GET", IMAGES_RANDOM_ROUTE): {
-        "summary": "Select the next survey image, with deterministic attention-check placement when a participant is known.",
+        "summary": "Select the next image for the active participant flow (survey or attention step).",
         "auth": "none",
         "idempotency": "n/a",
         "rate_limit": "none",
@@ -172,7 +172,8 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": None,
         "notes": [
             "Pass previously shown image ids via `exclude` to avoid immediate repeats in the client.",
-            "Providing `public_id` enables participant-aware attention scheduling.",
+            "Providing `public_id` enables participant-aware sequencing for the 2-step submission flow.",
+            "Current backend flow expects exactly 2 submissions per participant session.",
         ],
     },
     ("POST", SUBMIT_ROUTE): {
@@ -184,13 +185,11 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "body": {
             "public_id": "<participant_public_id>",
             "session_id": "<participant_session_id_optional>",
-            "image_id": "image_001",
+            "image_id": "1.svg",
             "description": "A detailed 60+ word description of the image content goes here.",
             "feedback": "The task instructions were clear.",
             "rating": 4,
             "time_spent_seconds": 94,
-            "is_survey": True,
-            "is_attention_check": False,
             "survey_index": 1,
             "tab_switch_count": 0,
             "page_close_attempts": 0,
@@ -219,6 +218,8 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "notes": [
             "Requires a valid participant public_id and a participant that is already consented.",
             "Stores both survey output and engagement telemetry.",
+            "Backend determines whether a submission is survey vs attention from image assignment; client flags are not required.",
+            "`survey_index` is validated against backend progression and should be treated as backend-owned sequencing.",
             "Protected with idempotency because duplicate submission writes are materially harmful.",
         ],
     },
