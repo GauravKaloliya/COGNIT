@@ -10,8 +10,6 @@ export default function PostSurveyPage({
   publicId = "",
   clearUserStorage = null,
   resetWorkflowToConsent = null,
-  setSurveyFeedbackReady = null,
-  setStage = null,
 }) {
   const {
     handleSurveyFinish,
@@ -19,8 +17,6 @@ export default function PostSurveyPage({
     publicId,
     clearUserStorage,
     resetWorkflowToConsent,
-    setSurveyFeedbackReady,
-    setStage,
   });
 
   return (

@@ -6,8 +6,6 @@ import logging
 from contextlib import suppress
 
 from flask import Blueprint, g, request
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 
 from app.constants.event_constants import (
     AUDIT_EVENT_CONSENT_RECORDED,
@@ -31,14 +29,7 @@ from app.constants.observability_constants import OBS_EVENT_PARTICIPANT_CREATE_R
 from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
     PARTICIPANT_FIELD_USERNAME,
-    PARTICIPANT_STAGE_CONSENT,
-    PARTICIPANT_STAGE_USER_DETAILS,
     PARTICIPANT_STATUS_CONSENT_RECORDED,
-    PARTICIPANT_STATUS_CREATED,
-)
-from app.constants.error_keys import (
-    AUTH_EMAIL_OTP_SEND_HTTP_ERROR,
-    AUTH_EMAIL_OTP_SEND_TIMEOUT,
 )
 from app.constants.request_keys import (
     REQUEST_KEY_EMAIL,
@@ -82,39 +73,23 @@ from app.config import (
 from app.database import get_db
 from app.extensions import limiter
 from app.services import (
-    EmailOtpSendError,
-    build_email_otp_payload,
     collect_missing_participant_fields,
-    email_in_use_by_other,
-    enqueue_email_otp,
-    fetch_latest_email_otp,
-    fetch_participant_by_public_email,
-    fetch_participant_by_public_id,
     fetch_participant_options,
-    find_existing_participant_conflict,
-    generate_email_otp,
     generate_public_id,
     generate_session_id,
-    get_existing_session_id_for_public_id,
-    hash_email_otp,
-    increment_email_otp_attempts,
-    insert_email_otp,
-    insert_participant,
     is_participant_field_available,
     is_valid_prior_experience_code,
     is_valid_public_id,
-    mark_email_otp_used,
-    mark_existing_otps_used,
-    mark_participant_email_verified,
-    otp_expiry_timestamp,
-    otp_is_expired,
-    otp_is_over_attempts,
-    set_participant_cookies,
-    send_email_otp,
-    update_participant_email,
+    create_participant_workflow,
+    request_email_otp_workflow,
+    verify_email_otp_workflow,
 )
+from app.services.participant_state_service import (
+    apply_participant_stage_event,
+    record_participant_consent,
+)
+from app.services.state_machine_service import PARTICIPANT_STAGE_EVENTS
 from app.utils.decorators import require_idempotency_key, track_performance
-from app.utils.error_mapping import map_participant_create_exception
 from app.utils.helpers import (
     create_error_response,
     get_ip_hash,
@@ -171,62 +146,22 @@ def create_participant():
     try:
         db = get_db()
 
-        username = str(data[REQUEST_KEY_USERNAME]).strip()[:50]
-        email = str(data[REQUEST_KEY_EMAIL]).strip().lower()[:255]
-        prior_experience = str(data.get("prior_experience", "")).strip()
-
-        if not is_valid_prior_experience_code(db, prior_experience):
-            return create_error_response("VAL_EXPERIENCE_REQUIRED")
-
-        conflict_error_key = find_existing_participant_conflict(
-            db,
-            username=username,
-            email=email,
-        )
-        if conflict_error_key:
-            return create_error_response(conflict_error_key)
-
-        participant_id = insert_participant(
-            db,
+        result = create_participant_workflow(
+            db=db,
+            payload=data,
             public_id=public_id,
             session_id=session_id,
-            payload=data,
             ip_hash=iph,
             user_agent=ua,
         )
-        log_audit(
-            db,
-            AUDIT_EVENT_PARTICIPANT_CREATED,
-            participant_id=participant_id,
-            details=AUDIT_DETAIL_PARTICIPANT_CREATED.format(public_id=public_id),
-        )
-        db.commit()
-        response = success_response({RESPONSE_KEY_STATUS: PARTICIPANT_STATUS_CREATED, RESPONSE_KEY_PUBLIC_ID: public_id, RESPONSE_KEY_SESSION_ID: session_id})
-        response = set_participant_cookies(response, public_id, session_id)
-        return response, 201
-    except IntegrityError as e:
-        try:
-            db.rollback()
-        except Exception:
-            log_event(logger, OBS_EVENT_PARTICIPANT_CREATE_ROLLBACK_FAILED, level=logging.WARNING, error=str(e))
-        return map_participant_create_exception(
-            error=e,
-            public_id=public_id,
-            get_existing_session_id=lambda value: get_existing_session_id_for_public_id(db, value),
-            set_cookies=set_participant_cookies,
-        )
+        return result.response, result.status_code
     except Exception as e:
         try:
             db.rollback()
         except Exception:
             log_event(logger, OBS_EVENT_PARTICIPANT_CREATE_ROLLBACK_FAILED, level=logging.WARNING, error=str(e))
         logger.error(LOG_PARTICIPANT_CREATE_FAILED, e, getattr(g, "request_id", None))
-        return map_participant_create_exception(
-            error=e,
-            public_id=public_id,
-            get_existing_session_id=lambda value: get_existing_session_id_for_public_id(db, value),
-            set_cookies=set_participant_cookies,
-        )
+        return create_error_response("SYS_PARTICIPANT_CREATE_FAILED")
 
 
 @participant_bp.route(CHECK_USERNAME_ROUTE)
@@ -275,24 +210,17 @@ def record_consent():
 
     try:
         db = get_db()
-        row = db.execute(text("""
-            UPDATE participants
-            SET consent_given = true,
-                consent_at = CURRENT_TIMESTAMP,
-                stage = CASE
-                    WHEN stage = :consent_stage THEN :user_details_stage
-                    ELSE stage
-                END
-            WHERE public_id = :pub AND is_deleted = false
-            RETURNING id
-        """), {
-            "pub": public_id,
-            "consent_stage": PARTICIPANT_STAGE_CONSENT,
-            "user_details_stage": PARTICIPANT_STAGE_USER_DETAILS,
-        }).fetchone()
+        row = record_participant_consent(db, public_id=public_id)
         if not row:
             return create_error_response("NF_CONSENT_PARTICIPANT_NOT_FOUND")
         pid = row[0]
+        current_stage = row[1]
+        apply_participant_stage_event(
+            db,
+            participant_id=int(pid),
+            current_stage=current_stage,
+            event=PARTICIPANT_STAGE_EVENTS["consent_recorded"],
+        )
         log_audit(
             db,
             AUDIT_EVENT_CONSENT_RECORDED,
@@ -379,75 +307,14 @@ def request_email_otp():
         return create_error_response("VAL_INVALID_REQUEST_ID")
     try:
         db = get_db()
-        participant_row = fetch_participant_by_public_id(db, public_id=public_id)
-        if not participant_row:
-            return create_error_response("AUTH_EMAIL_MISMATCH")
-        participant_id, stored_email, email_verified = participant_row
-        if stored_email == email and email_update:
-            return create_error_response("AUTH_EMAIL_SAME")
-        if stored_email != email:
-            if email_in_use_by_other(db, public_id=public_id, email=email):
-                return create_error_response("DUP_EMAIL")
-            try:
-                update_participant_email(db, participant_id=int(participant_id), email=email)
-                stored_email = email
-                email_verified = False
-            except IntegrityError as exc:
-                err = str(exc).lower()
-                if "check constraint" in err:
-                    return create_error_response("VAL_EMAIL_INVALID")
-                if "duplicate key" in err or "unique constraint" in err:
-                    return create_error_response("DUP_EMAIL")
-                return create_error_response("SYS_EMAIL_OTP_REQUEST_FAILED")
-        if email_verified:
-            return success_response({
-                RESPONSE_KEY_EMAIL: stored_email,
-                RESPONSE_KEY_EMAIL_VERIFIED: True,
-            })
-        otp = generate_email_otp()
-        otp_hash = hash_email_otp(public_id=public_id, email=email, otp=otp)
-        expires_at = otp_expiry_timestamp()
-        mark_existing_otps_used(db, public_id=public_id, email=stored_email)
-        otp_id = insert_email_otp(db, public_id=public_id, email=stored_email, otp_hash=otp_hash, expires_at=expires_at)
-        db.commit()
-        try:
-            enqueue_email_otp(
-                build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
-                otp_id=otp_id,
-                idempotency_key=f"email-otp-request:{public_id}:{otp_id}",
-            )
-        except Exception:
-            try:
-                send_email_otp(
-                    build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id),
-                )
-            except EmailOtpSendError as exc:
-                error_key = "AUTH_EMAIL_OTP_SEND_FAILED"
-                if exc.kind == "timeout":
-                    error_key = AUTH_EMAIL_OTP_SEND_TIMEOUT
-                elif exc.kind == "http_error":
-                    error_key = AUTH_EMAIL_OTP_SEND_HTTP_ERROR
-                logger.warning(
-                    "email_otp_send_failed",
-                    extra={
-                        "event": "email_otp_send_failed",
-                        "kind": exc.kind,
-                        "status_code": exc.status_code,
-                        "request_id": getattr(g, "request_id", None),
-                    },
-                )
-                mark_email_otp_used(db, otp_id=otp_id)
-                db.commit()
-                return create_error_response(error_key)
-            except Exception:
-                mark_email_otp_used(db, otp_id=otp_id)
-                db.commit()
-                return create_error_response("AUTH_EMAIL_OTP_SEND_FAILED")
-        return success_response({
-            RESPONSE_KEY_EMAIL: stored_email,
-            RESPONSE_KEY_EMAIL_VERIFIED: False,
-            RESPONSE_KEY_EXPIRES_AT: expires_at.isoformat(),
-        })
+        result = request_email_otp_workflow(
+            db=db,
+            public_id=public_id,
+            email=email,
+            email_update=email_update,
+            request_id=getattr(g, "request_id", None),
+        )
+        return result.response, result.status_code
     except Exception:
         return create_error_response("SYS_EMAIL_OTP_REQUEST_FAILED")
 
@@ -469,38 +336,12 @@ def verify_email_otp():
         return create_error_response("AUTH_EMAIL_OTP_INVALID")
     try:
         db = get_db()
-        participant_row = fetch_participant_by_public_email(db, public_id=public_id, email=email)
-        if not participant_row:
-            return create_error_response("AUTH_EMAIL_MISMATCH")
-        participant_id, stored_email, email_verified = participant_row
-        if email_verified:
-            mark_participant_email_verified(db, participant_id=int(participant_id))
-            db.commit()
-            return success_response({
-                RESPONSE_KEY_EMAIL: stored_email,
-                RESPONSE_KEY_EMAIL_VERIFIED: True,
-            })
-        latest = fetch_latest_email_otp(db, public_id=public_id, email=email)
-        if not latest:
-            return create_error_response("AUTH_EMAIL_OTP_NOT_FOUND")
-        otp_id, otp_hash, attempts, is_used, expires_at = latest
-        if is_used:
-            return create_error_response("AUTH_EMAIL_OTP_INVALID")
-        if otp_is_over_attempts(attempts):
-            return create_error_response("AUTH_EMAIL_OTP_TOO_MANY")
-        if otp_is_expired(expires_at):
-            return create_error_response("AUTH_EMAIL_OTP_EXPIRED")
-        expected = hash_email_otp(public_id=public_id, email=email, otp=otp)
-        if expected != otp_hash:
-            increment_email_otp_attempts(db, otp_id=int(otp_id))
-            db.commit()
-            return create_error_response("AUTH_EMAIL_OTP_INVALID")
-        mark_email_otp_used(db, otp_id=int(otp_id))
-        mark_participant_email_verified(db, participant_id=int(participant_id))
-        db.commit()
-        return success_response({
-            RESPONSE_KEY_EMAIL: stored_email,
-            RESPONSE_KEY_EMAIL_VERIFIED: True,
-        })
+        result = verify_email_otp_workflow(
+            db=db,
+            public_id=public_id,
+            email=email,
+            otp=otp,
+        )
+        return result.response, result.status_code
     except Exception:
         return create_error_response("SYS_EMAIL_OTP_VERIFY_FAILED")

@@ -132,19 +132,28 @@ export function useSurveyEngagement({ copyPasteDisabled }) {
   }, []);
 
   return {
-    engagementData,
-    setEngagementData: updateEngagementData,
-    engagementDataRef,
-    elapsed,
-    setElapsed: updateElapsed,
-    elapsedRef,
-    timerActive,
-    setTimerActive,
-    descriptionRef,
-    commentsRef,
+    engagementState: {
+      engagementData,
+      elapsed,
+      timerActive,
+      descriptionRef,
+      commentsRef,
+      surveyStartTime,
+    },
+    engagementRefs: {
+      engagementDataRef,
+      elapsedRef,
+    },
+    engagementActions: {
+      setEngagementData: updateEngagementData,
+      setElapsed: updateElapsed,
+      setTimerActive,
+      resetEngagement,
+    },
+    clipboardHandlers: {
+      preventCopyPaste,
+      preventClipboardShortcuts,
+    },
     surveyStartTime,
-    preventCopyPaste,
-    preventClipboardShortcuts,
-    resetEngagement,
   };
 }
