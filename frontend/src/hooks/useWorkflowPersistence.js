@@ -14,9 +14,9 @@ import {
   writeCoreValue,
 } from "../utils/appControllerState";
 import { SURVEY_API_FIELDS } from "../constants/fields";
-import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { telemetryIncrement } from "../utils/clientTelemetry";
 import { migratePreAuthScopeToPublic } from "../utils/preAuthMigration";
+import { useDebouncedPersistence } from "./useDebouncedPersistence";
 
 const CORE_STATE_STORAGE_AREA = "local";
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
@@ -65,12 +65,92 @@ export function useWorkflowPersistence({
   shownImages,
   setShownImages,
 }) {
-  const demographicsSaveTimeoutRef = useRef(null);
   const migratedScopePairRef = useRef("");
   const migrationOwnerIdRef = useRef(
     `tab_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
   );
   const canPersistCore = Boolean(sessionHydrated && publicId);
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: stage,
+    delayMs: 250,
+    onWrite: (nextStage) => writeCoreValue(runtimeConfig.storageKeys.stage, nextStage, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: sessionId,
+    delayMs: 250,
+    onWrite: (nextSessionId) => writeCoreValue(runtimeConfig.storageKeys.sessionId, nextSessionId, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: consentGiven,
+    delayMs: 250,
+    onWrite: (nextConsentGiven) => writeCoreValue(runtimeConfig.storageKeys.consentGiven, nextConsentGiven, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: userDetailsSubmitted,
+    delayMs: 250,
+    onWrite: (nextUserDetailsSubmitted) => writeCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, nextUserDetailsSubmitted, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: emailVerified,
+    delayMs: 250,
+    onWrite: (nextEmailVerified) => writeCoreValue(runtimeConfig.storageKeys.emailVerified, nextEmailVerified, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: Boolean(canPersistCore && isOnline),
+    value: demographics,
+    delayMs: 700,
+    onWrite: (nextDemographics) => {
+      writeCoreValue(runtimeConfig.storageKeys.demographics, nextDemographics, scopeId, { ttlMs: PII_STATE_TTL_MS });
+    },
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: survey,
+    delayMs: 300,
+    onWrite: (nextSurvey) => writeCoreValue(runtimeConfig.storageKeys.survey, nextSurvey, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: surveyCompleted,
+    delayMs: 250,
+    onWrite: (nextSurveyCompleted) => writeCoreValue(runtimeConfig.storageKeys.surveyCompleted, nextSurveyCompleted, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: surveyFeedbackReady,
+    delayMs: 250,
+    onWrite: (nextSurveyFeedbackReady) => writeCoreValue(runtimeConfig.storageKeys.surveyFeedbackReady, nextSurveyFeedbackReady, scopeId),
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: lastSubmissionSucceeded,
+    delayMs: 250,
+    onWrite: (nextLastSubmissionSucceeded) => {
+      writeCoreValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, nextLastSubmissionSucceeded, scopeId);
+    },
+  });
+
+  useDebouncedPersistence({
+    enabled: canPersistCore,
+    value: shownImages,
+    delayMs: 300,
+    onWrite: (nextShownImages) => writeCoreValue(runtimeConfig.storageKeys.shownImages, nextShownImages, scopeId),
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -121,73 +201,21 @@ export function useWorkflowPersistence({
     migratedScopePairRef.current = pair;
   }, [preAuthId, publicId, sessionHydrated]);
   useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.stage, stage, scopeId);
-  }, [canPersistCore, scopeId, stage]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.sessionId, sessionId, scopeId);
-  }, [canPersistCore, scopeId, sessionId]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.consentGiven, consentGiven, scopeId);
-  }, [canPersistCore, consentGiven, scopeId]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, userDetailsSubmitted, scopeId);
-  }, [canPersistCore, scopeId, userDetailsSubmitted]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.emailVerified, emailVerified, scopeId);
-  }, [canPersistCore, emailVerified, scopeId]);
-  useEffect(() => {
-    if (!canPersistCore || !isOnline) return;
-    if (demographicsSaveTimeoutRef.current) {
-      clearScheduledTimeout(demographicsSaveTimeoutRef.current);
-    }
-    demographicsSaveTimeoutRef.current = scheduleTimeout(() => {
-      writeCoreValue(runtimeConfig.storageKeys.demographics, demographics, scopeId, { ttlMs: PII_STATE_TTL_MS });
-    }, 700);
-  }, [canPersistCore, demographics, isOnline, scopeId]);
-  useEffect(() => () => {
-    if (demographicsSaveTimeoutRef.current) {
-      clearScheduledTimeout(demographicsSaveTimeoutRef.current);
-    }
-  }, []);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.survey, survey, scopeId);
-  }, [canPersistCore, scopeId, survey]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.surveyCompleted, surveyCompleted, scopeId);
-  }, [canPersistCore, scopeId, surveyCompleted]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.surveyFeedbackReady, surveyFeedbackReady, scopeId);
-  }, [canPersistCore, scopeId, surveyFeedbackReady]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, lastSubmissionSucceeded, scopeId);
-  }, [canPersistCore, lastSubmissionSucceeded, scopeId]);
-  useEffect(() => {
-    if (!canPersistCore) return;
-    writeCoreValue(runtimeConfig.storageKeys.shownImages, shownImages, scopeId);
-  }, [canPersistCore, scopeId, shownImages]);
-
-  useEffect(() => {
     if (!publicId) return;
 
     const sessionStored = readCoreValue(runtimeConfig.storageKeys.sessionId, "", publicId);
-    setSessionId((prev) => (sessionStored ? sessionStored : prev));
+    setSessionId((prev) => (prev || sessionStored || ""));
     const stageStored = readCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.consent, publicId);
-    setStage((prev) => (stageStored ? normalizeAppStage(stageStored) : prev));
+    setStage((prev) => {
+      if (prev && prev !== APP_FLOW.stages.consent) return prev;
+      return stageStored ? normalizeAppStage(stageStored) : prev;
+    });
     const consentStored = readCoreValue(runtimeConfig.storageKeys.consentGiven, null, publicId);
-    if (typeof consentStored === "boolean") setConsentGiven((prev) => (consentStored !== prev ? consentStored : prev));
+    if (typeof consentStored === "boolean") setConsentGiven((prev) => (prev ? prev : consentStored));
     const userDetailsStored = readCoreValue(runtimeConfig.storageKeys.userDetailsSubmitted, null, publicId);
-    if (typeof userDetailsStored === "boolean") setUserDetailsSubmitted((prev) => (userDetailsStored !== prev ? userDetailsStored : prev));
+    if (typeof userDetailsStored === "boolean") setUserDetailsSubmitted((prev) => (prev ? prev : userDetailsStored));
     const emailStored = readCoreValue(runtimeConfig.storageKeys.emailVerified, null, publicId);
-    if (typeof emailStored === "boolean") setEmailVerified((prev) => (emailStored !== prev ? emailStored : prev));
+    if (typeof emailStored === "boolean") setEmailVerified((prev) => (prev ? prev : emailStored));
     const storedDemographics = readCoreValue(runtimeConfig.storageKeys.demographics, {
       username: "",
       email: "",
@@ -197,7 +225,10 @@ export function useWorkflowPersistence({
       language_code: "",
       prior_experience: "",
     }, publicId, { ttlMs: PII_STATE_TTL_MS });
-    setDemographics((prev) => (hasAnyDemographicsValue(storedDemographics) ? storedDemographics : prev));
+    setDemographics((prev) => {
+      if (hasAnyDemographicsValue(prev)) return prev;
+      return hasAnyDemographicsValue(storedDemographics) ? storedDemographics : prev;
+    });
 
     const storedSurvey = normalizeStoredSurvey(readCoreValue(runtimeConfig.storageKeys.survey, null, publicId));
     if (storedSurvey) {
@@ -209,14 +240,18 @@ export function useWorkflowPersistence({
 
     const storedSurveyCompleted = readCoreValue(runtimeConfig.storageKeys.surveyCompleted, null, publicId);
     if (Number.isInteger(storedSurveyCompleted) && storedSurveyCompleted >= 0) {
-      setSurveyCompleted((prev) => (storedSurveyCompleted !== prev ? storedSurveyCompleted : prev));
+      setSurveyCompleted((prev) => Math.max(prev, storedSurveyCompleted));
     }
 
     const storedSurveyFeedbackReady = readCoreValue(runtimeConfig.storageKeys.surveyFeedbackReady, null, publicId);
-    if (typeof storedSurveyFeedbackReady === "boolean") setSurveyFeedbackReady(storedSurveyFeedbackReady);
+    if (typeof storedSurveyFeedbackReady === "boolean") {
+      setSurveyFeedbackReady((prev) => (prev ? prev : storedSurveyFeedbackReady));
+    }
 
     const storedLastSubmissionSucceeded = readCoreValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, null, publicId);
-    if (typeof storedLastSubmissionSucceeded === "boolean") setLastSubmissionSucceeded(storedLastSubmissionSucceeded);
+    if (typeof storedLastSubmissionSucceeded === "boolean") {
+      setLastSubmissionSucceeded((prev) => (prev ? prev : storedLastSubmissionSucceeded));
+    }
 
     const storedShownImages = readCoreValue(runtimeConfig.storageKeys.shownImages, [], publicId);
     if (Array.isArray(storedShownImages) && storedShownImages.length > 0) {
