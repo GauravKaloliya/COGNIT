@@ -19,6 +19,7 @@ import { useWorkflowCoreState } from "./useWorkflowCoreState";
 import { useWorkflowPersistence } from "./useWorkflowPersistence";
 import { clearAllSurveyDraftsForUser } from "../utils/surveyDraft";
 import { WORKFLOW_EVENT_TYPES } from "../utils/workflowStateMachine";
+import { resetTelemetrySession } from "../utils/clientTelemetry";
 
 const EMPTY_DEMOGRAPHICS = {
   username: "",
@@ -178,6 +179,7 @@ export function useAppController() {
     }).then((participant) => {
       const nextPublicId = String(participant?.public_id || "").trim();
       const nextSessionId = String(participant?.session_id || "").trim();
+      resetTelemetrySession(APP_FLOW.stages.userDetails);
       if (nextPublicId) {
         writeCoreValue(runtimeConfig.storageKeys.demographics, demographics, nextPublicId, {
           ttlMs: runtimeConfig.piiStateTtlMs,
@@ -267,6 +269,7 @@ export function useAppController() {
 
   const resetWorkflowToConsent = useCallback((scopeOverride = null, options = {}) => {
     clearUserStorage(scopeOverride || publicId, options);
+    resetTelemetrySession(APP_FLOW.stages.consent);
     resetWorkflowState({
       publicId: "",
       sessionId: "",

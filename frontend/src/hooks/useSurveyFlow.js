@@ -10,7 +10,7 @@ import { TOAST_VARIANTS } from "../constants/ui";
 import { REQUEST_CODES } from "../constants/request";
 import { scheduleTimeout } from "../utils/timing";
 import { forEachStorageArea, getStoredValue, makeScopedKey, removeStoredKey } from "../utils/storage";
-import { getTelemetrySnapshot } from "../utils/clientTelemetry";
+import { consumeSurveyTelemetrySnapshot } from "../utils/clientTelemetry";
 import { readCoreValue } from "../utils/appControllerState";
 import { APP_FLOW } from "../config/appFlow";
 import {
@@ -130,6 +130,7 @@ export function useSurveyFlow({
   useEffect(() => {
     if (!sessionHydrated || !systemReady || stage !== APP_FLOW.stages.survey) return;
     if (!publicId || surveyState.surveyFeedbackReady) return;
+    if (surveyState.isFetchingImage || surveyState.isTransitioningToNext) return;
     if (normalizeSurvey(surveyState.survey)) return;
 
     const storedSurvey = readStoredSurvey(publicId);
@@ -144,6 +145,8 @@ export function useSurveyFlow({
     publicId,
     sessionHydrated,
     stage,
+    surveyState.isFetchingImage,
+    surveyState.isTransitioningToNext,
     surveyState.survey,
     surveyState.surveyFeedbackReady,
     systemReady,
@@ -169,7 +172,7 @@ export function useSurveyFlow({
     submitAbortRef.current = controller;
 
     try {
-      const telemetry = getTelemetrySnapshot("survey");
+      const telemetry = consumeSurveyTelemetrySnapshot("survey");
       const response = await endpoints.submitDescription({
         [SURVEY_API_FIELDS.publicId]: effectivePublicId,
         [SURVEY_API_FIELDS.sessionId]: activeContext.sessionId || undefined,
