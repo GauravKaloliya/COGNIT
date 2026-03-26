@@ -49,7 +49,8 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- DB-level hard flag rule: 2 consecutive failed attention checks.
+    -- DB-level attention flag rules mirror backend/app/config_sections/survey.py.
+    -- Hard flag: 2 consecutive failed attention checks.
     SELECT (
         COUNT(*) = 2
         AND bool_and(COALESCE(attention_passed, FALSE) = FALSE)
@@ -89,8 +90,8 @@ BEGIN
                           (participant_attention_stats.total_checks + 1),
         is_flagged = participant_attention_stats.is_flagged OR (
             ((participant_attention_stats.passed_checks + pass_inc)::NUMERIC /
-             (participant_attention_stats.total_checks + 1)) < 0.60 AND
-            (participant_attention_stats.total_checks + 1) >= 3
+             (participant_attention_stats.total_checks + 1)) < 0.50 AND
+            (participant_attention_stats.total_checks + 1) >= 5
         ) OR hard_flag,
         last_checked_at = CURRENT_TIMESTAMP;
 
@@ -244,7 +245,7 @@ CREATE TABLE IF NOT EXISTS participants (
     email_verified   BOOLEAN NOT NULL DEFAULT FALSE,
     email_verified_at TIMESTAMPTZ,
     stage VARCHAR(32) NOT NULL DEFAULT 'consent'
-        CHECK (stage IN ('consent','user-details','survey','finished')),
+        CHECK (stage IN ('consent','user-details','survey','post-survey')),
     stage_updated_at TIMESTAMPTZ,
     ip_hash          CHAR(64) NOT NULL CHECK (length(ip_hash) = 64),
     user_agent       VARCHAR(512),
@@ -274,6 +275,9 @@ CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (sessi
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_participants_public_not_deleted
     ON participants (public_id, is_deleted);
+CREATE INDEX IF NOT EXISTS idx_participants_public_email_not_deleted
+    ON participants (public_id, email)
+    WHERE is_deleted = false AND email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_participants_email_not_deleted
     ON participants (email, is_deleted) WHERE email IS NOT NULL;
 
@@ -281,6 +285,34 @@ COMMENT ON COLUMN participants.stage IS
     'App-owned participant progression stage used by frontend/backends to coordinate flow.';
 COMMENT ON COLUMN participants.stage_updated_at IS
     'Convenience timestamp updated only when stage changes.';
+
+-- Participant sessions (normalized session lifecycle model).
+CREATE TABLE IF NOT EXISTS participant_sessions (
+    id             BIGSERIAL PRIMARY KEY,
+    participant_id BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    session_id     VARCHAR(128) NOT NULL,
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at       TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_participant_sessions_participant_session UNIQUE (participant_id, session_id)
+);
+
+CREATE TRIGGER trg_participant_sessions_updated_at
+    BEFORE UPDATE ON participant_sessions
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_participant_sessions_participant_created
+    ON participant_sessions (participant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_participant_sessions_session_id
+    ON participant_sessions (session_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_sessions_id_participant
+    ON participant_sessions (id, participant_id);
+CREATE INDEX IF NOT EXISTS idx_participant_sessions_active
+    ON participant_sessions (participant_id, last_seen_at DESC)
+    WHERE ended_at IS NULL;
 
 -- Email OTPs (verification)
 CREATE TABLE IF NOT EXISTS email_otps (
@@ -347,6 +379,28 @@ ALTER TABLE attention_checks
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attention_checks_active_unique
     ON attention_checks (image_id) WHERE is_active = true;
 
+CREATE TABLE IF NOT EXISTS ground_truth_labels (
+    image_id   BIGINT REFERENCES images(id) ON DELETE CASCADE,
+    object     TEXT NOT NULL,
+    is_present BOOLEAN NOT NULL DEFAULT TRUE,
+
+    CONSTRAINT ground_truth_labels_pk PRIMARY KEY (image_id, object)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ground_truth_labels_image
+    ON ground_truth_labels (image_id);
+
+CREATE TABLE IF NOT EXISTS image_ground_truths (
+    image_id   BIGINT REFERENCES images(id) ON DELETE CASCADE,
+    object     TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT image_ground_truths_pk PRIMARY KEY (image_id, object)
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_ground_truths_image
+    ON image_ground_truths (image_id);
+
 CREATE TABLE IF NOT EXISTS image_reservations (
     image_public_id VARCHAR(64) PRIMARY KEY REFERENCES images(image_id) ON DELETE CASCADE,
     participant_id  BIGINT REFERENCES participants(id) ON DELETE CASCADE,
@@ -370,11 +424,12 @@ CREATE TABLE IF NOT EXISTS submissions (
     id                  BIGSERIAL PRIMARY KEY,
     request_id          UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
     participant_id      BIGINT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    participant_session_id BIGINT,
     image_id            BIGINT NOT NULL REFERENCES images(id) ON DELETE RESTRICT,
     survey_index        INTEGER,
     description         TEXT NOT NULL CHECK (length(description) BETWEEN 60 AND 10000),
     word_count          INTEGER NOT NULL CHECK (word_count >= 0),
-    rating              SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 10),
+    rating              SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
     feedback            TEXT NOT NULL CHECK (length(feedback) BETWEEN 5 AND 2000),
     time_spent_seconds  REAL NOT NULL DEFAULT 0 CHECK (time_spent_seconds >= 0),
     is_survey           BOOLEAN NOT NULL DEFAULT FALSE,
@@ -382,8 +437,10 @@ CREATE TABLE IF NOT EXISTS submissions (
     attention_passed    BOOLEAN,
     flagged_too_fast    BOOLEAN NOT NULL DEFAULT FALSE,
     quality_score       NUMERIC(5,4) CHECK (quality_score BETWEEN 0 AND 1),
+    alignment_score     NUMERIC(5,4) CHECK (alignment_score BETWEEN 0 AND 1),
     ip_hash             CHAR(64) NOT NULL,
     user_agent          VARCHAR(512),
+    device_type         VARCHAR(20),
     extra_metadata      JSONB NOT NULL DEFAULT '{}',
     tab_switch_count    INTEGER NOT NULL DEFAULT 0 CHECK (tab_switch_count >= 0),
     page_close_attempts INTEGER NOT NULL DEFAULT 0 CHECK (page_close_attempts >= 0),
@@ -398,6 +455,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     survey_keypresses INTEGER NOT NULL DEFAULT 0 CHECK (survey_keypresses >= 0),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+    CONSTRAINT fk_submissions_participant_session
+        FOREIGN KEY (participant_session_id, participant_id)
+        REFERENCES participant_sessions(id, participant_id),
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
     CONSTRAINT chk_attention_passed_consistent CHECK (NOT (is_attention_check = true AND attention_passed IS NULL)),
     CONSTRAINT chk_survey_fields_symmetric CHECK ((survey_index IS NULL) = (is_survey = false))
@@ -411,12 +471,71 @@ CREATE TRIGGER trg_sync_attention_stats_from_submission
     EXECUTE FUNCTION sync_attention_stats_from_submission();
 
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_created ON submissions (participant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_participant_session
+    ON submissions (participant_session_id)
+    WHERE participant_session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_quality ON submissions (participant_id, quality_score DESC, created_at DESC) WHERE is_survey = true;
 CREATE INDEX IF NOT EXISTS idx_submissions_attention ON submissions (is_attention_check, attention_passed);
+CREATE INDEX IF NOT EXISTS idx_submissions_attention_quality ON submissions (is_attention_check, attention_passed, quality_score);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey
     ON submissions (participant_id, is_survey, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey_index_desc
+    ON submissions (participant_id, survey_index DESC)
+    WHERE is_survey = true AND survey_index IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_image_non_survey
     ON submissions (participant_id, image_id, created_at DESC) WHERE is_survey = false;
+
+-- =====================================================================
+-- SUBMISSION BEHAVIOR METRICS (PHASE 2)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS submission_behavior_metrics (
+    submission_id BIGINT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,
+    time_before_typing_ms BIGINT,
+    edit_count INTEGER,
+    backspace_count INTEGER,
+    avg_keystroke_interval_ms REAL,
+    keystroke_variance REAL,
+    pause_count INTEGER,
+    avg_pause_duration_ms REAL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_submission_behavior_pause_count
+    ON submission_behavior_metrics (pause_count);
+
+-- =====================================================================
+-- SUBMISSION COGNITIVE METRICS (NO-DUP SOURCE OF TRUTH)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS submission_cognitive_metrics (
+    submission_id BIGINT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,
+    confidence_score SMALLINT CHECK (confidence_score BETWEEN 1 AND 5),
+    difficulty_self_report SMALLINT CHECK (difficulty_self_report BETWEEN 1 AND 5),
+    first_view_duration_ms BIGINT NOT NULL DEFAULT 0 CHECK (first_view_duration_ms >= 0),
+    writing_duration_ms BIGINT NOT NULL DEFAULT 0 CHECK (writing_duration_ms >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_submission_cognitive_confidence
+    ON submission_cognitive_metrics (confidence_score);
+CREATE INDEX IF NOT EXISTS idx_submission_cognitive_difficulty
+    ON submission_cognitive_metrics (difficulty_self_report);
+
+-- =====================================================================
+-- SUBMISSION ALIGNMENT MENTIONS (NO-DUP SOURCE OF TRUTH)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS submission_alignment_mentions (
+    id BIGSERIAL PRIMARY KEY,
+    submission_id BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+    mention_type VARCHAR(16) NOT NULL CHECK (mention_type IN ('object', 'spatial')),
+    mention VARCHAR(80) NOT NULL,
+    mention_order SMALLINT NOT NULL DEFAULT 0 CHECK (mention_order >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_submission_alignment_mention UNIQUE (submission_id, mention_type, mention)
+);
+CREATE INDEX IF NOT EXISTS idx_submission_alignment_submission
+    ON submission_alignment_mentions (submission_id, mention_type, mention_order);
+CREATE INDEX IF NOT EXISTS idx_submission_alignment_lookup
+    ON submission_alignment_mentions (mention_type, mention);
+CREATE INDEX IF NOT EXISTS idx_alignment_fast_lookup
+    ON submission_alignment_mentions (mention, mention_type);
 
 -- =====================================================================
 -- ATTENTION EVENTS (IMMUTABLE AUDIT)

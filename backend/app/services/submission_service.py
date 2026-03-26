@@ -1,11 +1,12 @@
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy import text
 
 from app.constants.event_constants import AUDIT_EVENT_SUBMISSION, DOMAIN_EVENT_SUBMISSION_SAVED, HTTP_METHOD_POST
+from app.constants.audit_details import AUDIT_DETAIL_SUBMISSION
 from app.constants.route_constants import SUBMIT_ROUTE
 from app.constants.submission_patterns import (
     ALPHABETIC_TOKEN_RE,
@@ -30,6 +31,22 @@ SUBMIT_POST_COMMIT_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="submit-post-commit",
 )
 logger = logging.getLogger(__name__)
+SPATIAL_TERMS = {
+    "left", "right", "top", "bottom", "above", "below", "under", "over",
+    "behind", "front", "between", "middle", "center", "inside", "outside",
+    "near", "far", "next", "beside",
+}
+OBJECT_STOPWORDS = {
+    "a", "an", "the", "this", "that", "there", "with", "from", "into", "onto",
+    "what", "where", "when", "while", "about", "after", "before", "because",
+    "very", "more", "most", "just", "have", "has", "had", "were", "was", "are",
+    "and", "for", "but", "then", "than", "they", "them", "their", "your", "you",
+    "our", "ours", "his", "her", "its", "image", "picture", "looks", "seems",
+}
+NORMALIZATION_MAP = {
+    "puppy": "dog",
+    "bunny": "rabbit",
+}
 
 
 def _bounded_backoff(attempt: int, base_backoff_ms: int, max_backoff_ms: int) -> float:
@@ -54,6 +71,17 @@ def clamp_time_spent_seconds(value) -> float:
         return parsed if parsed >= 0 else 0.0
     except Exception:
         return 0.0
+
+
+def infer_device_type(user_agent: str) -> str:
+    ua = str(user_agent or "").lower()
+    if not ua:
+        return "unknown"
+    if any(token in ua for token in ["mobile", "iphone", "android", "windows phone"]):
+        return "mobile"
+    if any(token in ua for token in ["ipad", "tablet"]):
+        return "tablet"
+    return "desktop"
 
 
 def normalize_engagement_counts(
@@ -143,6 +171,141 @@ def extract_survey_metrics(payload):
     }
 
 
+def _safe_optional_smallint(value, *, minimum: int, maximum: int):
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    if parsed < minimum or parsed > maximum:
+        return None
+    return parsed
+
+
+def _safe_optional_float(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _safe_string_list(value, *, max_items: int = 20, max_item_len: int = 80):
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for item in value:
+        text_value = str(item or "").strip().lower()
+        if not text_value:
+            continue
+        normalized = NORMALIZE_WHITESPACE_RE.sub(" ", text_value)[:max_item_len]
+        if normalized and normalized not in cleaned:
+            cleaned.append(normalized)
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+
+def _extract_alignment_mentions(description: str):
+    tokens = normalize_for_attention(description).split()
+    object_mentions = []
+    spatial_mentions = []
+    for token in tokens:
+        if token in SPATIAL_TERMS:
+            if token not in spatial_mentions:
+                spatial_mentions.append(token)
+            continue
+        if len(token) < 3 or token in OBJECT_STOPWORDS:
+            continue
+        if token not in object_mentions:
+            object_mentions.append(token)
+        if len(object_mentions) >= 12 and len(spatial_mentions) >= 10:
+            break
+    return {
+        "object_mentions": object_mentions[:12],
+        "spatial_mentions": spatial_mentions[:10],
+    }
+
+
+def extract_objects(description: str) -> set[str]:
+    mentions = _extract_alignment_mentions(description)
+    return set(mentions.get("object_mentions") or [])
+
+
+def normalize_objects(objects: Iterable[str]) -> set[str]:
+    normalized = set()
+    for obj in objects:
+        token = str(obj or "").strip().lower()
+        if not token:
+            continue
+        normalized.add(NORMALIZATION_MAP.get(token, token))
+    return normalized
+
+
+def compute_alignment(user_objects: set[str], gt_objects: set[str]):
+    if not gt_objects:
+        return None
+    correct = user_objects & gt_objects
+    wrong = user_objects - gt_objects
+    missed = gt_objects - user_objects
+
+    precision = (len(correct) / len(user_objects)) if user_objects else 0.0
+    recall = len(correct) / len(gt_objects)
+    if precision + recall == 0:
+        f1 = 0.0
+    else:
+        f1 = (2 * precision * recall) / (precision + recall)
+
+    return {
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+        "correct": sorted(correct),
+        "wrong": sorted(wrong),
+        "missed": sorted(missed),
+    }
+
+
+def get_ground_truth_objects(db, image_id: int) -> set[str]:
+    rows = db.execute(text("""
+        SELECT object
+        FROM image_ground_truths
+        WHERE image_id = :image_id
+    """), {"image_id": int(image_id)}).fetchall()
+    return {row[0] for row in rows or []}
+
+
+def extract_submission_phase_metrics(payload: dict[str, Any], *, description: str = ""):
+    metrics = payload if isinstance(payload, dict) else {}
+    difficulty_self_report = _safe_optional_smallint(metrics.get("difficulty_self_report"), minimum=1, maximum=5)
+    alignment_mentions = _extract_alignment_mentions(description)
+
+    phase_metrics = {
+        "confidence_score": _safe_optional_smallint(metrics.get("confidence_score"), minimum=1, maximum=5),
+        "difficulty_self_report": difficulty_self_report,
+        "object_mentions": alignment_mentions["object_mentions"],
+        "spatial_mentions": alignment_mentions["spatial_mentions"],
+        "first_view_duration_ms": safe_non_negative_int(metrics.get("first_view_duration_ms"), 0),
+        "writing_duration_ms": safe_non_negative_int(metrics.get("writing_duration_ms"), 0),
+    }
+
+    behavior_metrics = {
+        "time_before_typing_ms": safe_non_negative_int(metrics.get("time_before_typing_ms"), 0),
+        "edit_count": safe_non_negative_int(metrics.get("edit_count"), 0),
+        "backspace_count": safe_non_negative_int(metrics.get("backspace_count"), 0),
+        "avg_keystroke_interval_ms": _safe_optional_float(metrics.get("avg_keystroke_interval_ms")),
+        "keystroke_variance": _safe_optional_float(metrics.get("keystroke_variance")),
+        "pause_count": safe_non_negative_int(metrics.get("pause_count"), 0),
+        "avg_pause_duration_ms": _safe_optional_float(metrics.get("avg_pause_duration_ms")),
+    }
+    return {
+        "phase_metrics": phase_metrics,
+        "behavior_metrics": behavior_metrics,
+    }
+
+
 def enqueue_submit_post_commit_tasks(
     *,
     engine,
@@ -178,7 +341,11 @@ def enqueue_submit_post_commit_tasks(
                         "st": 200,
                         "iph": "0" * 64,
                         "ua": "",
-                        "det": f"wc={word_count} q={quality:.3f} survey={is_survey}",
+                        "det": AUDIT_DETAIL_SUBMISSION.format(
+                            word_count=word_count,
+                            quality=quality,
+                            is_survey=is_survey,
+                        ),
                         "rid": None,
                     })
                     emit_domain_event_fn(

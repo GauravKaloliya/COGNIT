@@ -1,5 +1,4 @@
 import React from "react";
-import PageSkeleton from "../components/PageSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import { uiText } from "../utils/uiText";
 import DSButton from "../components/design/DSButton.jsx";
@@ -13,12 +12,8 @@ export default function PostSurveyPage({
   resetWorkflowToConsent = null,
   setSurveyFeedbackReady = null,
   setStage = null,
-  fetchNextSurvey = null,
 }) {
   const {
-    loadingNext,
-    continueError,
-    handleSurveyContinue,
     handleSurveyFinish,
   } = usePostSurveyPage({
     publicId,
@@ -26,18 +21,7 @@ export default function PostSurveyPage({
     resetWorkflowToConsent,
     setSurveyFeedbackReady,
     setStage,
-    fetchNextSurvey,
   });
-
-  if (loadingNext) {
-    return (
-      <PageSkeleton
-        title={uiText("survey.loadingNext")}
-        subtitle={uiText("survey.loadingNextSubtitle")}
-        variant="survey"
-      />
-    );
-  }
 
   return (
     <div className="panel finish-panel survey-feed-panel">
@@ -56,43 +40,13 @@ export default function PostSurveyPage({
         <p className="debrief">{uiText("finish.debrief")}</p>
         <PageActions sticky inline className="survey-feedback-actions">
           <DSButton
-            className="primary"
-            onClick={handleSurveyContinue}
-            disabled={loadingNext}
-          >
-            {loadingNext ? uiText("survey.loading") : uiText("common.continue")}
-          </DSButton>
-          <DSButton
             variant="ghost"
             className="survey-feedback-finish"
             onClick={handleSurveyFinish}
-            disabled={loadingNext}
           >
             {uiText("finish.finishButton")}
           </DSButton>
         </PageActions>
-        {continueError && (
-          <div className="card">
-            <div className="card-header">
-              <PanelState
-                variant="warning"
-                title={uiText("survey.unableLoadNext")}
-                message={uiText("survey.feedLoadFailedWithHint", { error: continueError })}
-                actionLabel={null}
-                onAction={null}
-                disabled
-              />
-            </div>
-            <div className="card-body">
-              <p className="helper-text">{uiText("survey.guidanceTitle")}</p>
-              <ul className="guidance-list">
-                <li>{uiText("survey.guidanceCheckConnection")}</li>
-                <li>{uiText("survey.guidanceContinueLater")}</li>
-                <li>{uiText("survey.guidanceSupport")}</li>
-              </ul>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

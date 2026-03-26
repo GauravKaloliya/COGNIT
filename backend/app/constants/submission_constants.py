@@ -5,6 +5,7 @@ ATTENTION_FAILURE_TOO_SHORT = "attention_too_short"
 ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT = "low_distinct_word_count"
 ATTENTION_FAILURE_COPIED_PATTERN = "copied_attention_pattern"
 ATTENTION_FAILURE_TOO_FAST = "too_fast_attention"
+ATTENTION_FAILURE_LOW_RECALL = "low_alignment_recall"
 
 PARTICIPANT_META_KEY_ATTENTION_MONITOR = "attention_monitor"
 PARTICIPANT_META_KEY_RECENT_RESULTS = "recent_results"

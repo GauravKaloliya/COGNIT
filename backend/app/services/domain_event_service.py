@@ -1,6 +1,11 @@
 import json
 from typing import Any, Dict, Optional
 
+from app.constants.audit_details import (
+    AUDIT_DETAIL_KEY_CORRELATION_ID,
+    AUDIT_DETAIL_KEY_EVENT_TYPE,
+    AUDIT_DETAIL_KEY_PAYLOAD,
+)
 from app.constants.event_constants import HTTP_METHOD_INTERNAL
 from app.constants.response_keys import (
     RESPONSE_KEY_DETAILS,
@@ -20,9 +25,9 @@ def emit_domain_event(
     payload: Optional[Dict[str, Any]] = None,
 ) -> None:
     details = {
-        RESPONSE_KEY_EVENT_TYPE: event_type,
-        "correlation_id": correlation_id,
-        "payload": payload or {},
+        AUDIT_DETAIL_KEY_EVENT_TYPE: event_type,
+        AUDIT_DETAIL_KEY_CORRELATION_ID: correlation_id,
+        AUDIT_DETAIL_KEY_PAYLOAD: payload or {},
     }
 
     try:

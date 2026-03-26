@@ -1,5 +1,4 @@
 import React from "react";
-import { getErrorMessage } from "../../utils/errorRegistry.js";
 import { uiText } from "../../utils/uiText.js";
 import SectionSkeleton from "../SectionSkeleton.jsx";
 import DSButton from "../design/DSButton.jsx";
@@ -8,14 +7,28 @@ export default function SurveyImagePanel({
   imageSrc,
   imageLoaded,
   imageError,
+  showImageError,
   isZoomed,
   setIsZoomed,
-  retryCountdown,
+  _retryCountdown,
   retryDisabled,
   handleRetryImage,
   handleImageLoad,
   handleImageError,
 }) {
+  if (showImageError) {
+    return (
+      <div className="image-container">
+        <div className="image-error">
+          <p>{uiText("survey.feedLoadFailed")}</p>
+          <DSButton variant="primary" className="small button-top" onClick={handleRetryImage} disabled={retryDisabled}>
+            {uiText("common.retry")}
+          </DSButton>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`image-container ${isZoomed ? "zoomed" : ""}`}>
       {!imageError ? (
@@ -28,22 +41,8 @@ export default function SurveyImagePanel({
           onError={handleImageError}
           style={{ display: imageLoaded ? "block" : "none" }}
         />
-      ) : (
-        <div className="image-error">
-          <p>{getErrorMessage("SYS_002_0005")}</p>
-          {retryCountdown > 0 && (
-            <DSButton variant="primary" className="small button-top" disabled>
-              {uiText("common.tryAgainIn", { seconds: retryCountdown })}
-            </DSButton>
-          )}
-          {!retryDisabled && (
-            <DSButton variant="primary" className="small button-top" onClick={handleRetryImage}>
-              {uiText("common.retry")}
-            </DSButton>
-          )}
-        </div>
-      )}
-      {!imageLoaded && !imageError && (
+      ) : null}
+      {(!imageLoaded || imageError) && (
         <div className="image-loading">
           <SectionSkeleton title={uiText("survey.loadingImage")} rows={4} dense />
         </div>

@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { BROWSER_EVENTS } from "../constants/browser";
+import { ERROR_UI_EVENTS } from "../constants/errorUiEvents";
 import { initErrorReporter, reportClientError } from "../utils/errorReporter";
 import { uiText } from "../utils/uiText";
-
-const RATE_LIMIT_EVENT = "cognit:rate-limit";
-const MAINTENANCE_EVENT = "cognit:maintenance";
+import { getErrorMessage } from "../utils/errorRegistry";
 
 export function useGlobalAppEvents() {
   const [error, setError] = useState(null);
@@ -56,17 +55,30 @@ export function useGlobalAppEvents() {
       setMaintenanceError(detail || { message: uiText("app.maintenanceDefault") });
     };
 
+    const handleAccountFlagged = (event) => {
+      const detail = event?.detail || {};
+      setRateLimitError(null);
+      setMaintenanceError(null);
+      deferSetError({
+        ...detail,
+        code: detail?.code || "AUTH_001_0002",
+        message: detail?.message || getErrorMessage("AUTH_001_0002"),
+      });
+    };
+
     const teardownReporter = initErrorReporter();
     window.addEventListener(BROWSER_EVENTS.error, handleError);
     window.addEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
-    window.addEventListener(RATE_LIMIT_EVENT, handleRateLimit);
-    window.addEventListener(MAINTENANCE_EVENT, handleMaintenance);
+    window.addEventListener(ERROR_UI_EVENTS.rateLimit, handleRateLimit);
+    window.addEventListener(ERROR_UI_EVENTS.maintenance, handleMaintenance);
+    window.addEventListener(ERROR_UI_EVENTS.accountFlagged, handleAccountFlagged);
 
     return () => {
       window.removeEventListener(BROWSER_EVENTS.error, handleError);
       window.removeEventListener(BROWSER_EVENTS.unhandledRejection, handleUnhandledRejection);
-      window.removeEventListener(RATE_LIMIT_EVENT, handleRateLimit);
-      window.removeEventListener(MAINTENANCE_EVENT, handleMaintenance);
+      window.removeEventListener(ERROR_UI_EVENTS.rateLimit, handleRateLimit);
+      window.removeEventListener(ERROR_UI_EVENTS.maintenance, handleMaintenance);
+      window.removeEventListener(ERROR_UI_EVENTS.accountFlagged, handleAccountFlagged);
       teardownReporter();
     };
   }, []);

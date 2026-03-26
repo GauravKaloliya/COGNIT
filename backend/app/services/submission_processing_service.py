@@ -220,6 +220,13 @@ def build_submission_response_payload(
     consecutive_failures: int,
     recent_attention_score,
     hard_flag_triggered: bool,
+    attention_total_checks: int | None = None,
+    attention_passed_checks: int | None = None,
+    attention_failed_checks: int | None = None,
+    stage=None,
+    stage_updated_at=None,
+    stage_stale_seconds: int | None = None,
+    stage_escalation_recommended: bool = False,
 ):
     return {
         RESPONSE_KEY_STATUS: SUBMISSION_RESPONSE_STATUS,
@@ -245,5 +252,16 @@ def build_submission_response_payload(
             "consecutive_failures": consecutive_failures if is_attention else None,
             "recent_attention_score": recent_attention_score,
             "hard_flag_triggered": hard_flag_triggered,
+            "total_checks": attention_total_checks,
+            "passed_checks": attention_passed_checks,
+            "failed_checks": attention_failed_checks,
+        },
+        "workflow_status": {
+            "stage": stage,
+            "stage_updated_at": (
+                stage_updated_at.isoformat() if hasattr(stage_updated_at, "isoformat") else stage_updated_at
+            ),
+            "stage_stale_seconds": stage_stale_seconds,
+            "escalation_recommended": bool(stage_escalation_recommended),
         },
     }

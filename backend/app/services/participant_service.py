@@ -14,6 +14,7 @@ from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
     PARTICIPANT_FIELD_USERNAME,
 )
+from app.constants.error_keys import DUP_USERNAME
 from app.constants.request_keys import REQUEST_KEY_SESSION_ID
 from app.constants.participant_patterns import PUBLIC_ID_REGEX
 from app.services.participant_query_service import (
@@ -85,7 +86,7 @@ def find_existing_participant_conflict(db, *, username: str, email: str):
         return None
     existing_username, existing_email = existing
     if existing_username == username:
-        return "DUP_USERNAME"
+        return DUP_USERNAME
     if existing_email == email:
         return "DUP_EMAIL"
     return "DUP_PUBLIC_ID"
