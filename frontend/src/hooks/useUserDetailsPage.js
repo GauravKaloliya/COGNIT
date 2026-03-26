@@ -5,7 +5,6 @@ import { getDisplayErrorMessage } from "../utils/appError.js";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
-import { useRetryCountdown } from "./useRetryCountdown";
 import { useIsMobile } from "./useIsMobile";
 import { getPendingFlag, makeScopedKey, removeStoredKey, setPendingFlag } from "../utils/storage";
 import {
@@ -44,15 +43,11 @@ export function useUserDetailsPage({
   const isOnline = useOnlineStatus();
   const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
-  const [pendingSubmit, setPendingSubmit] = useState(false);
-  const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
 
   const {
     errors,
     setErrors,
-    fieldMeta,
     checking,
-    draftRestored,
     validateForm,
     updateField,
     handleFieldBlur,
@@ -77,10 +72,7 @@ export function useUserDetailsPage({
   const {
     locating,
     locationStatus,
-    locationPermissionDenied,
     locationPermissionState,
-    manualLocationAllowed,
-    locationAutoSucceeded,
     userEditedLocationRef,
     detectLocation,
   } = useUserDetailsLocation({
@@ -106,7 +98,6 @@ export function useUserDetailsPage({
     otpError,
     otpExpirySeconds,
     otpLength,
-    otpValue,
     resendSeconds,
     requestOtp,
     handleResend,
@@ -139,7 +130,6 @@ export function useUserDetailsPage({
       if (canPersistScoped && scopedUserDetailsPendingKey) {
         setPendingFlag(scopedUserDetailsPendingKey);
       }
-      setPendingSubmit(true);
       return;
     }
     if (!validateForm()) return;
@@ -255,7 +245,6 @@ export function useUserDetailsPage({
     const pending = getPendingFlag(scopedUserDetailsPendingKey) === true;
     if (!pending) return;
     removeStoredKey(scopedUserDetailsPendingKey);
-    setPendingSubmit(false);
     void handleSubmit();
   }, [canPersistScoped, handleSubmit, isOnline, scopedUserDetailsPendingKey, submitting]);
 
@@ -324,10 +313,7 @@ export function useUserDetailsPage({
     checking,
     locating,
     locationStatus,
-    locationPermissionDenied,
     locationPermissionState,
-    manualLocationAllowed,
-    locationAutoSucceeded,
     userEditedLocationRef,
     isFormComplete: formFlags.isFormComplete,
     canSubmit: formFlags.canSubmit,
@@ -335,11 +321,7 @@ export function useUserDetailsPage({
     handleSubmit,
     handleFieldBlur,
     updateField,
-    draftRestored,
-    fieldMeta,
-    retryCountdown,
     otpDigits,
-    otpValue,
     otpLength,
     showOtpField,
     otpStatus,

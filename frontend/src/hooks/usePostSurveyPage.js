@@ -19,7 +19,7 @@ export function usePostSurveyPage({
 
   useEffect(() => {
     document.title = uiText("finish.documentTitle");
-  }, [publicId]);
+  }, []);
 
   const handleSurveyFinish = useCallback(() => {
     if (!isOnline) {
@@ -39,12 +39,10 @@ export function usePostSurveyPage({
 
   useEffect(() => {
     if (!isOnline) return;
-    const shouldFinish = getPendingFlag(SURVEY_FEED_PENDING_FINISH_KEY);
-    if (shouldFinish) {
-      clearPendingFlag(SURVEY_FEED_PENDING_FINISH_KEY);
-      setPendingFinish(false);
-      handleSurveyFinish();
-    }
+    if (!getPendingFlag(SURVEY_FEED_PENDING_FINISH_KEY)) return;
+    clearPendingFlag(SURVEY_FEED_PENDING_FINISH_KEY);
+    setPendingFinish(false);
+    handleSurveyFinish();
   }, [handleSurveyFinish, isOnline]);
 
   useEffect(() => {

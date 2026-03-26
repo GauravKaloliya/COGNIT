@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { BROWSER_EVENTS } from "../constants/browser";
 
+function readOnlineStatus() {
+  return typeof navigator === "undefined" ? true : navigator.onLine;
+}
+
 export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(() =>
-    typeof navigator !== "undefined" ? navigator.onLine : true
-  );
+  const [isOnline, setIsOnline] = useState(readOnlineStatus);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);

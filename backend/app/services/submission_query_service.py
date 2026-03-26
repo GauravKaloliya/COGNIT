@@ -81,14 +81,14 @@ QUERY_INSERT_SUBMISSION = text("""
         attention_passed, flagged_too_fast, quality_score, alignment_score,
         ip_hash, user_agent, device_type, extra_metadata,
         tab_switch_count, page_close_attempts, network_disconnects,
-        survey_time_spent_ms, survey_page_views, survey_tab_switches,
+        survey_time_spent_seconds, survey_page_views, survey_tab_switches,
         survey_page_close_attempts, survey_network_disconnects,
         survey_max_scroll_depth_pct, survey_clicks, survey_keypresses
     ) VALUES (
         :pid, :psid, :iid, :sidx, :desc, :wc, :rt, :fb, :ts, :isv, :isa,
         :ap, :tf, :qs, :als, :iph, :ua, :dt, :meta,
         :tsc, :pca, :nd,
-        :survey_time_spent_ms, :survey_page_views, :survey_tab_switches,
+        :survey_time_spent_seconds, :survey_page_views, :survey_tab_switches,
         :survey_page_close_attempts, :survey_network_disconnects,
         :survey_max_scroll_depth_pct, :survey_clicks, :survey_keypresses
     ) RETURNING id
@@ -111,22 +111,22 @@ QUERY_UPSERT_PARTICIPANT_SESSION = text("""
 QUERY_INSERT_SUBMISSION_BEHAVIOR_METRICS = text("""
     INSERT INTO submission_behavior_metrics (
         submission_id,
-        time_before_typing_ms,
+        time_before_typing_seconds,
         edit_count,
         backspace_count,
-        avg_keystroke_interval_ms,
+        avg_keystroke_interval_seconds,
         keystroke_variance,
         pause_count,
-        avg_pause_duration_ms
+        avg_pause_duration_seconds
     ) VALUES (
         :submission_id,
-        :time_before_typing_ms,
+        :time_before_typing_seconds,
         :edit_count,
         :backspace_count,
-        :avg_keystroke_interval_ms,
+        :avg_keystroke_interval_seconds,
         :keystroke_variance,
         :pause_count,
-        :avg_pause_duration_ms
+        :avg_pause_duration_seconds
     )
 """)
 
@@ -135,14 +135,14 @@ QUERY_INSERT_SUBMISSION_COGNITIVE_METRICS = text("""
         submission_id,
         confidence_score,
         difficulty_self_report,
-        first_view_duration_ms,
-        writing_duration_ms
+        first_view_duration_seconds,
+        writing_duration_seconds
     ) VALUES (
         :submission_id,
         :confidence_score,
         :difficulty_self_report,
-        :first_view_duration_ms,
-        :writing_duration_ms
+        :first_view_duration_seconds,
+        :writing_duration_seconds
     )
 """)
 
@@ -172,6 +172,17 @@ QUERY_UPDATE_PARTICIPANT_STAGE = text("""
     SET stage = :stage,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = :pid
+""")
+
+QUERY_END_PARTICIPANT_SESSION = text("""
+    UPDATE participant_sessions
+    SET
+        ended_at = CURRENT_TIMESTAMP,
+        last_seen_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = :session_row_id
+      AND participant_id = :pid
+      AND ended_at IS NULL
 """)
 
 QUERY_INSERT_ATTENTION_EVENT = text("""
@@ -279,6 +290,15 @@ def update_participant_stage(db, *, participant_id: int, stage: str) -> None:
     })
 
 
+def end_participant_session(db, *, participant_id: int, participant_session_id) -> None:
+    if participant_session_id is None:
+        return
+    db.execute(QUERY_END_PARTICIPANT_SESSION, {
+        "session_row_id": int(participant_session_id),
+        "pid": int(participant_id),
+    })
+
+
 def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, rating: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, too_fast: bool, quality: float, alignment_score, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
     row = db.execute(QUERY_INSERT_SUBMISSION, {
         "pid": int(participant_id),
@@ -303,7 +323,7 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "tsc": int(tab_switch_count),
         "pca": int(page_close_attempts),
         "nd": int(network_disconnects),
-        "survey_time_spent_ms": int(survey_metrics["survey_time_spent_ms"]),
+        "survey_time_spent_seconds": float(survey_metrics["survey_time_spent_seconds"]),
         "survey_page_views": int(survey_metrics["survey_page_views"]),
         "survey_tab_switches": int(survey_metrics["survey_tab_switches"]),
         "survey_page_close_attempts": int(survey_metrics["survey_page_close_attempts"]),
@@ -316,21 +336,21 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
 
     db.execute(QUERY_INSERT_SUBMISSION_BEHAVIOR_METRICS, {
         "submission_id": submission_id,
-        "time_before_typing_ms": int(behavior_metrics.get("time_before_typing_ms", 0)),
+        "time_before_typing_seconds": float(behavior_metrics.get("time_before_typing_seconds", 0)),
         "edit_count": int(behavior_metrics.get("edit_count", 0)),
         "backspace_count": int(behavior_metrics.get("backspace_count", 0)),
-        "avg_keystroke_interval_ms": behavior_metrics.get("avg_keystroke_interval_ms"),
+        "avg_keystroke_interval_seconds": behavior_metrics.get("avg_keystroke_interval_seconds"),
         "keystroke_variance": behavior_metrics.get("keystroke_variance"),
         "pause_count": int(behavior_metrics.get("pause_count", 0)),
-        "avg_pause_duration_ms": behavior_metrics.get("avg_pause_duration_ms"),
+        "avg_pause_duration_seconds": behavior_metrics.get("avg_pause_duration_seconds"),
     })
 
     db.execute(QUERY_INSERT_SUBMISSION_COGNITIVE_METRICS, {
         "submission_id": submission_id,
         "confidence_score": phase_metrics.get("confidence_score"),
         "difficulty_self_report": phase_metrics.get("difficulty_self_report"),
-        "first_view_duration_ms": int(phase_metrics.get("first_view_duration_ms", 0)),
-        "writing_duration_ms": int(phase_metrics.get("writing_duration_ms", 0)),
+        "first_view_duration_seconds": float(phase_metrics.get("first_view_duration_seconds", 0)),
+        "writing_duration_seconds": float(phase_metrics.get("writing_duration_seconds", 0)),
     })
 
     for index, mention in enumerate(phase_metrics.get("object_mentions", [])):

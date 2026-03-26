@@ -36,11 +36,11 @@ logger = logging.getLogger(__name__)
 
 def _persist_performance_metric(
     endpoint: str,
-    response_time_ms: int,
+    response_time_seconds: float,
     status_code: int,
     request_size_bytes: int,
     response_size_bytes: int,
-    slo_target_ms: int,
+    slo_target_seconds: float,
     slo_breached: bool,
 ) -> None:
     """Write performance metric in its own transaction."""
@@ -50,24 +50,24 @@ def _persist_performance_metric(
         conn.execute(text("SET LOCAL statement_timeout = :timeout_ms"), {"timeout_ms": int(METRICS_INSERT_STATEMENT_TIMEOUT_MS)})
         conn.execute(text("""
             INSERT INTO performance_metrics (
-                endpoint, response_time_ms, status_code,
+                endpoint, response_time_seconds, status_code,
                 request_size_bytes, response_size_bytes,
-                slo_target_ms, slo_breached
-            ) VALUES (:ep, :ms, :st, :req, :resp, :slo_target, :slo_breached)
+                slo_target_seconds, slo_breached
+            ) VALUES (:ep, :secs, :st, :req, :resp, :slo_target, :slo_breached)
         """), {
             "ep": endpoint,
-            "ms": response_time_ms,
+            "secs": max(0.0, float(response_time_seconds or 0)),
             "st": status_code,
             "req": request_size_bytes,
             "resp": max(0, int(response_size_bytes or 0)),
-            "slo_target": max(1, int(slo_target_ms)),
+            "slo_target": max(0.001, float(slo_target_seconds or 0)),
             "slo_breached": bool(slo_breached),
         })
 
 
 def _enqueue_performance_metric(**kwargs) -> None:
     idempotency_key = hashlib.sha256(
-        f"{kwargs.get('endpoint')}|{kwargs.get('response_time_ms')}|{kwargs.get('status_code')}|{kwargs.get('request_size_bytes')}|{kwargs.get('response_size_bytes')}".encode(
+        f"{kwargs.get('endpoint')}|{kwargs.get('response_time_seconds')}|{kwargs.get('status_code')}|{kwargs.get('request_size_bytes')}|{kwargs.get('response_size_bytes')}".encode(
             "utf-8"
         )
     ).hexdigest()[:32]
@@ -142,11 +142,11 @@ def track_performance(f):
                         return resp
                     _enqueue_performance_metric(
                         endpoint=request.path,
-                        response_time_ms=duration_ms,
+                        response_time_seconds=duration_ms / 1000.0,
                         status_code=status,
                         request_size_bytes=request.content_length or 0,
                         response_size_bytes=response_size,
-                        slo_target_ms=API_LATENCY_SLO_MS,
+                        slo_target_seconds=API_LATENCY_SLO_MS / 1000.0,
                         slo_breached=slo_breached,
                     )
                 except Exception:
@@ -177,11 +177,11 @@ def track_performance(f):
                 try:
                     _enqueue_performance_metric(
                         endpoint=request.path,
-                        response_time_ms=duration_ms,
+                        response_time_seconds=duration_ms / 1000.0,
                         status_code=500,
                         request_size_bytes=request.content_length or 0,
                         response_size_bytes=0,
-                        slo_target_ms=API_LATENCY_SLO_MS,
+                        slo_target_seconds=API_LATENCY_SLO_MS / 1000.0,
                         slo_breached=slo_breached,
                     )
                 except Exception:

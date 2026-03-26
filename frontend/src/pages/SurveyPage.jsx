@@ -55,8 +55,10 @@ export default function SurveyPage({
     minimumMet,
     submitLocked,
     formDisabled,
+    inputsDisabled,
     descriptionRef,
     commentsRef,
+    imageElementRef,
     imageSrc,
     hasUsableSurveyImage,
     handleSubmit,
@@ -98,6 +100,7 @@ export default function SurveyPage({
     ? uiText("survey.feedLoadFailed")
     : fetchError;
   const deferredSaveError = React.useDeferredValue(saveError);
+  const surveyImageId = survey?.image_id || survey?.imageId || "";
 
   React.useEffect(() => {
     prefetchBehaviorChunks({
@@ -134,15 +137,15 @@ export default function SurveyPage({
   }, [minimumMet]);
 
   // Show loading state if we're waiting for survey data
-  if (!survey || !survey.image_id || !hasUsableSurveyImage) {
+  if (!survey || !surveyImageId || !hasUsableSurveyImage) {
     const retryLabel = retryDisabled && retryCountdown > 0
       ? uiText("common.tryAgainIn", { seconds: retryCountdown })
       : uiText("common.retry");
     return (
       <div className="panel status-panel">
         <AsyncStatePanel
-          loading={isFetchingImage || !survey?.image_id}
-          error={visibleFetchError || (survey?.image_id && !imageSrc ? uiText("survey.imageRestoreFailed") : "")}
+          loading={isFetchingImage || !surveyImageId}
+          error={visibleFetchError || (surveyImageId && !imageSrc ? uiText("survey.imageRestoreFailed") : "")}
           retryLabel={retryLabel}
           onRetry={handleRetryImage}
           retryDisabled={retryDisabled}
@@ -170,8 +173,8 @@ export default function SurveyPage({
           errorMessage={imagePanelErrorMessage}
           isZoomed={isZoomed}
           setIsZoomed={setIsZoomed}
-          retryCountdown={retryCountdown}
           retryDisabled={retryDisabled}
+          imageRef={imageElementRef}
         handleRetryImage={handleRetryImage}
         handleImageLoad={handleImageLoad}
         handleImageError={handleImageError}
@@ -199,7 +202,7 @@ export default function SurveyPage({
           wordCount={wordCount}
           charCount={charCount}
           imageReady={imageReady}
-          disabled={formDisabled}
+          disabled={inputsDisabled}
           copyPasteDisabled={COPY_PASTE_DISABLED}
           preventCopyPaste={preventCopyPaste}
           preventClipboardShortcuts={preventClipboardShortcuts}
@@ -213,7 +216,7 @@ export default function SurveyPage({
           confidenceScore={confidenceScore}
           setConfidenceScore={setConfidenceScore}
           imageReady={imageReady}
-          disabled={formDisabled}
+          disabled={inputsDisabled}
           onDifficultyBlur={() => touchField("difficulty")}
           onConfidenceBlur={() => touchField("confidence")}
         />
@@ -227,7 +230,7 @@ export default function SurveyPage({
           maxFeedbackLength={MAX_FEEDBACK_LENGTH}
           commentsCharCount={commentsCharCount}
           imageReady={imageReady}
-          disabled={formDisabled}
+          disabled={inputsDisabled}
           copyPasteDisabled={COPY_PASTE_DISABLED}
           preventCopyPaste={preventCopyPaste}
           preventClipboardShortcuts={preventClipboardShortcuts}

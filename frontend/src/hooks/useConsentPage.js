@@ -4,7 +4,6 @@ import { runtimeConfig } from "../config/runtime";
 import { clearPendingFlag, forEachStorageArea, getPendingFlag, makeScopedKey, readExpiringValue, removeStoredKey, setPendingFlag, writeExpiringValue } from "../utils/storage";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
-import { useRetryCountdown } from "./useRetryCountdown";
 import { useDebouncedPersistence } from "./useDebouncedPersistence";
 
 const CONSENT_DRAFT_SCHEMA_VERSION = runtimeConfig.consentDraftSchemaVersion;
@@ -46,13 +45,10 @@ export function useConsentPage({
   ));
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [draftRestored, setDraftRestored] = useState(() => (canPersistScoped ? readConsentDraft(scope) : false));
   const [saveError, setSaveError] = useState("");
-  const [pendingSubmit, setPendingSubmit] = useState(false);
   const isOnline = useOnlineStatus();
   const restoredScopeRef = useRef("");
   const userTouchedConsentRef = useRef(false);
-  const retryCountdown = useRetryCountdown(!isOnline && pendingSubmit, runtimeConfig.serviceRetrySeconds);
 
   const setConsentChecked = useCallback((nextValue) => {
     userTouchedConsentRef.current = true;
@@ -88,7 +84,6 @@ export function useConsentPage({
 
     const restored = readConsentDraft(scope);
     restoredScopeRef.current = scope;
-    setDraftRestored(restored === true);
     setConsentCheckedState(restored);
     markValueSaved(restored);
   }, [canPersistScoped, consentGiven, markValueSaved, scope]);
@@ -117,7 +112,6 @@ export function useConsentPage({
       if (pendingKey) {
         setPendingFlag(pendingKey);
       }
-      setPendingSubmit(true);
       return;
     }
     if (!systemReady) {
@@ -156,7 +150,6 @@ export function useConsentPage({
     const pending = getPendingFlag(pendingKey);
     if (!pending || !consentChecked) return;
     clearPendingFlag(pendingKey);
-    setPendingSubmit(false);
     handleSubmit();
   }, [canPersistScoped, consentChecked, handleSubmit, isOnline, scope, submitting]);
 
@@ -166,10 +159,7 @@ export function useConsentPage({
     error,
     setError,
     submitting,
-    isOnline,
     handleSubmit,
-    draftRestored,
     saveError,
-    retryCountdown,
   };
 }
