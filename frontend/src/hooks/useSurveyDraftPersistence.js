@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { removeStoredKey } from "../utils/storage";
 import { uiText } from "../utils/uiText";
+import { useDebouncedPersistence } from "./useDebouncedPersistence";
 import {
   getActiveSurveyDraftKey,
   getSurveyDraftKey,
@@ -19,33 +20,57 @@ export function useSurveyDraftPersistence({
   const [saveError, setSaveError] = useState("");
   const draftKey = getSurveyDraftKey(publicId, surveyImageId);
   const activeDraftKey = getActiveSurveyDraftKey(publicId);
+  const initialDraftStateRef = useRef(null);
+  const restoredDraftKeyRef = useRef("");
+
+  const serializeDraftState = (value) => {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "";
+    }
+  };
+
+  const { markValueSaved, resetSavedValue } = useDebouncedPersistence({
+    enabled: Boolean(isOnline && draftKey && surveyImageId),
+    value: draftState,
+    delayMs: 500,
+    onSchedule: () => setSaveError(""),
+    onWrite: (nextDraftState) => {
+      writeSurveyDraft(draftKey, nextDraftState);
+      writeSurveyDraft(activeDraftKey, nextDraftState);
+    },
+    onError: () => {
+      setSaveError(uiText("autosave.failed"));
+    },
+  });
 
   useEffect(() => {
     setDraftRestored(false);
+    initialDraftStateRef.current = serializeDraftState(draftState);
+    restoredDraftKeyRef.current = "";
+    resetSavedValue();
+  }, [draftKey, draftState, resetSavedValue]);
+
+  useEffect(() => {
     if (!surveyImageId) return;
 
     try {
       const saved = readSurveyDraft(draftKey) || readSurveyDraft(activeDraftKey);
-      if (saved) {
-        setDraftRestored(true);
-        onRestore?.(saved);
-      }
+      if (!saved) return;
+      if (restoredDraftKeyRef.current === draftKey) return;
+
+      const currentDraftSerialized = serializeDraftState(draftState);
+      if (currentDraftSerialized !== initialDraftStateRef.current) return;
+
+      restoredDraftKeyRef.current = draftKey;
+      setDraftRestored(true);
+      markValueSaved(saved);
+      onRestore?.(saved);
     } catch {
       // Ignore malformed draft payload and continue with fresh inputs.
     }
-  }, [activeDraftKey, draftKey, onRestore, surveyImageId]);
-
-  useEffect(() => {
-    if (!isOnline || !draftKey || !surveyImageId) return;
-    setSaveError("");
-
-    try {
-      writeSurveyDraft(draftKey, draftState);
-      writeSurveyDraft(activeDraftKey, draftState);
-    } catch {
-      setSaveError(uiText("autosave.failed"));
-    }
-  }, [activeDraftKey, draftKey, draftState, isOnline, surveyImageId]);
+  }, [activeDraftKey, draftKey, draftState, markValueSaved, onRestore, surveyImageId]);
 
   const clearDrafts = () => {
     if (draftKey) {
@@ -56,6 +81,7 @@ export function useSurveyDraftPersistence({
       removeStoredKey(activeDraftKey, "session");
       removeStoredKey(activeDraftKey, "local");
     }
+    resetSavedValue();
   };
 
   return {
