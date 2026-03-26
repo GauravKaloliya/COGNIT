@@ -44,6 +44,8 @@ export function useConsentPage({
   const [consentChecked, setConsentChecked] = useState(() => (
     consentGiven || (canPersistScoped ? readConsentDraft(scope) : false)
   ));
+  // Track last saved value for change detection
+  const lastSavedConsentRef = useRef(consentGiven || (canPersistScoped ? readConsentDraft(scope) : false));
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [draftRestored] = useState(() => (canPersistScoped ? readConsentDraft(scope) : false));
@@ -73,18 +75,33 @@ export function useConsentPage({
     if (draftSaveTimeoutRef.current) {
       clearScheduledTimeout(draftSaveTimeoutRef.current);
     }
-    draftSaveTimeoutRef.current = scheduleTimeout(() => {
-      try {
-        writeConsentDraft(scope, consentChecked);
-      } catch {
-        setSaveError(uiText("autosave.failed"));
-      }
-    }, 700);
+    // Only write if changed
+    if (lastSavedConsentRef.current !== consentChecked) {
+      draftSaveTimeoutRef.current = scheduleTimeout(() => {
+        try {
+          writeConsentDraft(scope, consentChecked);
+          lastSavedConsentRef.current = consentChecked;
+        } catch {
+          setSaveError(uiText("autosave.failed"));
+        }
+      }, 700);
+    }
   }, [canPersistScoped, consentChecked, isOnline, scope]);
 
   useEffect(() => () => {
     if (draftSaveTimeoutRef.current) clearScheduledTimeout(draftSaveTimeoutRef.current);
   }, []);
+
+  // Restore guard: only restore draft if user hasn't interacted
+  useEffect(() => {
+    if (!canPersistScoped) return;
+    // If consent is already checked (user interacted), don't restore
+    if (consentChecked) return;
+    const draft = readConsentDraft(scope);
+    if (draft && !consentChecked) {
+      setConsentChecked(true);
+    }
+  }, [canPersistScoped, scope]);
 
   const resolveConsentError = useCallback((err) => {
     const message = err?.message || "";
