@@ -1627,7 +1627,8 @@ body.dark select {
 
 textarea {
   min-height: 120px;
-  resize: vertical;
+  resize: none;
+  overflow-y: hidden;
   line-height: var(--leading-relaxed);
 }
 
