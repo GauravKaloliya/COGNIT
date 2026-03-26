@@ -16,6 +16,7 @@ export default function SurveyPage({
   publicId,
   surveyCompleted = 0,
   onSubmit,
+  onAccountFlagged = null,
   onRetry = null,
   onWarmNextSurvey = null,
   fetchError = null,
@@ -48,6 +49,7 @@ export default function SurveyPage({
     currentStep,
     minimumMet,
     submitLocked,
+    formDisabled,
     descriptionRef,
     commentsRef,
     imageSrc,
@@ -67,6 +69,7 @@ export default function SurveyPage({
     publicId,
     surveyCompleted,
     onSubmit,
+    onAccountFlagged,
     onRetry,
     onWarmNextSurvey,
     fetchError,
@@ -186,6 +189,7 @@ export default function SurveyPage({
           wordCount={wordCount}
           charCount={charCount}
           imageReady={imageReady}
+          disabled={formDisabled}
           copyPasteDisabled={COPY_PASTE_DISABLED}
           preventCopyPaste={preventCopyPaste}
           preventClipboardShortcuts={preventClipboardShortcuts}
@@ -197,6 +201,7 @@ export default function SurveyPage({
           rating={rating}
           setRating={setRating}
           imageReady={imageReady}
+          disabled={formDisabled}
           onBlur={() => touchField("rating")}
         />
 
@@ -208,6 +213,7 @@ export default function SurveyPage({
           minFeedbackLength={MIN_FEEDBACK_LENGTH}
           maxFeedbackLength={MAX_FEEDBACK_LENGTH}
           imageReady={imageReady}
+          disabled={formDisabled}
           copyPasteDisabled={COPY_PASTE_DISABLED}
           preventCopyPaste={preventCopyPaste}
           preventClipboardShortcuts={preventClipboardShortcuts}
@@ -220,7 +226,7 @@ export default function SurveyPage({
         visibleSubmitError={visibleSubmitError}
         submitting={submitting}
         canSubmit={canSubmit}
-        submitLocked={submitLocked}
+        submitLocked={submitLocked || formDisabled}
         handleSubmit={handleSubmit}
         getSubmitTooltip={getSubmitTooltip}
       />

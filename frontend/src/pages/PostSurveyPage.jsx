@@ -10,6 +10,7 @@ export default function PostSurveyPage({
   surveyCompleted = 0,
   publicId = "",
   clearUserStorage = null,
+  resetWorkflowToConsent = null,
   setSurveyFeedbackReady = null,
   setStage = null,
   fetchNextSurvey = null,
@@ -22,6 +23,7 @@ export default function PostSurveyPage({
   } = usePostSurveyPage({
     publicId,
     clearUserStorage,
+    resetWorkflowToConsent,
     setSurveyFeedbackReady,
     setStage,
     fetchNextSurvey,
