@@ -24,8 +24,7 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
 
     const existingPublicId =
       readExpiringValue(runtimeConfig.storageKeys.publicId, "", { area: "local", schemaVersion, ttlMs }) || "";
-    const scopes = ["anon"];
-    if (existingPublicId) scopes.push(existingPublicId);
+    const scopes = existingPublicId ? [existingPublicId] : [];
 
     const keysToClear = [
       runtimeConfig.storageKeys.publicId,
@@ -65,9 +64,11 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
       });
     });
 
-    // Ensure the app boots into Consent deterministically.
-    writeExpiringValue(makeScopedKey(runtimeConfig.storageKeys.stage, "anon"), APP_FLOW.stages.consent, { area: "local", schemaVersion, ttlMs });
-    writeExpiringValue(makeScopedKey(runtimeConfig.storageKeys.consentGiven, "anon"), false, { area: "local", schemaVersion, ttlMs });
+    // Ensure the app boots into Consent deterministically for an existing scoped participant.
+    if (existingPublicId) {
+      writeExpiringValue(makeScopedKey(runtimeConfig.storageKeys.stage, existingPublicId), APP_FLOW.stages.consent, { area: "local", schemaVersion, ttlMs });
+      writeExpiringValue(makeScopedKey(runtimeConfig.storageKeys.consentGiven, existingPublicId), false, { area: "local", schemaVersion, ttlMs });
+    }
 
     if (typeof storedDarkMode === "boolean") {
       writeExpiringValue(runtimeConfig.storageKeys.darkMode, storedDarkMode, { area: "local", schemaVersion, ttlMs });

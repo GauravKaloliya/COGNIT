@@ -11,6 +11,7 @@ import { REQUEST_CODES } from "../constants/request";
 import { scheduleTimeout } from "../utils/timing";
 import { forEachStorageArea, makeScopedKey, removeStoredKey } from "../utils/storage";
 import { getTelemetrySnapshot } from "../utils/clientTelemetry";
+import { readCoreValue } from "../utils/appControllerState";
 
 const normalizeSurveyPayload = (value) => {
   if (!value || typeof value !== "object") return null;
@@ -80,6 +81,27 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
     // unless caller explicitly asks to clear current survey.
     if (!clearCurrent && survey?.[SURVEY_API_FIELDS.imageId] && typeof survey?.[SURVEY_API_FIELDS.url] === "string" && survey[SURVEY_API_FIELDS.url].trim()) {
       return survey;
+    }
+    if (!clearCurrent) {
+      // Hard refresh guard: if in-memory survey is empty due hydration timing,
+      // restore from storage before calling backend for a new image.
+      const storedSurvey = normalizeSurveyPayload(
+        readCoreValue(runtimeConfig.storageKeys.survey, null, publicId)
+      );
+      if (storedSurvey?.[SURVEY_API_FIELDS.imageId] && String(storedSurvey?.[SURVEY_API_FIELDS.url] || "").trim()) {
+        setSurvey((prev) => {
+          if (prev?.[SURVEY_API_FIELDS.imageId] && String(prev?.[SURVEY_API_FIELDS.url] || "").trim()) {
+            return prev;
+          }
+          return storedSurvey;
+        });
+        setShownImages((prev) => (
+          prev.includes(storedSurvey[SURVEY_API_FIELDS.imageId])
+            ? prev
+            : [...prev, storedSurvey[SURVEY_API_FIELDS.imageId]]
+        ));
+        return storedSurvey;
+      }
     }
     if (clearCurrent && prefetchedSurveyRef.current) {
       const prefetched = prefetchedSurveyRef.current;
@@ -256,11 +278,12 @@ export function useSurveyFlow({ publicId, sessionId, addToast, initial }) {
 
       // OTP state is only needed for gating email verification; once the user is successfully submitting surveys,
       // clear it to avoid stale "OTP in progress" state on future refreshes.
-      const scope = String(publicId || "").trim() || "anon";
+      const scope = String(publicId || "").trim();
       forEachStorageArea((area) => {
         removeStoredKey(runtimeConfig.storageKeys.emailOtpState, area);
-        removeStoredKey(makeScopedKey(runtimeConfig.storageKeys.emailOtpState, scope), area);
-        removeStoredKey(makeScopedKey(runtimeConfig.storageKeys.emailOtpState, "anon"), area);
+        if (scope) {
+          removeStoredKey(makeScopedKey(runtimeConfig.storageKeys.emailOtpState, scope), area);
+        }
       });
       return response;
     } catch (error) {

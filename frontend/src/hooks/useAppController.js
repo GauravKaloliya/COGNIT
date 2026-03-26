@@ -42,6 +42,7 @@ export function useAppController() {
   const {
     publicId,
     setPublicId,
+    preAuthId,
     scopeId,
     sessionId,
     setSessionId,
@@ -60,6 +61,7 @@ export function useAppController() {
     setDemographics,
     clearUserStorage,
   } = workflow;
+  const storageScope = String(publicId || preAuthId || "").trim();
 
   const surveyFlow = useSurveyFlow({
     publicId,
@@ -96,6 +98,7 @@ export function useAppController() {
 
   useWorkflowPersistence({
     publicId,
+    preAuthId,
     setPublicId,
     scopeId,
     sessionId,
@@ -338,6 +341,9 @@ export function useAppController() {
     isActiveTabOwner,
     stage,
     publicId,
+    preAuthId,
+    storageScope,
+    sessionHydrated,
     sessionId,
     demographics,
     setDemographics,

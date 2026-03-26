@@ -7,22 +7,24 @@ import { makeScopedKey, readExpiringValue, writeExpiringValue } from "./storage"
 const CORE_STATE_STORAGE_AREA = "local";
 const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
-const CORE_SCOPE_ANON = "anon";
 const MIN_SURVEYS_BEFORE_FINISH = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
 
 export function getScopeId(publicId) {
-  const value = String(publicId || "").trim();
-  return value || CORE_SCOPE_ANON;
+  return String(publicId || "").trim();
 }
 
 export function readCoreValue(baseKey, fallback, scopeId, { ttlMs } = {}) {
-  const scopedKey = makeScopedKey(baseKey, getScopeId(scopeId));
+  const resolvedScope = getScopeId(scopeId);
+  if (!resolvedScope) return fallback;
+  const scopedKey = makeScopedKey(baseKey, resolvedScope);
   const options = { schemaVersion: CORE_STATE_SCHEMA_VERSION, ttlMs: ttlMs ?? CORE_STATE_TTL_MS };
   return readExpiringValue(scopedKey, fallback, { area: CORE_STATE_STORAGE_AREA, ...options });
 }
 
 export function writeCoreValue(baseKey, value, scopeId, { ttlMs } = {}) {
-  const scopedKey = makeScopedKey(baseKey, getScopeId(scopeId));
+  const resolvedScope = getScopeId(scopeId);
+  if (!resolvedScope) return;
+  const scopedKey = makeScopedKey(baseKey, resolvedScope);
   writeExpiringValue(scopedKey, value, {
     area: CORE_STATE_STORAGE_AREA,
     schemaVersion: CORE_STATE_SCHEMA_VERSION,

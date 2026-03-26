@@ -9,7 +9,8 @@ import PageStatusBanners from "../components/PageStatusBanners.jsx";
 import PageActions from "../components/PageActions.jsx";
 
 export default function ConsentPage({ 
-  publicId,
+  storageScope,
+  sessionHydrated = false,
   consentGiven,
   onConsentGiven, 
   systemReady 
@@ -23,7 +24,13 @@ export default function ConsentPage({
     submitting,
     handleSubmit,
     saveError,
-  } = useConsentPage({ publicId, consentGiven, onConsentGiven, systemReady });
+  } = useConsentPage({
+    storageScope,
+    consentGiven,
+    onConsentGiven,
+    systemReady,
+    sessionHydrated,
+  });
 
   if (submitting) {
     return (

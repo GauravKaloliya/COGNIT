@@ -94,8 +94,6 @@ export function useSurveyPage({
   const [imageError, setImageError] = useState(false);
   const [retryDisabled, setRetryDisabled] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
-  const retryAttemptsRef = useRef(0);
-  const [retryExhausted, setRetryExhausted] = useState(false);
   const [submitLocked, setSubmitLocked] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState("");
   const [formDisabled, setFormDisabled] = useState(false);
@@ -194,8 +192,6 @@ export function useSurveyPage({
   const handleRetryImage = useCallback(() => {
     if (formDisabled || retryDisabled || isFetchingImage) return;
     if (typeof onRetry !== "function") return;
-    retryAttemptsRef.current = 0;
-    setRetryExhausted(false);
     setRetryDisabled(true);
     setRetryCountdown(runtimeConfig.serviceRetrySeconds);
     setImageError(false);
@@ -214,25 +210,6 @@ export function useSurveyPage({
     }, runtimeConfig.msPerSecond);
     return () => clearScheduledInterval(interval);
   }, [retryDisabled]);
-
-  useEffect(() => {
-    if (!imageError && !fetchError) {
-      retryAttemptsRef.current = 0;
-      setRetryExhausted(false);
-      return;
-    }
-    if (retryDisabled || isFetchingImage || formDisabled) return;
-    const maxAttempts = Math.max(1, Number(runtimeConfig.serviceRetryMaxAttempts || 1));
-    if (retryAttemptsRef.current >= maxAttempts) {
-      setRetryExhausted(true);
-      return;
-    }
-    retryAttemptsRef.current += 1;
-    const retryTimer = scheduleTimeout(() => {
-      handleRetryImage();
-    }, 250);
-    return () => clearScheduledTimeout(retryTimer);
-  }, [fetchError, formDisabled, handleRetryImage, imageError, isFetchingImage, retryDisabled]);
 
   useEffect(() => {
     if (retryDisabled && retryCountdown === 0) {
@@ -613,7 +590,6 @@ export function useSurveyPage({
     }
     setImageLoaded(true);
     setImageError(false);
-    setRetryExhausted(false);
     setTimerActive(true);
   }, [setTimerActive]);
 
@@ -678,6 +654,8 @@ export function useSurveyPage({
     uiTotalSteps: UI_TOTAL_STEPS,
     copyPasteDisabled: COPY_PASTE_DISABLED,
   }), []);
+
+  const retryExhausted = Boolean(imageError || fetchError);
 
   return {
     constants,

@@ -16,12 +16,12 @@ import { APP_FLOW, normalizeAppStage } from "../config/appFlow";
 import { getScopeId, readCoreValue } from "../utils/appControllerState";
 
 const CORE_STATE_STORAGE_AREA = "local";
-const CORE_SCOPE_ANON = "anon";
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
 const SESSION_ALIVE_KEY = runtimeConfig.storageKeys.sessionAlive;
 const EXPIRED_STORAGE_PREFIXES = Object.values(runtimeConfig.storageKeys);
 const SESSION_CRITICAL_BASE_KEYS = new Set([
   runtimeConfig.storageKeys.publicId,
+  runtimeConfig.storageKeys.preAuthId,
   runtimeConfig.storageKeys.stage,
   runtimeConfig.storageKeys.sessionId,
   runtimeConfig.storageKeys.consentGiven,
@@ -30,9 +30,19 @@ const SESSION_CRITICAL_BASE_KEYS = new Set([
   runtimeConfig.storageKeys.demographics,
 ]);
 
+function generatePreAuthId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `preauth_${crypto.randomUUID()}`;
+  }
+  return `preauth_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function useWorkflowCoreState({ addToast }) {
   const [publicId, setPublicId] = useState(() => (
     getStoredValue(runtimeConfig.storageKeys.publicId, "", { area: CORE_STATE_STORAGE_AREA }) || ""
+  ));
+  const [preAuthId, setPreAuthId] = useState(() => (
+    getStoredValue(runtimeConfig.storageKeys.preAuthId, "", { area: CORE_STATE_STORAGE_AREA }) || ""
   ));
   const scopeId = getScopeId(publicId);
   const [sessionId, setSessionId] = useState(() => readCoreValue(runtimeConfig.storageKeys.sessionId, "", scopeId));
@@ -107,10 +117,11 @@ export function useWorkflowCoreState({ addToast }) {
       });
     }
 
-    const scope = String(scopeOverride || publicId || "").trim() || CORE_SCOPE_ANON;
+    const scope = String(scopeOverride || publicId || "").trim();
     const keysToClear = [
       runtimeConfig.storageKeys.activeTabLock,
       runtimeConfig.storageKeys.publicId,
+      runtimeConfig.storageKeys.preAuthId,
       runtimeConfig.storageKeys.stage,
       runtimeConfig.storageKeys.consentGiven,
       runtimeConfig.storageKeys.userDetailsSubmitted,
@@ -142,8 +153,9 @@ export function useWorkflowCoreState({ addToast }) {
     keysToClear.forEach((key) => {
       forEachStorageArea((area) => {
         removeStoredKey(key, area);
-        removeStoredKey(makeScopedKey(key, scope), area);
-        removeStoredKey(makeScopedKey(key, CORE_SCOPE_ANON), area);
+        if (scope) {
+          removeStoredKey(makeScopedKey(key, scope), area);
+        }
       });
     });
 
@@ -179,6 +191,17 @@ export function useWorkflowCoreState({ addToast }) {
   }, [stage]);
 
   useEffect(() => {
+    if (preAuthId) return;
+    const next = generatePreAuthId();
+    setPreAuthId(next);
+    writeExpiringValue(runtimeConfig.storageKeys.preAuthId, next, {
+      area: CORE_STATE_STORAGE_AREA,
+      schemaVersion: runtimeConfig.uiStateSchemaVersion,
+      ttlMs: runtimeConfig.uiStateTtlMs,
+    });
+  }, [preAuthId]);
+
+  useEffect(() => {
     writeExpiringValue(SESSION_ALIVE_KEY, "1", {
       area: "session",
       schemaVersion: runtimeConfig.uiStateSchemaVersion,
@@ -189,6 +212,8 @@ export function useWorkflowCoreState({ addToast }) {
   return {
     publicId,
     setPublicId,
+    preAuthId,
+    setPreAuthId,
     scopeId,
     sessionId,
     setSessionId,

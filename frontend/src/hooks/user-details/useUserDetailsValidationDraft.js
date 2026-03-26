@@ -104,8 +104,9 @@ export function useUserDetailsValidationDraft({
   demographics,
   setDemographics,
   scope,
+  canPersist = false,
 }) {
-  const scopedDemographicsKey = makeScopedKey(DEMOGRAPHICS_KEY, scope);
+  const scopedDemographicsKey = canPersist && scope ? makeScopedKey(DEMOGRAPHICS_KEY, scope) : null;
   const [fieldMeta, dispatchFieldMeta] = useReducer(fieldMetaReducer, INITIAL_FIELD_META);
   const [checking, setChecking] = useState({ username: false, email: false });
   const [draftRestored, setDraftRestored] = useState(false);
@@ -136,6 +137,7 @@ export function useUserDetailsValidationDraft({
   }, []);
 
   useEffect(() => {
+    if (!scopedDemographicsKey) return;
     const storedMeta = readStoredMeta(scopedDemographicsKey, "local");
     if (storedMeta) {
       setDraftRestored(true);
