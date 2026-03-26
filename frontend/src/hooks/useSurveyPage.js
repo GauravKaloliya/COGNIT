@@ -21,12 +21,15 @@ const MIN_DESCRIPTION_LENGTH = runtimeConfig.minDescriptionLength;
 const MAX_DESCRIPTION_LENGTH = runtimeConfig.maxDescriptionLength;
 const MIN_FEEDBACK_LENGTH = runtimeConfig.minFeedbackLength;
 const MAX_FEEDBACK_LENGTH = runtimeConfig.maxFeedbackLength;
+const MIN_RATING = runtimeConfig.minRating;
+const MAX_RATING = runtimeConfig.maxRating;
 const UI_TOTAL_STEPS = runtimeConfig.surveyUiTotalSteps;
 const COPY_PASTE_DISABLED = runtimeConfig.disableCopyPaste;
 const SURVEY_PENDING_SUBMIT_KEY = runtimeConfig.storageKeys.surveyPendingSubmit;
 const SURVEY_FIELDS = {
   description: "description",
-  rating: "rating",
+  difficulty: "difficulty",
+  confidence: "confidence",
   comments: "comments",
 };
 const SURVEY_META_ACTIONS = {
@@ -79,7 +82,8 @@ export function useSurveyPage({
 }) {
   const isOnline = useOnlineStatus();
   const [description, setDescription] = useState("");
-  const [rating, setRating] = useState(0);
+  const [difficultyRating, setDifficultyRating] = useState(0);
+  const [confidenceScore, setConfidenceScore] = useState(0);
   const [comments, setComments] = useState("");
   const [isZoomed, setIsZoomed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -90,9 +94,16 @@ export function useSurveyPage({
   const [imageError, setImageError] = useState(false);
   const [retryDisabled, setRetryDisabled] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
+  const retryAttemptsRef = useRef(0);
+  const [retryExhausted, setRetryExhausted] = useState(false);
   const [submitLocked, setSubmitLocked] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState("");
   const [formDisabled, setFormDisabled] = useState(false);
+  const [typingDynamics, setTypingDynamics] = useState({
+    firstInputAtMs: null,
+    editCount: 0,
+    backspaceCount: 0,
+  });
   const [fieldMeta, dispatchFieldMeta] = useReducer(surveyFieldMetaReducer, {
     dirty: {},
     touched: {},
@@ -123,7 +134,8 @@ export function useSurveyPage({
     const commentsValidValue = commentsCharCountValue >= MIN_FEEDBACK_LENGTH && commentsCharCountValue <= MAX_FEEDBACK_LENGTH;
     const imageReadyValue = imageLoaded && !imageError;
     const canSubmitValue = wordCountValue >= MIN_WORDS
-      && rating !== 0
+      && difficultyRating !== 0
+      && confidenceScore !== 0
       && commentsValidValue
       && descriptionValidValue
       && !submitting
@@ -137,9 +149,12 @@ export function useSurveyPage({
       imageReady: imageReadyValue,
       canSubmit: canSubmitValue,
       currentStep: Math.max(1, surveyCompleted + 1),
-      minimumMet: wordCountValue >= MIN_WORDS && commentsCharCountValue >= MIN_FEEDBACK_LENGTH && rating > 0,
+      minimumMet: wordCountValue >= MIN_WORDS
+        && commentsCharCountValue >= MIN_FEEDBACK_LENGTH
+        && difficultyRating > 0
+        && confidenceScore > 0,
     };
-  }, [comments, description, imageError, imageLoaded, rating, submitting, surveyCompleted]);
+  }, [comments, confidenceScore, description, difficultyRating, imageError, imageLoaded, submitting, surveyCompleted]);
   const {
     wordCount,
     charCount,
@@ -179,6 +194,8 @@ export function useSurveyPage({
   const handleRetryImage = useCallback(() => {
     if (formDisabled || retryDisabled || isFetchingImage) return;
     if (typeof onRetry !== "function") return;
+    retryAttemptsRef.current = 0;
+    setRetryExhausted(false);
     setRetryDisabled(true);
     setRetryCountdown(runtimeConfig.serviceRetrySeconds);
     setImageError(false);
@@ -199,10 +216,23 @@ export function useSurveyPage({
   }, [retryDisabled]);
 
   useEffect(() => {
-    if (imageError || fetchError) {
-      setRetryDisabled(false);
+    if (!imageError && !fetchError) {
+      retryAttemptsRef.current = 0;
+      setRetryExhausted(false);
+      return;
     }
-  }, [fetchError, imageError]);
+    if (retryDisabled || isFetchingImage || formDisabled) return;
+    const maxAttempts = Math.max(1, Number(runtimeConfig.serviceRetryMaxAttempts || 1));
+    if (retryAttemptsRef.current >= maxAttempts) {
+      setRetryExhausted(true);
+      return;
+    }
+    retryAttemptsRef.current += 1;
+    const retryTimer = scheduleTimeout(() => {
+      handleRetryImage();
+    }, 250);
+    return () => clearScheduledTimeout(retryTimer);
+  }, [fetchError, formDisabled, handleRetryImage, imageError, isFetchingImage, retryDisabled]);
 
   useEffect(() => {
     if (retryDisabled && retryCountdown === 0) {
@@ -233,7 +263,20 @@ export function useSurveyPage({
 
   const restoreDraft = useCallback((saved) => {
     setDescription(typeof saved.description === "string" ? saved.description : "");
-    setRating(Number.isInteger(saved.rating) ? saved.rating : 0);
+    setDifficultyRating(
+      Number.isInteger(saved.difficultyRating)
+      && saved.difficultyRating >= MIN_RATING
+      && saved.difficultyRating <= MAX_RATING
+        ? saved.difficultyRating
+        : 0
+    );
+    setConfidenceScore(
+      Number.isInteger(saved.confidenceScore)
+      && saved.confidenceScore >= MIN_RATING
+      && saved.confidenceScore <= MAX_RATING
+        ? saved.confidenceScore
+        : 0
+    );
     setComments(typeof saved.comments === "string" ? saved.comments : "");
     setElapsed(Number.isFinite(saved.elapsed) ? Math.max(0, saved.elapsed) : 0);
     setEngagementData({
@@ -246,21 +289,48 @@ export function useSurveyPage({
     } else if (Number.isFinite(saved.elapsed)) {
       surveyStartTime.current = Date.now() - Math.max(0, saved.elapsed) * runtimeConfig.msPerSecond;
     }
-  }, [setComments, setDescription, setElapsed, setEngagementData, setRating, surveyStartTime]);
+  }, [setComments, setConfidenceScore, setDescription, setDifficultyRating, setElapsed, setEngagementData, surveyStartTime]);
 
   const updateDescription = useCallback((value) => {
     dispatchFieldMeta({ type: SURVEY_META_ACTIONS.dirty, field: SURVEY_FIELDS.description });
-    setDescription(value);
+    setDescription((prev) => {
+      if (prev !== value) {
+        const prevChars = countAlphaNumericChars(prev);
+        const nextChars = countAlphaNumericChars(value);
+        setTypingDynamics((metrics) => ({
+          firstInputAtMs: metrics.firstInputAtMs ?? Date.now(),
+          editCount: metrics.editCount + 1,
+          backspaceCount: metrics.backspaceCount + Math.max(0, prevChars - nextChars),
+        }));
+      }
+      return value;
+    });
   }, []);
 
-  const updateRating = useCallback((value) => {
-    dispatchFieldMeta({ type: SURVEY_META_ACTIONS.dirty, field: SURVEY_FIELDS.rating });
-    setRating(value);
+  const updateDifficultyRating = useCallback((value) => {
+    dispatchFieldMeta({ type: SURVEY_META_ACTIONS.dirty, field: SURVEY_FIELDS.difficulty });
+    setDifficultyRating(value);
+  }, []);
+
+  const updateConfidenceScore = useCallback((value) => {
+    dispatchFieldMeta({ type: SURVEY_META_ACTIONS.dirty, field: SURVEY_FIELDS.confidence });
+    setConfidenceScore(value);
   }, []);
 
   const updateComments = useCallback((value) => {
     dispatchFieldMeta({ type: SURVEY_META_ACTIONS.dirty, field: SURVEY_FIELDS.comments });
-    setComments(value);
+    setComments((prev) => {
+      if (prev !== value) {
+        const prevChars = countAlphaNumericChars(prev);
+        const nextChars = countAlphaNumericChars(value);
+        setTypingDynamics((metrics) => ({
+          firstInputAtMs: metrics.firstInputAtMs ?? Date.now(),
+          editCount: metrics.editCount + 1,
+          backspaceCount: metrics.backspaceCount + Math.max(0, prevChars - nextChars),
+        }));
+      }
+      return value;
+    });
   }, []);
 
   const touchField = useCallback((field) => {
@@ -277,11 +347,13 @@ export function useSurveyPage({
     setShowValidationErrors(false);
     setFormDisabled(false);
     setDescription("");
-    setRating(0);
+    setDifficultyRating(0);
+    setConfidenceScore(0);
     setComments("");
+    setTypingDynamics({ firstInputAtMs: null, editCount: 0, backspaceCount: 0 });
     resetEngagement();
     prefetchTriggeredRef.current = false;
-  }, [resetEngagement, setDescription, setRating, setComments, survey?.image_id]);
+  }, [resetEngagement, setComments, setConfidenceScore, setDescription, setDifficultyRating, survey?.image_id]);
 
   useEffect(() => {
     if (!isOnline || submitting || typeof onWarmNextSurvey !== "function") return;
@@ -303,13 +375,16 @@ export function useSurveyPage({
   useEffect(() => {
     if (!isOnline || submitting) return;
     if (turnstilePrefetchTriggeredRef.current) return;
-    const typingSignal = (description.trim().length >= 24) || (comments.trim().length >= 12) || rating > 0;
+    const typingSignal = (description.trim().length >= 24)
+      || (comments.trim().length >= 12)
+      || difficultyRating > 0
+      || confidenceScore > 0;
     if (!typingSignal) return;
     turnstilePrefetchTriggeredRef.current = true;
     prefetchTurnstileToken("submission_submit").catch(() => {
       turnstilePrefetchTriggeredRef.current = false;
     });
-  }, [comments, description, isOnline, rating, submitting]);
+  }, [comments, confidenceScore, description, difficultyRating, isOnline, submitting]);
 
   useEffect(() => {
     turnstilePrefetchTriggeredRef.current = false;
@@ -326,7 +401,8 @@ export function useSurveyPage({
     draftState: {
       imageId: survey?.image_id,
       description,
-      rating,
+      difficultyRating,
+      confidenceScore,
       comments,
       elapsed,
       startedAt: surveyStartTime.current,
@@ -360,13 +436,23 @@ export function useSurveyPage({
     descriptionCharCount: charCount,
     minDescriptionLength: MIN_DESCRIPTION_LENGTH,
     maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
-    rating,
+    difficultyRating,
+    confidenceScore,
     comments,
     minFeedbackLength: MIN_FEEDBACK_LENGTH,
     maxFeedbackLength: MAX_FEEDBACK_LENGTH,
     getErrorMessage,
     uiText,
-  }), [comments, description, imageReady, rating, submitLocked, submitting, wordCount]);
+  }), [
+    charCount,
+    comments,
+    confidenceScore,
+    difficultyRating,
+    imageReady,
+    submitLocked,
+    submitting,
+    wordCount,
+  ]);
 
   useEffect(() => {
     if (submitErrorSource !== "validation") return;
@@ -376,9 +462,7 @@ export function useSurveyPage({
     setSubmitError(getSubmitTooltipText());
   }, [
     comments,
-    description,
     getSubmitTooltipText,
-    rating,
     showValidationErrors,
     submitError,
     submitErrorSource,
@@ -398,7 +482,7 @@ export function useSurveyPage({
     setShowValidationErrors(true);
     dispatchFieldMeta({
       type: SURVEY_META_ACTIONS.touchedBatch,
-      fields: [SURVEY_FIELDS.description, SURVEY_FIELDS.rating, SURVEY_FIELDS.comments],
+      fields: [SURVEY_FIELDS.description, SURVEY_FIELDS.difficulty, SURVEY_FIELDS.confidence, SURVEY_FIELDS.comments],
     });
     if (!canSubmit) {
       setSubmitError(getSubmitTooltipText());
@@ -421,20 +505,41 @@ export function useSurveyPage({
       setOptimisticMessage(uiText("common.submitting"));
     });
     const timeSpentSeconds = Math.round((Date.now() - surveyStartTime.current) / runtimeConfig.msPerSecond);
+    const submitAtMs = Date.now();
+    const firstInputAtMs = Number(typingDynamics.firstInputAtMs || 0);
+    const timeBeforeTypingMs = firstInputAtMs > 0
+      ? Math.max(0, firstInputAtMs - surveyStartTime.current)
+      : 0;
+    const writingDurationMs = firstInputAtMs > 0
+      ? Math.max(0, submitAtMs - firstInputAtMs)
+      : 0;
     let shouldKeepLocked = false;
 
     try {
       await onSubmit({
         description,
-        rating,
+        rating: difficultyRating,
         comments,
         timeSpentSeconds,
         engagementData,
+        confidenceScore,
+        difficultySelfReport: difficultyRating,
+        timeBeforeTypingMs,
+        editCount: typingDynamics.editCount,
+        backspaceCount: typingDynamics.backspaceCount,
+        firstViewDurationMs: timeBeforeTypingMs,
+        writingDurationMs,
+        avgKeystrokeIntervalMs: null,
+        keystrokeVariance: null,
+        pauseCount: 0,
+        avgPauseDurationMs: null,
       });
       clearDrafts();
       setDescription("");
-      setRating(0);
+      setDifficultyRating(0);
+      setConfidenceScore(0);
       setComments("");
+      setTypingDynamics({ firstInputAtMs: null, editCount: 0, backspaceCount: 0 });
       setEngagementData({ tabSwitchCount: 0, pageCloseAttempts: 0, networkDisconnects: 0 });
       startTransition(() => {
         setOptimisticMessage("");
@@ -480,12 +585,16 @@ export function useSurveyPage({
     onAccountFlagged,
     onSubmit,
     publicId,
-    rating,
+    difficultyRating,
+    confidenceScore,
     setEngagementData,
     submitLocked,
     submitting,
     survey,
     surveyStartTime,
+    typingDynamics.backspaceCount,
+    typingDynamics.editCount,
+    typingDynamics.firstInputAtMs,
     unlockSubmit,
   ]);
 
@@ -504,6 +613,7 @@ export function useSurveyPage({
     }
     setImageLoaded(true);
     setImageError(false);
+    setRetryExhausted(false);
     setTimerActive(true);
   }, [setTimerActive]);
 
@@ -538,10 +648,10 @@ export function useSurveyPage({
       if (!imageReady || typingTarget) return;
       if (e.key === "ArrowRight" || e.key === "ArrowUp") {
         e.preventDefault();
-        setRating((prev) => Math.min(10, Math.max(1, prev + 1)));
+        setDifficultyRating((prev) => Math.min(MAX_RATING, Math.max(MIN_RATING, prev + 1)));
       } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
         e.preventDefault();
-        setRating((prev) => Math.max(1, prev > 0 ? prev - 1 : 1));
+        setDifficultyRating((prev) => Math.max(MIN_RATING, prev > 0 ? prev - 1 : MIN_RATING));
       }
     };
     window.addEventListener("keydown", onRatingAndZoomKeys);
@@ -563,6 +673,8 @@ export function useSurveyPage({
     maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
     minFeedbackLength: MIN_FEEDBACK_LENGTH,
     maxFeedbackLength: MAX_FEEDBACK_LENGTH,
+    minRating: MIN_RATING,
+    maxRating: MAX_RATING,
     uiTotalSteps: UI_TOTAL_STEPS,
     copyPasteDisabled: COPY_PASTE_DISABLED,
   }), []);
@@ -571,8 +683,12 @@ export function useSurveyPage({
     constants,
     description,
     setDescription: updateDescription,
-    rating,
-    setRating: updateRating,
+    rating: difficultyRating,
+    setRating: updateDifficultyRating,
+    difficultyRating,
+    setDifficultyRating: updateDifficultyRating,
+    confidenceScore,
+    setConfidenceScore: updateConfidenceScore,
     comments,
     setComments: updateComments,
     isZoomed,
@@ -583,6 +699,7 @@ export function useSurveyPage({
     elapsed,
     imageLoaded,
     imageError,
+    retryExhausted,
     imageReady,
     retryDisabled,
     retryCountdown,

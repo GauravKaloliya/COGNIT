@@ -7,12 +7,13 @@ import { useSystemHealth } from "./useSystemHealth";
 import { useSurveyFlow } from "./useSurveyFlow";
 import { runtimeConfig } from "../config/runtime";
 import { uiText } from "../utils/uiText";
-import { APP_FLOW } from "../config/appFlow";
+import { APP_FLOW, normalizeAppStage } from "../config/appFlow";
 import { readCoreValue, validateStageTransition } from "../utils/appControllerState";
 import { useToastState } from "./useToastState";
 import { useActiveTabOwnership } from "./useActiveTabOwnership";
 import { useWorkflowCoreState } from "./useWorkflowCoreState";
 import { useWorkflowPersistence } from "./useWorkflowPersistence";
+import { clearAllSurveyDraftsForUser } from "../utils/surveyDraft";
 
 function rethrowWithMetadata(error, fallbackCode, fallbackMessage) {
   const message = getDisplayErrorMessage(error, fallbackCode) || fallbackMessage || getErrorMessage(fallbackCode);
@@ -61,6 +62,7 @@ export function useAppController() {
 
   const surveyFlow = useSurveyFlow({
     publicId,
+    sessionId,
     addToast,
     initial: {
       survey: readCoreValue(runtimeConfig.storageKeys.survey, null, scopeId),
@@ -277,11 +279,30 @@ export function useAppController() {
 
   const handleSubmit = useCallback(async (formData) => {
     const result = await submitSurvey(formData);
-    if (validateStageTransition(APP_FLOW.stages.survey, APP_FLOW.stages.postSurvey)) {
-      setStage(APP_FLOW.stages.postSurvey);
+    const backendStage = result?.workflow_status?.stage;
+    if (backendStage) {
+      const normalizedStage = normalizeAppStage(backendStage);
+      if (validateStageTransition(stage, normalizedStage)) {
+        setStage(normalizedStage);
+      }
+      if (normalizedStage === APP_FLOW.stages.postSurvey) {
+        return result;
+      }
     }
+    const requiredSubmissions = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
+    const nextCompleted = Number(surveyCompleted || 0) + 1;
+    if (nextCompleted >= requiredSubmissions) {
+      if (validateStageTransition(APP_FLOW.stages.survey, APP_FLOW.stages.postSurvey)) {
+        setStage(APP_FLOW.stages.postSurvey);
+      }
+      return result;
+    }
+
+    clearAllSurveyDraftsForUser(publicId);
+    setSurveyFeedbackReady(false);
+    await fetchImage({ clearCurrent: true, throwOnError: true });
     return result;
-  }, [setStage, submitSurvey]);
+  }, [fetchImage, publicId, setStage, setSurveyFeedbackReady, stage, submitSurvey, surveyCompleted]);
 
   const handleAppError = useCallback(() => addToast(getErrorMessage("SYS_002_0017"), "error"), [addToast]);
 

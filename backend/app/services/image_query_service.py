@@ -37,5 +37,5 @@ QUERY_CLEANUP_STALE_RESERVATIONS = text("""
     UPDATE image_reservations
     SET released_at = CURRENT_TIMESTAMP
     WHERE released_at IS NULL
-      AND reserved_at <= (CURRENT_TIMESTAMP - (:ttl || ' seconds')::interval)
+      AND expires_at <= CURRENT_TIMESTAMP
 """)

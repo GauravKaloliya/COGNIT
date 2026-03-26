@@ -49,7 +49,7 @@ from app.services.email_otp_query_service import (
 from app.database import engine
 from app.constants.participant_constants import (
     PARTICIPANT_STAGE_CONSENT,
-    PARTICIPANT_STAGE_FINISHED,
+    PARTICIPANT_STAGE_POST_SURVEY,
     PARTICIPANT_STAGE_SURVEY,
     PARTICIPANT_STAGE_USER_DETAILS,
 )
@@ -150,7 +150,7 @@ def update_participant_email(db, *, participant_id: int, email: str) -> None:
     db.execute(QUERY_UPDATE_PARTICIPANT_EMAIL, {
         "pid": participant_id,
         "em": email,
-        "stage_finished": PARTICIPANT_STAGE_FINISHED,
+        "stage_post_survey": PARTICIPANT_STAGE_POST_SURVEY,
         "stage_user_details": PARTICIPANT_STAGE_USER_DETAILS,
     })
 

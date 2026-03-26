@@ -23,7 +23,10 @@ from app.constants.log_messages import (
     LOG_PARTICIPANT_OPTIONS_FAILED,
 )
 from app.utils.observability import log_event
-from app.constants.audit_details import AUDIT_DETAIL_PARTICIPANT_CREATED
+from app.constants.audit_details import (
+    AUDIT_DETAIL_CONSENT_RECORDED,
+    AUDIT_DETAIL_PARTICIPANT_CREATED,
+)
 from app.constants.observability_constants import OBS_EVENT_PARTICIPANT_CREATE_ROLLBACK_FAILED
 from app.constants.participant_constants import (
     PARTICIPANT_FIELD_EMAIL,
@@ -32,6 +35,10 @@ from app.constants.participant_constants import (
     PARTICIPANT_STAGE_USER_DETAILS,
     PARTICIPANT_STATUS_CONSENT_RECORDED,
     PARTICIPANT_STATUS_CREATED,
+)
+from app.constants.error_keys import (
+    AUTH_EMAIL_OTP_SEND_HTTP_ERROR,
+    AUTH_EMAIL_OTP_SEND_TIMEOUT,
 )
 from app.constants.request_keys import (
     REQUEST_KEY_EMAIL,
@@ -286,7 +293,12 @@ def record_consent():
         if not row:
             return create_error_response("NF_CONSENT_PARTICIPANT_NOT_FOUND")
         pid = row[0]
-        log_audit(db, AUDIT_EVENT_CONSENT_RECORDED, participant_id=pid)
+        log_audit(
+            db,
+            AUDIT_EVENT_CONSENT_RECORDED,
+            participant_id=pid,
+            details=AUDIT_DETAIL_CONSENT_RECORDED.format(participant_id=pid),
+        )
         response_payload = {RESPONSE_KEY_STATUS: PARTICIPANT_STATUS_CONSENT_RECORDED}
         db.commit()
         return success_response(response_payload)
@@ -412,9 +424,9 @@ def request_email_otp():
             except EmailOtpSendError as exc:
                 error_key = "AUTH_EMAIL_OTP_SEND_FAILED"
                 if exc.kind == "timeout":
-                    error_key = "AUTH_EMAIL_OTP_SEND_TIMEOUT"
+                    error_key = AUTH_EMAIL_OTP_SEND_TIMEOUT
                 elif exc.kind == "http_error":
-                    error_key = "AUTH_EMAIL_OTP_SEND_HTTP_ERROR"
+                    error_key = AUTH_EMAIL_OTP_SEND_HTTP_ERROR
                 logger.warning(
                     "email_otp_send_failed",
                     extra={

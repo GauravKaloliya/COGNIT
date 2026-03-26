@@ -8,7 +8,7 @@ const CORE_STATE_STORAGE_AREA = "local";
 const CORE_STATE_SCHEMA_VERSION = runtimeConfig.uiStateSchemaVersion;
 const CORE_STATE_TTL_MS = runtimeConfig.uiStateTtlMs;
 const CORE_SCOPE_ANON = "anon";
-const MIN_SURVEYS_BEFORE_FINISH = 1;
+const MIN_SURVEYS_BEFORE_FINISH = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
 
 export function getScopeId(publicId) {
   const value = String(publicId || "").trim();

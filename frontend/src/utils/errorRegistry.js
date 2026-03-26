@@ -1,13 +1,11 @@
-import sharedErrorContract from "./error_contract.json";
+import {
+  ERROR_CONTRACT,
+  SHARED_CODE_TO_KEY,
+  SHARED_KEY_TO_CODE,
+  SHARED_MESSAGES_EN,
+} from "./errorContract.js";
 
 const DEFAULT_LANGUAGE = "en";
-
-const SHARED_MESSAGES_EN = Object.values(sharedErrorContract || {}).reduce((acc, def) => {
-  if (def && typeof def === "object" && def.code && def.message) {
-    acc[String(def.code)] = String(def.message);
-  }
-  return acc;
-}, {});
 
 const TRANSLATIONS = {
   en: {
@@ -29,6 +27,7 @@ const TRANSLATIONS = {
     "DUP_001_0004": "You have already registered.",
     "DUP_002_0001": "You have already described this image.",
     "DUP_002_0002": "You have already completed this survey round.",
+    "NF_001_0001": "Account not found. Please register first.",
     "NF_001_0005": "Route not found.",
     "NF_001_0006": "No images are currently available. Please try again later.",
     "NF_001_0012": "Participant not found while recording consent.",
@@ -36,6 +35,18 @@ const TRANSLATIONS = {
     "RATE_001_0001": "Too many attempts. Please wait a moment.",
     "SYS_001_0001": "Something went wrong. Please try again.",
     "SYS_001_0002": "Database error occurred. Please try again later.",
+    "SYS_001_0004": "Service is temporarily unavailable. Please try again.",
+    "SYS_002_0001": "Request validation failed. Please try again.",
+    "SYS_002_0002": "Failed to process the request. Please try again.",
+    "SYS_002_0005": "Failed to load the image. Please retry.",
+    "SYS_002_0006": "Failed to submit the response. Please try again.",
+    "SYS_002_0007": "Request failed. Please try again.",
+    "SYS_002_0016": "Failed to load the next image. Please try again.",
+    "SYS_002_0017": "The app encountered an issue. Please try again.",
+    "SYS_002_0018": "Image is still loading. Please wait and try again.",
+    "SYS_002_0020": "System health check failed: {error}",
+    "SYS_002_0021": "System is currently unavailable. Please try again later.",
+    "SYS_002_0022": "Failed to create participant. Please try again.",
     "SYS_002_0024": "Service degraded.",
     "SYS_002_0030": "Failed to select a fallback image.",
     "SYS_002_0031": "Failed to load the next image. Please try again.",
@@ -55,10 +66,26 @@ const TRANSLATIONS = {
     "VAL_001_0005": "Please select a gender.",
     "VAL_001_0007": "Please select your native language.",
     "VAL_001_0008": "Please select your prior experience.",
+    "VAL_001_0010": "Username must be at least {min} characters.",
+    "VAL_001_0011": "Username can only contain letters, numbers, and underscores.",
+    "VAL_001_0012": "Email is required.",
+    "VAL_001_0013": "Please enter a valid email address.",
+    "VAL_001_0014": "Please use an approved email domain.",
+    "VAL_001_0017": "Please select a gender.",
+    "VAL_001_0018": "Age is required.",
+    "VAL_001_0019": "Age must be between {min} and {max}.",
+    "VAL_001_0020": "Location must be at least {min} characters.",
+    "VAL_001_0021": "Please select your native language.",
+    "VAL_001_0022": "Please select your prior experience.",
     "VAL_002_0001": "Description must be {min_description_length}-{max_description_length} characters long.",
+    "VAL_002_0002": "Description is too short.",
+    "VAL_002_0003": "Description is too long.",
     "VAL_002_0004": "At least {min_word_count} words are required.",
     "VAL_002_0005": "Feedback must be {min_feedback_length}-{max_feedback_length} characters long.",
+    "VAL_002_0006": "Feedback is too short.",
+    "VAL_002_0007": "Feedback is too long.",
     "VAL_002_0008": "Rating must be between {min_rating} and {max_rating}.",
+    "VAL_003_0001": "Verification code is required.",
     "VAL_003_0003": "Invalid request ID format.",
     "VAL_003_0007": "This action is not available here.",
     "VAL_003_0008": "Invalid image identifier.",
@@ -73,9 +100,10 @@ const TRANSLATIONS = {
     "VAL_003_0022": "Public ID, email, and verification code are required.",
     "VAL_003_0023": "Public ID is required to submit a response.",
     "VAL_003_0024": "Image ID is required to submit a response.",
-    "VAL_003_0025": "Participant is not in a valid stage for this action.",
+    "VAL_003_0025": "Participant is not in a valid stage for this action."
   },
 };
+
 
 export const ERROR_CATEGORIES = {
   VAL: { severity: "warning", action: "fix_input" },
@@ -90,14 +118,16 @@ export const ERROR_CATEGORIES = {
 };
 
 export function hasErrorCode(errorCode) {
-  return !!TRANSLATIONS.en[errorCode] || !!SHARED_MESSAGES_EN[errorCode];
+  const normalized = SHARED_KEY_TO_CODE[errorCode] || errorCode;
+  return !!TRANSLATIONS.en[normalized] || !!SHARED_MESSAGES_EN[normalized];
 }
 
 export function getErrorMessage(errorCode, lang = DEFAULT_LANGUAGE, params = {}) {
   const messages = TRANSLATIONS[lang] || TRANSLATIONS[DEFAULT_LANGUAGE];
+  const normalizedCode = SHARED_KEY_TO_CODE[errorCode] || errorCode;
   let message =
-    messages[errorCode] ||
-    (lang === DEFAULT_LANGUAGE ? SHARED_MESSAGES_EN[errorCode] : null) ||
+    messages[normalizedCode] ||
+    (lang === DEFAULT_LANGUAGE ? SHARED_MESSAGES_EN[normalizedCode] : null) ||
     messages["SYS_001_0001"] ||
     SHARED_MESSAGES_EN["SYS_001_0001"] ||
     "An error occurred";
@@ -127,11 +157,13 @@ export function parseErrorResponse(response) {
       response.error_message ||
       response.detail ||
       getErrorMessage("SYS_001_0001");
-    const fallbackCode = response.code || "SYS_001_0001";
+    const fallbackKey = response.key || SHARED_CODE_TO_KEY[response.code] || null;
+    const fallbackCode = response.code || SHARED_KEY_TO_CODE[fallbackKey] || fallbackKey || "SYS_001_0001";
     const fallbackCategory = String(fallbackCode).split("_")[0] || "SYS";
     const categoryInfo = ERROR_CATEGORIES[fallbackCategory] || ERROR_CATEGORIES.SYS;
     return {
       code: fallbackCode,
+      key: fallbackKey || null,
       message: fallbackMessage,
       originalMessage: fallbackMessage,
       category: fallbackCategory,
@@ -148,13 +180,21 @@ export function parseErrorResponse(response) {
   }
 
   const { error } = response;
-  const code = error.code || "SYS_001_0001";
-  const category = error.category || String(code).split("_")[0] || "SYS";
+  const rawKey = error.key || SHARED_CODE_TO_KEY[error.code] || null;
+  const rawCode = error.code || SHARED_KEY_TO_CODE[rawKey] || rawKey || "SYS_001_0001";
+  const normalizedCode = SHARED_KEY_TO_CODE[rawCode] || rawCode;
+  const contractDef = (
+    (rawKey && ERROR_CONTRACT?.[rawKey])
+    || ERROR_CONTRACT?.[rawCode]
+    || Object.values(ERROR_CONTRACT || {}).find((def) => def.code === normalizedCode)
+  );
+  const category = error.category || contractDef?.category || String(normalizedCode).split("_")[0] || "SYS";
   const categoryInfo = ERROR_CATEGORIES[category] || ERROR_CATEGORIES.SYS;
 
   return {
-    code,
-    message: getErrorMessage(code, DEFAULT_LANGUAGE, error.params || {}),
+    code: normalizedCode,
+    key: rawKey || null,
+    message: getErrorMessage(normalizedCode, DEFAULT_LANGUAGE, error.params || {}),
     originalMessage: error.message,
     category,
     field: error.field,

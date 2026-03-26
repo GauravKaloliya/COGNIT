@@ -9,22 +9,29 @@ from app.constants.participant_constants import (
     PARTICIPANT_FIELD_USERNAME,
     PARTICIPANT_STATUS_EXISTS,
 )
+from app.constants.error_keys import (
+    DUP_USERNAME,
+    SYS_DATABASE_ERROR,
+    VAL_AGE_INVALID,
+    VAL_GENDER_REQUIRED,
+    VAL_LANGUAGE_REQUIRED,
+)
 from app.utils.helpers import create_error_response, success_response
 
 PARTICIPANT_DUPLICATE_ERROR_MAP = {
-    PARTICIPANT_FIELD_USERNAME: "DUP_USERNAME",
+    PARTICIPANT_FIELD_USERNAME: DUP_USERNAME,
     PARTICIPANT_FIELD_EMAIL: "DUP_EMAIL",
     "public_id": "DUP_PUBLIC_ID",
 }
 PARTICIPANT_FOREIGN_KEY_ERROR_MAP = {
-    "gender_code": "VAL_GENDER_REQUIRED",
-    "language_code": "VAL_LANGUAGE_REQUIRED",
+    "gender_code": VAL_GENDER_REQUIRED,
+    "language_code": VAL_LANGUAGE_REQUIRED,
 }
 PARTICIPANT_CHECK_CONSTRAINT_ERROR_MAP = {
     "chk_email_format": "VAL_EMAIL_INVALID",
     PARTICIPANT_FIELD_EMAIL: "VAL_EMAIL_INVALID",
-    "chk_age": "VAL_AGE_INVALID",
-    "age": "VAL_AGE_INVALID",
+    "chk_age": VAL_AGE_INVALID,
+    "age": VAL_AGE_INVALID,
 }
 PARTICIPANT_UNIQUE_ERROR_MARKERS = (
     "duplicate key value",
@@ -105,10 +112,10 @@ def map_participant_create_exception(
 
     if any(marker in error_str for marker in PARTICIPANT_FOREIGN_KEY_ERROR_MARKERS):
         mapped = _match_error_key(error_str, PARTICIPANT_FOREIGN_KEY_ERROR_MAP)
-        return create_error_response(mapped or "SYS_DATABASE_ERROR")
+        return create_error_response(mapped or SYS_DATABASE_ERROR)
 
     if any(marker in error_str for marker in PARTICIPANT_CHECK_CONSTRAINT_MARKERS):
         mapped = _match_error_key(error_str, PARTICIPANT_CHECK_CONSTRAINT_ERROR_MAP)
-        return create_error_response(mapped or "SYS_DATABASE_ERROR")
+        return create_error_response(mapped or SYS_DATABASE_ERROR)
 
-    return create_error_response("DUP_PUBLIC_ID" if duplicate_error else "SYS_DATABASE_ERROR")
+    return create_error_response("DUP_PUBLIC_ID" if duplicate_error else SYS_DATABASE_ERROR)
