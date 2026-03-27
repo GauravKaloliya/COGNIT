@@ -9,7 +9,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from flask import request
+from flask import g, request
 from sqlalchemy import text
 
 from app.config import (
@@ -34,41 +34,7 @@ _METRICS_EXECUTOR = ThreadPoolExecutor(
 logger = logging.getLogger(__name__)
 
 
-def _persist_performance_metric(
-    endpoint: str,
-    response_time_seconds: float,
-    status_code: int,
-    request_size_bytes: int,
-    response_size_bytes: int,
-    slo_target_seconds: float,
-    slo_breached: bool,
-) -> None:
-    """Write performance metric in its own transaction."""
-    with engine.begin() as conn:
-        conn.execute(text("SET LOCAL statement_timeout = :timeout_ms"), {"timeout_ms": int(METRICS_INSERT_STATEMENT_TIMEOUT_MS)})
-        conn.execute(
-            text(
-                """
-                INSERT INTO performance_metrics (
-                    endpoint, response_time_seconds, status_code,
-                    request_size_bytes, response_size_bytes,
-                    slo_target_seconds, slo_breached
-                ) VALUES (:ep, :secs, :st, :req, :resp, :slo_target, :slo_breached)
-                """
-            ),
-            {
-                "ep": endpoint,
-                "secs": max(0.0, float(response_time_seconds or 0)),
-                "st": status_code,
-                "req": request_size_bytes,
-                "resp": max(0, int(response_size_bytes or 0)),
-                "slo_target": max(0.001, float(slo_target_seconds or 0)),
-                "slo_breached": bool(slo_breached),
-            },
-        )
-
-
-def _persist_request_audit(
+def _persist_request_observability(
     event_type: str,
     endpoint: str,
     http_method: str,
@@ -77,116 +43,67 @@ def _persist_request_audit(
     participant_public_id: str | None,
     user_agent: str,
     ip_hash: str,
+    response_time_seconds: float,
+    request_size_bytes: int,
+    response_size_bytes: int,
+    slo_target_seconds: float,
+    slo_breached: bool,
     details: str = "",
 ) -> None:
-    """Write one generic request audit row."""
+    """Write request audit and performance rows together in one transaction."""
     with engine.begin() as conn:
         conn.execute(text("SET LOCAL statement_timeout = :timeout_ms"), {"timeout_ms": int(METRICS_INSERT_STATEMENT_TIMEOUT_MS)})
-        conn.execute(
-            text(
-                """
-                INSERT INTO audit_log (
-                    event_type, participant_id, endpoint, http_method, status_code,
-                    ip_hash, user_agent, details, request_id
-                ) VALUES (
-                    :ev,
-                    (
-                        SELECT id
-                        FROM participants
-                        WHERE public_id::text = :participant_public_id
-                          AND is_deleted = false
-                        LIMIT 1
-                    ),
-                    :ep, :meth, :st, :iph, :ua, :det, :rid
-                )
-                """
-            ),
-            {
-                "ev": str(event_type or "request_complete")[:60],
-                "participant_public_id": str(participant_public_id or "").strip() or None,
-                "ep": str(endpoint or "")[:120],
-                "meth": str(http_method or "")[:10],
-                "st": int(status_code or 200),
-                "iph": str(ip_hash or ("0" * 64))[:64],
-                "ua": str(user_agent or "")[:512],
-                "det": str(details or "")[:8000],
-                "rid": request_id,
-            },
-        )
-
-
-def _enqueue_performance_metric(**kwargs) -> None:
-    idempotency_key = hashlib.sha256(
-        f"{kwargs.get('endpoint')}|{kwargs.get('response_time_seconds')}|{kwargs.get('status_code')}|{kwargs.get('request_size_bytes')}|{kwargs.get('response_size_bytes')}".encode(
-            "utf-8"
-        )
-    ).hexdigest()[:32]
-
-    def _run_with_retry():
-        attempts = max(1, int(METRICS_ASYNC_MAX_ATTEMPTS))
-        for attempt in range(1, attempts + 1):
-            try:
-                _persist_performance_metric(**kwargs)
-                return
-            except Exception as exc:
-                if attempt >= attempts:
-                    log_event(
-                        logger,
-                        OBS_EVENT_METRICS_ENQUEUE_FAILED,
-                        level=logging.WARNING,
-                        error=str(exc),
-                        idempotency_key=idempotency_key,
-                        attempt=attempt,
+        params = {
+            "ep": str(endpoint or "")[:120],
+            "secs": max(0.0, float(response_time_seconds or 0)),
+            "st": int(status_code or 200),
+            "req": max(0, int(request_size_bytes or 0)),
+            "resp": max(0, int(response_size_bytes or 0)),
+            "slo_target": max(0.001, float(slo_target_seconds or 0)),
+            "slo_breached": bool(slo_breached),
+            "ev": str(event_type or "request_complete")[:60],
+            "participant_public_id": str(participant_public_id or "").strip() or None,
+            "meth": str(http_method or "")[:10],
+            "iph": str(ip_hash or ("0" * 64))[:64],
+            "ua": str(user_agent or "")[:512],
+            "det": str(details or "")[:8000],
+            "rid": request_id,
+        }
+        if ENABLE_PERFORMANCE_METRICS:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO performance_metrics (
+                        endpoint, response_time_seconds, status_code,
+                        request_size_bytes, response_size_bytes,
+                        slo_target_seconds, slo_breached
+                    ) VALUES (:ep, :secs, :st, :req, :resp, :slo_target, :slo_breached)
+                    """
+                ),
+                params,
+            )
+        if ENABLE_AUDIT_LOGGING:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO audit_log (
+                        event_type, participant_id, endpoint, http_method, status_code,
+                        ip_hash, user_agent, details, request_id
+                    ) VALUES (
+                        :ev,
+                        (
+                            SELECT id
+                            FROM participants
+                            WHERE public_id::text = :participant_public_id
+                              AND is_deleted = false
+                            LIMIT 1
+                        ),
+                        :ep, :meth, :st, :iph, :ua, :det, :rid
                     )
-                    return
-                delay_ms = int(METRICS_ASYNC_BASE_BACKOFF_MS) * (2 ** max(0, attempt - 1))
-                time.sleep(max(0.05, min(60000, delay_ms) / 1000.0))
-
-    try:
-        _METRICS_EXECUTOR.submit(_run_with_retry)
-    except Exception as exc:
-        log_event(
-            logger,
-            OBS_EVENT_METRICS_ENQUEUE_FAILED,
-            level=logging.WARNING,
-            error=str(exc),
-            idempotency_key=idempotency_key,
-        )
-
-
-def _enqueue_request_audit(**kwargs) -> None:
-    def _run_with_retry():
-        attempts = max(1, int(METRICS_ASYNC_MAX_ATTEMPTS))
-        for attempt in range(1, attempts + 1):
-            try:
-                _persist_request_audit(**kwargs)
-                return
-            except Exception as exc:
-                if attempt >= attempts:
-                    log_event(
-                        logger,
-                        OBS_EVENT_METRICS_ENQUEUE_FAILED,
-                        level=logging.WARNING,
-                        error=str(exc),
-                        endpoint=kwargs.get("endpoint"),
-                        event_type=kwargs.get("event_type"),
-                        attempt=attempt,
-                    )
-                    return
-                delay_ms = int(METRICS_ASYNC_BASE_BACKOFF_MS) * (2 ** max(0, attempt - 1))
-                time.sleep(max(0.05, min(60000, delay_ms) / 1000.0))
-
-    try:
-        _METRICS_EXECUTOR.submit(_run_with_retry)
-    except Exception as exc:
-        log_event(
-            logger,
-            OBS_EVENT_METRICS_ENQUEUE_FAILED,
-            level=logging.WARNING,
-            error=str(exc),
-            endpoint=kwargs.get("endpoint"),
-            event_type=kwargs.get("event_type"),
-        )
+                    """
+                ),
+                params,
+            )
 
 
 def _enqueue_request_observability(
@@ -205,27 +122,64 @@ def _enqueue_request_observability(
     audit_event_type: str,
     audit_details: str,
 ) -> None:
-    if ENABLE_PERFORMANCE_METRICS:
-        _enqueue_performance_metric(
-            endpoint=endpoint,
-            response_time_seconds=response_time_seconds,
-            status_code=status_code,
-            request_size_bytes=request_size_bytes,
-            response_size_bytes=response_size_bytes,
-            slo_target_seconds=API_LATENCY_SLO_MS / 1000.0,
-            slo_breached=slo_breached,
+    if not ENABLE_PERFORMANCE_METRICS and not ENABLE_AUDIT_LOGGING:
+        return
+
+    payload = {
+        "event_type": audit_event_type,
+        "endpoint": endpoint,
+        "http_method": http_method,
+        "status_code": status_code,
+        "request_id": request_id,
+        "participant_public_id": participant_public_id,
+        "user_agent": user_agent,
+        "ip_hash": ip_hash,
+        "response_time_seconds": response_time_seconds,
+        "request_size_bytes": request_size_bytes,
+        "response_size_bytes": response_size_bytes,
+        "slo_target_seconds": API_LATENCY_SLO_MS / 1000.0,
+        "slo_breached": slo_breached,
+        "details": audit_details,
+    }
+    idempotency_key = hashlib.sha256(
+        f"{endpoint}|{audit_event_type}|{status_code}|{request_id}|{response_time_seconds}|{request_size_bytes}|{response_size_bytes}".encode(
+            "utf-8"
         )
-    if ENABLE_AUDIT_LOGGING:
-        _enqueue_request_audit(
-            event_type=audit_event_type,
+    ).hexdigest()[:32]
+
+    def _run_with_retry():
+        attempts = max(1, int(METRICS_ASYNC_MAX_ATTEMPTS))
+        for attempt in range(1, attempts + 1):
+            try:
+                _persist_request_observability(**payload)
+                return
+            except Exception as exc:
+                if attempt >= attempts:
+                    log_event(
+                        logger,
+                        OBS_EVENT_METRICS_ENQUEUE_FAILED,
+                        level=logging.WARNING,
+                        error=str(exc),
+                        endpoint=endpoint,
+                        event_type=audit_event_type,
+                        idempotency_key=idempotency_key,
+                        attempt=attempt,
+                    )
+                    return
+                delay_ms = int(METRICS_ASYNC_BASE_BACKOFF_MS) * (2 ** max(0, attempt - 1))
+                time.sleep(max(0.05, min(60000, delay_ms) / 1000.0))
+
+    try:
+        _METRICS_EXECUTOR.submit(_run_with_retry)
+    except Exception as exc:
+        log_event(
+            logger,
+            OBS_EVENT_METRICS_ENQUEUE_FAILED,
+            level=logging.WARNING,
+            error=str(exc),
             endpoint=endpoint,
-            http_method=http_method,
-            status_code=status_code,
-            request_id=request_id,
-            participant_public_id=participant_public_id,
-            user_agent=user_agent,
-            ip_hash=ip_hash,
-            details=audit_details,
+            event_type=audit_event_type,
+            idempotency_key=idempotency_key,
         )
 
 
@@ -254,10 +208,10 @@ def track_performance(f):
         start = time.perf_counter()
         request_path = request.path
         request_method = request.method
-        request_id = getattr(request, "request_id", None)
+        request_id = getattr(g, "request_id", None) or request.headers.get("X-Request-ID")
         participant_public_id = _extract_participant_public_id()
         request_size = request.content_length or 0
-        user_agent = request.headers.get("User-Agent", "")[:512]
+        user_agent = (request.headers.get("User-Agent") or "unknown")[:512]
         ip_hash = get_ip_hash()
 
         try:

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from app.config import (
     PARTICIPANT_PUBLIC_COOKIE_NAME,
     PARTICIPANT_SESSION_COOKIE_NAME,
+    PARTICIPANT_SESSION_STALE_TTL_SECONDS,
     SESSION_COOKIE_SAMESITE,
     SESSION_COOKIE_SECURE,
 )
@@ -20,12 +22,15 @@ from app.constants.participant_patterns import PUBLIC_ID_REGEX
 from app.services.participant_query_service import (
     QUERY_CHECK_PARTICIPANT_FIELD_AVAILABLE_TEMPLATE,
     QUERY_CHECK_PRIOR_EXPERIENCE_EXISTS,
+    QUERY_CLOSE_PARTICIPANT_SESSION_BY_KEY,
+    QUERY_FETCH_PARTICIPANT_SESSION_STATUS,
     QUERY_FETCH_GENDERS,
     QUERY_FETCH_LANGUAGES,
     QUERY_FETCH_PRIOR_EXPERIENCES,
     QUERY_FIND_EXISTING_PARTICIPANT_CONFLICT,
     QUERY_GET_EXISTING_SESSION_ID,
     QUERY_INSERT_PARTICIPANT,
+    QUERY_TOUCH_PARTICIPANT_SESSION,
 )
 from sqlalchemy import text
 
@@ -57,6 +62,22 @@ def set_participant_cookies(response, public_id: str, session_id: str):
         secure=bool(SESSION_COOKIE_SECURE),
         samesite=SESSION_COOKIE_SAMESITE,
         path="/",
+    )
+    return response
+
+
+def clear_participant_cookies(response):
+    response.delete_cookie(
+        PARTICIPANT_SESSION_COOKIE_NAME,
+        path="/",
+        secure=bool(SESSION_COOKIE_SECURE),
+        samesite=SESSION_COOKIE_SAMESITE,
+    )
+    response.delete_cookie(
+        PARTICIPANT_PUBLIC_COOKIE_NAME,
+        path="/",
+        secure=bool(SESSION_COOKIE_SECURE),
+        samesite=SESSION_COOKIE_SAMESITE,
     )
     return response
 
@@ -123,6 +144,49 @@ def insert_participant(
 def get_existing_session_id_for_public_id(db, public_id: str):
     row = db.execute(QUERY_GET_EXISTING_SESSION_ID, {"pub": public_id}).fetchone()
     return row[0] if row else None
+
+
+def fetch_participant_session_status(db, *, public_id: str, session_id: str):
+    safe_public_id = str(public_id or "").strip()
+    safe_session_id = str(session_id or "").strip()
+    if not safe_public_id or not safe_session_id:
+        return None
+    return db.execute(
+        QUERY_FETCH_PARTICIPANT_SESSION_STATUS,
+        {"pub": safe_public_id, "sid": safe_session_id[:128]},
+    ).fetchone()
+
+
+def touch_participant_session(db, *, public_id: str, session_id: str):
+    safe_public_id = str(public_id or "").strip()
+    safe_session_id = str(session_id or "").strip()
+    if not safe_public_id or not safe_session_id:
+        return None
+    return db.execute(
+        QUERY_TOUCH_PARTICIPANT_SESSION,
+        {"pub": safe_public_id, "sid": safe_session_id[:128]},
+    ).fetchone()
+
+
+def close_participant_session_by_key(db, *, public_id: str, session_id: str):
+    safe_public_id = str(public_id or "").strip()
+    safe_session_id = str(session_id or "").strip()
+    if not safe_public_id or not safe_session_id:
+        return None
+    return db.execute(
+        QUERY_CLOSE_PARTICIPANT_SESSION_BY_KEY,
+        {"pub": safe_public_id, "sid": safe_session_id[:128]},
+    ).fetchone()
+
+
+def is_participant_session_stale(last_seen_at, *, now_utc: datetime | None = None) -> bool:
+    if last_seen_at is None:
+        return False
+    reference_time = now_utc or datetime.now(timezone.utc)
+    if getattr(last_seen_at, "tzinfo", None) is None:
+        last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
+    age_seconds = max(0.0, (reference_time - last_seen_at).total_seconds())
+    return age_seconds >= float(PARTICIPANT_SESSION_STALE_TTL_SECONDS)
 
 
 def is_participant_field_available(db, *, field_name: str, value: str) -> bool:

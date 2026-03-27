@@ -9,14 +9,17 @@ from app.constants.response_keys import (
     RESPONSE_KEY_ATTENTION_PASSED,
     RESPONSE_KEY_ATTENTION_STATUS,
     RESPONSE_KEY_BEHAVIOR_RISK_SCORE,
+    RESPONSE_KEY_CLEAR_CLIENT_STATE,
     RESPONSE_KEY_ENGAGEMENT,
     RESPONSE_KEY_FLAGGED_TOO_FAST,
     RESPONSE_KEY_IS_ATTENTION_CHECK,
     RESPONSE_KEY_IS_SURVEY,
     RESPONSE_KEY_QUALITY_SCORE,
+    RESPONSE_KEY_SESSION_CLOSED,
     RESPONSE_KEY_STATUS,
     RESPONSE_KEY_SURVEY_INDEX,
     RESPONSE_KEY_WORD_COUNT,
+    RESPONSE_KEY_WORKFLOW_STATUS,
     RESPONSE_KEY_WRITING_QUALITY_SCORE,
 )
 from app.constants.submission_constants import (
@@ -417,6 +420,8 @@ def build_submission_response_payload(
     stage_updated_at=None,
     stage_stale_seconds: int | None = None,
     stage_escalation_recommended: bool = False,
+    session_closed: bool = False,
+    clear_client_state: bool = False,
 ):
     return {
         RESPONSE_KEY_STATUS: SUBMISSION_RESPONSE_STATUS,
@@ -453,7 +458,9 @@ def build_submission_response_payload(
             "passed_checks": attention_passed_checks,
             "failed_checks": attention_failed_checks,
         },
-        "workflow_status": {
+        RESPONSE_KEY_SESSION_CLOSED: bool(session_closed),
+        RESPONSE_KEY_CLEAR_CLIENT_STATE: bool(clear_client_state),
+        RESPONSE_KEY_WORKFLOW_STATUS: {
             "stage": stage,
             "stage_updated_at": (
                 stage_updated_at.isoformat() if hasattr(stage_updated_at, "isoformat") else stage_updated_at

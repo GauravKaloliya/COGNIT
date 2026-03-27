@@ -44,6 +44,14 @@ QUERY_LOCK_PARTICIPANT = text("""
     FOR UPDATE
 """)
 
+QUERY_FETCH_PARTICIPANT_SESSION_BY_KEY = text("""
+    SELECT id, ended_at
+    FROM participant_sessions
+    WHERE participant_id = :pid
+      AND session_id = :sid
+    LIMIT 1
+""")
+
 QUERY_FETCH_SUBMISSION_COUNTS = text("""
     SELECT
         COUNT(*) AS total_submissions,
@@ -124,8 +132,8 @@ QUERY_UPSERT_PARTICIPANT_SESSION = text("""
     ON CONFLICT (participant_id, session_id) DO UPDATE
     SET
         last_seen_at = CURRENT_TIMESTAMP,
-        ended_at = NULL,
         updated_at = CURRENT_TIMESTAMP
+    WHERE participant_sessions.ended_at IS NULL
     RETURNING id
 """)
 
@@ -301,6 +309,16 @@ def lock_submission_participant(db, participant_id: int):
     db.execute(QUERY_LOCK_PARTICIPANT, {"pid": int(participant_id)})
 
 
+def fetch_participant_session_by_key(db, *, participant_id: int, session_id: str | None):
+    safe_session_id = str(session_id or "").strip()
+    if not safe_session_id:
+        return None
+    return db.execute(
+        QUERY_FETCH_PARTICIPANT_SESSION_BY_KEY,
+        {"pid": int(participant_id), "sid": safe_session_id[:128]},
+    ).fetchone()
+
+
 def fetch_submission_counts(db, *, participant_id: int) -> dict[str, int]:
     row = db.execute(QUERY_FETCH_SUBMISSION_COUNTS, {"pid": int(participant_id)}).fetchone()
     if not row:
@@ -345,6 +363,10 @@ def ensure_participant_session(db, *, participant_id: int, session_id: str | Non
         "pid": int(participant_id),
         "sid": safe_session_id[:128],
     }).scalar()
+    if value is None:
+        existing = fetch_participant_session_by_key(db, participant_id=participant_id, session_id=safe_session_id)
+        if existing is not None and existing[1] is not None:
+            return None
     return int(value) if value is not None else None
 
 

@@ -46,6 +46,34 @@ function createStructuredError({
   return error;
 }
 
+function closeSessionTransport(endpoint, payload) {
+  const url = getApiUrl(endpoint);
+  const body = JSON.stringify(payload || {});
+  try {
+    if (typeof fetch === "function") {
+      void fetch(url, {
+        method: REQUEST_METHODS.post,
+        credentials: "include",
+        headers: { [REQUEST_HEADERS.contentType]: "application/json" },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+      return true;
+    }
+  } catch {
+    // Fall through to beacon.
+  }
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([body], { type: "application/json" });
+      return navigator.sendBeacon(url, blob);
+    }
+  } catch {
+    // Ignore unload transport failures.
+  }
+  return false;
+}
+
 function isAbortSignal(signal) {
   return signal && typeof signal === "object" && "aborted" in signal;
 }
@@ -310,6 +338,10 @@ export const endpoints = {
     staleMs: 30000,
     swr: true,
   }),
+  closeParticipantSession: (payload = {}, options = {}) =>
+    api.post(API_ROUTES.participantSessionClose, payload, options),
+  signalParticipantSessionClose: (payload = {}) =>
+    closeSessionTransport(API_ROUTES.participantSessionClose, payload),
 };
 
 export function handleApiError(error, options = {}) {
