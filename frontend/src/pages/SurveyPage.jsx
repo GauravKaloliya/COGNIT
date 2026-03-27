@@ -45,7 +45,7 @@ export default function SurveyPage({
   const {
     description,
     difficultyRating,
-    confidenceScore,
+    confidenceRating,
     comments,
     submitting,
     submitError,
@@ -80,7 +80,7 @@ export default function SurveyPage({
   const {
     setDescription,
     setDifficultyRating,
-    setConfidenceScore,
+    setConfidenceRating,
     setComments,
     setIsZoomed,
     handleSubmit,
@@ -230,8 +230,8 @@ export default function SurveyPage({
           <SurveyRatingField
             difficultyRating={difficultyRating}
             setDifficultyRating={setDifficultyRating}
-            confidenceScore={confidenceScore}
-            setConfidenceScore={setConfidenceScore}
+            confidenceRating={confidenceRating}
+            setConfidenceRating={setConfidenceRating}
             imageReady={imageReady}
             disabled={inputsDisabled}
             onDifficultyBlur={() => touchField("difficulty")}

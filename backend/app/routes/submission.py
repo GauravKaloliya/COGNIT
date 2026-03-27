@@ -29,7 +29,7 @@ from app.constants.request_keys import (
     REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_SECONDS,
     REQUEST_KEY_AVG_PAUSE_DURATION_SECONDS,
     REQUEST_KEY_BACKSPACE_COUNT,
-    REQUEST_KEY_CONFIDENCE_SCORE,
+    REQUEST_KEY_CONFIDENCE_RATING,
     REQUEST_KEY_DESCRIPTION,
     REQUEST_KEY_DIFFICULTY_SELF_REPORT,
     REQUEST_KEY_EDIT_COUNT,
@@ -42,7 +42,6 @@ from app.constants.request_keys import (
     REQUEST_KEY_PAGE_CLOSE_ATTEMPTS,
     REQUEST_KEY_PAUSE_COUNT,
     REQUEST_KEY_PUBLIC_ID,
-    REQUEST_KEY_RATING,
     REQUEST_KEY_SESSION_ID,
     REQUEST_KEY_SURVEY_CLICKS,
     REQUEST_KEY_SURVEY_KEYPRESSES,
@@ -145,13 +144,6 @@ def submit():
         return create_error_response("VAL_FEEDBACK_LENGTH")
 
     try:
-        rating = int(d[REQUEST_KEY_RATING])
-        if not MIN_RATING <= rating <= MAX_RATING:
-            raise ValueError
-    except Exception:
-        return create_error_response("VAL_RATING_INVALID")
-
-    try:
         difficulty_self_report = int(d[REQUEST_KEY_DIFFICULTY_SELF_REPORT])
         if not MIN_RATING <= difficulty_self_report <= MAX_RATING:
             raise ValueError
@@ -159,8 +151,8 @@ def submit():
         return create_error_response("VAL_RATING_INVALID")
 
     try:
-        confidence_score = int(d[REQUEST_KEY_CONFIDENCE_SCORE])
-        if not MIN_RATING <= confidence_score <= MAX_RATING:
+        confidence_rating = int(d[REQUEST_KEY_CONFIDENCE_RATING])
+        if not MIN_RATING <= confidence_rating <= MAX_RATING:
             raise ValueError
     except Exception:
         return create_error_response("VAL_RATING_INVALID")
@@ -179,14 +171,13 @@ def submit():
         REQUEST_KEY_IMAGE_ID: image_id_str,
         REQUEST_KEY_DESCRIPTION: description,
         REQUEST_KEY_FEEDBACK: feedback,
-        REQUEST_KEY_RATING: rating,
+        REQUEST_KEY_DIFFICULTY_SELF_REPORT: difficulty_self_report,
+        REQUEST_KEY_CONFIDENCE_RATING: confidence_rating,
         REQUEST_KEY_SESSION_ID: d.get(REQUEST_KEY_SESSION_ID),
         REQUEST_KEY_TIME_SPENT_SECONDS: ts,
         REQUEST_KEY_TAB_SWITCH_COUNT: d.get(REQUEST_KEY_TAB_SWITCH_COUNT),
         REQUEST_KEY_PAGE_CLOSE_ATTEMPTS: d.get(REQUEST_KEY_PAGE_CLOSE_ATTEMPTS),
         REQUEST_KEY_NETWORK_DISCONNECTS: d.get(REQUEST_KEY_NETWORK_DISCONNECTS),
-        REQUEST_KEY_CONFIDENCE_SCORE: d.get(REQUEST_KEY_CONFIDENCE_SCORE),
-        REQUEST_KEY_DIFFICULTY_SELF_REPORT: d.get(REQUEST_KEY_DIFFICULTY_SELF_REPORT),
         REQUEST_KEY_TIME_BEFORE_TYPING_SECONDS: d.get(REQUEST_KEY_TIME_BEFORE_TYPING_SECONDS),
         REQUEST_KEY_EDIT_COUNT: d.get(REQUEST_KEY_EDIT_COUNT),
         REQUEST_KEY_BACKSPACE_COUNT: d.get(REQUEST_KEY_BACKSPACE_COUNT),
@@ -208,7 +199,7 @@ def submit():
         REQUEST_KEY_SURVEY_KEYPRESSES: d.get(REQUEST_KEY_SURVEY_KEYPRESSES),
     })
     d[REQUEST_KEY_DIFFICULTY_SELF_REPORT] = difficulty_self_report
-    d[REQUEST_KEY_CONFIDENCE_SCORE] = confidence_score
+    d[REQUEST_KEY_CONFIDENCE_RATING] = confidence_rating
     phase_data = extract_submission_phase_metrics(d, description=description)
 
     try:
@@ -226,7 +217,6 @@ def submit():
             image_id_str=image_id_str,
             description=description,
             feedback=feedback,
-            rating=rating,
             word_count=word_count,
             time_spent_seconds=ts,
             ip_hash=iph,

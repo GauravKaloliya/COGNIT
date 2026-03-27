@@ -803,10 +803,11 @@ def get_ground_truth_objects(db, image_id: int) -> set[str]:
 def extract_submission_phase_metrics(payload: dict[str, Any], *, description: str = ""):
     metrics = payload if isinstance(payload, dict) else {}
     difficulty_self_report = _safe_optional_smallint(metrics.get("difficulty_self_report"), minimum=1, maximum=5)
+    confidence_rating = _safe_optional_smallint(metrics.get("confidence_rating"), minimum=1, maximum=5)
     alignment_mentions = summarize_alignment_mentions(description)
 
     phase_metrics = {
-        "confidence_score": _safe_optional_smallint(metrics.get("confidence_score"), minimum=1, maximum=5),
+        "confidence_rating": confidence_rating,
         "difficulty_self_report": difficulty_self_report,
         "object_mentions": alignment_mentions["object_mentions"],
         "spatial_mentions": alignment_mentions["spatial_mentions"],

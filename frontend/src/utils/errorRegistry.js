@@ -84,7 +84,7 @@ const TRANSLATIONS = {
     "VAL_002_0005": "Feedback must be {min_feedback_length}-{max_feedback_length} characters long.",
     "VAL_002_0006": "Feedback is too short.",
     "VAL_002_0007": "Feedback is too long.",
-    "VAL_002_0008": "Rating must be between {min_rating} and {max_rating}.",
+    "VAL_002_0008": "Difficulty and confidence ratings must be between {min_rating} and {max_rating}.",
     "VAL_003_0001": "Verification code is required.",
     "VAL_003_0003": "Invalid request ID format.",
     "VAL_003_0007": "This action is not available here.",

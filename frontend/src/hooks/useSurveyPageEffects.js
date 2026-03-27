@@ -38,7 +38,7 @@ export function useSurveyPageEffects({
   description,
   comments,
   difficultyRating,
-  confidenceScore,
+  confidenceRating,
   prefetchTriggeredRef,
   turnstilePrefetchTriggeredRef,
   lastSubmitErrorWasValidationRef,
@@ -173,7 +173,7 @@ export function useSurveyPageEffects({
       description.trim().length < 24
       && comments.trim().length < 12
       && difficultyRating === 0
-      && confidenceScore === 0
+      && confidenceRating === 0
     ) {
       return;
     }
@@ -183,7 +183,7 @@ export function useSurveyPageEffects({
     });
   }, [
     comments,
-    confidenceScore,
+    confidenceRating,
     description,
     difficultyRating,
     isOnline,
