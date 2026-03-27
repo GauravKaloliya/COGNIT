@@ -384,14 +384,16 @@ button,
 
 @media (max-width: 420px) {
   .header {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
     gap: var(--space-2);
   }
 
   .header-actions {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
   }
 }
 
@@ -3429,46 +3431,77 @@ body.dark .toast.warning {
     top: calc(env(safe-area-inset-top, 0px) + var(--space-2));
     left: var(--space-3);
     right: var(--space-3);
-    gap: var(--space-3);
+    gap: var(--space-2);
+    align-items: center;
   }
 
   .toast {
-    padding: var(--space-3);
-    gap: var(--space-3);
-    font-size: var(--text-sm);
-    flex-direction: column;
-    align-items: stretch;
-    border-radius: var(--radius-xl);
+    width: min(100%, 320px);
+    padding: 0.65rem 0.75rem;
+    gap: var(--space-2);
+    font-size: 0.82rem;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    border-radius: 18px;
+    margin: 0 auto;
+    background: color-mix(in srgb, var(--panel) 94%, white 6%);
+    box-shadow:
+      0 10px 28px rgba(15, 23, 42, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(16px);
   }
 
   .toast-message {
-    width: 100%;
-    font-size: var(--text-sm);
-    line-height: var(--leading-relaxed);
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    font-size: 0.82rem;
+    line-height: 1.35;
     word-break: break-word;
+    align-self: center;
+    text-align: left;
   }
 
   .toast-actions {
     margin-left: 0;
-    width: 100%;
+    width: auto;
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
-    gap: var(--space-2);
-    flex-wrap: wrap;
+    gap: 0.45rem;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
   }
 
   .toast-action {
-    padding: var(--space-2) var(--space-3);
-    min-height: 36px;
+    padding: 0.45rem 0.7rem;
+    min-height: 32px;
     border-radius: var(--radius-full);
+    font-size: 0.76rem;
   }
 
   .toast button[aria-label="Dismiss"] {
-    width: 32px;
-    height: 32px;
-    font-size: 18px;
+    width: 30px;
+    height: 30px;
+    min-height: 30px;
+    padding: 0;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.52);
+    border: 1px solid color-mix(in srgb, var(--border-light) 70%, white 30%);
   }
+}
+
+body.dark .toast-container .toast {
+  background: color-mix(in srgb, var(--panel) 96%, white 4%);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+body.dark .toast button[aria-label="Dismiss"] {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .toast button[aria-label="Dismiss"]:hover {
@@ -5018,13 +5051,15 @@ canvas {
   }
 
   .header-actions {
-    gap: var(--space-2);
-    flex-wrap: wrap;
+    gap: 0.45rem;
+    flex-wrap: nowrap;
     justify-content: flex-end;
+    align-items: center;
+    width: auto;
   }
 
   .header .brand {
-    max-width: 100%;
+    max-width: calc(100% - 7.5rem);
   }
 
   .header .brand h1,
@@ -5065,6 +5100,29 @@ canvas {
   .toast-action {
     margin-left: 0;
   }
+
+  .api-docs-button {
+    min-height: 32px;
+    padding: 0.45rem 0.8rem !important;
+    font-size: 0.78rem;
+    border-radius: 12px;
+  }
+
+  .dark-mode-toggle {
+    min-width: 38px;
+    min-height: 32px;
+    padding: 0.4rem !important;
+    border-radius: 12px;
+  }
+
+  .dark-mode-toggle svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .dark-mode-toggle .dark-mode-emoji {
+    font-size: 16px;
+  }
 }
 
 
@@ -5083,21 +5141,24 @@ canvas {
   .header-actions {
     width: auto;
     justify-content: flex-end;
-    gap: var(--space-2);
-    flex-wrap: wrap;
+    gap: 0.45rem;
+    flex-wrap: nowrap;
   }
 
   .dark-mode-toggle {
-    min-width: var(--mobile-touch-target);
+    min-width: 32px;
   }
 
   .brand {
     flex: 1 1 auto;
+    min-width: 0;
   }
 
   .brand h1 {
     width: 100%;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .brand .subtitle {
@@ -5106,6 +5167,33 @@ canvas {
 
   .status-dot {
     max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .header .brand {
+    max-width: calc(100% - 6.4rem);
+  }
+
+  .api-docs-button {
+    min-height: 30px;
+    padding: 0.4rem 0.65rem !important;
+    font-size: 0.74rem;
+  }
+
+  .dark-mode-toggle {
+    min-width: 36px;
+    min-height: 30px;
+    padding: 0.34rem !important;
+  }
+
+  .dark-mode-toggle svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .dark-mode-toggle .dark-mode-emoji {
+    font-size: 15px;
   }
 }
 
