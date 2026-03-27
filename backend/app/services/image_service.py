@@ -115,11 +115,27 @@ def fetch_active_reserved_image(db, participant_id: int | None):
     return tuple(row) if row else None
 
 
+def release_participant_reservations(db, participant_id: int | None) -> None:
+    if participant_id is None:
+        return
+    db.execute(
+        QUERY_RELEASE_PARTICIPANT_RESERVATIONS,
+        {"pid": int(participant_id), "keep_image_id": None},
+    )
+
+
 def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int):
     cleanup_stale_reservations(db)
     active_reserved = fetch_active_reserved_image(db, participant_id)
     if active_reserved:
-        return active_reserved
+        is_attention_reserved = bool(active_reserved[3]) if len(active_reserved) > 3 else False
+        if is_attention_reserved == bool(should_prioritize_attention):
+            return active_reserved
+        try:
+            release_participant_reservations(db, participant_id)
+            db.commit()
+        except Exception as exc:
+            log_event(logger, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
     attention_pool, non_attention_pool, _all_pool = load_image_pool(db)
     row: ImagePoolItem | None = None
     target_pool = attention_pool if should_prioritize_attention else non_attention_pool
