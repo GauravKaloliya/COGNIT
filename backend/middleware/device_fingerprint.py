@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from flask import request, g
 from sqlalchemy import text
 
-from app.config import DEVICE_FINGERPRINT_SALTS, ENABLE_DEVICE_FINGERPRINTING
+from app.config import (
+    DEVICE_FINGERPRINT_SALTS,
+    ENABLE_DEVICE_FINGERPRINTING,
+    PARTICIPANT_PUBLIC_COOKIE_NAME,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +24,15 @@ def _should_run_fingerprinting() -> bool:
     if not ENABLE_DEVICE_FINGERPRINTING:
         return False
     path = (request.path or "").lower()
-    # Restrict expensive fingerprint DB work to write flows that matter for submissions.
+    # Restrict fingerprint DB work to write flows tied to an identifiable participant.
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
-    return path == "/submit"
+    return path in {
+        "/submit",
+        "/consent",
+        "/email-otp/request",
+        "/email-otp/verify",
+    }
 
 def _resolve_participant_id(db):
     """Best-effort participant resolution across active route styles."""
@@ -41,6 +50,9 @@ def _resolve_participant_id(db):
     view_args = getattr(request, "view_args", None) or {}
     if not public_id:
         public_id = view_args.get("public_id")
+
+    if not public_id:
+        public_id = request.cookies.get(PARTICIPANT_PUBLIC_COOKIE_NAME)
 
     if not public_id:
         return None
@@ -123,6 +135,7 @@ def calculate_risk_score(
     fingerprint_data: dict[str, object],
     db,
     participant_id=None,
+    fingerprint_variants: list[str] | None = None,
 ) -> tuple[float, list[str]]:
     """Calculate device risk score based on fingerprint characteristics"""
     risk_score = 0.0
@@ -149,12 +162,14 @@ def calculate_risk_score(
             LIMIT 5
         """), {"pid": participant_id}).fetchall()
 
-        current_fingerprint = generate_device_fingerprint(fingerprint_data)
+        current_fingerprint_variants = set(
+            fingerprint_variants or generate_device_fingerprint_variants(fingerprint_data)
+        )
         
         if len(previous_fingerprints) > 0:
             # Check for multiple different fingerprints in short time
             recent_hashes = [fp[0] for fp in previous_fingerprints]
-            if current_fingerprint not in recent_hashes:
+            if not current_fingerprint_variants.intersection(recent_hashes):
                 risk_score += 20
                 signals.append('device_fingerprint_change')
             
@@ -186,7 +201,12 @@ def get_or_create_device_fingerprint(
     characteristics = collect_device_characteristics()
     fingerprint_hash = generate_device_fingerprint(characteristics)
     fingerprint_variants = generate_device_fingerprint_variants(characteristics)
-    risk_score, risk_signals = calculate_risk_score(characteristics, db, participant_id)
+    risk_score, risk_signals = calculate_risk_score(
+        characteristics,
+        db,
+        participant_id,
+        fingerprint_variants=fingerprint_variants,
+    )
     
     # Store or update fingerprint
     if participant_id:

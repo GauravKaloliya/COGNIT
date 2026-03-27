@@ -8,6 +8,7 @@ export const API_ROUTES = {
   participants: "/participants",
   participantOptions: "/participant-options",
   participantSession: "/participants/session",
+  participantSessionClose: "/participants/session/close",
   consent: "/consent",
   emailOtpRequest: "/email-otp/request",
   emailOtpVerify: "/email-otp/verify",

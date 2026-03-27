@@ -46,6 +46,46 @@ QUERY_GET_EXISTING_SESSION_ID = text("""
     LIMIT 1
 """)
 
+QUERY_FETCH_PARTICIPANT_SESSION_STATUS = text("""
+    SELECT
+        ps.id,
+        ps.ended_at,
+        ps.last_seen_at
+    FROM participant_sessions ps
+    JOIN participants p ON p.id = ps.participant_id
+    WHERE p.public_id = :pub
+      AND p.is_deleted = false
+      AND ps.session_id = :sid
+    LIMIT 1
+""")
+
+QUERY_TOUCH_PARTICIPANT_SESSION = text("""
+    UPDATE participant_sessions ps
+    SET last_seen_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    FROM participants p
+    WHERE p.id = ps.participant_id
+      AND p.public_id = :pub
+      AND p.is_deleted = false
+      AND ps.session_id = :sid
+      AND ps.ended_at IS NULL
+    RETURNING ps.id, ps.ended_at, ps.last_seen_at
+""")
+
+QUERY_CLOSE_PARTICIPANT_SESSION_BY_KEY = text("""
+    UPDATE participant_sessions ps
+    SET ended_at = CURRENT_TIMESTAMP,
+        last_seen_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    FROM participants p
+    WHERE p.id = ps.participant_id
+      AND p.public_id = :pub
+      AND p.is_deleted = false
+      AND ps.session_id = :sid
+      AND ps.ended_at IS NULL
+    RETURNING ps.id, ps.ended_at, ps.last_seen_at
+""")
+
 QUERY_CHECK_PARTICIPANT_FIELD_AVAILABLE_TEMPLATE = """
     SELECT 1 FROM participants
     WHERE {field_name} = :value AND is_deleted = false

@@ -77,6 +77,7 @@ from app.utils.turnstile import verify_turnstile_token
 from app.services import (
     alphabetic_tokens,
     build_request_hash,
+    clear_participant_cookies,
     compute_alignment,
     load_idempotent_response,
     save_idempotent_response,
@@ -238,9 +239,15 @@ def submit():
             route_path=SUBMIT_ROUTE,
             request_id=getattr(g, "request_id", None),
         )
-        return success_response(response_payload)
+        response = success_response(response_payload)
+        if response_payload.get("session_closed") or response_payload.get("clear_client_state"):
+            response = clear_participant_cookies(response)
+        return response
     except SubmissionWorkflowError as exc:
-        return create_error_response(exc.code, exc.details)
+        response, status_code = create_error_response(exc.code, exc.details)
+        if (exc.details or {}).get("session_closed") or (exc.details or {}).get("clear_client_state"):
+            response = clear_participant_cookies(response)
+        return response, status_code
 
     except Exception as exc:
         try:

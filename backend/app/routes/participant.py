@@ -37,15 +37,18 @@ from app.constants.request_keys import (
     REQUEST_KEY_IDEMPOTENCY_KEY,
     REQUEST_KEY_OTP,
     REQUEST_KEY_PUBLIC_ID,
+    REQUEST_KEY_SESSION_ID,
     REQUEST_KEY_TURNSTILE_TOKEN,
     REQUEST_KEY_USERNAME,
 )
 from app.constants.response_keys import (
     RESPONSE_KEY_AVAILABLE,
+    RESPONSE_KEY_CLEAR_CLIENT_STATE,
     RESPONSE_KEY_EMAIL,
     RESPONSE_KEY_EMAIL_VERIFIED,
     RESPONSE_KEY_EXPIRES_AT,
     RESPONSE_KEY_PUBLIC_ID,
+    RESPONSE_KEY_SESSION_CLOSED,
     RESPONSE_KEY_SESSION_ID,
     RESPONSE_KEY_STATUS,
 )
@@ -58,6 +61,7 @@ from app.constants.route_constants import (
     PARTICIPANTS_ROUTE,
     PARTICIPANT_OPTIONS_ROUTE,
     PARTICIPANT_SESSION_ROUTE,
+    PARTICIPANT_SESSION_CLOSE_ROUTE,
 )
 from app.config import (
     CONSENT_RATE_LIMIT,
@@ -73,13 +77,18 @@ from app.config import (
 from app.database import get_db
 from app.extensions import limiter
 from app.services import (
+    close_participant_session_by_key,
+    clear_participant_cookies,
     collect_missing_participant_fields,
+    fetch_participant_session_status,
     fetch_participant_options,
     generate_public_id,
     generate_session_id,
+    is_participant_session_stale,
     is_participant_field_available,
     is_valid_prior_experience_code,
     is_valid_public_id,
+    touch_participant_session,
     create_participant_workflow,
     request_email_otp_workflow,
     verify_email_otp_workflow,
@@ -244,10 +253,68 @@ def get_participant_session():
     """Return participant identifiers from httpOnly cookies (if present)."""
     public_id = (request.cookies.get(PARTICIPANT_PUBLIC_COOKIE_NAME) or "").strip()
     session_id = (request.cookies.get(PARTICIPANT_SESSION_COOKIE_NAME) or "").strip()
+    if public_id and session_id:
+        try:
+            db = get_db()
+            session_row = fetch_participant_session_status(db, public_id=public_id, session_id=session_id)
+            if session_row is not None:
+                ended_at = session_row[1]
+                last_seen_at = session_row[2]
+                if ended_at is not None or is_participant_session_stale(last_seen_at):
+                    if ended_at is None:
+                        close_participant_session_by_key(db, public_id=public_id, session_id=session_id)
+                        db.commit()
+                    response = success_response({
+                        RESPONSE_KEY_PUBLIC_ID: None,
+                        RESPONSE_KEY_SESSION_ID: None,
+                        RESPONSE_KEY_SESSION_CLOSED: True,
+                        RESPONSE_KEY_CLEAR_CLIENT_STATE: True,
+                    })
+                    return clear_participant_cookies(response)
+                touch_participant_session(db, public_id=public_id, session_id=session_id)
+                db.commit()
+        except Exception:
+            pass
     return success_response({
         RESPONSE_KEY_PUBLIC_ID: public_id or None,
         RESPONSE_KEY_SESSION_ID: session_id or None,
+        RESPONSE_KEY_SESSION_CLOSED: False,
+        RESPONSE_KEY_CLEAR_CLIENT_STATE: False,
     })
+
+
+@participant_bp.route(PARTICIPANT_SESSION_CLOSE_ROUTE, methods=[HTTP_METHOD_POST])
+@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
+@track_performance
+def close_participant_session():
+    payload = request.json or {}
+    public_id = str(
+        payload.get(REQUEST_KEY_PUBLIC_ID)
+        or request.cookies.get(PARTICIPANT_PUBLIC_COOKIE_NAME)
+        or ""
+    ).strip()
+    session_id = str(
+        payload.get(REQUEST_KEY_SESSION_ID)
+        or request.cookies.get(PARTICIPANT_SESSION_COOKIE_NAME)
+        or ""
+    ).strip()
+    if not public_id or not session_id:
+        response = success_response({"closed": False, "ignored": True})
+        return clear_participant_cookies(response)
+
+    try:
+        db = get_db()
+        close_participant_session_by_key(db, public_id=public_id, session_id=session_id)
+        db.commit()
+    except Exception:
+        pass
+
+    response = success_response({
+        "closed": True,
+        RESPONSE_KEY_SESSION_CLOSED: True,
+        RESPONSE_KEY_CLEAR_CLIENT_STATE: True,
+    })
+    return clear_participant_cookies(response)
 
 
 @participant_bp.route(PARTICIPANT_OPTIONS_ROUTE, methods=[HTTP_METHOD_GET])

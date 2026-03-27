@@ -49,21 +49,34 @@ _IP_HASH_SALT_WARNED = False
 def get_ip_hash() -> str:
     """Generate SHA256 hash of client IP address for privacy-preserving logging."""
     global _IP_HASH_SALT_WARNED
-    raw_ip = request.remote_addr or "unknown"
+    candidates: list[str] = []
     if TRUST_PROXY_HEADERS:
-        raw_ip = request.headers.get("X-Forwarded-For", raw_ip)
-    ip = str(raw_ip).split(",")[0].strip()
-    if ip in ("", "unknown"):
-        return "0" * 64
+        candidates.extend([
+            request.headers.get("X-Forwarded-For", ""),
+            request.headers.get("X-Real-IP", ""),
+        ])
+        try:
+            candidates.extend(list(getattr(request, "access_route", []) or []))
+        except Exception:
+            pass
+    candidates.append(request.remote_addr or "")
+    raw_ip = next((str(value).split(",")[0].strip() for value in candidates if str(value or "").strip()), "")
     try:
         import ipaddress
         salt = str(IP_HASH_SALT or "")
         if not salt and not _IP_HASH_SALT_WARNED:
             log_event(logger, OBS_EVENT_IP_HASH_SALT_MISSING, level=logging.WARNING, message=LOG_IP_HASH_SALT_MISSING)
             _IP_HASH_SALT_WARNED = True
-        return hashlib.sha256(f"{ipaddress.ip_address(ip)}{salt}".encode()).hexdigest()
+        normalized_ip = "__missing_ip__"
+        if raw_ip:
+            try:
+                normalized_ip = str(ipaddress.ip_address(raw_ip))
+            except Exception:
+                normalized_ip = f"__unparsed__:{raw_ip[:120]}"
+        return hashlib.sha256(f"{normalized_ip}{salt}".encode()).hexdigest()
     except Exception:
-        return "0" * 64
+        fallback_value = raw_ip or "__missing_ip__"
+        return hashlib.sha256(fallback_value.encode()).hexdigest()
 
 
 # ────────────────────────────────────────────────
@@ -217,9 +230,9 @@ def log_audit(
             "meth": request.method,
             "st": int(status_code) if status_code is not None else 200,
             "iph": get_ip_hash(),
-            "ua": request.headers.get("User-Agent", "")[:512],
+            "ua": (request.headers.get("User-Agent") or "unknown")[:512],
             "det": details[:8000],
-            "rid": getattr(g, "request_id", None),
+            "rid": getattr(g, "request_id", None) or request.headers.get("X-Request-ID"),
         })
     except Exception as exc:
         log_event(logger, OBS_EVENT_AUDIT_LOG_INSERT_FAILED, level=logging.WARNING, error=str(exc), message=LOG_AUDIT_LOG_INSERT_FAILED)
