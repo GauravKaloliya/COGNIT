@@ -86,7 +86,13 @@ QUERY_INSERT_SUBMISSION = text("""
     INSERT INTO submissions (
         participant_id, participant_session_id, image_id, survey_index, description, word_count,
         rating, feedback, time_spent_seconds, is_survey, is_attention_check,
-        attention_passed, flagged_too_fast, quality_score, alignment_score,
+        attention_passed, attention_tier, attention_confidence, expected_term_recall,
+        matched_term_count, expected_term_count, distinct_word_count, descriptive_token_count,
+        flagged_too_fast, quality_score, writing_quality_score, behavior_risk_score,
+        alignment_score, alignment_precision, alignment_recall, alignment_object_f1,
+        alignment_relation_score, alignment_scene_consistency_score, alignment_wrong_object_penalty,
+        alignment_natural_language_score, alignment_stuffing_penalty, supporting_signals,
+        consecutive_failures, hard_flag_triggered, soft_flag_triggered,
         ip_hash, user_agent, device_type, extra_metadata,
         tab_switch_count, page_close_attempts, network_disconnects,
         survey_time_spent_seconds, survey_page_views, survey_tab_switches,
@@ -94,7 +100,14 @@ QUERY_INSERT_SUBMISSION = text("""
         survey_max_scroll_depth_pct, survey_clicks, survey_keypresses
     ) VALUES (
         :pid, :psid, :iid, :sidx, :desc, :wc, :rt, :fb, :ts, :isv, :isa,
-        :ap, :tf, :qs, :als, :iph, :ua, :dt, :meta,
+        :ap, :attention_tier, :attention_confidence, :expected_term_recall,
+        :matched_term_count, :expected_term_count, :distinct_word_count, :descriptive_token_count,
+        :tf, :qs, :writing_quality_score, :behavior_risk_score,
+        :als, :alignment_precision, :alignment_recall, :alignment_object_f1,
+        :alignment_relation_score, :alignment_scene_consistency_score, :alignment_wrong_object_penalty,
+        :alignment_natural_language_score, :alignment_stuffing_penalty, CAST(:supporting_signals AS JSONB),
+        :consecutive_failures, :hard_flag_triggered, :soft_flag_triggered,
+        :iph, :ua, :dt, :meta,
         :tsc, :pca, :nd,
         :survey_time_spent_seconds, :survey_page_views, :survey_tab_switches,
         :survey_page_close_attempts, :survey_network_disconnects,
@@ -125,7 +138,10 @@ QUERY_INSERT_SUBMISSION_BEHAVIOR_METRICS = text("""
         avg_keystroke_interval_seconds,
         keystroke_variance,
         pause_count,
-        avg_pause_duration_seconds
+        avg_pause_duration_seconds,
+        revision_bursts,
+        hesitation_score,
+        submitted_without_typing_pause
     ) VALUES (
         :submission_id,
         :time_before_typing_seconds,
@@ -134,7 +150,10 @@ QUERY_INSERT_SUBMISSION_BEHAVIOR_METRICS = text("""
         :avg_keystroke_interval_seconds,
         :keystroke_variance,
         :pause_count,
-        :avg_pause_duration_seconds
+        :avg_pause_duration_seconds,
+        :revision_bursts,
+        :hesitation_score,
+        :submitted_without_typing_pause
     )
 """)
 
@@ -144,13 +163,21 @@ QUERY_INSERT_SUBMISSION_COGNITIVE_METRICS = text("""
         confidence_score,
         difficulty_self_report,
         first_view_duration_seconds,
-        writing_duration_seconds
+        writing_duration_seconds,
+        object_mention_count,
+        spatial_mention_count,
+        reference_coverage,
+        detail_density_score
     ) VALUES (
         :submission_id,
         :confidence_score,
         :difficulty_self_report,
         :first_view_duration_seconds,
-        :writing_duration_seconds
+        :writing_duration_seconds,
+        :object_mention_count,
+        :spatial_mention_count,
+        :reference_coverage,
+        :detail_density_score
     )
 """)
 
@@ -201,25 +228,32 @@ QUERY_INSERT_ATTENTION_EVENT = text("""
         expected_terms,
         matched_terms,
         failure_reasons,
+        hard_fail_reasons,
+        soft_risk_reasons,
         is_strict,
-        attention_passed,
+        repetition_metrics,
         response_seconds,
-        distinct_word_count,
         content_fingerprint
     ) VALUES (
         :pid, :sid, :img_id, :expected, :matched, :reasons,
-        :strict, :passed, :resp_secs, :distinct_wc, :fingerprint
+        :hard_fail_reasons, :soft_risk_reasons,
+        :strict, CAST(:repetition_metrics AS JSONB),
+        :resp_secs, :fingerprint
     )
 """)
 
 QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG = text("""
     UPDATE participant_attention_stats
     SET attention_score = COALESCE(:attention_score, attention_score),
+        recent_attention_score = COALESCE(:recent_attention_score, recent_attention_score),
+        consecutive_failures = COALESCE(:consecutive_failures, consecutive_failures),
+        hard_flag_triggered = COALESCE(:hard_flag_triggered, hard_flag_triggered),
+        soft_flag_triggered = COALESCE(:soft_flag_triggered, soft_flag_triggered),
         is_flagged = CASE
             WHEN :hard_flag OR :soft_flag THEN true
             ELSE is_flagged
         END,
-        last_checked_at = CURRENT_TIMESTAMP
+        last_checked_at = :checked_at
     WHERE participant_id = :pid
 """)
 
@@ -334,7 +368,9 @@ def end_participant_session(db, *, participant_id: int, participant_session_id) 
     })
 
 
-def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, rating: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, too_fast: bool, quality: float, alignment_score, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
+def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, rating: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, attention_tier, attention_confidence, expected_term_recall: float, matched_term_count: int, expected_term_count: int, distinct_word_count: int, descriptive_token_count: int, too_fast: bool, quality: float, writing_quality_score: float, behavior_risk_score: float, alignment_score, alignment: dict | None, supporting_signals: dict | None, consecutive_failures: int, hard_flag_triggered: bool, soft_flag_triggered: bool, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
+    alignment = alignment or {}
+    supporting_signals = supporting_signals or {}
     row = db.execute(QUERY_INSERT_SUBMISSION, {
         "pid": int(participant_id),
         "psid": int(participant_session_id) if participant_session_id is not None else None,
@@ -348,9 +384,30 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "isv": bool(is_survey),
         "isa": bool(is_attention),
         "ap": attention_passed,
+        "attention_tier": attention_tier,
+        "attention_confidence": float(attention_confidence) if attention_confidence is not None else None,
+        "expected_term_recall": float(expected_term_recall) if expected_term_recall is not None else None,
+        "matched_term_count": int(matched_term_count),
+        "expected_term_count": int(expected_term_count),
+        "distinct_word_count": int(distinct_word_count),
+        "descriptive_token_count": int(descriptive_token_count),
         "tf": bool(too_fast),
         "qs": float(quality),
+        "writing_quality_score": float(writing_quality_score),
+        "behavior_risk_score": float(behavior_risk_score),
         "als": float(alignment_score) if alignment_score is not None else None,
+        "alignment_precision": alignment.get("precision"),
+        "alignment_recall": alignment.get("recall"),
+        "alignment_object_f1": alignment.get("object_f1"),
+        "alignment_relation_score": alignment.get("relation_score"),
+        "alignment_scene_consistency_score": alignment.get("scene_consistency_score"),
+        "alignment_wrong_object_penalty": alignment.get("wrong_object_penalty"),
+        "alignment_natural_language_score": alignment.get("natural_language_score"),
+        "alignment_stuffing_penalty": alignment.get("stuffing_penalty"),
+        "supporting_signals": json.dumps(supporting_signals),
+        "consecutive_failures": int(consecutive_failures),
+        "hard_flag_triggered": bool(hard_flag_triggered),
+        "soft_flag_triggered": bool(soft_flag_triggered),
         "iph": ip_hash,
         "ua": user_agent,
         "dt": str(device_type or "unknown")[:20],
@@ -378,6 +435,9 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "keystroke_variance": behavior_metrics.get("keystroke_variance"),
         "pause_count": int(behavior_metrics.get("pause_count", 0)),
         "avg_pause_duration_seconds": behavior_metrics.get("avg_pause_duration_seconds"),
+        "revision_bursts": int(behavior_metrics.get("revision_bursts", 0)),
+        "hesitation_score": float(behavior_metrics.get("hesitation_score", 0.0)),
+        "submitted_without_typing_pause": bool(behavior_metrics.get("submitted_without_typing_pause", False)),
     })
 
     db.execute(QUERY_INSERT_SUBMISSION_COGNITIVE_METRICS, {
@@ -386,6 +446,10 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "difficulty_self_report": phase_metrics.get("difficulty_self_report"),
         "first_view_duration_seconds": float(phase_metrics.get("first_view_duration_seconds", 0)),
         "writing_duration_seconds": float(phase_metrics.get("writing_duration_seconds", 0)),
+        "object_mention_count": int(phase_metrics.get("object_mention_count", 0)),
+        "spatial_mention_count": int(phase_metrics.get("spatial_mention_count", 0)),
+        "reference_coverage": float(phase_metrics.get("reference_coverage", 0.0)),
+        "detail_density_score": float(phase_metrics.get("detail_density_score", 0.0)),
     })
 
     for index, mention in enumerate(phase_metrics.get("object_mentions", [])):
@@ -413,7 +477,7 @@ def update_participant_metadata(db, *, participant_id: int, participant_meta: di
     })
 
 
-def insert_attention_event_record(db, *, participant_id: int, submission_id: int, image_id_fk: int, attention_expected_terms, attention_matched_terms, attention_failure_reasons, strict: bool, attention_passed: bool, response_seconds, distinct_word_count: int, description_fingerprint: str):
+def insert_attention_event_record(db, *, participant_id: int, submission_id: int, image_id_fk: int, attention_expected_terms, attention_matched_terms, attention_failure_reasons, hard_fail_reasons, soft_risk_reasons, repetition_metrics: dict, strict: bool, response_seconds, description_fingerprint: str):
     db.execute(QUERY_INSERT_ATTENTION_EVENT, {
         "pid": int(participant_id),
         "sid": int(submission_id),
@@ -421,20 +485,36 @@ def insert_attention_event_record(db, *, participant_id: int, submission_id: int
         "expected": attention_expected_terms,
         "matched": attention_matched_terms,
         "reasons": attention_failure_reasons,
+        "hard_fail_reasons": hard_fail_reasons or [],
+        "soft_risk_reasons": soft_risk_reasons or [],
         "strict": bool(strict),
-        "passed": bool(attention_passed),
+        "repetition_metrics": json.dumps(repetition_metrics or {}),
         "resp_secs": response_seconds,
-        "distinct_wc": int(distinct_word_count),
         "fingerprint": description_fingerprint,
     })
 
 
-def update_participant_attention_flag(db, *, participant_id: int, hard_flag_triggered: bool, soft_flag_triggered: bool, attention_score: float | None = None):
+def update_participant_attention_flag(
+    db,
+    *,
+    participant_id: int,
+    hard_flag_triggered: bool,
+    soft_flag_triggered: bool,
+    attention_score: float | None = None,
+    recent_attention_score: float | None = None,
+    consecutive_failures: int | None = None,
+    checked_at=None,
+):
     db.execute(QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG, {
         "pid": int(participant_id),
         "hard_flag": bool(hard_flag_triggered),
         "soft_flag": bool(soft_flag_triggered),
         "attention_score": float(attention_score) if attention_score is not None else None,
+        "recent_attention_score": float(recent_attention_score) if recent_attention_score is not None else None,
+        "consecutive_failures": int(consecutive_failures) if consecutive_failures is not None else None,
+        "hard_flag_triggered": bool(hard_flag_triggered),
+        "soft_flag_triggered": bool(soft_flag_triggered),
+        "checked_at": checked_at,
     })
 
 

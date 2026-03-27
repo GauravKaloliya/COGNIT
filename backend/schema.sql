@@ -41,29 +41,96 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION sync_attention_stats_from_submission()
 RETURNS TRIGGER AS $$
 DECLARE
-    pass_inc INTEGER := CASE WHEN NEW.attention_passed THEN 1 ELSE 0 END;
-    fail_inc INTEGER := CASE WHEN NEW.attention_passed THEN 0 ELSE 1 END;
+    total_checks_count INTEGER := 0;
+    passed_checks_count INTEGER := 0;
+    failed_checks_count INTEGER := 0;
+    consecutive_failures_count INTEGER := 0;
+    suspicious_recent_count INTEGER := 0;
+    weighted_total NUMERIC := 0.0;
+    weight_sum NUMERIC := 0.0;
+    recent_attention_score_value NUMERIC(5,4);
     hard_flag BOOLEAN := FALSE;
+    soft_flag BOOLEAN := FALSE;
+    tier_value TEXT;
+    confidence_value NUMERIC;
+    assessment_index INTEGER := 0;
+    checked_at_value TIMESTAMPTZ := COALESCE(NEW.created_at, CURRENT_TIMESTAMP);
 BEGIN
     IF NEW.is_attention_check IS DISTINCT FROM TRUE THEN
         RETURN NEW;
     END IF;
 
-    -- DB-level attention flag rules mirror backend/app/config_sections/survey.py.
-    -- Hard flag: 2 consecutive failed attention checks.
-    SELECT (
-        COUNT(*) = 2
-        AND bool_and(COALESCE(attention_passed, FALSE) = FALSE)
-    )
-    INTO hard_flag
-    FROM (
-        SELECT attention_passed
+    SELECT
+        COUNT(*),
+        COUNT(*) FILTER (WHERE attention_passed = TRUE),
+        COUNT(*) FILTER (WHERE attention_passed = FALSE)
+    INTO total_checks_count, passed_checks_count, failed_checks_count
+    FROM submissions
+    WHERE participant_id = NEW.participant_id
+      AND is_attention_check = TRUE;
+
+    FOR tier_value, confidence_value IN
+        SELECT
+            attention_tier,
+            COALESCE(attention_confidence, 0.0)
         FROM submissions
         WHERE participant_id = NEW.participant_id
           AND is_attention_check = TRUE
         ORDER BY created_at DESC, id DESC
-        LIMIT 2
-    ) recent;
+        LIMIT 10
+    LOOP
+        EXIT WHEN tier_value = 'pass';
+        consecutive_failures_count := consecutive_failures_count + 1;
+    END LOOP;
+
+    FOR tier_value, confidence_value IN
+        SELECT attention_tier, COALESCE(attention_confidence, 0.0)
+        FROM (
+            SELECT attention_tier, attention_confidence, created_at, id
+            FROM submissions
+            WHERE participant_id = NEW.participant_id
+              AND is_attention_check = TRUE
+            ORDER BY created_at DESC, id DESC
+            LIMIT 10
+        ) recent
+        ORDER BY created_at ASC, id ASC
+    LOOP
+        assessment_index := assessment_index + 1;
+        weight_sum := weight_sum + assessment_index;
+        weighted_total := weighted_total + assessment_index * (
+            0.75 * CASE tier_value
+                WHEN 'pass' THEN 1.0
+                WHEN 'weak_pass' THEN 0.78
+                WHEN 'suspicious' THEN 0.32
+                ELSE 0.0
+            END
+            + 0.25 * LEAST(GREATEST(COALESCE(confidence_value, 0.0), 0.0), 1.0)
+        );
+
+        IF tier_value IN ('suspicious', 'fail') THEN
+            suspicious_recent_count := suspicious_recent_count + 1;
+        END IF;
+    END LOOP;
+
+    recent_attention_score_value := CASE
+        WHEN weight_sum > 0 THEN ROUND(weighted_total / weight_sum, 4)
+        ELSE NULL
+    END;
+
+    hard_flag := (
+        consecutive_failures_count >= 2
+        OR suspicious_recent_count >= 3
+        OR COALESCE(NEW.hard_flag_triggered, FALSE)
+    );
+    soft_flag := (
+        (
+            total_checks_count >= 4
+            AND recent_attention_score_value IS NOT NULL
+            AND recent_attention_score_value < 0.50
+        )
+        OR suspicious_recent_count >= 2
+        OR COALESCE(NEW.soft_flag_triggered, FALSE)
+    );
 
     INSERT INTO participant_attention_stats (
         participant_id,
@@ -71,29 +138,36 @@ BEGIN
         passed_checks,
         failed_checks,
         attention_score,
+        recent_attention_score,
+        consecutive_failures,
+        hard_flag_triggered,
+        soft_flag_triggered,
         is_flagged,
         last_checked_at
     ) VALUES (
         NEW.participant_id,
-        1,
-        pass_inc,
-        fail_inc,
-        pass_inc::NUMERIC,
-        FALSE,
-        CURRENT_TIMESTAMP
+        total_checks_count,
+        passed_checks_count,
+        failed_checks_count,
+        COALESCE(recent_attention_score_value, 1.0),
+        recent_attention_score_value,
+        consecutive_failures_count,
+        hard_flag,
+        soft_flag,
+        hard_flag OR soft_flag,
+        checked_at_value
     )
     ON CONFLICT (participant_id) DO UPDATE SET
-        total_checks = participant_attention_stats.total_checks + 1,
-        passed_checks = participant_attention_stats.passed_checks + pass_inc,
-        failed_checks = participant_attention_stats.failed_checks + fail_inc,
-        attention_score = (participant_attention_stats.passed_checks + pass_inc)::NUMERIC /
-                          (participant_attention_stats.total_checks + 1),
-        is_flagged = participant_attention_stats.is_flagged OR (
-            ((participant_attention_stats.passed_checks + pass_inc)::NUMERIC /
-             (participant_attention_stats.total_checks + 1)) < 0.50 AND
-            (participant_attention_stats.total_checks + 1) >= 5
-        ) OR hard_flag,
-        last_checked_at = CURRENT_TIMESTAMP;
+        total_checks = total_checks_count,
+        passed_checks = passed_checks_count,
+        failed_checks = failed_checks_count,
+        attention_score = COALESCE(recent_attention_score_value, participant_attention_stats.attention_score),
+        recent_attention_score = COALESCE(recent_attention_score_value, participant_attention_stats.recent_attention_score),
+        consecutive_failures = consecutive_failures_count,
+        hard_flag_triggered = hard_flag,
+        soft_flag_triggered = soft_flag,
+        is_flagged = participant_attention_stats.is_flagged OR hard_flag OR soft_flag,
+        last_checked_at = checked_at_value;
 
     RETURN NEW;
 END;
@@ -104,11 +178,10 @@ RETURNS TRIGGER AS $$
 DECLARE
     sub_participant_id BIGINT;
     sub_image_id BIGINT;
-    sub_attention_passed BOOLEAN;
     sub_is_attention BOOLEAN;
 BEGIN
-    SELECT s.participant_id, s.image_id, s.attention_passed, s.is_attention_check
-    INTO sub_participant_id, sub_image_id, sub_attention_passed, sub_is_attention
+    SELECT s.participant_id, s.image_id, s.is_attention_check
+    INTO sub_participant_id, sub_image_id, sub_is_attention
     FROM submissions s
     WHERE s.id = NEW.submission_id;
 
@@ -126,10 +199,6 @@ BEGIN
 
     IF NEW.image_id IS DISTINCT FROM sub_image_id THEN
         RAISE EXCEPTION 'attention_event image mismatch for submission %', NEW.submission_id;
-    END IF;
-
-    IF NEW.attention_passed IS DISTINCT FROM sub_attention_passed THEN
-        RAISE EXCEPTION 'attention_event attention_passed mismatch for submission %', NEW.submission_id;
     END IF;
 
     RETURN NEW;
@@ -419,9 +488,30 @@ CREATE TABLE IF NOT EXISTS submissions (
     is_survey           BOOLEAN NOT NULL DEFAULT FALSE,
     is_attention_check  BOOLEAN NOT NULL DEFAULT FALSE,
     attention_passed    BOOLEAN,
+    attention_tier      VARCHAR(16) CHECK (attention_tier IN ('pass','weak_pass','suspicious','fail')),
+    attention_confidence NUMERIC(5,4) CHECK (attention_confidence BETWEEN 0 AND 1),
+    expected_term_recall NUMERIC(5,4) CHECK (expected_term_recall BETWEEN 0 AND 1),
+    matched_term_count  SMALLINT CHECK (matched_term_count >= 0),
+    expected_term_count SMALLINT CHECK (expected_term_count >= 0),
+    distinct_word_count SMALLINT CHECK (distinct_word_count >= 0),
+    descriptive_token_count SMALLINT CHECK (descriptive_token_count >= 0),
     flagged_too_fast    BOOLEAN NOT NULL DEFAULT FALSE,
     quality_score       NUMERIC(5,4) CHECK (quality_score BETWEEN 0 AND 1),
+    writing_quality_score NUMERIC(5,4) CHECK (writing_quality_score BETWEEN 0 AND 1),
+    behavior_risk_score NUMERIC(5,4) CHECK (behavior_risk_score BETWEEN 0 AND 1),
     alignment_score     NUMERIC(5,4) CHECK (alignment_score BETWEEN 0 AND 1),
+    alignment_precision NUMERIC(5,4) CHECK (alignment_precision BETWEEN 0 AND 1),
+    alignment_recall NUMERIC(5,4) CHECK (alignment_recall BETWEEN 0 AND 1),
+    alignment_object_f1 NUMERIC(5,4) CHECK (alignment_object_f1 BETWEEN 0 AND 1),
+    alignment_relation_score NUMERIC(5,4) CHECK (alignment_relation_score BETWEEN 0 AND 1),
+    alignment_scene_consistency_score NUMERIC(5,4) CHECK (alignment_scene_consistency_score BETWEEN 0 AND 1),
+    alignment_wrong_object_penalty NUMERIC(5,4) CHECK (alignment_wrong_object_penalty BETWEEN 0 AND 1),
+    alignment_natural_language_score NUMERIC(5,4) CHECK (alignment_natural_language_score BETWEEN 0 AND 1),
+    alignment_stuffing_penalty NUMERIC(5,4) CHECK (alignment_stuffing_penalty BETWEEN 0 AND 1),
+    supporting_signals  JSONB NOT NULL DEFAULT '{}',
+    consecutive_failures SMALLINT NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+    hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
     ip_hash             CHAR(64) NOT NULL,
     user_agent          VARCHAR(512),
     device_type         VARCHAR(20),
@@ -446,6 +536,68 @@ CREATE TABLE IF NOT EXISTS submissions (
     CONSTRAINT chk_attention_passed_consistent CHECK (NOT (is_attention_check = true AND attention_passed IS NULL)),
     CONSTRAINT chk_submission_sequence_positive CHECK (survey_index IS NULL OR survey_index > 0)
 );
+
+-- Computed/scored submission columns kept as idempotent in-file migrations.
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS attention_tier VARCHAR(16)
+    CHECK (attention_tier IN ('pass','weak_pass','suspicious','fail'));
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS attention_confidence NUMERIC(5,4)
+    CHECK (attention_confidence BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS expected_term_recall NUMERIC(5,4)
+    CHECK (expected_term_recall BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS matched_term_count SMALLINT
+    CHECK (matched_term_count >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS expected_term_count SMALLINT
+    CHECK (expected_term_count >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS distinct_word_count SMALLINT
+    CHECK (distinct_word_count >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS descriptive_token_count SMALLINT
+    CHECK (descriptive_token_count >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS writing_quality_score NUMERIC(5,4)
+    CHECK (writing_quality_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS behavior_risk_score NUMERIC(5,4)
+    CHECK (behavior_risk_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_precision NUMERIC(5,4)
+    CHECK (alignment_precision BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_recall NUMERIC(5,4)
+    CHECK (alignment_recall BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_object_f1 NUMERIC(5,4)
+    CHECK (alignment_object_f1 BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_relation_score NUMERIC(5,4)
+    CHECK (alignment_relation_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_scene_consistency_score NUMERIC(5,4)
+    CHECK (alignment_scene_consistency_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_wrong_object_penalty NUMERIC(5,4)
+    CHECK (alignment_wrong_object_penalty BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_natural_language_score NUMERIC(5,4)
+    CHECK (alignment_natural_language_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS alignment_stuffing_penalty NUMERIC(5,4)
+    CHECK (alignment_stuffing_penalty BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS supporting_signals JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS consecutive_failures SMALLINT NOT NULL DEFAULT 0
+    CHECK (consecutive_failures >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Derived stats trigger kept intentionally small and local to submissions.
 CREATE TRIGGER trg_sync_attention_stats_from_submission
@@ -481,10 +633,21 @@ CREATE TABLE IF NOT EXISTS submission_behavior_metrics (
     keystroke_variance REAL,
     pause_count INTEGER,
     avg_pause_duration_seconds REAL,
+    revision_bursts INTEGER NOT NULL DEFAULT 0 CHECK (revision_bursts >= 0),
+    hesitation_score REAL NOT NULL DEFAULT 0 CHECK (hesitation_score BETWEEN 0 AND 1),
+    submitted_without_typing_pause BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE submission_behavior_metrics
+    ADD COLUMN IF NOT EXISTS revision_bursts INTEGER NOT NULL DEFAULT 0 CHECK (revision_bursts >= 0);
+ALTER TABLE submission_behavior_metrics
+    ADD COLUMN IF NOT EXISTS hesitation_score REAL NOT NULL DEFAULT 0 CHECK (hesitation_score BETWEEN 0 AND 1);
+ALTER TABLE submission_behavior_metrics
+    ADD COLUMN IF NOT EXISTS submitted_without_typing_pause BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_submission_behavior_pause_count
     ON submission_behavior_metrics (pause_count);
+CREATE INDEX IF NOT EXISTS idx_submission_behavior_hesitation
+    ON submission_behavior_metrics (hesitation_score DESC);
 
 -- =====================================================================
 -- SUBMISSION COGNITIVE METRICS (NO-DUP SOURCE OF TRUTH)
@@ -495,12 +658,26 @@ CREATE TABLE IF NOT EXISTS submission_cognitive_metrics (
     difficulty_self_report SMALLINT CHECK (difficulty_self_report BETWEEN 1 AND 5),
     first_view_duration_seconds REAL NOT NULL DEFAULT 0 CHECK (first_view_duration_seconds >= 0),
     writing_duration_seconds REAL NOT NULL DEFAULT 0 CHECK (writing_duration_seconds >= 0),
+    object_mention_count SMALLINT NOT NULL DEFAULT 0 CHECK (object_mention_count >= 0),
+    spatial_mention_count SMALLINT NOT NULL DEFAULT 0 CHECK (spatial_mention_count >= 0),
+    reference_coverage REAL NOT NULL DEFAULT 0 CHECK (reference_coverage BETWEEN 0 AND 1),
+    detail_density_score REAL NOT NULL DEFAULT 0 CHECK (detail_density_score BETWEEN 0 AND 1),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS object_mention_count SMALLINT NOT NULL DEFAULT 0 CHECK (object_mention_count >= 0);
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS spatial_mention_count SMALLINT NOT NULL DEFAULT 0 CHECK (spatial_mention_count >= 0);
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS reference_coverage REAL NOT NULL DEFAULT 0 CHECK (reference_coverage BETWEEN 0 AND 1);
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS detail_density_score REAL NOT NULL DEFAULT 0 CHECK (detail_density_score BETWEEN 0 AND 1);
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_confidence
     ON submission_cognitive_metrics (confidence_score);
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_difficulty
     ON submission_cognitive_metrics (difficulty_self_report);
+CREATE INDEX IF NOT EXISTS idx_submission_cognitive_reference_coverage
+    ON submission_cognitive_metrics (reference_coverage DESC);
 
 -- =====================================================================
 -- SUBMISSION ALIGNMENT MENTIONS (NO-DUP SOURCE OF TRUTH)
@@ -532,18 +709,44 @@ CREATE TABLE IF NOT EXISTS attention_events (
     expected_terms     TEXT[] NOT NULL DEFAULT '{}',
     matched_terms      TEXT[] NOT NULL DEFAULT '{}',
     failure_reasons    TEXT[] NOT NULL DEFAULT '{}',
+    hard_fail_reasons  TEXT[] NOT NULL DEFAULT '{}',
+    soft_risk_reasons  TEXT[] NOT NULL DEFAULT '{}',
     is_strict          BOOLEAN NOT NULL DEFAULT TRUE,
-    attention_passed   BOOLEAN NOT NULL,
+    repetition_metrics JSONB NOT NULL DEFAULT '{}',
     response_seconds   REAL,
-    distinct_word_count INTEGER,
     content_fingerprint CHAR(64),
     created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE attention_events
+    ADD COLUMN IF NOT EXISTS hard_fail_reasons TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE attention_events
+    ADD COLUMN IF NOT EXISTS soft_risk_reasons TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE attention_events
+    ADD COLUMN IF NOT EXISTS repetition_metrics JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS attention_passed;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS attention_tier;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS attention_confidence;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS expected_term_recall;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS matched_term_count;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS expected_term_count;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS descriptive_token_count;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS alignment_recall;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS supporting_signals;
+ALTER TABLE attention_events
+    DROP COLUMN IF EXISTS distinct_word_count;
+
 CREATE INDEX IF NOT EXISTS idx_attention_events_participant_created
     ON attention_events (participant_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_attention_events_passed
-    ON attention_events (attention_passed, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_attention_events_fingerprint
     ON attention_events (content_fingerprint) WHERE content_fingerprint IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attention_events_image_fingerprint
@@ -572,6 +775,10 @@ CREATE TABLE IF NOT EXISTS participant_attention_stats (
     passed_checks   INTEGER NOT NULL DEFAULT 0 CHECK (passed_checks >= 0),
     failed_checks   INTEGER NOT NULL DEFAULT 0 CHECK (failed_checks >= 0),
     attention_score NUMERIC(5,4) NOT NULL DEFAULT 1.0 CHECK (attention_score BETWEEN 0 AND 1),
+    recent_attention_score NUMERIC(5,4) CHECK (recent_attention_score BETWEEN 0 AND 1),
+    consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+    hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
     is_flagged      BOOLEAN NOT NULL DEFAULT FALSE,
     last_checked_at TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -579,6 +786,17 @@ CREATE TABLE IF NOT EXISTS participant_attention_stats (
 
     CONSTRAINT chk_attention_counts_consistent CHECK (total_checks = passed_checks + failed_checks)
 );
+
+ALTER TABLE participant_attention_stats
+    ADD COLUMN IF NOT EXISTS recent_attention_score NUMERIC(5,4)
+    CHECK (recent_attention_score BETWEEN 0 AND 1);
+ALTER TABLE participant_attention_stats
+    ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER NOT NULL DEFAULT 0
+    CHECK (consecutive_failures >= 0);
+ALTER TABLE participant_attention_stats
+    ADD COLUMN IF NOT EXISTS hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE participant_attention_stats
+    ADD COLUMN IF NOT EXISTS soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TRIGGER trg_attention_stats_updated
     BEFORE UPDATE ON participant_attention_stats
