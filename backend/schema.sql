@@ -532,11 +532,27 @@ CREATE TABLE IF NOT EXISTS submissions (
         FOREIGN KEY (participant_session_id, participant_id)
         REFERENCES participant_sessions(id, participant_id),
     CONSTRAINT unique_participant_survey UNIQUE (participant_id, survey_index) DEFERRABLE INITIALLY DEFERRED,
+    CONSTRAINT chk_submission_kind_exclusive CHECK (is_survey <> is_attention_check),
     CONSTRAINT chk_attention_passed_consistent CHECK (NOT (is_attention_check = true AND attention_passed IS NULL)),
+    CONSTRAINT chk_attention_fields_scoped_to_attention_submissions CHECK (
+        is_attention_check = TRUE OR (
+            attention_passed IS NULL
+            AND attention_tier IS NULL
+            AND attention_confidence IS NULL
+            AND expected_term_recall IS NULL
+            AND matched_term_count IS NULL
+            AND expected_term_count IS NULL
+            AND descriptive_token_count IS NULL
+            AND supporting_signals = '{}'::jsonb
+            AND consecutive_failures = 0
+            AND hard_flag_triggered = FALSE
+            AND soft_flag_triggered = FALSE
+        )
+    ),
     CONSTRAINT chk_submission_sequence_positive CHECK (survey_index IS NULL OR survey_index > 0)
 );
 
--- Computed/scored submission columns kept as idempotent in-file migrations.
+-- Legacy compatibility migrations for older live schemas.
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS attention_tier VARCHAR(16)
     CHECK (attention_tier IN ('pass','weak_pass','suspicious','fail'));
@@ -600,6 +616,52 @@ ALTER TABLE submissions
 ALTER TABLE submissions
     DROP COLUMN IF EXISTS rating;
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_survey_index_matches_submission_kind'
+          AND conrelid = 'submissions'::regclass
+    ) THEN
+        ALTER TABLE submissions
+            DROP CONSTRAINT chk_survey_index_matches_submission_kind;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_submission_kind_exclusive'
+          AND conrelid = 'submissions'::regclass
+    ) THEN
+        ALTER TABLE submissions
+            ADD CONSTRAINT chk_submission_kind_exclusive
+            CHECK (is_survey <> is_attention_check);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_attention_fields_scoped_to_attention_submissions'
+          AND conrelid = 'submissions'::regclass
+    ) THEN
+        ALTER TABLE submissions
+            ADD CONSTRAINT chk_attention_fields_scoped_to_attention_submissions
+            CHECK (
+                is_attention_check = TRUE OR (
+                    attention_passed IS NULL
+                    AND attention_tier IS NULL
+                    AND attention_confidence IS NULL
+                    AND expected_term_recall IS NULL
+                    AND matched_term_count IS NULL
+                    AND expected_term_count IS NULL
+                    AND descriptive_token_count IS NULL
+                    AND supporting_signals = '{}'::jsonb
+                    AND consecutive_failures = 0
+                    AND hard_flag_triggered = FALSE
+                    AND soft_flag_triggered = FALSE
+                )
+            );
+    END IF;
+END $$;
+
 -- Derived stats trigger kept intentionally small and local to submissions.
 CREATE TRIGGER trg_sync_attention_stats_from_submission
     AFTER INSERT ON submissions
@@ -614,13 +676,16 @@ CREATE INDEX IF NOT EXISTS idx_submissions_participant_session
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_quality ON submissions (participant_id, quality_score DESC, created_at DESC) WHERE is_survey = true;
 CREATE INDEX IF NOT EXISTS idx_submissions_attention ON submissions (is_attention_check, attention_passed);
 CREATE INDEX IF NOT EXISTS idx_submissions_attention_quality ON submissions (is_attention_check, attention_passed, quality_score);
+CREATE INDEX IF NOT EXISTS idx_submissions_attention_participant_created
+    ON submissions (participant_id, created_at DESC)
+    WHERE is_attention_check = TRUE;
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey
     ON submissions (participant_id, is_survey, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_survey_index_desc
     ON submissions (participant_id, survey_index DESC)
-    WHERE survey_index IS NOT NULL;
+    WHERE is_survey = TRUE AND survey_index IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_participant_image_non_survey
-    ON submissions (participant_id, image_id, created_at DESC) WHERE is_survey = false;
+    ON submissions (participant_id, image_id, created_at DESC) WHERE is_attention_check = TRUE;
 
 -- =====================================================================
 -- SUBMISSION BEHAVIOR METRICS (PHASE 2)
@@ -663,8 +728,13 @@ CREATE TABLE IF NOT EXISTS submission_cognitive_metrics (
     spatial_mention_count SMALLINT NOT NULL DEFAULT 0 CHECK (spatial_mention_count >= 0),
     reference_coverage REAL NOT NULL DEFAULT 0 CHECK (reference_coverage BETWEEN 0 AND 1),
     detail_density_score REAL NOT NULL DEFAULT 0 CHECK (detail_density_score BETWEEN 0 AND 1),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_submission_cognitive_ratings_paired CHECK (
+        (confidence_rating IS NULL AND difficulty_self_report IS NULL)
+        OR (confidence_rating IS NOT NULL AND difficulty_self_report IS NOT NULL)
+    )
 );
+-- Legacy compatibility migrations for older live schemas.
 DO $$
 BEGIN
     IF EXISTS (
@@ -692,10 +762,27 @@ ALTER TABLE submission_cognitive_metrics
     ADD COLUMN IF NOT EXISTS reference_coverage REAL NOT NULL DEFAULT 0 CHECK (reference_coverage BETWEEN 0 AND 1);
 ALTER TABLE submission_cognitive_metrics
     ADD COLUMN IF NOT EXISTS detail_density_score REAL NOT NULL DEFAULT 0 CHECK (detail_density_score BETWEEN 0 AND 1);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_submission_cognitive_ratings_paired'
+          AND conrelid = 'submission_cognitive_metrics'::regclass
+    ) THEN
+        ALTER TABLE submission_cognitive_metrics
+            ADD CONSTRAINT chk_submission_cognitive_ratings_paired
+            CHECK (
+                (confidence_rating IS NULL AND difficulty_self_report IS NULL)
+                OR (confidence_rating IS NOT NULL AND difficulty_self_report IS NOT NULL)
+            );
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_confidence
-    ON submission_cognitive_metrics (confidence_rating);
+    ON submission_cognitive_metrics (confidence_rating)
+    WHERE confidence_rating IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_difficulty
-    ON submission_cognitive_metrics (difficulty_self_report);
+    ON submission_cognitive_metrics (difficulty_self_report)
+    WHERE difficulty_self_report IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_reference_coverage
     ON submission_cognitive_metrics (reference_coverage DESC);
 
@@ -735,9 +822,12 @@ CREATE TABLE IF NOT EXISTS attention_events (
     repetition_metrics JSONB NOT NULL DEFAULT '{}',
     response_seconds   REAL,
     content_fingerprint CHAR(64),
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_attention_event_fingerprint_length
+        CHECK (content_fingerprint IS NULL OR length(content_fingerprint) = 64)
 );
 
+-- Legacy compatibility migrations for older live schemas.
 ALTER TABLE attention_events
     ADD COLUMN IF NOT EXISTS hard_fail_reasons TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE attention_events
@@ -764,6 +854,18 @@ ALTER TABLE attention_events
     DROP COLUMN IF EXISTS supporting_signals;
 ALTER TABLE attention_events
     DROP COLUMN IF EXISTS distinct_word_count;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_attention_event_fingerprint_length'
+          AND conrelid = 'attention_events'::regclass
+    ) THEN
+        ALTER TABLE attention_events
+            ADD CONSTRAINT chk_attention_event_fingerprint_length
+            CHECK (content_fingerprint IS NULL OR length(content_fingerprint) = 64);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_attention_events_participant_created
     ON attention_events (participant_id, created_at DESC);
