@@ -262,6 +262,7 @@ def process_submission_workflow(
         distinct_word_count=distinct_word_count,
         attention_min_char_length=ATTENTION_MIN_CHAR_LENGTH,
         attention_min_distinct_words=ATTENTION_MIN_DISTINCT_WORDS,
+        attention_min_recall=ATTENTION_MIN_RECALL,
         too_fast=bool(is_attention and too_fast),
     )
     attention_passed = attention_result["attention_passed"]
