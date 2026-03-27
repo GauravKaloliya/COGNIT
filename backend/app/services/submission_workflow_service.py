@@ -39,6 +39,7 @@ from app.services.submission_query_service import (
     fetch_attention_check,
     fetch_next_survey_index,
     fetch_participant_attention_stats,
+    fetch_participant_session_by_key,
     fetch_submission_counts,
     fetch_submission_image_target,
     fetch_submission_participant,
@@ -84,6 +85,16 @@ from app.services.survey_sequence_service import (
 from app.utils.observability import log_event
 
 logger = logging.getLogger(__name__)
+
+
+def _build_closed_session_details(current_stage: str | None, session_id: str | None) -> dict:
+    return {
+        "current_stage": current_stage,
+        "reason": "session_closed",
+        "session_closed": True,
+        "clear_client_state": True,
+        "session_id": str(session_id or "").strip() or None,
+    }
 
 
 @dataclass(slots=True)
@@ -217,6 +228,19 @@ def process_submission_workflow(
             "VAL_INVALID_STATE",
             {"current_stage": current_stage, "reason": "submission_limit_reached"},
         )
+
+    effective_session_id = payload_session_id or stored_session_id
+    if effective_session_id:
+        session_row = fetch_participant_session_by_key(
+            db,
+            participant_id=participant_id,
+            session_id=effective_session_id,
+        )
+        if session_row is not None and session_row[1] is not None:
+            raise SubmissionWorkflowError(
+                "VAL_INVALID_STATE",
+                _build_closed_session_details(current_stage, effective_session_id),
+            )
 
     survey_index = fetch_next_survey_index(db, participant_id)
     ac_row = fetch_attention_check(db, image_id_fk)
@@ -413,12 +437,16 @@ def process_submission_workflow(
     hard_flag_triggered = monitor_result["hard_flag_triggered"]
     soft_flag_triggered = monitor_result["soft_flag_triggered"]
 
-    effective_session_id = payload_session_id or stored_session_id
     participant_session_id = ensure_participant_session(
         db,
         participant_id=participant_id,
         session_id=effective_session_id,
     )
+    if effective_session_id and participant_session_id is None:
+        raise SubmissionWorkflowError(
+            "VAL_INVALID_STATE",
+            _build_closed_session_details(current_stage, effective_session_id),
+        )
 
     submission_id = insert_submission_record(
         db,
@@ -579,6 +607,8 @@ def process_submission_workflow(
         stage_updated_at=stage_updated_at,
         stage_stale_seconds=stage_stale_seconds,
         stage_escalation_recommended=stage_escalation_recommended,
+        session_closed=bool(next_stage == "post-survey"),
+        clear_client_state=bool(next_stage == "post-survey"),
     )
     save_idempotent_response_fn(
         db,

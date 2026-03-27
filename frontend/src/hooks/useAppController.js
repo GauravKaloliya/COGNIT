@@ -64,6 +64,7 @@ export function useAppController() {
   const { isActiveTabOwner, claimActiveTabLock } = useActiveTabOwnership();
   const submitAbortRef = useRef(null);
   const createParticipantPromiseRef = useRef(null);
+  const sessionCloseSignalSentRef = useRef("");
 
   const {
     workflowState,
@@ -122,10 +123,34 @@ export function useAppController() {
     cancelInFlightRequests,
   } = surveyFlow;
 
+  const handleClosedSessionReset = useCallback((scopeOverride = null) => {
+    const targetScope = scopeOverride || publicId;
+    clearUserStorage(targetScope);
+    resetTelemetrySession(APP_FLOW.stages.consent);
+    resetWorkflowState({
+      publicId: "",
+      sessionId: "",
+      consentGiven: false,
+      userDetailsSubmitted: false,
+      emailVerified: false,
+      demographics: EMPTY_DEMOGRAPHICS,
+      stage: APP_FLOW.stages.consent,
+    });
+    surveyActions.resetSession();
+    addToast("Your session has ended. Starting fresh.", "info");
+  }, [
+    addToast,
+    clearUserStorage,
+    publicId,
+    resetWorkflowState,
+    surveyActions,
+  ]);
+
   useWorkflowPersistence({
     workflowState,
     preAuthId,
     updateWorkflowState,
+    onSessionClosed: handleClosedSessionReset,
     scopeId,
     sessionHydrated,
     setSessionHydrated,
@@ -159,6 +184,30 @@ export function useAppController() {
       submitAbortRef.current.abort();
     }
   }, [cancelInFlightRequests]);
+
+  useEffect(() => {
+    sessionCloseSignalSentRef.current = "";
+  }, [publicId, sessionId]);
+
+  useEffect(() => {
+    if (!publicId || !sessionId) return undefined;
+    if (stage === APP_FLOW.stages.postSurvey || stage === APP_FLOW.stages.consent) return undefined;
+
+    const closePayload = { public_id: publicId, session_id: sessionId };
+    const signalClose = () => {
+      const dedupeKey = `${publicId}:${sessionId}:${stage}`;
+      if (sessionCloseSignalSentRef.current === dedupeKey) return;
+      sessionCloseSignalSentRef.current = dedupeKey;
+      endpoints.signalParticipantSessionClose(closePayload);
+    };
+
+    window.addEventListener("pagehide", signalClose);
+    window.addEventListener("beforeunload", signalClose);
+    return () => {
+      window.removeEventListener("pagehide", signalClose);
+      window.removeEventListener("beforeunload", signalClose);
+    };
+  }, [publicId, sessionId, stage]);
 
   const createParticipant = useCallback(async () => {
     if (userDetailsSubmitted && publicId) {
@@ -292,34 +341,46 @@ export function useAppController() {
   }, [resetWorkflowToConsent]);
 
   const handleSubmit = useCallback(async (formData) => {
-    const result = await submitSurvey(formData);
-    const backendStage = normalizeAppStage(result?.workflow_status?.stage);
+    try {
+      const result = await submitSurvey(formData);
+      const backendStage = normalizeAppStage(result?.workflow_status?.stage);
+      if (result?.session_closed || result?.clear_client_state) {
+        clearUserStorage(publicId);
+      }
 
-    if (backendStage === APP_FLOW.stages.postSurvey) {
-      dispatchWorkflow({ type: WORKFLOW_EVENT_TYPES.ADVANCE_TO_POST_SURVEY });
+      if (backendStage === APP_FLOW.stages.postSurvey) {
+        dispatchWorkflow({ type: WORKFLOW_EVENT_TYPES.ADVANCE_TO_POST_SURVEY });
+        return result;
+      }
+
+      const nextCompleted = Number(surveyCompleted || 0) + 1;
+      const requiredSubmissions = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
+      if (nextCompleted >= requiredSubmissions) {
+        dispatchWorkflow({ type: WORKFLOW_EVENT_TYPES.ADVANCE_TO_POST_SURVEY });
+        return result;
+      }
+
+      if (backendStage && validateStageTransition(stage, backendStage)) {
+        dispatchWorkflow({
+          type: WORKFLOW_EVENT_TYPES.PATCH,
+          patch: { stage: backendStage },
+        });
+      }
+
+      clearAllSurveyDraftsForUser(publicId);
+      surveyActions.prepareNextSurvey();
+      await fetchImage({ clearCurrent: true, throwOnError: true });
       return result;
+    } catch (error) {
+      if (error?.details?.session_closed || error?.details?.clear_client_state) {
+        handleClosedSessionReset(publicId);
+      }
+      throw error;
     }
-
-    const nextCompleted = Number(surveyCompleted || 0) + 1;
-    const requiredSubmissions = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
-    if (nextCompleted >= requiredSubmissions) {
-      dispatchWorkflow({ type: WORKFLOW_EVENT_TYPES.ADVANCE_TO_POST_SURVEY });
-      return result;
-    }
-
-    if (backendStage && validateStageTransition(stage, backendStage)) {
-      dispatchWorkflow({
-        type: WORKFLOW_EVENT_TYPES.PATCH,
-        patch: { stage: backendStage },
-      });
-    }
-
-    clearAllSurveyDraftsForUser(publicId);
-    surveyActions.prepareNextSurvey();
-    await fetchImage({ clearCurrent: true, throwOnError: true });
-    return result;
   }, [
+    clearUserStorage,
     fetchImage,
+    handleClosedSessionReset,
     publicId,
     stage,
     submitSurvey,

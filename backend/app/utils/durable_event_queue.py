@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 QUERY_ENQUEUE_EVENT = text("""
     INSERT INTO durable_event_queue (
         event_type,
+        idempotency_key,
         payload,
         status,
         attempt_count,
@@ -37,12 +38,31 @@ QUERY_ENQUEUE_EVENT = text("""
         next_attempt_at
     ) VALUES (
         :event_type,
+        :idempotency_key,
         CAST(:payload AS jsonb),
         'queued',
         0,
         :max_attempts,
         CURRENT_TIMESTAMP
     )
+    ON CONFLICT (event_type, idempotency_key)
+    WHERE idempotency_key IS NOT NULL
+    DO UPDATE SET
+        payload = EXCLUDED.payload,
+        max_attempts = GREATEST(durable_event_queue.max_attempts, EXCLUDED.max_attempts),
+        next_attempt_at = CASE
+            WHEN durable_event_queue.status IN ('retry', 'dead') THEN CURRENT_TIMESTAMP
+            ELSE durable_event_queue.next_attempt_at
+        END,
+        status = CASE
+            WHEN durable_event_queue.status IN ('retry', 'dead') THEN 'queued'
+            ELSE durable_event_queue.status
+        END,
+        last_error = CASE
+            WHEN durable_event_queue.status IN ('retry', 'dead') THEN NULL
+            ELSE durable_event_queue.last_error
+        END,
+        updated_at = CURRENT_TIMESTAMP
 """)
 
 QUERY_CLAIM_EVENT = text("""
@@ -99,13 +119,15 @@ def enqueue_durable_event(
     event_name = str(event_type or "").strip()[:120]
     if not event_name:
         return
-    safe_payload = payload if isinstance(payload, dict) else {}
-    if idempotency_key:
-        safe_payload["idempotency_key"] = str(idempotency_key).strip()[:128]
+    safe_payload = dict(payload or {}) if isinstance(payload, dict) else {}
+    normalized_idempotency_key = str(idempotency_key or "").strip()[:128] or None
+    if normalized_idempotency_key:
+        safe_payload["idempotency_key"] = normalized_idempotency_key
     try:
         with engine.begin() as conn:
             conn.execute(QUERY_ENQUEUE_EVENT, {
                 "event_type": event_name,
+                "idempotency_key": normalized_idempotency_key,
                 "payload": json.dumps(safe_payload, ensure_ascii=True),
                 "max_attempts": int(max_attempts or DURABLE_EVENT_QUEUE_MAX_ATTEMPTS),
             })

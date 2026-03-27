@@ -29,6 +29,7 @@ export function useWorkflowPersistence({
   workflowState,
   preAuthId,
   updateWorkflowState,
+  onSessionClosed,
   scopeId,
   sessionHydrated,
   setSessionHydrated,
@@ -66,6 +67,10 @@ export function useWorkflowPersistence({
       try {
         const session = await endpoints.getParticipantSession();
         if (cancelled) return;
+        if (session?.session_closed || session?.clear_client_state) {
+          onSessionClosed?.();
+          return;
+        }
         if (session?.public_id || session?.session_id) {
           updateWorkflowState({
             ...(session?.public_id ? { publicId: session.public_id } : {}),
@@ -83,7 +88,7 @@ export function useWorkflowPersistence({
     return () => {
       cancelled = true;
     };
-  }, [publicId, setSessionHydrated, updateWorkflowState]);
+  }, [onSessionClosed, publicId, setSessionHydrated, updateWorkflowState]);
 
   useEffect(() => {
     saveStoredValue(runtimeConfig.storageKeys.publicId, publicId, { area: CORE_STATE_STORAGE_AREA });

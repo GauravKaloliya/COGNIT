@@ -825,6 +825,8 @@ CREATE TRIGGER trg_device_fingerprint_last_seen
     FOR EACH ROW EXECUTE FUNCTION update_last_seen();
 
 CREATE INDEX IF NOT EXISTS idx_device_fingerprints_participant ON device_fingerprints (participant_id);
+CREATE INDEX IF NOT EXISTS idx_device_fingerprints_participant_created
+    ON device_fingerprints (participant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_device_fingerprints_hash      ON device_fingerprints (fingerprint_hash);
 CREATE INDEX IF NOT EXISTS idx_device_fingerprints_risk      ON device_fingerprints (risk_score DESC);
 
@@ -878,6 +880,7 @@ CREATE INDEX IF NOT EXISTS idx_idempotency_deleted
 CREATE TABLE IF NOT EXISTS durable_event_queue (
     id              BIGSERIAL PRIMARY KEY,
     event_type      VARCHAR(120) NOT NULL,
+    idempotency_key VARCHAR(128),
     payload         JSONB NOT NULL DEFAULT '{}',
     status          VARCHAR(20) NOT NULL DEFAULT 'queued'
         CHECK (status IN ('queued', 'processing', 'retry', 'done', 'dead')),
@@ -890,6 +893,9 @@ CREATE TABLE IF NOT EXISTS durable_event_queue (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE durable_event_queue
+    ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128);
+
 CREATE TRIGGER trg_durable_event_queue_updated_at
     BEFORE UPDATE ON durable_event_queue
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -898,6 +904,9 @@ CREATE INDEX IF NOT EXISTS idx_durable_queue_ready
     ON durable_event_queue (status, next_attempt_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_durable_queue_event_created
     ON durable_event_queue (event_type, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_durable_queue_dedupe
+    ON durable_event_queue (event_type, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_durable_queue_dead
     ON durable_event_queue (status, updated_at DESC)
     WHERE status = 'dead';
