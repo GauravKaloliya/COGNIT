@@ -432,7 +432,7 @@ export function useSurveyPage({
     try {
       await onSubmit(payload);
       clearDrafts();
-      setEngagementData({ tabSwitchCount: 0, pageCloseAttempts: 0, networkDisconnects: 0 });
+      resetEngagement();
       setTypingDynamics(EMPTY_TYPING_DYNAMICS);
       setDescription("");
       setDifficultyRating(0);
@@ -488,7 +488,6 @@ export function useSurveyPage({
     onAccountFlagged,
     onSubmit,
     publicId,
-    setEngagementData,
     submitLocked,
     setTimerActive,
     submitting,
@@ -497,6 +496,7 @@ export function useSurveyPage({
     typingDynamics,
     unlockSubmit,
     setValidationError,
+    resetEngagement,
   ]);
 
   useSurveyPageEffects({

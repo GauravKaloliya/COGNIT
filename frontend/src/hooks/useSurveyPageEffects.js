@@ -55,8 +55,9 @@ export function useSurveyPageEffects({
 }) {
   useEffect(() => {
     const previousSurveyImageId = previousSurveyImageIdRef.current;
+    if (!surveyImageId) return;
     previousSurveyImageIdRef.current = surveyImageId;
-    if (!surveyImageId || !previousSurveyImageId || previousSurveyImageId === surveyImageId) return;
+    if (!previousSurveyImageId || previousSurveyImageId === surveyImageId) return;
     resetFormState();
   }, [previousSurveyImageIdRef, resetFormState, surveyImageId]);
 

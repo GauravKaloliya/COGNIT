@@ -56,9 +56,9 @@ function SurveyCommentsField({
       </div>
       <div className="counts">
         <span className={showValidationErrors && commentsCharCount < minFeedbackLength ? "warning" : ""}>
-          {uiText("survey.feedbackMin", { count: commentsCharCount })}
+          {uiText("survey.feedbackMin", { count: commentsCharCount, min: minFeedbackLength })}
         </span>
-        <span className="ok">{uiText("survey.feedbackMinimum")}</span>
+        <span className="ok">{uiText("survey.feedbackMinimum", { min: minFeedbackLength })}</span>
       </div>
       <div className={`helper-text ${commentsCharCount >= minFeedbackLength ? "ok" : "warning"}`}>
         {commentsCharCount >= minFeedbackLength
