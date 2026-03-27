@@ -1,6 +1,8 @@
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from difflib import SequenceMatcher
 from typing import Any, Iterable
 
 from sqlalchemy import text
@@ -36,16 +38,106 @@ SPATIAL_TERMS = {
     "behind", "front", "between", "middle", "center", "inside", "outside",
     "near", "far", "next", "beside",
 }
+RELATION_TERMS = {
+    "above", "around", "behind", "below", "beside", "between", "holding",
+    "in", "inside", "near", "next", "on", "over", "under", "with",
+}
+ACTION_TERMS = {
+    "carry", "carrying", "eat", "eating", "flow", "flowing", "fly", "flying",
+    "hold", "holding", "look", "looking", "rest", "resting", "run", "running",
+    "sit", "sitting", "smile", "smiling", "stand", "standing", "walk", "walking",
+}
 OBJECT_STOPWORDS = {
     "a", "an", "the", "this", "that", "there", "with", "from", "into", "onto",
     "what", "where", "when", "while", "about", "after", "before", "because",
     "very", "more", "most", "just", "have", "has", "had", "were", "was", "are",
     "and", "for", "but", "then", "than", "they", "them", "their", "your", "you",
     "our", "ours", "his", "her", "its", "image", "picture", "looks", "seems",
+    "one", "ones", "open", "place", "thing", "which", "while", "lots", "lot",
 }
 NORMALIZATION_MAP = {
+    "cottage": "home",
+    "cupcake": "cake",
+    "house": "home",
+    "kitten": "cat",
+    "kitty": "cat",
+    "mug": "cup",
     "puppy": "dog",
+    "teacup": "cup",
     "bunny": "rabbit",
+}
+ATTENTION_VARIANT_STOPWORDS = {
+    "background",
+    "landscape",
+    "scene",
+    "view",
+}
+ATTENTION_NON_CORE_TERMS = {
+    "autumn",
+    "black",
+    "blue",
+    "brown",
+    "colorful",
+    "cream",
+    "cute",
+    "dark",
+    "fantasy",
+    "floral",
+    "garden",
+    "gold",
+    "gray",
+    "green",
+    "holding",
+    "landscape",
+    "lavender",
+    "navy",
+    "olive",
+    "orange",
+    "outdoor",
+    "painting",
+    "path",
+    "peach",
+    "pink",
+    "plain",
+    "purple",
+    "red",
+    "resting",
+    "sitting",
+    "sky",
+    "smiling",
+    "snowy",
+    "standing",
+    "sunny",
+    "sunset",
+    "teal",
+    "white",
+    "winter",
+    "yellow",
+}
+ATTENTION_FILLER_TERMS = {
+    "amazing",
+    "around",
+    "art",
+    "beautiful",
+    "bright",
+    "cute",
+    "dreamy",
+    "feeling",
+    "feelings",
+    "good",
+    "great",
+    "happy",
+    "image",
+    "magical",
+    "nice",
+    "peaceful",
+    "some",
+    "something",
+    "stuff",
+    "style",
+    "things",
+    "vibe",
+    "vibes",
 }
 
 
@@ -113,8 +205,28 @@ def normalize_engagement_counts(
     }
 
 
-def dynamic_too_fast_threshold(base_threshold: float, word_count: int) -> float:
-    return max(float(base_threshold), min(90.0, max(8.0, int(word_count) * 0.35)))
+def dynamic_too_fast_threshold(
+    base_threshold: float,
+    word_count: int,
+    *,
+    is_attention: bool = False,
+    description: str = "",
+    behavior_metrics: dict[str, Any] | None = None,
+) -> float:
+    metrics = behavior_metrics or {}
+    safe_word_count = max(0, int(word_count or 0))
+    char_count = len(str(description or "").strip())
+    time_before_typing = max(0.0, float(metrics.get("time_before_typing_seconds", 0.0) or 0.0))
+
+    reading_seconds = max(5.0, min(28.0, char_count / 20.0))
+    writing_rate = 0.55 if is_attention else 0.70
+    writing_seconds = max(10.0, min(95.0, safe_word_count * writing_rate))
+    settle_seconds = min(8.0, time_before_typing * 0.6)
+    base = max(float(base_threshold or 0.0), 6.0)
+    submission_bias = 4.0 if is_attention else 8.0
+
+    threshold = base + (0.35 * reading_seconds) + (0.45 * writing_seconds) + settle_seconds + submission_bias
+    return round(min(150.0, max(base, threshold)), 2)
 
 
 def normalize_for_attention(text: str) -> str:
@@ -123,11 +235,193 @@ def normalize_for_attention(text: str) -> str:
     return NORMALIZE_WHITESPACE_RE.sub(" ", normalized).strip()
 
 
+def _singularize_attention_token(token: str) -> str:
+    if len(token) <= 3:
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return f"{token[:-3]}y"
+    if token.endswith("ves") and len(token) > 4:
+        if token[-4] == "i":
+            return f"{token[:-3]}fe"
+        return f"{token[:-3]}f"
+    if token.endswith(("ses", "xes", "zes", "ches", "shes")) and len(token) > 4:
+        return token[:-2]
+    if token.endswith("s") and not token.endswith(("ss", "us")):
+        return token[:-1]
+    return token
+
+
+def canonicalize_attention_term(term: str) -> str:
+    normalized = normalize_for_attention(term)
+    if not normalized:
+        return ""
+
+    tokens = normalized.split()
+    trimmed = [token for token in tokens if token not in ATTENTION_VARIANT_STOPWORDS]
+    if trimmed:
+        tokens = trimmed
+
+    canonical_tokens = []
+    for token in tokens:
+        mapped = NORMALIZATION_MAP.get(token, token)
+        canonical_tokens.append(_singularize_attention_token(mapped))
+
+    return " ".join(token for token in canonical_tokens if token)
+
+
+def _attention_term_key(term: str) -> str:
+    tokens = term.split()
+    if not tokens:
+        return ""
+    return tokens[-1]
+
+
+def _is_core_attention_term(term: str) -> bool:
+    tokens = term.split()
+    if not tokens:
+        return False
+    if len(tokens) > 1:
+        return True
+    return tokens[0] not in ATTENTION_NON_CORE_TERMS
+
+
+def _dedupe_attention_terms(tokens: list[str]) -> list[str]:
+    representatives = {}
+    order = []
+    for token in tokens:
+        if not token:
+            continue
+        key = _attention_term_key(token) or token
+        existing = representatives.get(key)
+        if existing is None:
+            representatives[key] = token
+            order.append(key)
+            continue
+        if (len(token.split()), len(token)) < (len(existing.split()), len(existing)):
+            representatives[key] = token
+    return [representatives[key] for key in order]
+
+
 def extract_expected_terms(raw_expected: str):
     """Allow multiple attention terms in DB using separators like | , ; /."""
     tokens = [token.strip() for token in ATTN_TOKEN_SPLIT_RE.split((raw_expected or "").strip())]
-    clean = [normalize_for_attention(token) for token in tokens if token.strip()]
-    return [token for token in clean if token]
+    clean = [canonicalize_attention_term(token) for token in tokens if token.strip()]
+    deduped_terms = _dedupe_attention_terms(clean)
+    core_terms = [term for term in deduped_terms if _is_core_attention_term(term)]
+    return core_terms or deduped_terms
+
+
+def build_attention_core_terms(raw_expected: str, ground_truth_objects: Iterable[str] | None = None, *, min_terms: int = 3, max_terms: int = 6) -> list[str]:
+    expected_terms = extract_expected_terms(raw_expected)
+    gt_terms = [
+        canonicalize_attention_term(obj)
+        for obj in (ground_truth_objects or [])
+        if canonicalize_attention_term(obj)
+    ]
+    gt_core_terms = [term for term in _dedupe_attention_terms(gt_terms) if _is_core_attention_term(term)]
+    if len(gt_core_terms) >= min_terms:
+        return gt_core_terms[:max_terms]
+
+    combined = _dedupe_attention_terms(gt_core_terms + expected_terms)
+    selected = combined[:max_terms]
+    if len(selected) < min_terms:
+        fallback = [term for term in _dedupe_attention_terms(gt_terms + expected_terms) if term not in selected]
+        selected.extend(fallback[: max(0, min_terms - len(selected))])
+    return selected[:max_terms]
+
+
+def _attention_tokens_match(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if not left or not right:
+        return False
+    if len(left) < 5 or len(right) < 5:
+        return False
+    if left[0] != right[0]:
+        return False
+    if abs(len(left) - len(right)) > 1:
+        return False
+    return SequenceMatcher(None, left, right).ratio() >= 0.86
+
+
+def count_attention_descriptive_tokens(description: str, matched_terms: Iterable[str]) -> int:
+    description_tokens = alphabetic_tokens(description)
+    matched_token_set = {
+        token
+        for term in matched_terms
+        for token in canonicalize_attention_term(term).split()
+        if token
+    }
+
+    informative = []
+    for token in description_tokens:
+        if token in OBJECT_STOPWORDS:
+            continue
+        if token in ATTENTION_FILLER_TERMS:
+            continue
+        if token in matched_token_set:
+            continue
+        informative.append(token)
+    return len(set(informative))
+
+
+def detect_repetitive_attention_template(description: str, matched_terms: Iterable[str]) -> tuple[bool, dict[str, float]]:
+    tokens = alphabetic_tokens(description)
+    token_count = len(tokens)
+    if token_count < 12:
+        return False, {
+            "token_count": float(token_count),
+            "unique_ratio": 1.0 if token_count else 0.0,
+            "repeated_bigram_ratio": 0.0,
+            "max_repeated_trigram_count": 0.0,
+            "matched_token_density": 0.0,
+        }
+
+    unique_ratio = len(set(tokens)) / float(token_count)
+
+    bigrams = [tuple(tokens[index:index + 2]) for index in range(token_count - 1)]
+    repeated_bigram_ratio = 0.0
+    if bigrams:
+        repeated_bigram_ratio = 1.0 - (len(set(bigrams)) / float(len(bigrams)))
+
+    trigram_counts = {}
+    for index in range(token_count - 2):
+        trigram = tuple(tokens[index:index + 3])
+        trigram_counts[trigram] = trigram_counts.get(trigram, 0) + 1
+    max_repeated_trigram_count = max(trigram_counts.values(), default=0)
+
+    matched_token_set = {
+        token
+        for term in matched_terms
+        for token in canonicalize_attention_term(term).split()
+        if token
+    }
+    matched_token_density = (
+        sum(1 for token in tokens if token in matched_token_set) / float(token_count)
+        if token_count else 0.0
+    )
+
+    repetitive = bool(
+        (
+            max_repeated_trigram_count >= 3
+            and matched_token_density > 0.15
+        )
+        or (
+            max_repeated_trigram_count >= 2
+            and (
+                unique_ratio < 0.6
+                or repeated_bigram_ratio > 0.18
+                or matched_token_density > 0.28
+            )
+        )
+    )
+    return repetitive, {
+        "token_count": float(token_count),
+        "unique_ratio": round(unique_ratio, 4),
+        "repeated_bigram_ratio": round(repeated_bigram_ratio, 4),
+        "max_repeated_trigram_count": float(max_repeated_trigram_count),
+        "matched_token_density": round(matched_token_density, 4),
+    }
 
 
 def _contains_term_tokens(description_tokens, term_tokens) -> bool:
@@ -136,21 +430,22 @@ def _contains_term_tokens(description_tokens, term_tokens) -> bool:
 
     span = len(term_tokens)
     for index in range(len(description_tokens) - span + 1):
-        if description_tokens[index:index + span] == term_tokens:
+        window = description_tokens[index:index + span]
+        if all(_attention_tokens_match(window_token, term_token) for window_token, term_token in zip(window, term_tokens)):
             return True
     return False
 
 
 def match_attention_terms(description: str, expected_terms, strict: bool):
     """Return list of expected terms found in description."""
-    normalized_description = normalize_for_attention(description)
+    normalized_description = canonicalize_attention_term(description)
     if not normalized_description or not expected_terms:
         return []
 
     description_tokens = normalized_description.split()
     matched = []
     for term in expected_terms:
-        normalized_term = normalize_for_attention(term)
+        normalized_term = canonicalize_attention_term(term)
         if not normalized_term:
             continue
         if strict:
@@ -228,7 +523,15 @@ def _extract_alignment_mentions(description: str):
             if token not in spatial_mentions:
                 spatial_mentions.append(token)
             continue
-        if len(token) < 3 or token in OBJECT_STOPWORDS:
+        token = canonicalize_attention_term(token)
+        if (
+            len(token) < 3
+            or token in OBJECT_STOPWORDS
+            or token in ATTENTION_FILLER_TERMS
+            or token in ATTENTION_NON_CORE_TERMS
+            or token in RELATION_TERMS
+            or token in ACTION_TERMS
+        ):
             continue
         if token not in object_mentions:
             object_mentions.append(token)
@@ -248,31 +551,167 @@ def extract_objects(description: str) -> set[str]:
 def normalize_objects(objects: Iterable[str]) -> set[str]:
     normalized = set()
     for obj in objects:
-        token = str(obj or "").strip().lower()
+        token = canonicalize_attention_term(str(obj or "").strip().lower())
         if not token:
             continue
-        normalized.add(NORMALIZATION_MAP.get(token, token))
+        normalized.add(token)
     return normalized
 
 
-def compute_alignment(user_objects: set[str], gt_objects: set[str]):
+def _extract_relation_hits(tokens: list[str], correct_objects: set[str]) -> set[tuple[str, str, str]]:
+    relation_hits: set[tuple[str, str, str]] = set()
+    token_count = len(tokens)
+    for index, token in enumerate(tokens):
+        if token not in correct_objects:
+            continue
+        for middle_index in range(index + 1, min(index + 4, token_count - 1)):
+            middle = tokens[middle_index]
+            if middle not in RELATION_TERMS and middle not in ACTION_TERMS:
+                continue
+            for end_index in range(middle_index + 1, min(middle_index + 4, token_count)):
+                target = tokens[end_index]
+                if target in correct_objects and target != token:
+                    relation_hits.add((token, middle, target))
+    return relation_hits
+
+
+def _alignment_style_metrics(tokens: list[str], correct_objects: set[str], description: str) -> dict[str, float]:
+    token_count = len(tokens)
+    if token_count <= 1:
+        return {
+            "token_count": float(token_count),
+            "unique_ratio": 1.0 if token_count else 0.0,
+            "repeated_bigram_ratio": 0.0,
+            "object_token_density": 0.0,
+            "relation_term_density": 0.0,
+            "sentence_count": 1.0 if description.strip() else 0.0,
+            "natural_language_score": 0.0,
+            "stuffing_penalty": 0.0,
+        }
+
+    unique_ratio = len(set(tokens)) / float(token_count)
+    bigrams = [tuple(tokens[index:index + 2]) for index in range(token_count - 1)]
+    repeated_bigram_ratio = 0.0
+    if bigrams:
+        repeated_bigram_ratio = 1.0 - (len(set(bigrams)) / float(len(bigrams)))
+
+    object_mentions = sum(1 for token in tokens if token in correct_objects)
+    object_token_density = object_mentions / float(token_count) if token_count else 0.0
+    relation_term_count = sum(1 for token in tokens if token in RELATION_TERMS or token in ACTION_TERMS)
+    relation_term_density = relation_term_count / float(token_count) if token_count else 0.0
+    sentence_count = float(max(1, len(re.findall(r"[.!?]+", description or ""))))
+    detail_count = sum(
+        1
+        for token in tokens
+        if token not in OBJECT_STOPWORDS
+        and token not in ATTENTION_FILLER_TERMS
+        and token not in correct_objects
+    )
+
+    natural_language_score = min(
+        1.0,
+        (
+            0.35 * min(1.0, unique_ratio / 0.72)
+            + 0.25 * min(1.0, detail_count / 10.0)
+            + 0.20 * min(1.0, relation_term_count / 2.0)
+            + 0.20 * min(1.0, sentence_count / 3.0)
+        ),
+    )
+
+    stuffing_penalty = 0.0
+    if object_token_density > 0.18:
+        stuffing_penalty += min(0.16, (object_token_density - 0.18) * 0.85)
+    if repeated_bigram_ratio > 0.08:
+        stuffing_penalty += min(0.16, (repeated_bigram_ratio - 0.08) * 0.95)
+    if unique_ratio < 0.62:
+        stuffing_penalty += min(0.12, (0.62 - unique_ratio) * 0.55)
+    if relation_term_count == 0 and object_token_density > 0.20:
+        stuffing_penalty += 0.04
+    stuffing_penalty = min(0.28, stuffing_penalty)
+
+    return {
+        "token_count": float(token_count),
+        "unique_ratio": round(unique_ratio, 4),
+        "repeated_bigram_ratio": round(repeated_bigram_ratio, 4),
+        "object_token_density": round(object_token_density, 4),
+        "relation_term_density": round(relation_term_density, 4),
+        "sentence_count": sentence_count,
+        "natural_language_score": round(natural_language_score, 4),
+        "stuffing_penalty": round(stuffing_penalty, 4),
+    }
+
+
+def compute_alignment(user_objects: set[str], gt_objects: set[str], description: str = ""):
     if not gt_objects:
         return None
-    correct = user_objects & gt_objects
-    wrong = user_objects - gt_objects
-    missed = gt_objects - user_objects
+    description_tokens = canonicalize_attention_term(description).split()
+    text_matched_gt = set()
+    for gt_object in gt_objects:
+        gt_term = canonicalize_attention_term(gt_object)
+        if gt_term and _contains_term_tokens(description_tokens, gt_term.split()):
+            text_matched_gt.add(gt_term)
 
-    precision = (len(correct) / len(user_objects)) if user_objects else 0.0
+    effective_user_objects = set(user_objects) | text_matched_gt
+    correct = effective_user_objects & gt_objects
+    wrong = effective_user_objects - gt_objects
+    missed = gt_objects - effective_user_objects
+
+    precision = (len(correct) / len(effective_user_objects)) if effective_user_objects else 0.0
     recall = len(correct) / len(gt_objects)
     if precision + recall == 0:
         f1 = 0.0
     else:
         f1 = (2 * precision * recall) / (precision + recall)
 
+    object_f1 = round(f1, 4)
+    tokens = alphabetic_tokens(description)
+    relation_hits = _extract_relation_hits(tokens, correct)
+    relation_score = min(1.0, len(relation_hits) / float(max(1, min(len(correct), 3))))
+    spatial_count = sum(1 for token in tokens if token in SPATIAL_TERMS or token in RELATION_TERMS)
+    style_metrics = _alignment_style_metrics(tokens, correct, description)
+    detail_count = sum(
+        1
+        for token in tokens
+        if token not in OBJECT_STOPWORDS and token not in ATTENTION_FILLER_TERMS
+    )
+    scene_consistency = 0.0
+    if correct:
+        scene_consistency = min(
+            1.0,
+            (
+                0.60 * (len(correct) / float(max(1, len(gt_objects))))
+                + 0.20 * min(1.0, spatial_count / 3.0)
+                + 0.20 * min(1.0, detail_count / 14.0)
+            ),
+        )
+    wrong_object_penalty = min(
+        0.05,
+        (len(wrong) / float(max(1, len(gt_objects)))) * 0.02
+        + (len(wrong) / float(max(1, len(effective_user_objects)))) * 0.015,
+    ) if effective_user_objects else 0.0
+    alignment_score = (
+        0.58 * object_f1
+        + 0.12 * relation_score
+        + 0.08 * scene_consistency
+        + 0.14 * style_metrics["natural_language_score"]
+        + 0.08 * recall
+        - wrong_object_penalty
+        - style_metrics["stuffing_penalty"]
+    )
+    alignment_score = round(max(0.0, min(1.0, alignment_score)), 4)
+
     return {
         "precision": round(precision, 4),
         "recall": round(recall, 4),
-        "f1": round(f1, 4),
+        "f1": alignment_score,
+        "object_f1": object_f1,
+        "relation_score": round(relation_score, 4),
+        "scene_consistency_score": round(scene_consistency, 4),
+        "wrong_object_penalty": round(wrong_object_penalty, 4),
+        "natural_language_score": style_metrics["natural_language_score"],
+        "stuffing_penalty": style_metrics["stuffing_penalty"],
+        "alignment_style_metrics": style_metrics,
+        "relation_hits": [list(item) for item in sorted(relation_hits)],
         "correct": sorted(correct),
         "wrong": sorted(wrong),
         "missed": sorted(missed),

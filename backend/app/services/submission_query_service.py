@@ -214,7 +214,8 @@ QUERY_INSERT_ATTENTION_EVENT = text("""
 
 QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG = text("""
     UPDATE participant_attention_stats
-    SET is_flagged = CASE
+    SET attention_score = COALESCE(:attention_score, attention_score),
+        is_flagged = CASE
             WHEN :hard_flag OR :soft_flag THEN true
             ELSE is_flagged
         END,
@@ -428,11 +429,12 @@ def insert_attention_event_record(db, *, participant_id: int, submission_id: int
     })
 
 
-def update_participant_attention_flag(db, *, participant_id: int, hard_flag_triggered: bool, soft_flag_triggered: bool):
+def update_participant_attention_flag(db, *, participant_id: int, hard_flag_triggered: bool, soft_flag_triggered: bool, attention_score: float | None = None):
     db.execute(QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG, {
         "pid": int(participant_id),
         "hard_flag": bool(hard_flag_triggered),
         "soft_flag": bool(soft_flag_triggered),
+        "attention_score": float(attention_score) if attention_score is not None else None,
     })
 
 
