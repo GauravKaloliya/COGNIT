@@ -5,6 +5,7 @@ import DSButton from "./components/design/DSButton.jsx";
 import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
 import AppContainer from "./components/app/AppContainer.jsx";
 import AppStageRouter, { prefetchLikelyNextChunks } from "./components/app/AppStageRouter.jsx";
+import TypewriterSubtitle from "./components/TypewriterSubtitle.jsx";
 import { getErrorMessage } from "./utils/errorRegistry.js";
 import { getApiOriginUrl } from "./utils/apiBase.js";
 import { uiText } from "./utils/uiText.js";
@@ -179,7 +180,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           <header className="header">
             <div className="brand">
               <h1>{uiText("app.brand")}</h1>
-              {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
+              {!isMobile && <TypewriterSubtitle text={uiText("app.subtitle")} />}
             </div>
             <div className="header-actions">
               <DSButton

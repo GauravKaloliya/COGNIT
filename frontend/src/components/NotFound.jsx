@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
+import TypewriterSubtitle from './TypewriterSubtitle.jsx';
 import DSButton from './design/DSButton.jsx';
 import { uiText } from '../utils/uiText.js';
 import { DOG_ILLUSTRATION } from '../content/notFoundIllustration.js';
@@ -19,7 +20,7 @@ export default function NotFound({ darkMode = false, onToggleDarkMode }) {
       <header className="header">
         <div className="brand">
           <h1>{uiText("app.brand")}</h1>
-          {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
+          {!isMobile && <TypewriterSubtitle text={uiText("app.subtitle")} />}
         </div>
         <div className="header-actions">
           <DSButton
