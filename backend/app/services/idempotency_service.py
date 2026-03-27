@@ -118,6 +118,10 @@ def save_idempotent_response(
             "ttl_seconds": int(IDEMPOTENCY_TTL_SECONDS),
         })
     except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return
     if IDEMPOTENCY_TTL_SECONDS > 0 and random.random() < 0.02:
         cleanup_idempotency_keys(db, int(IDEMPOTENCY_TTL_SECONDS))
