@@ -2,6 +2,7 @@ import React from "react";
 import ThemeToggleIcon from "../ThemeToggleIcon.jsx";
 import FlowStepper from "../FlowStepper.jsx";
 import DSButton from "../design/DSButton.jsx";
+import TypewriterSubtitle from "../TypewriterSubtitle.jsx";
 import { getApiOriginUrl } from "../../utils/apiBase.js";
 import { uiText } from "../../utils/uiText.js";
 
@@ -22,7 +23,7 @@ export default function AppContainer({
       <header className="header">
         <div className="brand">
           <h1>{uiText("app.brand")}</h1>
-          {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
+          {!isMobile && <TypewriterSubtitle text={uiText("app.subtitle")} />}
         </div>
         <div className="header-actions">
           <DSButton

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .env import bool_env, int_env, required_bool_env, required_env, required_float_env, str_env
+from .env import bool_env, required_bool_env, required_env, required_float_env, str_env
 
 
 WEBSITE_URL = required_env("WEBSITE_URL")
@@ -11,13 +11,12 @@ SESSION_COOKIE_SECURE = _default_cookie_secure
 SESSION_COOKIE_SAMESITE = "None" if SESSION_COOKIE_SECURE else "Lax"
 PARTICIPANT_SESSION_COOKIE_NAME = "cognit_session"
 PARTICIPANT_PUBLIC_COOKIE_NAME = "cognit_public_id"
-PARTICIPANT_SESSION_STALE_TTL_SECONDS = int_env("PARTICIPANT_SESSION_STALE_TTL_SECONDS", 30 * 60, min_value=60, max_value=7 * 24 * 60 * 60)
+PARTICIPANT_SESSION_STALE_TTL_SECONDS = 60
 
 TURNSTILE_ENABLED = required_bool_env("TURNSTILE_ENABLED")
 TURNSTILE_SECRET_KEY = required_env("TURNSTILE_SECRET_KEY") if TURNSTILE_ENABLED else ""
 TURNSTILE_VERIFY_URL = required_env("TURNSTILE_VERIFY_URL")
 TURNSTILE_TIMEOUT_SECONDS = required_float_env("TURNSTILE_TIMEOUT_SECONDS")
-TURNSTILE_BYPASS_LOCAL = bool_env("TURNSTILE_BYPASS_LOCAL", False)
 
 SECRET_KEY = required_env("SECRET_KEY")
 IP_HASH_SALT = required_env("IP_HASH_SALT")
