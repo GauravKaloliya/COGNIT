@@ -93,7 +93,7 @@ QUERY_HAS_COPIED_ATTENTION_PATTERN = text("""
 QUERY_INSERT_SUBMISSION = text("""
     INSERT INTO submissions (
         participant_id, participant_session_id, image_id, survey_index, description, word_count,
-        rating, feedback, time_spent_seconds, is_survey, is_attention_check,
+        feedback, time_spent_seconds, is_survey, is_attention_check,
         attention_passed, attention_tier, attention_confidence, expected_term_recall,
         matched_term_count, expected_term_count, distinct_word_count, descriptive_token_count,
         flagged_too_fast, quality_score, writing_quality_score, behavior_risk_score,
@@ -107,7 +107,7 @@ QUERY_INSERT_SUBMISSION = text("""
         survey_page_close_attempts, survey_network_disconnects,
         survey_max_scroll_depth_pct, survey_clicks, survey_keypresses
     ) VALUES (
-        :pid, :psid, :iid, :sidx, :desc, :wc, :rt, :fb, :ts, :isv, :isa,
+        :pid, :psid, :iid, :sidx, :desc, :wc, :fb, :ts, :isv, :isa,
         :ap, :attention_tier, :attention_confidence, :expected_term_recall,
         :matched_term_count, :expected_term_count, :distinct_word_count, :descriptive_token_count,
         :tf, :qs, :writing_quality_score, :behavior_risk_score,
@@ -168,7 +168,7 @@ QUERY_INSERT_SUBMISSION_BEHAVIOR_METRICS = text("""
 QUERY_INSERT_SUBMISSION_COGNITIVE_METRICS = text("""
     INSERT INTO submission_cognitive_metrics (
         submission_id,
-        confidence_score,
+        confidence_rating,
         difficulty_self_report,
         first_view_duration_seconds,
         writing_duration_seconds,
@@ -178,7 +178,7 @@ QUERY_INSERT_SUBMISSION_COGNITIVE_METRICS = text("""
         detail_density_score
     ) VALUES (
         :submission_id,
-        :confidence_score,
+        :confidence_rating,
         :difficulty_self_report,
         :first_view_duration_seconds,
         :writing_duration_seconds,
@@ -390,7 +390,7 @@ def end_participant_session(db, *, participant_id: int, participant_session_id) 
     })
 
 
-def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, rating: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, attention_tier, attention_confidence, expected_term_recall: float, matched_term_count: int, expected_term_count: int, distinct_word_count: int, descriptive_token_count: int, too_fast: bool, quality: float, writing_quality_score: float, behavior_risk_score: float, alignment_score, alignment: dict | None, supporting_signals: dict | None, consecutive_failures: int, hard_flag_triggered: bool, soft_flag_triggered: bool, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
+def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, attention_tier, attention_confidence, expected_term_recall: float, matched_term_count: int, expected_term_count: int, distinct_word_count: int, descriptive_token_count: int, too_fast: bool, quality: float, writing_quality_score: float, behavior_risk_score: float, alignment_score, alignment: dict | None, supporting_signals: dict | None, consecutive_failures: int, hard_flag_triggered: bool, soft_flag_triggered: bool, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
     alignment = alignment or {}
     supporting_signals = supporting_signals or {}
     row = db.execute(QUERY_INSERT_SUBMISSION, {
@@ -400,7 +400,6 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "sidx": survey_index,
         "desc": description,
         "wc": int(word_count),
-        "rt": int(rating),
         "fb": feedback,
         "ts": time_spent_seconds,
         "isv": bool(is_survey),
@@ -464,7 +463,7 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
 
     db.execute(QUERY_INSERT_SUBMISSION_COGNITIVE_METRICS, {
         "submission_id": submission_id,
-        "confidence_score": phase_metrics.get("confidence_score"),
+        "confidence_rating": phase_metrics.get("confidence_rating"),
         "difficulty_self_report": phase_metrics.get("difficulty_self_report"),
         "first_view_duration_seconds": float(phase_metrics.get("first_view_duration_seconds", 0)),
         "writing_duration_seconds": float(phase_metrics.get("writing_duration_seconds", 0)),

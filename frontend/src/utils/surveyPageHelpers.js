@@ -22,7 +22,7 @@ export function getSubmitTooltip({
   minDescriptionLength,
   maxDescriptionLength,
   difficultyRating,
-  confidenceScore,
+  confidenceRating,
   comments,
   minFeedbackLength,
   maxFeedbackLength,
@@ -37,7 +37,7 @@ export function getSubmitTooltip({
   if (descriptionCharCount < minDescriptionLength) return getErrorMessage("VAL_002_0002");
   if (descriptionCharCount > maxDescriptionLength) return getErrorMessage("VAL_002_0003");
   if (difficultyRating === 0) return uiText("survey.difficultyRequired");
-  if (confidenceScore === 0) return uiText("survey.confidenceRequired");
+  if (confidenceRating === 0) return uiText("survey.confidenceRequired");
   const commentsLength = countAlphaNumericChars(comments);
   if (commentsLength < minFeedbackLength) return getErrorMessage("VAL_002_0006");
   if (commentsLength > maxFeedbackLength) return getErrorMessage("VAL_002_0007");

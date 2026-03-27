@@ -482,7 +482,6 @@ CREATE TABLE IF NOT EXISTS submissions (
     survey_index        INTEGER,
     description         TEXT NOT NULL CHECK (length(description) BETWEEN 60 AND 10000),
     word_count          INTEGER NOT NULL CHECK (word_count >= 0),
-    rating              SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
     feedback            TEXT NOT NULL CHECK (length(feedback) BETWEEN 5 AND 2000),
     time_spent_seconds  REAL NOT NULL DEFAULT 0 CHECK (time_spent_seconds >= 0),
     is_survey           BOOLEAN NOT NULL DEFAULT FALSE,
@@ -598,6 +597,8 @@ ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE submissions
+    DROP COLUMN IF EXISTS rating;
 
 -- Derived stats trigger kept intentionally small and local to submissions.
 CREATE TRIGGER trg_sync_attention_stats_from_submission
@@ -654,7 +655,7 @@ CREATE INDEX IF NOT EXISTS idx_submission_behavior_hesitation
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS submission_cognitive_metrics (
     submission_id BIGINT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,
-    confidence_score SMALLINT CHECK (confidence_score BETWEEN 1 AND 5),
+    confidence_rating SMALLINT CHECK (confidence_rating BETWEEN 1 AND 5),
     difficulty_self_report SMALLINT CHECK (difficulty_self_report BETWEEN 1 AND 5),
     first_view_duration_seconds REAL NOT NULL DEFAULT 0 CHECK (first_view_duration_seconds >= 0),
     writing_duration_seconds REAL NOT NULL DEFAULT 0 CHECK (writing_duration_seconds >= 0),
@@ -664,6 +665,25 @@ CREATE TABLE IF NOT EXISTS submission_cognitive_metrics (
     detail_density_score REAL NOT NULL DEFAULT 0 CHECK (detail_density_score BETWEEN 0 AND 1),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'submission_cognitive_metrics'
+          AND column_name = 'confidence_score'
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'submission_cognitive_metrics'
+          AND column_name = 'confidence_rating'
+    ) THEN
+        ALTER TABLE submission_cognitive_metrics
+            RENAME COLUMN confidence_score TO confidence_rating;
+    END IF;
+END $$;
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS confidence_rating SMALLINT CHECK (confidence_rating BETWEEN 1 AND 5);
 ALTER TABLE submission_cognitive_metrics
     ADD COLUMN IF NOT EXISTS object_mention_count SMALLINT NOT NULL DEFAULT 0 CHECK (object_mention_count >= 0);
 ALTER TABLE submission_cognitive_metrics
@@ -673,7 +693,7 @@ ALTER TABLE submission_cognitive_metrics
 ALTER TABLE submission_cognitive_metrics
     ADD COLUMN IF NOT EXISTS detail_density_score REAL NOT NULL DEFAULT 0 CHECK (detail_density_score BETWEEN 0 AND 1);
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_confidence
-    ON submission_cognitive_metrics (confidence_score);
+    ON submission_cognitive_metrics (confidence_rating);
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_difficulty
     ON submission_cognitive_metrics (difficulty_self_report);
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_reference_coverage

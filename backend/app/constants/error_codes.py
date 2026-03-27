@@ -230,10 +230,10 @@ ERROR_CODES_TEMPLATE: Dict[str, Dict[str, Any]] = {
     },
     "VAL_RATING_INVALID": {
         "code": "VAL_002_0008",
-        "message": "Rating must be between {min_rating} and {max_rating}.",
+        "message": "Difficulty and confidence ratings must be between {min_rating} and {max_rating}.",
         "status": 400,
         "category": "VAL",
-        "field": "rating"
+        "field": "ratings"
     },
     "VAL_WORD_COUNT": {
         "code": "VAL_002_0004",

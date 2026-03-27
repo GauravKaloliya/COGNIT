@@ -48,8 +48,8 @@ function RatingScale({
 function SurveyRatingField({
   difficultyRating,
   setDifficultyRating,
-  confidenceScore,
-  setConfidenceScore,
+  confidenceRating,
+  setConfidenceRating,
   imageReady,
   disabled = false,
   onDifficultyBlur,
@@ -67,10 +67,10 @@ function SurveyRatingField({
         onBlur={onDifficultyBlur}
       />
       <RatingScale
-        name="confidence-score"
+        name="confidence-rating"
         label={uiText("survey.confidenceLabel")}
-        value={confidenceScore}
-        setValue={setConfidenceScore}
+        value={confidenceRating}
+        setValue={setConfidenceRating}
         imageReady={imageReady}
         disabled={disabled}
         onBlur={onConfidenceBlur}
