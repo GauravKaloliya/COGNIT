@@ -139,6 +139,17 @@ ATTENTION_FILLER_TERMS = {
     "vibe",
     "vibes",
 }
+ALIGNMENT_SCENE_NOUNS = {
+    "ball", "basket", "bird", "blossom", "bow", "branch", "bucket", "butterfly",
+    "cake", "cat", "cherry", "cliff", "cloud", "cottage", "cup", "dog", "eye",
+    "face", "flower", "garden", "grass", "heart", "hill", "home", "house",
+    "island", "mountain", "panda", "path", "picnic", "rabbit", "river", "rock",
+    "sky", "sun", "tree", "turtle", "water", "waterfall",
+}
+ALIGNMENT_NOISE_TOKENS = {
+    "aay", "haaye", "kiki", "lots", "many", "one", "pand", "place", "preety",
+    "syn", "thi", "traingle", "which",
+}
 
 
 def _bounded_backoff(attempt: int, base_backoff_ms: int, max_backoff_ms: int) -> float:
@@ -161,6 +172,10 @@ def safe_non_negative_float(value, default: float = 0.0) -> float:
         return parsed if parsed >= 0 else default
     except Exception:
         return default
+
+
+def _clamp_unit_interval(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 def clamp_time_spent_seconds(value) -> float:
@@ -514,8 +529,9 @@ def _safe_string_list(value, *, max_items: int = 20, max_item_len: int = 80):
     return cleaned
 
 
-def _extract_alignment_mentions(description: str):
+def _extract_alignment_mentions(description: str, reference_objects: Iterable[str] | None = None):
     tokens = normalize_for_attention(description).split()
+    reference_terms = normalize_objects(reference_objects or [])
     object_mentions = []
     spatial_mentions = []
     for token in tokens:
@@ -529,9 +545,15 @@ def _extract_alignment_mentions(description: str):
             or token in OBJECT_STOPWORDS
             or token in ATTENTION_FILLER_TERMS
             or token in ATTENTION_NON_CORE_TERMS
+            or token in ALIGNMENT_NOISE_TOKENS
             or token in RELATION_TERMS
             or token in ACTION_TERMS
         ):
+            continue
+        if reference_terms:
+            if token not in reference_terms and token not in ALIGNMENT_SCENE_NOUNS:
+                continue
+        elif token not in ALIGNMENT_SCENE_NOUNS:
             continue
         if token not in object_mentions:
             object_mentions.append(token)
@@ -540,6 +562,56 @@ def _extract_alignment_mentions(description: str):
     return {
         "object_mentions": object_mentions[:12],
         "spatial_mentions": spatial_mentions[:10],
+    }
+
+
+def summarize_alignment_mentions(
+    description: str,
+    *,
+    reference_objects: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    mentions = _extract_alignment_mentions(description, reference_objects=reference_objects)
+    object_mentions = mentions["object_mentions"]
+    spatial_mentions = mentions["spatial_mentions"]
+    tokens = alphabetic_tokens(description)
+    reference_terms = normalize_objects(reference_objects or [])
+    reference_coverage = 0.0
+    if reference_terms:
+        reference_coverage = len(set(object_mentions) & reference_terms) / float(len(reference_terms))
+    detail_tokens = [
+        token
+        for token in tokens
+        if token not in OBJECT_STOPWORDS
+        and token not in ATTENTION_FILLER_TERMS
+        and token not in ATTENTION_NON_CORE_TERMS
+        and token not in ALIGNMENT_NOISE_TOKENS
+    ]
+    unique_detail_tokens = list(dict.fromkeys(detail_tokens))
+    non_object_detail_tokens = [
+        token
+        for token in unique_detail_tokens
+        if token not in set(object_mentions)
+        and token not in reference_terms
+        and token not in SPATIAL_TERMS
+        and token not in RELATION_TERMS
+        and token not in ACTION_TERMS
+    ]
+    unique_detail_component = len(unique_detail_tokens) / float(len(unique_detail_tokens) + 12)
+    non_object_detail_component = len(non_object_detail_tokens) / float(len(non_object_detail_tokens) + 10)
+    spatial_component = len(spatial_mentions) / float(len(spatial_mentions) + 2)
+    detail_density_score = _clamp_unit_interval(
+        0.35 * unique_detail_component
+        + 0.35 * non_object_detail_component
+        + 0.15 * spatial_component
+        + 0.15 * reference_coverage
+    )
+    return {
+        "object_mentions": object_mentions,
+        "spatial_mentions": spatial_mentions,
+        "object_mention_count": len(object_mentions),
+        "spatial_mention_count": len(spatial_mentions),
+        "reference_coverage": round(reference_coverage, 4),
+        "detail_density_score": round(detail_density_score, 4),
     }
 
 
@@ -731,13 +803,17 @@ def get_ground_truth_objects(db, image_id: int) -> set[str]:
 def extract_submission_phase_metrics(payload: dict[str, Any], *, description: str = ""):
     metrics = payload if isinstance(payload, dict) else {}
     difficulty_self_report = _safe_optional_smallint(metrics.get("difficulty_self_report"), minimum=1, maximum=5)
-    alignment_mentions = _extract_alignment_mentions(description)
+    alignment_mentions = summarize_alignment_mentions(description)
 
     phase_metrics = {
         "confidence_score": _safe_optional_smallint(metrics.get("confidence_score"), minimum=1, maximum=5),
         "difficulty_self_report": difficulty_self_report,
         "object_mentions": alignment_mentions["object_mentions"],
         "spatial_mentions": alignment_mentions["spatial_mentions"],
+        "object_mention_count": alignment_mentions["object_mention_count"],
+        "spatial_mention_count": alignment_mentions["spatial_mention_count"],
+        "reference_coverage": alignment_mentions["reference_coverage"],
+        "detail_density_score": alignment_mentions["detail_density_score"],
         "first_view_duration_seconds": safe_non_negative_float(
             metrics.get("first_view_duration_seconds"),
             safe_non_negative_float(metrics.get("first_view_duration_ms"), 0.0) / 1000.0,
@@ -748,13 +824,36 @@ def extract_submission_phase_metrics(payload: dict[str, Any], *, description: st
         ),
     }
 
+    time_before_typing_seconds = safe_non_negative_float(
+        metrics.get("time_before_typing_seconds"),
+        safe_non_negative_float(metrics.get("time_before_typing_ms"), 0.0) / 1000.0,
+    )
+    edit_count = safe_non_negative_int(metrics.get("edit_count"), 0)
+    backspace_count = safe_non_negative_int(metrics.get("backspace_count"), 0)
+    pause_count = safe_non_negative_int(metrics.get("pause_count"), 0)
+    avg_pause_duration_seconds = (
+        _safe_optional_float(metrics.get("avg_pause_duration_seconds"))
+        if metrics.get("avg_pause_duration_seconds") is not None
+        else (
+            _safe_optional_float(metrics.get("avg_pause_duration_ms")) / 1000.0
+            if _safe_optional_float(metrics.get("avg_pause_duration_ms")) is not None
+            else None
+        )
+    )
+    keystroke_variance = _safe_optional_float(metrics.get("keystroke_variance"))
+    hesitation_score = _clamp_unit_interval(
+        (min(1.0, time_before_typing_seconds / 25.0) * 0.40)
+        + (min(1.0, pause_count / 24.0) * 0.20)
+        + (min(1.0, float(avg_pause_duration_seconds or 0.0) / 5.0) * 0.20)
+        + (min(1.0, float(keystroke_variance or 0.0) / 3.0) * 0.20)
+    )
+    revision_bursts = max(0, int(round((backspace_count / 18.0) + (pause_count / 8.0))))
+    submitted_without_typing_pause = bool(pause_count == 0 and time_before_typing_seconds <= 2.5)
+
     behavior_metrics = {
-        "time_before_typing_seconds": safe_non_negative_float(
-            metrics.get("time_before_typing_seconds"),
-            safe_non_negative_float(metrics.get("time_before_typing_ms"), 0.0) / 1000.0,
-        ),
-        "edit_count": safe_non_negative_int(metrics.get("edit_count"), 0),
-        "backspace_count": safe_non_negative_int(metrics.get("backspace_count"), 0),
+        "time_before_typing_seconds": time_before_typing_seconds,
+        "edit_count": edit_count,
+        "backspace_count": backspace_count,
         "avg_keystroke_interval_seconds": _safe_optional_float(metrics.get("avg_keystroke_interval_seconds"))
         if metrics.get("avg_keystroke_interval_seconds") is not None
         else (
@@ -762,15 +861,12 @@ def extract_submission_phase_metrics(payload: dict[str, Any], *, description: st
             if _safe_optional_float(metrics.get("avg_keystroke_interval_ms")) is not None
             else None
         ),
-        "keystroke_variance": _safe_optional_float(metrics.get("keystroke_variance")),
-        "pause_count": safe_non_negative_int(metrics.get("pause_count"), 0),
-        "avg_pause_duration_seconds": _safe_optional_float(metrics.get("avg_pause_duration_seconds"))
-        if metrics.get("avg_pause_duration_seconds") is not None
-        else (
-            _safe_optional_float(metrics.get("avg_pause_duration_ms")) / 1000.0
-            if _safe_optional_float(metrics.get("avg_pause_duration_ms")) is not None
-            else None
-        ),
+        "keystroke_variance": keystroke_variance,
+        "pause_count": pause_count,
+        "avg_pause_duration_seconds": avg_pause_duration_seconds,
+        "revision_bursts": revision_bursts,
+        "hesitation_score": round(hesitation_score, 4),
+        "submitted_without_typing_pause": submitted_without_typing_pause,
     }
     return {
         "phase_metrics": phase_metrics,

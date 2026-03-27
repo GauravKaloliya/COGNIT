@@ -25,12 +25,6 @@ from app.constants.submission_constants import (
     ATTENTION_FAILURE_LOW_RECALL,
     ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD,
     SUBMISSION_META_KEY_ATTENTION,
-    SUBMISSION_META_KEY_ATTENTION_CONFIDENCE,
-    SUBMISSION_META_KEY_ATTENTION_TIER,
-    SUBMISSION_META_KEY_FAILURE_REASONS,
-    SUBMISSION_META_KEY_HARD_FAIL_REASONS,
-    SUBMISSION_META_KEY_SOFT_RISK_REASONS,
-    SUBMISSION_META_KEY_SUPPORTING_SIGNALS,
 )
 from app.services.submission_processing_service import (
     apply_attention_monitor,
@@ -72,6 +66,7 @@ from app.services.submission_service import (
     normalize_engagement_counts,
     normalize_for_attention,
     normalize_objects,
+    summarize_alignment_mentions,
 )
 from app.services.state_machine_service import (
     PARTICIPANT_STAGE_EVENTS,
@@ -297,34 +292,35 @@ def process_submission_workflow(
     attention_keyword_missing = bool(attention_result["attention_keyword_missing"])
     copied_pattern_detected = bool(attention_result["copied_pattern_detected"])
     descriptive_token_count = int(attention_result["descriptive_token_count"] or 0)
+    expected_term_recall = float(attention_result["expected_term_recall"] or 0.0)
+    expected_term_count = int(attention_result["expected_term_count"] or 0)
+    matched_term_count = int(attention_result["matched_term_count"] or 0)
+    attention_distinct_word_count = int(attention_result["distinct_word_count"] or distinct_word_count)
+    attention_repetition_metrics = attention_result.get("repetition_metrics") or {}
 
-    user_objects = extract_objects(description)
-    normalized_user_objects = normalize_objects(user_objects)
     normalized_gt_objects = normalize_objects(gt_objects)
     alignment_reference_objects = (
         normalize_objects(attention_expected_terms)
         if is_attention and attention_expected_terms
         else normalized_gt_objects
     )
+    refined_mentions = summarize_alignment_mentions(
+        description,
+        reference_objects=alignment_reference_objects,
+    )
+    phase_data["phase_metrics"]["object_mentions"] = refined_mentions["object_mentions"]
+    phase_data["phase_metrics"]["spatial_mentions"] = refined_mentions["spatial_mentions"]
+    phase_data["phase_metrics"]["object_mention_count"] = refined_mentions["object_mention_count"]
+    phase_data["phase_metrics"]["spatial_mention_count"] = refined_mentions["spatial_mention_count"]
+    phase_data["phase_metrics"]["reference_coverage"] = refined_mentions["reference_coverage"]
+    phase_data["phase_metrics"]["detail_density_score"] = refined_mentions["detail_density_score"]
+    normalized_user_objects = normalize_objects(refined_mentions["object_mentions"])
     alignment = compute_alignment(normalized_user_objects, alignment_reference_objects, description)
     alignment_score = alignment["f1"] if alignment else None
     alignment_recall = float(alignment["recall"]) if alignment else 0.0
-    expected_term_recall = 0.0
-    attention_meta_seed = submission_meta.get(SUBMISSION_META_KEY_ATTENTION, {}) if isinstance(submission_meta, dict) else {}
-    if isinstance(attention_meta_seed, dict):
-        expected_term_recall = float(attention_meta_seed.get("expected_term_recall", 0.0) or 0.0)
     if alignment:
         submission_meta = dict(submission_meta)
         submission_meta["alignment"] = {
-            "precision": alignment["precision"],
-            "recall": alignment["recall"],
-            "f1": alignment["f1"],
-            "object_f1": alignment["object_f1"],
-            "relation_score": alignment["relation_score"],
-            "scene_consistency_score": alignment["scene_consistency_score"],
-            "wrong_object_penalty": alignment["wrong_object_penalty"],
-            "natural_language_score": alignment["natural_language_score"],
-            "stuffing_penalty": alignment["stuffing_penalty"],
             "style_metrics": alignment["alignment_style_metrics"],
             "relation_hits": alignment["relation_hits"],
             "correct": alignment["correct"],
@@ -364,17 +360,9 @@ def process_submission_workflow(
             "keyword_missing": attention_keyword_missing,
             "recall_weak": attention_recall_weak,
             "alignment_weak": alignment_recall < float(ATTENTION_MIN_RECALL),
-            "alignment_recall": round(alignment_recall, 4),
-            "descriptive_token_count": descriptive_token_count,
             "repetitive_template_detected": bool(attention_result.get("repetitive_template_detected")),
             "suspicious": attention_suspicious,
-            SUBMISSION_META_KEY_ATTENTION_TIER: attention_tier,
-            SUBMISSION_META_KEY_ATTENTION_CONFIDENCE: attention_confidence,
-            SUBMISSION_META_KEY_HARD_FAIL_REASONS: hard_fail_reasons,
-            SUBMISSION_META_KEY_SOFT_RISK_REASONS: soft_risk_reasons,
-            SUBMISSION_META_KEY_SUPPORTING_SIGNALS: supporting_signals,
         })
-        attention_meta[SUBMISSION_META_KEY_FAILURE_REASONS] = attention_failure_reasons
         submission_meta[SUBMISSION_META_KEY_ATTENTION] = attention_meta
 
     engagement_result = merge_submission_engagement(
@@ -406,11 +394,24 @@ def process_submission_workflow(
         copied_pattern_detected=copied_pattern_detected,
         behavior_metrics=phase_data["behavior_metrics"],
     )
-    submission_meta["scores"] = {
-        "quality_score": float(quality),
-        "writing_quality_score": float(writing_quality_score),
-        "behavior_risk_score": float(behavior_risk_score),
-    }
+    attention_checked_at = datetime.now(timezone.utc) if is_attention else None
+    monitor_result = apply_attention_monitor(
+        participant_meta=participant_meta,
+        attention_passed=attention_passed,
+        attention_tier=attention_tier,
+        attention_confidence=attention_confidence,
+        hard_fail_reasons=hard_fail_reasons,
+        soft_risk_reasons=soft_risk_reasons,
+        is_attention=is_attention,
+        checked_at=attention_checked_at,
+        hard_flag_consecutive_fails=ATTENTION_HARD_FLAG_CONSEC_FAILS,
+        attention_flag_min_checks=ATTENTION_FLAG_MIN_CHECKS,
+        attention_flag_threshold=ATTENTION_FLAG_THRESHOLD,
+    )
+    consecutive_failures = monitor_result["consecutive_failures"]
+    recent_attention_score = monitor_result["recent_attention_score"]
+    hard_flag_triggered = monitor_result["hard_flag_triggered"]
+    soft_flag_triggered = monitor_result["soft_flag_triggered"]
 
     effective_session_id = payload_session_id or stored_session_id
     participant_session_id = ensure_participant_session(
@@ -433,9 +434,23 @@ def process_submission_workflow(
         is_survey=is_survey,
         is_attention=is_attention,
         attention_passed=attention_passed,
+        attention_tier=attention_tier,
+        attention_confidence=attention_confidence,
+        expected_term_recall=expected_term_recall,
+        matched_term_count=matched_term_count,
+        expected_term_count=expected_term_count,
+        distinct_word_count=distinct_word_count,
+        descriptive_token_count=descriptive_token_count,
         too_fast=too_fast,
         quality=quality,
+        writing_quality_score=writing_quality_score,
+        behavior_risk_score=behavior_risk_score,
         alignment_score=alignment_score,
+        alignment=alignment,
+        supporting_signals=supporting_signals,
+        consecutive_failures=consecutive_failures,
+        hard_flag_triggered=hard_flag_triggered,
+        soft_flag_triggered=soft_flag_triggered,
         ip_hash=ip_hash,
         user_agent=user_agent,
         device_type=device_type,
@@ -461,23 +476,6 @@ def process_submission_workflow(
         current_stage = next_stage
         stage_updated_at = datetime.now(timezone.utc)
 
-    monitor_result = apply_attention_monitor(
-        participant_meta=participant_meta,
-        attention_passed=attention_passed,
-        attention_tier=attention_tier,
-        attention_confidence=attention_confidence,
-        hard_fail_reasons=hard_fail_reasons,
-        soft_risk_reasons=soft_risk_reasons,
-        is_attention=is_attention,
-        hard_flag_consecutive_fails=ATTENTION_HARD_FLAG_CONSEC_FAILS,
-        attention_flag_min_checks=ATTENTION_FLAG_MIN_CHECKS,
-        attention_flag_threshold=ATTENTION_FLAG_THRESHOLD,
-    )
-    consecutive_failures = monitor_result["consecutive_failures"]
-    recent_attention_score = monitor_result["recent_attention_score"]
-    hard_flag_triggered = monitor_result["hard_flag_triggered"]
-    soft_flag_triggered = monitor_result["soft_flag_triggered"]
-
     if is_attention:
         update_participant_metadata(db, participant_id=participant_id, participant_meta=monitor_result["participant_meta"])
         insert_attention_event_record(
@@ -488,10 +486,11 @@ def process_submission_workflow(
             attention_expected_terms=attention_expected_terms,
             attention_matched_terms=attention_matched_terms,
             attention_failure_reasons=attention_failure_reasons,
+            hard_fail_reasons=hard_fail_reasons,
+            soft_risk_reasons=soft_risk_reasons,
+            repetition_metrics=attention_repetition_metrics,
             strict=bool(ac_row[1]),
-            attention_passed=bool(attention_passed),
             response_seconds=time_spent_seconds,
-            distinct_word_count=distinct_word_count,
             description_fingerprint=description_fingerprint,
         )
         update_participant_attention_flag(
@@ -500,6 +499,9 @@ def process_submission_workflow(
             hard_flag_triggered=hard_flag_triggered,
             soft_flag_triggered=soft_flag_triggered,
             attention_score=recent_attention_score,
+            recent_attention_score=recent_attention_score,
+            consecutive_failures=consecutive_failures,
+            checked_at=attention_checked_at,
         )
 
     post_stats_row = fetch_participant_attention_stats(db, participant_id=participant_id)
