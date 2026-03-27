@@ -21,14 +21,22 @@ from app.constants.observability_constants import (
     OBS_EVENT_SUBMIT_BLOCKED_STATE_MACHINE,
 )
 from app.constants.submission_constants import (
+    ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL,
     ATTENTION_FAILURE_LOW_RECALL,
+    ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD,
     SUBMISSION_META_KEY_ATTENTION,
+    SUBMISSION_META_KEY_ATTENTION_CONFIDENCE,
+    SUBMISSION_META_KEY_ATTENTION_TIER,
     SUBMISSION_META_KEY_FAILURE_REASONS,
+    SUBMISSION_META_KEY_HARD_FAIL_REASONS,
+    SUBMISSION_META_KEY_SOFT_RISK_REASONS,
+    SUBMISSION_META_KEY_SUPPORTING_SIGNALS,
 )
 from app.services.submission_processing_service import (
     apply_attention_monitor,
     build_submission_response_payload,
     evaluate_attention_result,
+    finalize_attention_assessment,
     merge_submission_engagement,
 )
 from app.services.submission_query_service import (
@@ -53,9 +61,11 @@ from app.services.submission_query_service import (
 from app.services.participant_state_service import apply_participant_stage_event
 from app.services.submission_service import (
     alphabetic_tokens,
+    build_attention_core_terms,
+    count_attention_descriptive_tokens,
+    detect_repetitive_attention_template,
     compute_alignment,
     dynamic_too_fast_threshold,
-    extract_expected_terms,
     extract_objects,
     get_ground_truth_objects,
     match_attention_terms,
@@ -245,16 +255,26 @@ def process_submission_workflow(
         )
 
     distinct_word_count = len(set(alphabetic_tokens(description)))
-    dynamic_threshold = dynamic_too_fast_threshold(TOO_FAST_SECONDS, word_count)
+    dynamic_threshold = dynamic_too_fast_threshold(
+        TOO_FAST_SECONDS,
+        word_count,
+        is_attention=bool(is_attention),
+        description=description,
+        behavior_metrics=phase_data["behavior_metrics"],
+    )
     too_fast = time_spent_seconds is not None and time_spent_seconds < dynamic_threshold
 
+    gt_objects = get_ground_truth_objects(db, image_id_fk)
     attention_result = evaluate_attention_result(
         db=db,
         is_attention=is_attention,
         attention_check_row=ac_row,
+        ground_truth_objects=gt_objects,
         description=description,
+        count_attention_descriptive_tokens=count_attention_descriptive_tokens,
+        detect_repetitive_attention_template=detect_repetitive_attention_template,
         normalize_for_attention=normalize_for_attention,
-        extract_expected_terms=extract_expected_terms,
+        build_attention_core_terms=build_attention_core_terms,
         match_attention_terms=match_attention_terms,
         has_copied_attention_pattern=has_copied_attention_pattern,
         image_id_fk=image_id_fk,
@@ -269,36 +289,93 @@ def process_submission_workflow(
     attention_expected_terms = attention_result["attention_expected_terms"]
     attention_matched_terms = attention_result["attention_matched_terms"]
     attention_failure_reasons = attention_result["attention_failure_reasons"]
+    hard_fail_reasons = attention_result["hard_fail_reasons"]
+    soft_risk_reasons = attention_result["soft_risk_reasons"]
     description_fingerprint = attention_result["description_fingerprint"]
     submission_meta = attention_result["submission_meta"]
+    attention_recall_weak = bool(attention_result["attention_recall_weak"])
+    attention_keyword_missing = bool(attention_result["attention_keyword_missing"])
+    copied_pattern_detected = bool(attention_result["copied_pattern_detected"])
+    descriptive_token_count = int(attention_result["descriptive_token_count"] or 0)
 
     user_objects = extract_objects(description)
-    gt_objects = get_ground_truth_objects(db, image_id_fk)
     normalized_user_objects = normalize_objects(user_objects)
     normalized_gt_objects = normalize_objects(gt_objects)
-    alignment = compute_alignment(normalized_user_objects, normalized_gt_objects)
+    alignment_reference_objects = (
+        normalize_objects(attention_expected_terms)
+        if is_attention and attention_expected_terms
+        else normalized_gt_objects
+    )
+    alignment = compute_alignment(normalized_user_objects, alignment_reference_objects, description)
     alignment_score = alignment["f1"] if alignment else None
+    alignment_recall = float(alignment["recall"]) if alignment else 0.0
+    expected_term_recall = 0.0
+    attention_meta_seed = submission_meta.get(SUBMISSION_META_KEY_ATTENTION, {}) if isinstance(submission_meta, dict) else {}
+    if isinstance(attention_meta_seed, dict):
+        expected_term_recall = float(attention_meta_seed.get("expected_term_recall", 0.0) or 0.0)
     if alignment:
         submission_meta = dict(submission_meta)
         submission_meta["alignment"] = {
             "precision": alignment["precision"],
             "recall": alignment["recall"],
             "f1": alignment["f1"],
+            "object_f1": alignment["object_f1"],
+            "relation_score": alignment["relation_score"],
+            "scene_consistency_score": alignment["scene_consistency_score"],
+            "wrong_object_penalty": alignment["wrong_object_penalty"],
+            "natural_language_score": alignment["natural_language_score"],
+            "stuffing_penalty": alignment["stuffing_penalty"],
+            "style_metrics": alignment["alignment_style_metrics"],
+            "relation_hits": alignment["relation_hits"],
             "correct": alignment["correct"],
             "wrong": alignment["wrong"],
             "missed": alignment["missed"],
         }
-        if is_attention and alignment["recall"] < float(ATTENTION_MIN_RECALL):
-            attention_passed = False
-            if ATTENTION_FAILURE_LOW_RECALL not in attention_failure_reasons:
-                attention_failure_reasons.append(ATTENTION_FAILURE_LOW_RECALL)
-            if SUBMISSION_META_KEY_ATTENTION in submission_meta:
-                attention_meta = dict(submission_meta[SUBMISSION_META_KEY_ATTENTION])
-                reasons = list(attention_meta.get(SUBMISSION_META_KEY_FAILURE_REASONS, []))
-                if ATTENTION_FAILURE_LOW_RECALL not in reasons:
-                    reasons.append(ATTENTION_FAILURE_LOW_RECALL)
-                attention_meta[SUBMISSION_META_KEY_FAILURE_REASONS] = reasons
-                submission_meta[SUBMISSION_META_KEY_ATTENTION] = attention_meta
+    finalized_attention = finalize_attention_assessment(
+        is_attention=is_attention,
+        attention_expected_terms=attention_expected_terms,
+        attention_matched_terms=attention_matched_terms,
+        hard_fail_reasons=hard_fail_reasons,
+        soft_risk_reasons=soft_risk_reasons,
+        attention_recall_weak=attention_recall_weak,
+        attention_keyword_missing=attention_keyword_missing,
+        copied_pattern_detected=copied_pattern_detected,
+        repetitive_template_detected=bool(attention_result.get("repetitive_template_detected")),
+        descriptive_token_count=descriptive_token_count,
+        distinct_word_count=distinct_word_count,
+        alignment_recall=alignment_recall,
+        alignment_score=alignment_score,
+        expected_term_recall=expected_term_recall,
+    )
+    attention_passed = finalized_attention["attention_passed"]
+    attention_suspicious = finalized_attention["attention_suspicious"]
+    attention_tier = finalized_attention["attention_tier"]
+    attention_confidence = finalized_attention["attention_confidence"]
+    hard_fail_reasons = finalized_attention["hard_fail_reasons"]
+    soft_risk_reasons = finalized_attention["soft_risk_reasons"]
+    attention_failure_reasons = finalized_attention["failure_reasons"]
+    supporting_signals = finalized_attention["supporting_signals"]
+
+    submission_meta = dict(submission_meta)
+    if is_attention:
+        attention_meta = dict(submission_meta.get(SUBMISSION_META_KEY_ATTENTION, {}))
+        attention_meta.update({
+            "core_term_count": len(attention_expected_terms),
+            "keyword_missing": attention_keyword_missing,
+            "recall_weak": attention_recall_weak,
+            "alignment_weak": alignment_recall < float(ATTENTION_MIN_RECALL),
+            "alignment_recall": round(alignment_recall, 4),
+            "descriptive_token_count": descriptive_token_count,
+            "repetitive_template_detected": bool(attention_result.get("repetitive_template_detected")),
+            "suspicious": attention_suspicious,
+            SUBMISSION_META_KEY_ATTENTION_TIER: attention_tier,
+            SUBMISSION_META_KEY_ATTENTION_CONFIDENCE: attention_confidence,
+            SUBMISSION_META_KEY_HARD_FAIL_REASONS: hard_fail_reasons,
+            SUBMISSION_META_KEY_SOFT_RISK_REASONS: soft_risk_reasons,
+            SUBMISSION_META_KEY_SUPPORTING_SIGNALS: supporting_signals,
+        })
+        attention_meta[SUBMISSION_META_KEY_FAILURE_REASONS] = attention_failure_reasons
+        submission_meta[SUBMISSION_META_KEY_ATTENTION] = attention_meta
 
     engagement_result = merge_submission_engagement(
         normalize_engagement_counts=normalize_engagement_counts,
@@ -311,9 +388,11 @@ def process_submission_workflow(
     network_disconnects = engagement_result["network_disconnects"]
     survey_metrics = engagement_result["survey_metrics"]
 
-    quality = calculate_quality(
+    writing_quality_score, behavior_risk_score, quality = calculate_quality(
         word_count=word_count,
         attention_passed=attention_passed,
+        attention_suspicious=attention_suspicious,
+        attention_confidence=attention_confidence,
         time_spent_seconds=time_spent_seconds,
         feedback=feedback,
         distinct_word_count=distinct_word_count,
@@ -323,7 +402,15 @@ def process_submission_workflow(
         dynamic_too_fast_threshold=dynamic_threshold,
         alignment_score=alignment_score,
         alignment=alignment,
+        too_fast=too_fast,
+        copied_pattern_detected=copied_pattern_detected,
+        behavior_metrics=phase_data["behavior_metrics"],
     )
+    submission_meta["scores"] = {
+        "quality_score": float(quality),
+        "writing_quality_score": float(writing_quality_score),
+        "behavior_risk_score": float(behavior_risk_score),
+    }
 
     effective_session_id = payload_session_id or stored_session_id
     participant_session_id = ensure_participant_session(
@@ -377,6 +464,10 @@ def process_submission_workflow(
     monitor_result = apply_attention_monitor(
         participant_meta=participant_meta,
         attention_passed=attention_passed,
+        attention_tier=attention_tier,
+        attention_confidence=attention_confidence,
+        hard_fail_reasons=hard_fail_reasons,
+        soft_risk_reasons=soft_risk_reasons,
         is_attention=is_attention,
         hard_flag_consecutive_fails=ATTENTION_HARD_FLAG_CONSEC_FAILS,
         attention_flag_min_checks=ATTENTION_FLAG_MIN_CHECKS,
@@ -408,6 +499,7 @@ def process_submission_workflow(
             participant_id=participant_id,
             hard_flag_triggered=hard_flag_triggered,
             soft_flag_triggered=soft_flag_triggered,
+            attention_score=recent_attention_score,
         )
 
     post_stats_row = fetch_participant_attention_stats(db, participant_id=participant_id)
@@ -456,6 +548,8 @@ def process_submission_workflow(
     response_payload = build_submission_response_payload(
         word_count=word_count,
         quality=quality,
+        writing_quality_score=writing_quality_score,
+        behavior_risk_score=behavior_risk_score,
         attention_passed=attention_passed,
         too_fast=too_fast,
         survey_index=survey_index,
@@ -468,6 +562,11 @@ def process_submission_workflow(
         attention_expected_terms=attention_expected_terms,
         attention_matched_terms=attention_matched_terms,
         attention_failure_reasons=attention_failure_reasons,
+        attention_tier=attention_tier,
+        attention_confidence=attention_confidence,
+        hard_fail_reasons=hard_fail_reasons,
+        soft_risk_reasons=soft_risk_reasons,
+        supporting_signals=supporting_signals,
         consecutive_failures=consecutive_failures,
         recent_attention_score=recent_attention_score,
         hard_flag_triggered=hard_flag_triggered,
@@ -496,6 +595,8 @@ def calculate_quality(
     *,
     word_count: int,
     attention_passed,
+    attention_suspicious: bool,
+    attention_confidence,
     time_spent_seconds: float,
     feedback: str,
     distinct_word_count: int,
@@ -505,24 +606,40 @@ def calculate_quality(
     dynamic_too_fast_threshold: float,
     alignment_score,
     alignment,
+    too_fast: bool,
+    copied_pattern_detected: bool,
+    behavior_metrics: dict,
 ):
-    from app.utils.helpers import calculate_quality_score
+    from app.utils.helpers import (
+        calculate_behavior_risk_score,
+        calculate_quality_score,
+        calculate_writing_quality_score,
+    )
 
-    quality = calculate_quality_score(
+    writing_quality = calculate_writing_quality_score(
         word_count,
-        attention_passed,
         time_spent_seconds,
         len(feedback),
-        False,
         distinct_word_count=distinct_word_count,
+        alignment_score=alignment_score,
+    )
+    behavior_risk = calculate_behavior_risk_score(
+        attention_suspicious=bool(attention_suspicious),
+        too_fast=bool(too_fast),
         tab_switch_count=tab_switch_count,
         page_close_attempts=page_close_attempts,
         network_disconnects=network_disconnects,
-        too_fast_threshold=dynamic_too_fast_threshold,
+        copied_pattern=bool(copied_pattern_detected),
+        behavior_metrics=behavior_metrics,
     )
-    if alignment_score is not None:
-        quality = (0.6 * quality) + (0.4 * alignment_score)
-        if alignment and alignment["wrong"]:
-            quality *= 0.9
-        quality = round(max(0.0, min(1.0, quality)), 4)
-    return quality
+    quality = calculate_quality_score(
+        writing_quality_score=writing_quality,
+        behavior_risk_score=behavior_risk,
+        alignment_score=alignment_score,
+        attention_trust_score=attention_confidence if attention_passed is not None else None,
+        bot=False,
+    )
+    if alignment_score is not None and alignment and alignment["wrong"]:
+        quality *= 0.95
+    quality = round(max(0.0, min(1.0, quality)), 4)
+    return round(writing_quality, 4), round(behavior_risk, 4), quality

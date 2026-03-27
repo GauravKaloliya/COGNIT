@@ -83,27 +83,56 @@ def count_words(text: str) -> int:
 # ────────────────────────────────────────────────
 
 def calculate_quality_score(
-    wc: int, 
-    att: Optional[bool], 
-    ts: Optional[float], 
-    fb_len: int, 
-    bot: bool,
-    distinct_word_count: Optional[int] = None,
-    tab_switch_count: int = 0,
-    page_close_attempts: int = 0,
-    network_disconnects: int = 0,
-    too_fast_threshold: float = TOO_FAST_SECONDS,
+    *,
+    writing_quality_score: float,
+    behavior_risk_score: float,
+    alignment_score: Optional[float],
+    attention_trust_score: Optional[float],
+    bot: bool = False,
 ) -> float:
     """
-    Calculate submission quality score based on writing quality and behavior signals.
+    Calculate the overall quality score from explicit component scores.
+
+    The overall score should be interpretable: writing quality is primary,
+    alignment is meaningful, behavioral risk reduces confidence, and attention
+    trust is a smaller modifier rather than a hard gate.
     """
+    safe_writing = max(0.0, min(1.0, float(writing_quality_score or 0.0)))
+    safe_behavior_risk = max(0.0, min(1.0, float(behavior_risk_score or 0.0)))
+    safe_alignment = max(0.0, min(1.0, float(alignment_score or 0.0)))
+    safe_attention = 1.0 if attention_trust_score is None else max(0.0, min(1.0, float(attention_trust_score)))
+
+    score = (
+        0.46 * safe_writing
+        + 0.24 * (1.0 - safe_behavior_risk)
+        + 0.20 * safe_alignment
+        + 0.10 * safe_attention
+    )
+    if bot:
+        score *= 0.3
+    return round(max(0.0, min(1.0, score)), 4)
+
+
+def calculate_writing_quality_score(
+    wc: int,
+    ts: Optional[float],
+    fb_len: int,
+    distinct_word_count: Optional[int] = None,
+    alignment_score: Optional[float] = None,
+) -> float:
     safe_wc = max(0, int(wc or 0))
     safe_fb_len = max(0, int(fb_len or 0))
     safe_distinct = max(0, int(distinct_word_count or 0))
+    safe_alignment = max(0.0, min(1.0, float(alignment_score or 0.0)))
 
-    s_word = min(max((safe_wc - 40) / 140.0, 0.0), 1.0)
-    s_att = 1.0 if att is None else (1.0 if bool(att) else 0.0)
+    s_word = min(max((safe_wc - 40) / 120.0, 0.0), 1.0)
     s_fb = min(safe_fb_len / 120.0, 1.0)
+
+    if safe_wc > 0:
+        lexical_ratio = safe_distinct / float(safe_wc)
+        s_lex = min(max((lexical_ratio - 0.25) / 0.40, 0.0), 1.0)
+    else:
+        s_lex = 0.0
 
     if ts is None:
         s_time = 0.0
@@ -112,32 +141,53 @@ def calculate_quality_score(
             ts_val = max(0.0, float(ts))
         except Exception:
             ts_val = 0.0
-        time_target = max(float(too_fast_threshold or TOO_FAST_SECONDS), 1.0) * 3.0
-        s_time = min(ts_val / time_target, 1.0)
+        s_time = min(ts_val / 90.0, 1.0)
 
-    if safe_wc > 0:
-        lexical_ratio = safe_distinct / float(safe_wc)
-        s_lex = min(max((lexical_ratio - 0.25) / 0.45, 0.0), 1.0)
-    else:
-        s_lex = 0.0
+    score = (
+        0.34 * s_word +
+        0.24 * s_lex +
+        0.16 * s_time +
+        0.10 * s_fb +
+        0.16 * safe_alignment
+    )
+    return round(score, 4)
 
+
+def calculate_behavior_risk_score(
+    *,
+    attention_suspicious: bool,
+    too_fast: bool,
+    tab_switch_count: int = 0,
+    page_close_attempts: int = 0,
+    network_disconnects: int = 0,
+    copied_pattern: bool = False,
+    behavior_metrics: Optional[dict[str, Any]] = None,
+) -> float:
+    metrics = behavior_metrics or {}
     tsc = max(0, int(tab_switch_count or 0))
     pca = max(0, int(page_close_attempts or 0))
     nd = max(0, int(network_disconnects or 0))
-    engagement_penalty = min(0.25, (tsc * 0.01) + (pca * 0.03) + (nd * 0.02))
-    s_engagement = 1.0 - engagement_penalty
+    edit_count = max(0, int(metrics.get("edit_count", 0) or 0))
+    backspace_count = max(0, int(metrics.get("backspace_count", 0) or 0))
+    pause_count = max(0, int(metrics.get("pause_count", 0) or 0))
+    time_before_typing = max(0.0, float(metrics.get("time_before_typing_seconds", 0.0) or 0.0))
 
-    score = (
-        0.32 * s_word +
-        0.18 * s_lex +
-        0.20 * s_att +
-        0.15 * s_time +
-        0.10 * s_fb +
-        0.05 * s_engagement
-    )
-    if bot:
-        score *= 0.3
-    return round(score, 4)
+    risk = 0.0
+    if attention_suspicious:
+        risk += 0.28
+    if copied_pattern:
+        risk += 0.35
+    if too_fast:
+        risk += 0.20
+
+    risk += min(0.25, (tsc * 0.01) + (pca * 0.04) + (nd * 0.03))
+
+    if edit_count == 0 and backspace_count == 0 and pause_count == 0 and time_before_typing == 0:
+        risk += 0.05
+    elif edit_count > 0 or backspace_count > 0 or pause_count > 0:
+        risk -= 0.03
+
+    return round(max(0.0, min(1.0, risk)), 4)
 
 
 # ────────────────────────────────────────────────

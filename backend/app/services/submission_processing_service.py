@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from app.constants.response_keys import (
     RESPONSE_KEY_ATTENTION_PASSED,
     RESPONSE_KEY_ATTENTION_STATUS,
+    RESPONSE_KEY_BEHAVIOR_RISK_SCORE,
     RESPONSE_KEY_ENGAGEMENT,
     RESPONSE_KEY_FLAGGED_TOO_FAST,
     RESPONSE_KEY_IS_ATTENTION_CHECK,
@@ -16,29 +17,43 @@ from app.constants.response_keys import (
     RESPONSE_KEY_STATUS,
     RESPONSE_KEY_SURVEY_INDEX,
     RESPONSE_KEY_WORD_COUNT,
+    RESPONSE_KEY_WRITING_QUALITY_SCORE,
 )
 from app.constants.submission_constants import (
     ATTENTION_FAILURE_COPIED_PATTERN,
+    ATTENTION_FAILURE_LOW_DESCRIPTIVE_RICHNESS,
     ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL,
     ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT,
+    ATTENTION_FAILURE_LOW_RECALL,
     ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD,
+    ATTENTION_FAILURE_REPETITIVE_TEMPLATE,
     ATTENTION_FAILURE_TOO_FAST,
     ATTENTION_FAILURE_TOO_SHORT,
+    ATTENTION_TIER_FAIL,
+    ATTENTION_TIER_PASS,
+    ATTENTION_TIER_SUSPICIOUS,
+    ATTENTION_TIER_WEAK_PASS,
     PARTICIPANT_META_KEY_ATTENTION_MONITOR,
+    PARTICIPANT_META_KEY_RECENT_ASSESSMENTS,
     PARTICIPANT_META_KEY_CONSECUTIVE_FAILURES,
     PARTICIPANT_META_KEY_LAST_CHECKED_AT,
     PARTICIPANT_META_KEY_RECENT_ATTENTION_SCORE,
     PARTICIPANT_META_KEY_RECENT_RESULTS,
     SUBMISSION_META_KEY_ATTENTION,
+    SUBMISSION_META_KEY_ATTENTION_CONFIDENCE,
+    SUBMISSION_META_KEY_ATTENTION_TIER,
     SUBMISSION_META_KEY_CONTENT_FINGERPRINT,
     SUBMISSION_META_KEY_DISTINCT_WORD_COUNT,
     SUBMISSION_META_KEY_EXPECTED_TERM_COUNT,
     SUBMISSION_META_KEY_EXPECTED_TERM_RECALL,
     SUBMISSION_META_KEY_EXPECTED_TERMS,
     SUBMISSION_META_KEY_FAILURE_REASONS,
+    SUBMISSION_META_KEY_HARD_FAIL_REASONS,
     SUBMISSION_META_KEY_MATCHED_TERM_COUNT,
     SUBMISSION_META_KEY_MATCHED_TERMS,
+    SUBMISSION_META_KEY_SOFT_RISK_REASONS,
     SUBMISSION_META_KEY_STRICT,
+    SUBMISSION_META_KEY_SUPPORTING_SIGNALS,
     SUBMISSION_RESPONSE_STATUS,
 )
 
@@ -48,9 +63,12 @@ def evaluate_attention_result(
     db,
     is_attention: bool,
     attention_check_row,
+    ground_truth_objects,
     description: str,
+    count_attention_descriptive_tokens,
+    detect_repetitive_attention_template,
     normalize_for_attention,
-    extract_expected_terms,
+    build_attention_core_terms,
     match_attention_terms,
     has_copied_attention_pattern,
     image_id_fk: int,
@@ -65,8 +83,16 @@ def evaluate_attention_result(
     attention_expected_terms: list[str] = []
     attention_matched_terms: list[str] = []
     attention_failure_reasons: list[str] = []
+    hard_fail_reasons: list[str] = []
+    soft_risk_reasons: list[str] = []
     description_fingerprint = None
     strict = False
+    recall_weak = False
+    keyword_missing = False
+    copied_pattern_detected = False
+    descriptive_token_count = 0
+    repetitive_template_detected = False
+    repetition_metrics: dict[str, float] = {}
 
     if not is_attention:
         return {
@@ -74,15 +100,25 @@ def evaluate_attention_result(
             "attention_expected_terms": attention_expected_terms,
             "attention_matched_terms": attention_matched_terms,
             "attention_failure_reasons": attention_failure_reasons,
+            "hard_fail_reasons": hard_fail_reasons,
+            "soft_risk_reasons": soft_risk_reasons,
             "description_fingerprint": description_fingerprint,
             "strict": strict,
+            "attention_recall_weak": recall_weak,
+            "attention_keyword_missing": keyword_missing,
+            "copied_pattern_detected": copied_pattern_detected,
+            "descriptive_token_count": descriptive_token_count,
+            "repetitive_template_detected": repetitive_template_detected,
             "submission_meta": {},
         }
 
     expected = attention_check_row[0].strip().lower()
     strict = bool(attention_check_row[1])
     description_fingerprint = hashlib.sha256(normalize_for_attention(description).encode("utf-8")).hexdigest()
-    attention_expected_terms = extract_expected_terms(expected) or [normalize_for_attention(expected)]
+    attention_expected_terms = (
+        build_attention_core_terms(expected, ground_truth_objects)
+        or [normalize_for_attention(expected)]
+    )
     attention_matched_terms = match_attention_terms(description, attention_expected_terms, strict)
     matched_term_count = len(attention_matched_terms)
     expected_term_count = len(attention_expected_terms)
@@ -90,37 +126,48 @@ def evaluate_attention_result(
         round(matched_term_count / expected_term_count, 4)
         if expected_term_count > 0 else 0.0
     )
-    attention_passed = matched_term_count > 0
-    if matched_term_count == 0:
-        attention_failure_reasons.append(ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD)
-    if expected_term_recall < float(attention_min_recall):
-        attention_passed = False
-        attention_failure_reasons.append(ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL)
+    attention_passed = True
+    keyword_missing = matched_term_count == 0
+    recall_weak = expected_term_recall < float(attention_min_recall)
+    descriptive_token_count = count_attention_descriptive_tokens(description, attention_matched_terms)
+    repetitive_template_detected, repetition_metrics = detect_repetitive_attention_template(
+        description,
+        attention_matched_terms,
+    )
     if len(description.strip()) < attention_min_char_length:
-        attention_passed = False
-        attention_failure_reasons.append(ATTENTION_FAILURE_TOO_SHORT)
+        hard_fail_reasons.append(ATTENTION_FAILURE_TOO_SHORT)
     if distinct_word_count < attention_min_distinct_words:
-        attention_passed = False
-        attention_failure_reasons.append(ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT)
-    if has_copied_attention_pattern(
+        soft_risk_reasons.append(ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT)
+    if descriptive_token_count < 5:
+        soft_risk_reasons.append(ATTENTION_FAILURE_LOW_DESCRIPTIVE_RICHNESS)
+    if repetitive_template_detected:
+        hard_fail_reasons.append(ATTENTION_FAILURE_REPETITIVE_TEMPLATE)
+    copied_pattern_detected = has_copied_attention_pattern(
         db,
         image_id_fk=image_id_fk,
         description_fingerprint=description_fingerprint,
         participant_id=participant_id,
-    ):
-        attention_passed = False
-        attention_failure_reasons.append(ATTENTION_FAILURE_COPIED_PATTERN)
+    )
+    if copied_pattern_detected:
+        hard_fail_reasons.append(ATTENTION_FAILURE_COPIED_PATTERN)
     if too_fast:
-        attention_passed = False
-        attention_failure_reasons.append(ATTENTION_FAILURE_TOO_FAST)
+        soft_risk_reasons.append(ATTENTION_FAILURE_TOO_FAST)
+    attention_failure_reasons = hard_fail_reasons + soft_risk_reasons
 
     return {
         "attention_passed": attention_passed,
         "attention_expected_terms": attention_expected_terms,
         "attention_matched_terms": attention_matched_terms,
         "attention_failure_reasons": attention_failure_reasons,
+        "hard_fail_reasons": hard_fail_reasons,
+        "soft_risk_reasons": soft_risk_reasons,
         "description_fingerprint": description_fingerprint,
         "strict": strict,
+        "attention_recall_weak": recall_weak,
+        "attention_keyword_missing": keyword_missing,
+        "copied_pattern_detected": copied_pattern_detected,
+        "descriptive_token_count": descriptive_token_count,
+        "repetitive_template_detected": repetitive_template_detected,
         "submission_meta": {
             SUBMISSION_META_KEY_ATTENTION: {
                 SUBMISSION_META_KEY_STRICT: strict,
@@ -130,10 +177,105 @@ def evaluate_attention_result(
                 SUBMISSION_META_KEY_EXPECTED_TERM_COUNT: expected_term_count,
                 SUBMISSION_META_KEY_MATCHED_TERM_COUNT: matched_term_count,
                 SUBMISSION_META_KEY_FAILURE_REASONS: attention_failure_reasons,
+                SUBMISSION_META_KEY_HARD_FAIL_REASONS: hard_fail_reasons,
+                SUBMISSION_META_KEY_SOFT_RISK_REASONS: soft_risk_reasons,
                 SUBMISSION_META_KEY_DISTINCT_WORD_COUNT: distinct_word_count,
+                "descriptive_token_count": descriptive_token_count,
+                "repetition_metrics": repetition_metrics,
                 SUBMISSION_META_KEY_CONTENT_FINGERPRINT: description_fingerprint,
             }
         },
+    }
+
+
+def finalize_attention_assessment(
+    *,
+    is_attention: bool,
+    attention_expected_terms: list[str],
+    attention_matched_terms: list[str],
+    hard_fail_reasons: list[str],
+    soft_risk_reasons: list[str],
+    attention_recall_weak: bool,
+    attention_keyword_missing: bool,
+    copied_pattern_detected: bool,
+    repetitive_template_detected: bool,
+    descriptive_token_count: int,
+    distinct_word_count: int,
+    alignment_recall: float,
+    alignment_score: float | None,
+    expected_term_recall: float,
+):
+    if not is_attention:
+        return {
+            "attention_passed": None,
+            "attention_tier": None,
+            "attention_confidence": None,
+            "attention_suspicious": False,
+            "hard_fail_reasons": [],
+            "soft_risk_reasons": [],
+            "failure_reasons": [],
+            "supporting_signals": {},
+        }
+
+    hard = list(dict.fromkeys(hard_fail_reasons))
+    soft = list(dict.fromkeys(soft_risk_reasons))
+
+    if attention_keyword_missing and ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD not in soft:
+        soft.append(ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD)
+    alignment_weak = alignment_recall < 0.4
+    if attention_recall_weak and ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL not in soft:
+        soft.append(ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL)
+    if alignment_weak and ATTENTION_FAILURE_LOW_RECALL not in soft:
+        soft.append(ATTENTION_FAILURE_LOW_RECALL)
+
+    descriptive_score = min(1.0, descriptive_token_count / 12.0)
+    alignment_component = max(0.0, min(1.0, float(alignment_score or 0.0)))
+    confidence = (
+        0.38 * max(0.0, min(1.0, expected_term_recall))
+        + 0.34 * max(0.0, min(1.0, alignment_recall))
+        + 0.18 * descriptive_score
+        + 0.10 * min(1.0, distinct_word_count / 16.0)
+    )
+    if copied_pattern_detected:
+        confidence -= 0.30
+    if repetitive_template_detected:
+        confidence -= 0.22
+    confidence -= min(0.18, max(0, len(soft) - 1) * 0.07)
+    confidence = round(max(0.0, min(1.0, confidence)), 4)
+
+    if hard or (attention_recall_weak and alignment_weak):
+        tier = ATTENTION_TIER_FAIL
+    elif confidence >= 0.78 and len(soft) == 0:
+        tier = ATTENTION_TIER_PASS
+    elif confidence >= 0.58 and len(soft) <= 1:
+        tier = ATTENTION_TIER_WEAK_PASS
+    elif confidence >= 0.40:
+        tier = ATTENTION_TIER_SUSPICIOUS
+    else:
+        tier = ATTENTION_TIER_FAIL
+
+    if tier == ATTENTION_TIER_FAIL and not (attention_recall_weak and alignment_weak) and not hard and len(soft) <= 1 and confidence >= 0.35:
+        tier = ATTENTION_TIER_SUSPICIOUS
+
+    failure_reasons = hard + soft
+    supporting_signals = {
+        "expected_term_recall": round(expected_term_recall, 4),
+        "alignment_recall": round(alignment_recall, 4),
+        "alignment_score": round(alignment_component, 4),
+        "descriptive_token_count": int(descriptive_token_count),
+        "distinct_word_count": int(distinct_word_count),
+        "matched_term_count": len(attention_matched_terms),
+        "expected_term_count": len(attention_expected_terms),
+    }
+    return {
+        "attention_passed": tier in {ATTENTION_TIER_PASS, ATTENTION_TIER_WEAK_PASS},
+        "attention_tier": tier,
+        "attention_confidence": confidence,
+        "attention_suspicious": tier in {ATTENTION_TIER_SUSPICIOUS, ATTENTION_TIER_FAIL},
+        "hard_fail_reasons": hard,
+        "soft_risk_reasons": soft,
+        "failure_reasons": failure_reasons,
+        "supporting_signals": supporting_signals,
     }
 
 
@@ -168,6 +310,10 @@ def apply_attention_monitor(
     *,
     participant_meta: dict,
     attention_passed,
+    attention_tier,
+    attention_confidence,
+    hard_fail_reasons,
+    soft_risk_reasons,
     is_attention: bool,
     hard_flag_consecutive_fails: int,
     attention_flag_min_checks: int,
@@ -185,25 +331,70 @@ def apply_attention_monitor(
     consecutive_failures = 0
     monitor = participant_meta.get(PARTICIPANT_META_KEY_ATTENTION_MONITOR, {})
     recent_results = monitor.get(PARTICIPANT_META_KEY_RECENT_RESULTS, [])
+    recent_assessments = monitor.get(PARTICIPANT_META_KEY_RECENT_ASSESSMENTS, [])
     if not isinstance(recent_results, list):
         recent_results = []
+    if not isinstance(recent_assessments, list):
+        recent_assessments = []
     recent_results = [bool(item) for item in recent_results[-9:]]
     recent_results.append(bool(attention_passed))
+    recent_assessments = recent_assessments[-9:]
+    recent_assessments.append({
+        "passed": bool(attention_passed),
+        "tier": attention_tier,
+        "confidence": round(float(attention_confidence or 0.0), 4),
+        "hard_fail": bool(hard_fail_reasons),
+        "soft_risk_count": len(soft_risk_reasons or []),
+        "copied_pattern": ATTENTION_FAILURE_COPIED_PATTERN in (hard_fail_reasons or []),
+        "low_descriptive": ATTENTION_FAILURE_LOW_DESCRIPTIVE_RICHNESS in (soft_risk_reasons or []),
+    })
 
     for result in reversed(recent_results):
         if result:
             break
         consecutive_failures += 1
 
-    recent_attention_score = round(sum(1 for item in recent_results if item) / len(recent_results), 4)
-    hard_flag_triggered = consecutive_failures >= hard_flag_consecutive_fails
+    tier_weights = {
+        ATTENTION_TIER_PASS: 1.0,
+        ATTENTION_TIER_WEAK_PASS: 0.78,
+        ATTENTION_TIER_SUSPICIOUS: 0.32,
+        ATTENTION_TIER_FAIL: 0.0,
+    }
+    weighted_total = 0.0
+    weight_sum = 0.0
+    suspicious_recent = 0
+    copied_recent = 0
+    low_descriptive_recent = 0
+    for index, item in enumerate(recent_assessments, start=1):
+        weight = float(index)
+        weight_sum += weight
+        confidence = max(0.0, min(1.0, float(item.get("confidence") or 0.0)))
+        base_score = tier_weights.get(str(item.get("tier") or ""), 0.0)
+        weighted_total += weight * ((0.75 * base_score) + (0.25 * confidence))
+        if item.get("tier") in {ATTENTION_TIER_SUSPICIOUS, ATTENTION_TIER_FAIL}:
+            suspicious_recent += 1
+        if item.get("copied_pattern"):
+            copied_recent += 1
+        if item.get("low_descriptive"):
+            low_descriptive_recent += 1
+    recent_attention_score = round(weighted_total / weight_sum, 4) if weight_sum else None
+    hard_flag_triggered = (
+        consecutive_failures >= hard_flag_consecutive_fails
+        or suspicious_recent >= 3
+        or copied_recent >= 2
+    )
     soft_flag_triggered = (
-        len(recent_results) >= attention_flag_min_checks
-        and recent_attention_score < float(attention_flag_threshold)
+        len(recent_assessments) >= attention_flag_min_checks
+        and (
+            (recent_attention_score is not None and recent_attention_score < float(attention_flag_threshold))
+            or suspicious_recent >= 2
+            or low_descriptive_recent >= 2
+        )
     )
 
     updated_meta = dict(participant_meta)
     updated_meta[PARTICIPANT_META_KEY_ATTENTION_MONITOR] = {
+        PARTICIPANT_META_KEY_RECENT_ASSESSMENTS: recent_assessments,
         PARTICIPANT_META_KEY_RECENT_RESULTS: recent_results,
         PARTICIPANT_META_KEY_CONSECUTIVE_FAILURES: consecutive_failures,
         PARTICIPANT_META_KEY_RECENT_ATTENTION_SCORE: recent_attention_score,
@@ -222,6 +413,8 @@ def build_submission_response_payload(
     *,
     word_count: int,
     quality: float,
+    writing_quality_score: float | None,
+    behavior_risk_score: float | None,
     attention_passed,
     too_fast: bool,
     survey_index,
@@ -234,6 +427,11 @@ def build_submission_response_payload(
     attention_expected_terms: list,
     attention_matched_terms: list,
     attention_failure_reasons: list,
+    attention_tier,
+    attention_confidence,
+    hard_fail_reasons: list,
+    soft_risk_reasons: list,
+    supporting_signals: dict,
     consecutive_failures: int,
     recent_attention_score,
     hard_flag_triggered: bool,
@@ -249,6 +447,8 @@ def build_submission_response_payload(
         RESPONSE_KEY_STATUS: SUBMISSION_RESPONSE_STATUS,
         RESPONSE_KEY_WORD_COUNT: word_count,
         RESPONSE_KEY_QUALITY_SCORE: quality,
+        RESPONSE_KEY_WRITING_QUALITY_SCORE: writing_quality_score,
+        RESPONSE_KEY_BEHAVIOR_RISK_SCORE: behavior_risk_score,
         RESPONSE_KEY_ATTENTION_PASSED: attention_passed,
         RESPONSE_KEY_FLAGGED_TOO_FAST: too_fast,
         RESPONSE_KEY_SURVEY_INDEX: survey_index,
@@ -263,9 +463,14 @@ def build_submission_response_payload(
         RESPONSE_KEY_ATTENTION_STATUS: {
             RESPONSE_KEY_IS_ATTENTION_CHECK: is_attention,
             "passed": attention_passed if is_attention else None,
+            "tier": attention_tier if is_attention else None,
+            "confidence": attention_confidence if is_attention else None,
             "expected_terms": attention_expected_terms,
             "matched_terms": attention_matched_terms,
             "failure_reasons": attention_failure_reasons,
+            "hard_fail_reasons": hard_fail_reasons if is_attention else [],
+            "soft_risk_reasons": soft_risk_reasons if is_attention else [],
+            "supporting_signals": supporting_signals if is_attention else {},
             "consecutive_failures": consecutive_failures if is_attention else None,
             "recent_attention_score": recent_attention_score,
             "hard_flag_triggered": hard_flag_triggered,
