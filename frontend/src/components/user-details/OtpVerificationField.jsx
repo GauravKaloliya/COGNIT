@@ -63,11 +63,23 @@ export default function OtpVerificationField({
               onKeyDown={(e) => {
                 if (e.key === "Backspace") {
                   e.preventDefault();
+                  const effectiveIndex = index === editableOtpIndex ? index : editableOtpIndex;
+                  const currentDigit = otpDigits[effectiveIndex];
+
                   if (index !== editableOtpIndex) {
-                    inputRefs.current[editableOtpIndex]?.focus();
+                    inputRefs.current[effectiveIndex]?.focus();
+                  }
+
+                  if (currentDigit) {
+                    setOtpDigit(effectiveIndex, "");
                     return;
                   }
-                  setOtpDigit(index, "");
+
+                  const previousIndex = Math.max(0, effectiveIndex - 1);
+                  if (previousIndex !== effectiveIndex) {
+                    setOtpDigit(previousIndex, "");
+                    window.setTimeout(() => inputRefs.current[previousIndex]?.focus(), focusAdvanceDelayMs);
+                  }
                   return;
                 }
                 if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
