@@ -608,16 +608,28 @@ def process_submission_workflow(
         session_closed=bool(next_stage == "post-survey"),
         clear_client_state=bool(next_stage == "post-survey"),
     )
-    save_idempotent_response_fn(
-        db,
-        endpoint=route_path,
-        idempotency_key=idempotency_key,
-        participant_public_id=public_id,
-        request_hash=request_hash,
-        response_body=response_payload,
-        status_code=200,
-    )
-    db.commit()
+    try:
+        save_idempotent_response_fn(
+            db,
+            endpoint=route_path,
+            idempotency_key=idempotency_key,
+            participant_public_id=public_id,
+            request_hash=request_hash,
+            response_body=response_payload,
+            status_code=200,
+        )
+        db.commit()
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.warning(
+            "submit idempotency persistence failed request_id=%s public_id=%s error=%s",
+            request_id,
+            public_id,
+            exc,
+        )
     return response_payload, 200
 
 

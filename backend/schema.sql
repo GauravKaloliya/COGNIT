@@ -614,6 +614,30 @@ ALTER TABLE submissions
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_time_spent_seconds REAL NOT NULL DEFAULT 0
+    CHECK (survey_time_spent_seconds >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_page_views INTEGER NOT NULL DEFAULT 0
+    CHECK (survey_page_views >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_tab_switches INTEGER NOT NULL DEFAULT 0
+    CHECK (survey_tab_switches >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_page_close_attempts INTEGER NOT NULL DEFAULT 0
+    CHECK (survey_page_close_attempts >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_network_disconnects INTEGER NOT NULL DEFAULT 0
+    CHECK (survey_network_disconnects >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_max_scroll_depth_pct INTEGER NOT NULL DEFAULT 0
+    CHECK (survey_max_scroll_depth_pct BETWEEN 0 AND 100);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_clicks INTEGER NOT NULL DEFAULT 0
+    CHECK (survey_clicks >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS survey_keypresses INTEGER NOT NULL DEFAULT 0
+    CHECK (survey_keypresses >= 0);
+ALTER TABLE submissions
     DROP COLUMN IF EXISTS rating;
 
 DO $$
@@ -754,6 +778,14 @@ BEGIN
 END $$;
 ALTER TABLE submission_cognitive_metrics
     ADD COLUMN IF NOT EXISTS confidence_rating SMALLINT CHECK (confidence_rating BETWEEN 1 AND 5);
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS difficulty_self_report SMALLINT CHECK (difficulty_self_report BETWEEN 1 AND 5);
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS first_view_duration_seconds REAL NOT NULL DEFAULT 0
+    CHECK (first_view_duration_seconds >= 0);
+ALTER TABLE submission_cognitive_metrics
+    ADD COLUMN IF NOT EXISTS writing_duration_seconds REAL NOT NULL DEFAULT 0
+    CHECK (writing_duration_seconds >= 0);
 ALTER TABLE submission_cognitive_metrics
     ADD COLUMN IF NOT EXISTS object_mention_count SMALLINT NOT NULL DEFAULT 0 CHECK (object_mention_count >= 0);
 ALTER TABLE submission_cognitive_metrics
