@@ -59,7 +59,7 @@ export function useSurveyPage({
   const isOnline = useOnlineStatus();
   const [description, setDescription] = useState("");
   const [difficultyRating, setDifficultyRating] = useState(0);
-  const [confidenceScore, setConfidenceScore] = useState(0);
+  const [confidenceRating, setConfidenceRating] = useState(0);
   const [comments, setComments] = useState("");
   const [isZoomed, setIsZoomed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -85,7 +85,7 @@ export function useSurveyPage({
   const descriptionValueRef = useRef("");
   const commentsValueRef = useRef("");
   const difficultyRatingRef = useRef(0);
-  const confidenceScoreRef = useRef(0);
+  const confidenceRatingRef = useRef(0);
   const typingDynamicsRef = useRef(EMPTY_TYPING_DYNAMICS);
 
   const {
@@ -118,20 +118,20 @@ export function useSurveyPage({
     && commentsCharCount >= MIN_FEEDBACK_LENGTH
     && commentsCharCount <= MAX_FEEDBACK_LENGTH
     && difficultyRating > 0
-    && confidenceScore > 0
+    && confidenceRating > 0
     && imageReady
     && !submitting;
   const inputsDisabled = formDisabled || submitting;
   const minimumMet = wordCount >= MIN_WORDS
     && commentsCharCount >= MIN_FEEDBACK_LENGTH
     && difficultyRating > 0
-    && confidenceScore > 0;
+    && confidenceRating > 0;
   const currentStep = Math.max(1, surveyCompleted + 1);
 
   const resetFormState = useCallback(() => {
     setDescription("");
     setDifficultyRating(0);
-    setConfidenceScore(0);
+    setConfidenceRating(0);
     setComments("");
     setImageLoaded(false);
     setImageError(false);
@@ -197,9 +197,10 @@ export function useSurveyPage({
         ? saved.difficultyRating
         : 0
     );
-    setConfidenceScore(
-      Number.isInteger(saved.confidenceScore) && saved.confidenceScore >= MIN_RATING && saved.confidenceScore <= MAX_RATING
-        ? saved.confidenceScore
+    const restoredConfidenceRating = saved.confidenceRating;
+    setConfidenceRating(
+      Number.isInteger(restoredConfidenceRating) && restoredConfidenceRating >= MIN_RATING && restoredConfidenceRating <= MAX_RATING
+        ? restoredConfidenceRating
         : 0
     );
     setComments(typeof saved.comments === "string" ? saved.comments : "");
@@ -245,7 +246,7 @@ export function useSurveyPage({
     imageId: surveyImageId,
     description,
     difficultyRating,
-    confidenceScore,
+    confidenceRating,
     comments,
     elapsed,
     startedAtSeconds: surveyStartTime.current / runtimeConfig.msPerSecond,
@@ -253,7 +254,7 @@ export function useSurveyPage({
     typingDynamics,
   }), [
     comments,
-    confidenceScore,
+    confidenceRating,
     description,
     difficultyRating,
     elapsed,
@@ -279,15 +280,15 @@ export function useSurveyPage({
     descriptionValueRef.current = description;
     commentsValueRef.current = comments;
     difficultyRatingRef.current = difficultyRating;
-    confidenceScoreRef.current = confidenceScore;
+    confidenceRatingRef.current = confidenceRating;
     typingDynamicsRef.current = typingDynamics;
-  }, [comments, confidenceScore, description, difficultyRating, typingDynamics]);
+  }, [comments, confidenceRating, description, difficultyRating, typingDynamics]);
 
   const buildCurrentDraftState = useCallback(() => ({
     imageId: surveyImageId,
     description: descriptionValueRef.current,
     difficultyRating: difficultyRatingRef.current,
-    confidenceScore: confidenceScoreRef.current,
+    confidenceRating: confidenceRatingRef.current,
     comments: commentsValueRef.current,
     elapsed: elapsedRef.current,
     startedAtSeconds: surveyStartTime.current / runtimeConfig.msPerSecond,
@@ -305,7 +306,7 @@ export function useSurveyPage({
     minDescriptionLength: MIN_DESCRIPTION_LENGTH,
     maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
     difficultyRating,
-    confidenceScore,
+    confidenceRating,
     comments,
     minFeedbackLength: MIN_FEEDBACK_LENGTH,
     maxFeedbackLength: MAX_FEEDBACK_LENGTH,
@@ -314,7 +315,7 @@ export function useSurveyPage({
   }), [
     charCount,
     comments,
-    confidenceScore,
+    confidenceRating,
     difficultyRating,
     imageReady,
     submitLocked,
@@ -412,11 +413,10 @@ export function useSurveyPage({
       : 0;
     const payload = {
       description,
-      rating: difficultyRating,
       comments,
       timeSpentSeconds: Math.max(0, submitAtSeconds - surveyStartSeconds),
       engagementData,
-      confidenceScore,
+      confidenceRating,
       difficultySelfReport: difficultyRating,
       timeBeforeTypingSeconds,
       editCount: effectiveEditCount,
@@ -436,7 +436,7 @@ export function useSurveyPage({
       setTypingDynamics(EMPTY_TYPING_DYNAMICS);
       setDescription("");
       setDifficultyRating(0);
-      setConfidenceScore(0);
+      setConfidenceRating(0);
       setComments("");
       startTransition(() => {
         setOptimisticMessage("");
@@ -478,7 +478,7 @@ export function useSurveyPage({
     clearDrafts,
     comments,
     commentsCharCount,
-    confidenceScore,
+    confidenceRating,
     description,
     difficultyRating,
     engagementData,
@@ -531,7 +531,7 @@ export function useSurveyPage({
     description,
     comments,
     difficultyRating,
-    confidenceScore,
+    confidenceRating,
     prefetchTriggeredRef,
     turnstilePrefetchTriggeredRef,
     lastSubmitErrorWasValidationRef,
@@ -570,7 +570,7 @@ export function useSurveyPage({
     formState: {
       description,
       difficultyRating,
-      confidenceScore,
+      confidenceRating,
       comments,
       wordCount,
       charCount,
@@ -608,7 +608,7 @@ export function useSurveyPage({
     handlers: {
       setDescription: updateDescription,
       setDifficultyRating,
-      setConfidenceScore,
+      setConfidenceRating,
       setComments: updateComments,
       setIsZoomed,
       handleRetryImage,

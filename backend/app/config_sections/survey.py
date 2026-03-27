@@ -12,7 +12,7 @@ MAX_FEEDBACK_LENGTH = int_env("MAX_FEEDBACK_LENGTH", 2000, min_value=1)
 MIN_RATING = int_env("MIN_RATING", 1, min_value=1)
 MAX_RATING = int_env("MAX_RATING", 5, min_value=1)
 TOO_FAST_SECONDS = float_env("TOO_FAST_SECONDS", 5.0, min_value=0.0)
-STAGE_STALE_TIMEOUT_SECONDS = int_env("STAGE_STALE_TIMEOUT_SECONDS", 2 * 60 * 60, min_value=60, max_value=7 * 24 * 60 * 60)
+STAGE_STALE_TIMEOUT_SECONDS = int_env("STAGE_STALE_TIMEOUT_SECONDS", 60 * 60, min_value=60, max_value=7 * 24 * 60 * 60)
 
 ATTENTION_FLAG_THRESHOLD = 0.5
 ATTENTION_FLAG_MIN_CHECKS = 2

@@ -27,7 +27,7 @@ export const SURVEY_API_FIELDS = {
   surveyMaxScrollDepthPct: "survey_max_scroll_depth_pct",
   surveyClicks: "survey_clicks",
   surveyKeypresses: "survey_keypresses",
-  confidenceScore: "confidence_score",
+  confidenceRating: "confidence_rating",
   difficultySelfReport: "difficulty_self_report",
   timeBeforeTypingSeconds: "time_before_typing_seconds",
   editCount: "edit_count",
