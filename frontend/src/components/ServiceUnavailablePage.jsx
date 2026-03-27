@@ -5,6 +5,7 @@ import { runtimeConfig } from '../config/runtime';
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
 import ThemeToggleIcon from './ThemeToggleIcon.jsx';
+import TypewriterSubtitle from './TypewriterSubtitle.jsx';
 import DSButton from './design/DSButton.jsx';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 
@@ -27,7 +28,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
         <header className="header">
           <div className="brand">
             <h1>{uiText("app.brand")}</h1>
-            {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
+            {!isMobile && <TypewriterSubtitle text={uiText("app.subtitle")} />}
           </div>
           <div className="header-actions">
             <DSButton
@@ -66,7 +67,7 @@ export default function ServiceUnavailablePage({ error, darkMode = false, onTogg
       <header className="header">
         <div className="brand">
           <h1>{uiText("app.brand")}</h1>
-          {!isMobile && <p className="subtitle">{uiText("app.subtitle")}</p>}
+          {!isMobile && <TypewriterSubtitle text={uiText("app.subtitle")} />}
         </div>
         <div className="header-actions">
           <DSButton
