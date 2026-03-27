@@ -19,6 +19,7 @@ from app.constants.response_keys import (
 )
 from app.constants.submission_constants import (
     ATTENTION_FAILURE_COPIED_PATTERN,
+    ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL,
     ATTENTION_FAILURE_LOW_DISTINCT_WORD_COUNT,
     ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD,
     ATTENTION_FAILURE_TOO_FAST,
@@ -31,8 +32,11 @@ from app.constants.submission_constants import (
     SUBMISSION_META_KEY_ATTENTION,
     SUBMISSION_META_KEY_CONTENT_FINGERPRINT,
     SUBMISSION_META_KEY_DISTINCT_WORD_COUNT,
+    SUBMISSION_META_KEY_EXPECTED_TERM_COUNT,
+    SUBMISSION_META_KEY_EXPECTED_TERM_RECALL,
     SUBMISSION_META_KEY_EXPECTED_TERMS,
     SUBMISSION_META_KEY_FAILURE_REASONS,
+    SUBMISSION_META_KEY_MATCHED_TERM_COUNT,
     SUBMISSION_META_KEY_MATCHED_TERMS,
     SUBMISSION_META_KEY_STRICT,
     SUBMISSION_RESPONSE_STATUS,
@@ -54,6 +58,7 @@ def evaluate_attention_result(
     distinct_word_count: int,
     attention_min_char_length: int,
     attention_min_distinct_words: int,
+    attention_min_recall: float,
     too_fast: bool,
 ):
     attention_passed = None
@@ -79,9 +84,18 @@ def evaluate_attention_result(
     description_fingerprint = hashlib.sha256(normalize_for_attention(description).encode("utf-8")).hexdigest()
     attention_expected_terms = extract_expected_terms(expected) or [normalize_for_attention(expected)]
     attention_matched_terms = match_attention_terms(description, attention_expected_terms, strict)
-    attention_passed = len(attention_matched_terms) > 0
-    if not attention_passed:
+    matched_term_count = len(attention_matched_terms)
+    expected_term_count = len(attention_expected_terms)
+    expected_term_recall = (
+        round(matched_term_count / expected_term_count, 4)
+        if expected_term_count > 0 else 0.0
+    )
+    attention_passed = matched_term_count > 0
+    if matched_term_count == 0:
         attention_failure_reasons.append(ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD)
+    if expected_term_recall < float(attention_min_recall):
+        attention_passed = False
+        attention_failure_reasons.append(ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL)
     if len(description.strip()) < attention_min_char_length:
         attention_passed = False
         attention_failure_reasons.append(ATTENTION_FAILURE_TOO_SHORT)
@@ -112,6 +126,9 @@ def evaluate_attention_result(
                 SUBMISSION_META_KEY_STRICT: strict,
                 SUBMISSION_META_KEY_EXPECTED_TERMS: attention_expected_terms,
                 SUBMISSION_META_KEY_MATCHED_TERMS: attention_matched_terms,
+                SUBMISSION_META_KEY_EXPECTED_TERM_RECALL: expected_term_recall,
+                SUBMISSION_META_KEY_EXPECTED_TERM_COUNT: expected_term_count,
+                SUBMISSION_META_KEY_MATCHED_TERM_COUNT: matched_term_count,
                 SUBMISSION_META_KEY_FAILURE_REASONS: attention_failure_reasons,
                 SUBMISSION_META_KEY_DISTINCT_WORD_COUNT: distinct_word_count,
                 SUBMISSION_META_KEY_CONTENT_FINGERPRINT: description_fingerprint,
