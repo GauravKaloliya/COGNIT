@@ -17,7 +17,6 @@ from app.services.participant_service import (
     get_existing_session_id_for_public_id,
     insert_participant,
     is_valid_prior_experience_code,
-    set_participant_cookies,
 )
 from app.utils.error_mapping import map_participant_create_exception
 from app.utils.helpers import create_error_response, log_audit, success_response
@@ -37,7 +36,6 @@ def create_participant_workflow(
     db,
     payload: dict,
     public_id: str,
-    session_id: str,
     ip_hash: str,
     user_agent: str,
 ):
@@ -56,7 +54,7 @@ def create_participant_workflow(
         participant_id = insert_participant(
             db,
             public_id=public_id,
-            session_id=session_id,
+            session_id=None,
             payload=payload,
             ip_hash=ip_hash,
             user_agent=user_agent,
@@ -71,9 +69,8 @@ def create_participant_workflow(
         response = success_response({
             RESPONSE_KEY_STATUS: PARTICIPANT_STATUS_CREATED,
             RESPONSE_KEY_PUBLIC_ID: public_id,
-            RESPONSE_KEY_SESSION_ID: session_id,
+            RESPONSE_KEY_SESSION_ID: None,
         })
-        response = set_participant_cookies(response, public_id, session_id)
         return ParticipantWorkflowResult(response, 201)
     except IntegrityError as exc:
         try:
@@ -84,7 +81,6 @@ def create_participant_workflow(
             error=exc,
             public_id=public_id,
             get_existing_session_id=lambda value: get_existing_session_id_for_public_id(db, value),
-            set_cookies=set_participant_cookies,
         )
         return ParticipantWorkflowResult(response, response[1] if isinstance(response, tuple) else 400)
     except Exception as exc:
@@ -96,6 +92,5 @@ def create_participant_workflow(
             error=exc,
             public_id=public_id,
             get_existing_session_id=lambda value: get_existing_session_id_for_public_id(db, value),
-            set_cookies=set_participant_cookies,
         )
         return ParticipantWorkflowResult(response, response[1] if isinstance(response, tuple) else 500)

@@ -91,6 +91,15 @@ def count_words(text: str) -> int:
     return len([w for w in words if re.search(r"[^\W\d_]", w, re.UNICODE)])
 
 
+def normalize_submission_text(text: str) -> str:
+    """Normalize free-text submission fields without stripping normal punctuation."""
+    value = str(text or "")
+    value = re.sub(r"[\t\r\n]+", " ", value)
+    value = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", value)
+    value = re.sub(r"[^ \w.]", "", value, flags=re.UNICODE)
+    return value.strip()
+
+
 # ────────────────────────────────────────────────
 # Quality Scoring
 # ────────────────────────────────────────────────

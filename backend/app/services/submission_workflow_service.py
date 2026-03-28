@@ -35,7 +35,6 @@ from app.services.submission_processing_service import (
 )
 from app.services.submission_query_service import (
     end_participant_session,
-    ensure_participant_session,
     fetch_attention_check,
     fetch_next_survey_index,
     fetch_participant_attention_stats,
@@ -53,6 +52,7 @@ from app.services.submission_query_service import (
     update_participant_attention_flag,
     update_participant_metadata,
 )
+from app.services.participant_service import ensure_participant_session
 from app.services.participant_state_service import apply_participant_stage_event
 from app.services.submission_service import (
     alphabetic_tokens,
@@ -229,6 +229,11 @@ def process_submission_workflow(
         )
 
     effective_session_id = payload_session_id or stored_session_id
+    if not effective_session_id:
+        raise SubmissionWorkflowError(
+            "VAL_INVALID_STATE",
+            _build_closed_session_details(current_stage, effective_session_id),
+        )
     if effective_session_id:
         session_row = fetch_participant_session_by_key(
             db,

@@ -11,13 +11,15 @@ import { queuePendingSurveySubmit, useSurveyPageEffects } from "./useSurveyPageE
 import {
   buildSurveyImageState,
   countAlphaNumericChars,
-  countAlphaNumericWords,
+  countSurveyDescriptionChars,
+  countSurveyDescriptionWords,
   getSubmitTooltip,
+  sanitizeSurveyDescription,
 } from "../utils/surveyPageHelpers";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { REQUEST_CODES } from "../constants/request";
 
-export { sanitizeAlphaNumericSpace } from "../utils/surveyPageHelpers";
+export { sanitizeAlphaNumericSpace, sanitizeSurveyDescription } from "../utils/surveyPageHelpers";
 
 const MIN_WORDS = runtimeConfig.minWords;
 const MIN_DESCRIPTION_LENGTH = runtimeConfig.minDescriptionLength;
@@ -108,8 +110,8 @@ export function useSurveyPage({
   const surveyImageId = getSurveyImageId(survey);
   const { imageSrc, hasUsableSurveyImage } = useMemo(() => buildSurveyImageState(survey), [survey]);
 
-  const wordCount = useMemo(() => countAlphaNumericWords(description), [description]);
-  const charCount = useMemo(() => countAlphaNumericChars(description), [description]);
+  const wordCount = useMemo(() => countSurveyDescriptionWords(description), [description]);
+  const charCount = useMemo(() => countSurveyDescriptionChars(description), [description]);
   const commentsCharCount = useMemo(() => countAlphaNumericChars(comments), [comments]);
   const imageReady = imageLoaded && !imageError;
   const canSubmit = wordCount >= MIN_WORDS
@@ -158,11 +160,12 @@ export function useSurveyPage({
     }, delayMs);
   }, []);
 
-  const updateTypingMetrics = useCallback((previousValue, nextValue) => {
+  const updateTypingMetrics = useCallback((previousValue, nextValue, countChars) => {
     if (previousValue === nextValue) return;
     const now = Date.now() / runtimeConfig.msPerSecond;
-    const previousChars = countAlphaNumericChars(previousValue);
-    const nextChars = countAlphaNumericChars(nextValue);
+    const charCounter = typeof countChars === "function" ? countChars : countAlphaNumericChars;
+    const previousChars = charCounter(previousValue);
+    const nextChars = charCounter(nextValue);
     setTypingDynamics((metrics) => ({
       firstInputAtSeconds: metrics.firstInputAtSeconds ?? (nextChars > 0 ? now : null),
       lastInputAtSeconds: now,
@@ -178,14 +181,14 @@ export function useSurveyPage({
 
   const updateDescription = useCallback((value) => {
     setDescription((prev) => {
-      updateTypingMetrics(prev, value);
+      updateTypingMetrics(prev, value, countSurveyDescriptionChars);
       return value;
     });
   }, [updateTypingMetrics]);
 
   const updateComments = useCallback((value) => {
     setComments((prev) => {
-      updateTypingMetrics(prev, value);
+      updateTypingMetrics(prev, value, countAlphaNumericChars);
       return value;
     });
   }, [updateTypingMetrics]);

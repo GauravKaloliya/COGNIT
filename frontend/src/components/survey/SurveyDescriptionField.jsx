@@ -16,7 +16,7 @@ function SurveyDescriptionField({
   copyPasteDisabled,
   preventCopyPaste,
   preventClipboardShortcuts,
-  sanitizeAlphaNumericSpace,
+  sanitizeSurveyDescription,
   onBlur,
 }) {
   React.useLayoutEffect(() => {
@@ -38,8 +38,8 @@ function SurveyDescriptionField({
           ) ? "error-input" : ""}
           value={description}
           onChange={(e) => {
-            const value = sanitizeAlphaNumericSpace(e.target.value);
-            if (value.replace(/[^a-zA-Z0-9]+/g, "").length <= maxDescriptionLength) {
+            const value = sanitizeSurveyDescription(e.target.value);
+            if (value.trim().length <= maxDescriptionLength) {
               setDescription(value);
             }
           }}

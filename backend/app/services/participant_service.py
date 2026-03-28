@@ -31,6 +31,7 @@ from app.services.participant_query_service import (
     QUERY_GET_EXISTING_SESSION_ID,
     QUERY_INSERT_PARTICIPANT,
     QUERY_TOUCH_PARTICIPANT_SESSION,
+    QUERY_UPSERT_PARTICIPANT_SESSION,
 )
 from sqlalchemy import text
 
@@ -155,6 +156,22 @@ def fetch_participant_session_status(db, *, public_id: str, session_id: str):
         QUERY_FETCH_PARTICIPANT_SESSION_STATUS,
         {"pub": safe_public_id, "sid": safe_session_id[:128]},
     ).fetchone()
+
+
+def ensure_participant_session(db, *, participant_id: int, session_id: str | None):
+    safe_session_id = str(session_id or "").strip()
+    if not safe_session_id:
+        return None
+    row = db.execute(
+        QUERY_UPSERT_PARTICIPANT_SESSION,
+        {"pid": int(participant_id), "sid": safe_session_id[:128]},
+    ).fetchone()
+    if row is None:
+        return None
+    ended_at = row[1]
+    if ended_at is not None:
+        return None
+    return int(row[0])
 
 
 def touch_participant_session(db, *, public_id: str, session_id: str):

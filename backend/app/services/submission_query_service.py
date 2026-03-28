@@ -123,20 +123,6 @@ QUERY_INSERT_SUBMISSION = text("""
     ) RETURNING id
 """)
 
-QUERY_UPSERT_PARTICIPANT_SESSION = text("""
-    INSERT INTO participant_sessions (
-        participant_id, session_id, started_at, last_seen_at
-    ) VALUES (
-        :pid, :sid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-    )
-    ON CONFLICT (participant_id, session_id) DO UPDATE
-    SET
-        last_seen_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE participant_sessions.ended_at IS NULL
-    RETURNING id
-""")
-
 QUERY_INSERT_SUBMISSION_BEHAVIOR_METRICS = text("""
     INSERT INTO submission_behavior_metrics (
         submission_id,
@@ -353,21 +339,6 @@ def has_copied_attention_pattern(db, *, image_id_fk: int, description_fingerprin
         "fp": str(description_fingerprint),
         "pid": int(participant_id),
     }).scalar())
-
-
-def ensure_participant_session(db, *, participant_id: int, session_id: str | None):
-    safe_session_id = str(session_id or "").strip()
-    if not safe_session_id:
-        return None
-    value = db.execute(QUERY_UPSERT_PARTICIPANT_SESSION, {
-        "pid": int(participant_id),
-        "sid": safe_session_id[:128],
-    }).scalar()
-    if value is None:
-        existing = fetch_participant_session_by_key(db, participant_id=participant_id, session_id=safe_session_id)
-        if existing is not None and existing[1] is not None:
-            return None
-    return int(value) if value is not None else None
 
 
 def fetch_participant_attention_stats(db, *, participant_id: int):

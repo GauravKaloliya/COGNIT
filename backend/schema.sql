@@ -301,7 +301,7 @@ CREATE INDEX IF NOT EXISTS idx_prior_experiences_active_sort
 CREATE TABLE IF NOT EXISTS participants (
     id               BIGSERIAL PRIMARY KEY,
     public_id        UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
-    session_id       VARCHAR(128) NOT NULL,
+    session_id       VARCHAR(128),
     username         VARCHAR(50) NOT NULL,
     email            VARCHAR(255),
     gender_code      VARCHAR(32) REFERENCES genders(code),
@@ -341,6 +341,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_active_email    ON participan
 
 CREATE INDEX IF NOT EXISTS idx_participants_public_id     ON participants (public_id);
 CREATE INDEX IF NOT EXISTS idx_participants_session_id    ON participants (session_id);
+ALTER TABLE participants
+    ALTER COLUMN session_id DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_participants_email         ON participants (email) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_participants_public_not_deleted
     ON participants (public_id, is_deleted);
@@ -382,6 +384,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_sessions_id_participant
 CREATE INDEX IF NOT EXISTS idx_participant_sessions_active
     ON participant_sessions (participant_id, last_seen_at DESC)
     WHERE ended_at IS NULL;
+
+-- Legacy compatibility migrations for older live schemas.
+INSERT INTO participant_sessions (
+    participant_id,
+    session_id,
+    started_at,
+    last_seen_at
+)
+SELECT
+    p.id,
+    p.session_id,
+    COALESCE(p.consent_at, p.created_at, CURRENT_TIMESTAMP),
+    COALESCE(p.consent_at, p.updated_at, p.created_at, CURRENT_TIMESTAMP)
+FROM participants p
+WHERE p.is_deleted = false
+  AND p.consent_given = true
+  AND NULLIF(TRIM(p.session_id), '') IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM participant_sessions ps
+      WHERE ps.participant_id = p.id
+        AND ps.session_id = p.session_id
+  )
+ON CONFLICT (participant_id, session_id) DO NOTHING;
 
 -- Email OTPs (verification)
 CREATE TABLE IF NOT EXISTS email_otps (

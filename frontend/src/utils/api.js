@@ -338,6 +338,7 @@ export const endpoints = {
     staleMs: 30000,
     swr: true,
   }),
+  getParticipantSessionFresh: (options = {}) => api.get(API_ROUTES.participantSession, options),
   closeParticipantSession: (payload = {}, options = {}) =>
     api.post(API_ROUTES.participantSessionClose, payload, options),
   signalParticipantSessionClose: (payload = {}) =>

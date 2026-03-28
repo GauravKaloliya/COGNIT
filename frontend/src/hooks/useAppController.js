@@ -227,7 +227,6 @@ export function useAppController() {
       prior_experience: demographics.prior_experience,
     }).then((participant) => {
       const nextPublicId = String(participant?.public_id || "").trim();
-      const nextSessionId = String(participant?.session_id || "").trim();
       resetTelemetrySession(APP_FLOW.stages.userDetails);
       if (nextPublicId) {
         writeCoreValue(runtimeConfig.storageKeys.demographics, demographics, nextPublicId, {
@@ -237,14 +236,11 @@ export function useAppController() {
         writeCoreValue(runtimeConfig.storageKeys.consentGiven, consentGiven, nextPublicId);
         writeCoreValue(runtimeConfig.storageKeys.emailVerified, false, nextPublicId);
         writeCoreValue(runtimeConfig.storageKeys.stage, APP_FLOW.stages.userDetails, nextPublicId);
-        if (nextSessionId) {
-          writeCoreValue(runtimeConfig.storageKeys.sessionId, nextSessionId, nextPublicId);
-        }
       }
       dispatchWorkflow({
         type: WORKFLOW_EVENT_TYPES.PARTICIPANT_CREATED,
         publicId: nextPublicId,
-        sessionId: nextSessionId,
+        sessionId: "",
       });
       return participant;
     });
@@ -281,7 +277,13 @@ export function useAppController() {
         error.code = "NF_001_0001";
         throw error;
       }
-      return await endpoints.recordConsent(consentPublicId, { signal: controller.signal });
+      const result = await endpoints.recordConsent(consentPublicId, { signal: controller.signal });
+      const nextSessionId = String(result?.session_id || "").trim();
+      if (consentPublicId && nextSessionId) {
+        writeCoreValue(runtimeConfig.storageKeys.sessionId, nextSessionId, consentPublicId);
+        updateWorkflowState({ sessionId: nextSessionId });
+      }
+      return result;
     } catch (error) {
       if (error?.code === "REQ_ABORTED" || controller.signal.aborted) throw error;
       wrapControllerError(error, "SYS_002_0002");
@@ -290,7 +292,7 @@ export function useAppController() {
         submitAbortRef.current = null;
       }
     }
-  }, [publicId]);
+  }, [publicId, updateWorkflowState]);
 
   const handleConsentGiven = useCallback(async () => {
     dispatchWorkflow({ type: WORKFLOW_EVENT_TYPES.CONSENT_ACCEPTED });
@@ -345,7 +347,18 @@ export function useAppController() {
       const result = await submitSurvey(formData);
       const backendStage = normalizeAppStage(result?.workflow_status?.stage);
       if (result?.session_closed || result?.clear_client_state) {
-        clearUserStorage(publicId);
+        clearUserStorage(publicId, {
+          preserveDarkMode: true,
+          preserveKeys: [
+            runtimeConfig.storageKeys.publicId,
+            runtimeConfig.storageKeys.stage,
+            runtimeConfig.storageKeys.consentGiven,
+            runtimeConfig.storageKeys.userDetailsSubmitted,
+            runtimeConfig.storageKeys.emailVerified,
+            runtimeConfig.storageKeys.demographics,
+            runtimeConfig.storageKeys.sessionId,
+          ],
+        });
       }
 
       if (backendStage === APP_FLOW.stages.postSurvey) {

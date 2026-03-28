@@ -24,7 +24,6 @@ from .submission_service import (
 )
 from .submission_query_service import (
     end_participant_session,
-    ensure_participant_session,
     fetch_attention_check,
     fetch_participant_attention_stats,
     fetch_participant_session_by_key,
@@ -51,6 +50,7 @@ from .participant_service import (
     generate_public_id,
     generate_session_id,
     get_existing_session_id_for_public_id,
+    ensure_participant_session,
     insert_participant,
     is_participant_field_available,
     is_participant_session_stale,
@@ -124,7 +124,6 @@ __all__ = [
     "compute_alignment",
     "end_participant_session",
     "fetch_attention_check",
-    "ensure_participant_session",
     "fetch_participant_attention_stats",
     "fetch_participant_session_by_key",
     "fetch_next_survey_index",
@@ -148,6 +147,7 @@ __all__ = [
     "generate_public_id",
     "generate_session_id",
     "get_existing_session_id_for_public_id",
+    "ensure_participant_session",
     "insert_participant",
     "is_participant_field_available",
     "is_participant_session_stale",

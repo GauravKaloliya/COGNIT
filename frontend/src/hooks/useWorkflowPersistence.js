@@ -38,6 +38,7 @@ export function useWorkflowPersistence({
 }) {
   const migratedScopePairRef = useRef("");
   const migrationOwnerIdRef = useRef(`tab_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  const validationInFlightRef = useRef(null);
   const canPersist = Boolean(sessionHydrated && scopeId);
   const {
     publicId,
@@ -57,38 +58,86 @@ export function useWorkflowPersistence({
   } = surveyState;
 
   useEffect(() => {
-    if (publicId) {
-      setSessionHydrated(true);
-      return;
-    }
-
     let cancelled = false;
-    const hydrateFromCookies = async () => {
-      try {
-        const session = await endpoints.getParticipantSession();
-        if (cancelled) return;
-        if (session?.session_closed || session?.clear_client_state) {
-          onSessionClosed?.();
-          return;
-        }
-        if (session?.public_id || session?.session_id) {
-          updateWorkflowState({
-            ...(session?.public_id ? { publicId: session.public_id } : {}),
-            ...(session?.session_id ? { sessionId: session.session_id } : {}),
-          });
-        }
-      } catch {
-        // Storage-first boot should still continue even when cookies fail.
-      } finally {
-        if (!cancelled) setSessionHydrated(true);
+
+    const validateSession = async () => {
+      if (validationInFlightRef.current) {
+        return validationInFlightRef.current;
       }
+
+      const localPublicId = String(publicId || "").trim();
+      const localSessionId = String(sessionId || "").trim();
+      const requiresActiveSession = Boolean(localSessionId || (localPublicId && consentGiven));
+
+      const request = (async () => {
+        try {
+          const session = await endpoints.getParticipantSessionFresh();
+          if (cancelled) return;
+
+          const backendPublicId = String(session?.public_id || "").trim();
+          const backendSessionId = String(session?.session_id || "").trim();
+          const backendClosed = session?.session_closed || session?.clear_client_state;
+
+          if (backendClosed) {
+            onSessionClosed?.(localPublicId || null);
+            return;
+          }
+
+          if (requiresActiveSession && (!backendPublicId || !backendSessionId)) {
+            onSessionClosed?.(localPublicId || null);
+            return;
+          }
+
+          if (!localPublicId && (backendPublicId || backendSessionId)) {
+            updateWorkflowState({
+              ...(backendPublicId ? { publicId: backendPublicId } : {}),
+              ...(backendSessionId ? { sessionId: backendSessionId } : {}),
+            });
+          } else if (backendPublicId || backendSessionId) {
+            updateWorkflowState((prev) => ({
+              ...(backendPublicId && !prev.publicId ? { publicId: backendPublicId } : {}),
+              ...(backendSessionId && backendSessionId !== prev.sessionId ? { sessionId: backendSessionId } : {}),
+            }));
+          }
+        } catch {
+          // Storage-first boot should still continue even when cookies fail.
+        } finally {
+          if (!cancelled) {
+            setSessionHydrated(true);
+          }
+          validationInFlightRef.current = null;
+        }
+      })();
+
+      validationInFlightRef.current = request;
+      return request;
     };
 
-    void hydrateFromCookies();
+    void validateSession();
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "hidden") return;
+      if (!isOnline) return;
+      void validateSession();
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
     };
-  }, [onSessionClosed, publicId, setSessionHydrated, updateWorkflowState]);
+  }, [
+    consentGiven,
+    isOnline,
+    onSessionClosed,
+    publicId,
+    sessionId,
+    setSessionHydrated,
+    updateWorkflowState,
+  ]);
 
   useEffect(() => {
     saveStoredValue(runtimeConfig.storageKeys.publicId, publicId, { area: CORE_STATE_STORAGE_AREA });
