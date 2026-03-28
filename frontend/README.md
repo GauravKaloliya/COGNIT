@@ -1,19 +1,30 @@
 # Frontend
 
-This app handles participant onboarding, consent, email verification, survey progression, and completion for C.O.G.N.I.T.
+React + Vite frontend for the C.O.G.N.I.T. participant journey.
 
-## Current Flow
-- `consent -> user-details -> survey -> done`
+## User Journey
+
+`consent -> user details -> email OTP -> survey -> done`
 
 ## Highlights
-- Mobile-first onboarding and survey experience
-- Resilient client-side state recovery
-- Attention-check aware survey loop
-- Email OTP verification during onboarding
-- Clear error handling and offline guidance
 
-## Main Screens
-- Consent
-- User Details
-- Survey
-- Finished
+- Mobile-first onboarding and survey flow
+- Session recovery and draft persistence
+- Client-side validation aligned with backend limits
+- Offline, retry, and service health handling
+- Turnstile support via runtime env flags
+
+## Local Run
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Useful commands:
+
+```bash
+npm run lint
+npm run build
+```

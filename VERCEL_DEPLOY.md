@@ -1,54 +1,49 @@
-# Vercel Production Deployment
+# Vercel Deployment
 
-## 1) Deploy As Two Vercel Projects
+Deploy the repo as two Vercel projects:
 
-- `frontend/` as a Vite static project.
-- `backend/` as a Python serverless project.
+- `frontend/` as the Vite app
+- `backend/` as the Python API
 
-## 2) Frontend Vercel Settings
+## Frontend Project
 
-- Root Directory: `frontend`
-- Build Command: `npm run build`
-- Output Directory: `dist`
+- Root directory: `frontend`
+- Build command: `npm run build`
+- Output directory: `dist`
 
-Required env vars:
+Recommended env:
 
-- `VITE_API_BASE=https://<your-backend-domain>`
-- Any `VITE_*` runtime vars from `frontend/.env.example` you want to override.
+- `VITE_API_BASE=https://<backend-domain>`
+- `VITE_TURNSTILE_ENABLED=true`
+- `VITE_TURNSTILE_SITE_KEY=<your-site-key>`
 
-## 3) Backend Vercel Settings
+## Backend Project
 
-- Root Directory: `backend`
-- Framework Preset: Other
+- Root directory: `backend`
+- Framework preset: `Other`
 
-Required env vars:
+Required env:
 
 - `DATABASE_URL`
+- `WEBSITE_URL`
 - `SECRET_KEY`
 - `IP_HASH_SALT`
-- `UPI_VPA`
-- `UPI_NAME`
-- `PAYMENT_SECRET`
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_REGION`
-- `S3_BUCKET_NAME`
-- `CORS_ORIGINS` (set to frontend URL, comma-separated if multiple)
+- `EMAIL_OTP_WEBHOOK_URL`
+- `EMAIL_OTP_JWT_SECRET`
 
-Recommended:
+Recommended env:
 
-- `RATELIMIT_STORAGE_URI` (Redis/Upstash in production)
-- `DOCS_BASE_URL=https://<your-backend-domain>`
+- `DOCS_BASE_URL=https://<backend-domain>`
+- `CORS_ORIGINS=https://<frontend-domain>`
+- `RATELIMIT_STORAGE_URI=redis://...`
+- `TURNSTILE_ENABLED=true`
+- `TURNSTILE_SECRET_KEY=<your-secret>`
+- `APP_PROCESS_ROLE=web`
 
-## 4) DNS / Domain
+## Post-Deploy Checks
 
-- Point frontend custom domain to frontend Vercel project.
-- Point backend custom domain (e.g. `api.example.com`) to backend Vercel project.
-- Update frontend `VITE_API_BASE` to backend domain.
-
-## 5) Post-Deploy Checks
-
-- `GET /health` returns healthy.
-- Frontend can create participant, record consent, create payment, and submit survey.
-- CORS works from frontend origin only.
-- Security headers present on both frontend and backend responses.
+- `GET /health` responds successfully.
+- Frontend can create a participant and submit consent.
+- OTP request and verify flow succeeds.
+- Survey loads images and submits successfully.
+- Frontend origin is allowed by CORS.
