@@ -499,6 +499,20 @@ CREATE INDEX IF NOT EXISTS idx_image_reservations_expires_active
     ON image_reservations (expires_at)
     WHERE released_at IS NULL;
 
+CREATE TABLE IF NOT EXISTS image_pool_allocation_state (
+    pool_type    VARCHAR(16) PRIMARY KEY CHECK (pool_type IN ('attention', 'survey')),
+    batch_number INTEGER NOT NULL DEFAULT 0 CHECK (batch_number >= 0),
+    next_index   INTEGER NOT NULL DEFAULT 0 CHECK (next_index >= 0),
+    batch_size   INTEGER NOT NULL DEFAULT 0 CHECK (batch_size >= 0),
+    image_order  JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_image_pool_allocation_state_updated_at
+    BEFORE UPDATE ON image_pool_allocation_state
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- =====================================================================
 -- SUBMISSIONS
 -- =====================================================================

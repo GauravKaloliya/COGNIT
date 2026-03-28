@@ -2,32 +2,43 @@
 
 from __future__ import annotations
 
+import json
 import random
 import logging
 import time
 from typing import Any
 
 from app.config import (
-    IMAGE_PICK_ATTEMPTS_ATTENTION,
-    IMAGE_PICK_ATTEMPTS_NON_ATTENTION,
+    IMAGE_BATCH_SIZE_ATTENTION,
+    IMAGE_BATCH_SIZE_SURVEY,
     IMAGE_POOL_CACHE_TTL_SECONDS,
+    IMAGE_RESERVATION_CLEANUP_EXPIRES_AT_DEFAULT,
     IMAGE_RESERVATION_TTL_SECONDS,
+)
+from app.constants.image_constants import (
+    IMAGE_POOL_CACHE_KEY,
+    POOL_TYPE_ATTENTION,
+    POOL_TYPE_SURVEY,
 )
 from app.services.image_query_service import (
     QUERY_CLEANUP_STALE_RESERVATIONS,
+    QUERY_ENSURE_IMAGE_POOL_ALLOCATION_STATE,
     QUERY_FETCH_ACTIVE_PARTICIPANT_RESERVATION,
+    QUERY_LOCK_IMAGE_POOL_ALLOCATION_STATE,
     QUERY_LOAD_IMAGE_POOL,
     QUERY_RELEASE_PARTICIPANT_RESERVATIONS,
     QUERY_RESERVE_IMAGE,
+    QUERY_UPDATE_IMAGE_POOL_ALLOCATION_STATE,
+    serialize_image_order,
 )
 from app.utils.cache import cache
 from app.utils.observability import log_event
 from app.constants.observability_constants import OBS_EVENT_IMAGE_CLEANUP_FAILED, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, OBS_EVENT_IMAGE_RESERVE_FAILED
 
 ImagePoolItem = tuple[Any, str, bool, bool]
-IMAGE_RESERVATION_CLEANUP_EXPIRES_AT = 0.0
+IMAGE_RESERVATION_CLEANUP_EXPIRES_AT = IMAGE_RESERVATION_CLEANUP_EXPIRES_AT_DEFAULT
+
 logger = logging.getLogger(__name__)
-IMAGE_POOL_CACHE_KEY = "image_pool:v1"
 
 def load_image_pool(db) -> tuple[list[ImagePoolItem], list[ImagePoolItem], list[ImagePoolItem]]:
     cached = cache.get_json(IMAGE_POOL_CACHE_KEY)
@@ -45,7 +56,7 @@ def load_image_pool(db) -> tuple[list[ImagePoolItem], list[ImagePoolItem], list[
     for image_id, image_url, is_attention in rows:
         if not image_url:
             continue
-        item = (image_id, image_url, True, bool(is_attention))
+        item = (str(image_id), image_url, True, bool(is_attention))
         all_rows.append(item)
         if is_attention:
             attention_rows.append(item)
@@ -61,21 +72,6 @@ def load_image_pool(db) -> tuple[list[ImagePoolItem], list[ImagePoolItem], list[
         ttl_seconds=IMAGE_POOL_CACHE_TTL_SECONDS,
     )
     return attention_rows, non_attention_rows, all_rows
-
-
-def pick_from_pool(rows: list[ImagePoolItem], excluded_set, attempts):
-    if not rows:
-        return None
-    max_attempts = min(max(1, int(attempts)), max(1, len(rows) * 2))
-    for _ in range(max_attempts):
-        item = random.choice(rows)
-        if item[0] in excluded_set:
-            continue
-        return item
-    for item in rows:
-        if item[0] not in excluded_set:
-            return item
-    return None
 
 
 def reserve_image(db, image_id: str, participant_id: int | None, now_ts):
@@ -124,6 +120,169 @@ def release_participant_reservations(db, participant_id: int | None) -> None:
     )
 
 
+def _configured_batch_size_for_pool(pool_type: str) -> int:
+    if pool_type == POOL_TYPE_ATTENTION:
+        return max(1, int(IMAGE_BATCH_SIZE_ATTENTION))
+    return max(1, int(IMAGE_BATCH_SIZE_SURVEY))
+
+
+def _coerce_image_order(raw_value: Any) -> list[str]:
+    if isinstance(raw_value, list):
+        return [str(item) for item in raw_value if str(item).strip()]
+    if isinstance(raw_value, str):
+        try:
+            decoded = json.loads(raw_value)
+        except Exception:
+            return []
+        if isinstance(decoded, list):
+            return [str(item) for item in decoded if str(item).strip()]
+    return []
+
+
+def _build_new_batch_order(pool_image_ids: list[str], *, batch_size: int) -> list[str]:
+    shuffled = list(pool_image_ids)
+    random.shuffle(shuffled)
+    if batch_size >= len(shuffled):
+        return shuffled
+    return shuffled[:batch_size]
+
+
+def _ensure_and_lock_pool_state(db, pool_type: str):
+    db.execute(QUERY_ENSURE_IMAGE_POOL_ALLOCATION_STATE, {"pool_type": pool_type})
+    return db.execute(
+        QUERY_LOCK_IMAGE_POOL_ALLOCATION_STATE,
+        {"pool_type": pool_type},
+    ).fetchone()
+
+
+def _refresh_pool_state(*, pool_image_ids: list[str], batch_size: int, batch_number: int) -> tuple[int, int, int, list[str]]:
+    next_batch_number = max(0, int(batch_number)) + 1
+    image_order = _build_new_batch_order(pool_image_ids, batch_size=batch_size)
+    return next_batch_number, 0, batch_size, image_order
+
+
+def _normalize_pool_state(*, state_row, pool_image_ids: list[str], pool_type: str) -> tuple[int, int, int, list[str], bool]:
+    effective_batch_size = min(_configured_batch_size_for_pool(pool_type), len(pool_image_ids))
+    valid_ids = set(pool_image_ids)
+    batch_number = int(state_row[1] or 0)
+    next_index = int(state_row[2] or 0)
+    stored_batch_size = int(state_row[3] or 0)
+    image_order = []
+    seen_ids: set[str] = set()
+    for image_id in _coerce_image_order(state_row[4]):
+        if image_id not in valid_ids or image_id in seen_ids:
+            continue
+        image_order.append(image_id)
+        seen_ids.add(image_id)
+
+    should_refresh = (
+        effective_batch_size <= 0
+        or stored_batch_size != effective_batch_size
+        or len(image_order) != effective_batch_size
+        or next_index < 0
+        or next_index > effective_batch_size
+        or next_index >= effective_batch_size
+    )
+    if should_refresh:
+        batch_number, next_index, stored_batch_size, image_order = _refresh_pool_state(
+            pool_image_ids=pool_image_ids,
+            batch_size=effective_batch_size,
+            batch_number=batch_number,
+        )
+        return batch_number, next_index, stored_batch_size, image_order, True
+
+    return batch_number, next_index, stored_batch_size, image_order, False
+
+
+def _persist_pool_state(
+    db,
+    *,
+    pool_type: str,
+    batch_number: int,
+    next_index: int,
+    batch_size: int,
+    image_order: list[str],
+) -> None:
+    db.execute(
+        QUERY_UPDATE_IMAGE_POOL_ALLOCATION_STATE,
+        {
+            "pool_type": pool_type,
+            "batch_number": int(batch_number),
+            "next_index": int(next_index),
+            "batch_size": int(batch_size),
+            "image_order": serialize_image_order(image_order),
+        },
+    )
+
+
+def _reserve_next_batch_image(
+    db,
+    *,
+    pool_type: str,
+    target_pool: list[ImagePoolItem],
+    excluded_set,
+    participant_id: int | None,
+    now_ts: int,
+):
+    if not target_pool:
+        return None
+
+    pool_items = {str(item[0]): item for item in target_pool}
+    pool_image_ids = list(pool_items.keys())
+    state_row = _ensure_and_lock_pool_state(db, pool_type)
+    if state_row is None:
+        return None
+
+    batch_number, next_index, batch_size, image_order, state_changed = _normalize_pool_state(
+        state_row=state_row,
+        pool_image_ids=pool_image_ids,
+        pool_type=pool_type,
+    )
+
+    for refresh_attempt in range(2):
+        for candidate_index in range(next_index, batch_size):
+            image_public_id = image_order[candidate_index]
+            if image_public_id in excluded_set:
+                continue
+            row = pool_items.get(image_public_id)
+            if row is None:
+                continue
+            if not reserve_image(db, image_public_id, participant_id, now_ts):
+                continue
+
+            if candidate_index != next_index:
+                image_order[next_index], image_order[candidate_index] = image_order[candidate_index], image_order[next_index]
+            next_index += 1
+            _persist_pool_state(
+                db,
+                pool_type=pool_type,
+                batch_number=batch_number,
+                next_index=next_index,
+                batch_size=batch_size,
+                image_order=image_order,
+            )
+            return row
+
+        if refresh_attempt == 0:
+            batch_number, next_index, batch_size, image_order = _refresh_pool_state(
+                pool_image_ids=pool_image_ids,
+                batch_size=min(_configured_batch_size_for_pool(pool_type), len(pool_image_ids)),
+                batch_number=batch_number,
+            )
+            state_changed = True
+
+    if state_changed:
+        _persist_pool_state(
+            db,
+            pool_type=pool_type,
+            batch_number=batch_number,
+            next_index=next_index,
+            batch_size=batch_size,
+            image_order=image_order,
+        )
+    return None
+
+
 def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int):
     cleanup_stale_reservations(db)
     active_reserved = fetch_active_reserved_image(db, participant_id)
@@ -138,26 +297,20 @@ def select_random_image_for_participant(db, *, excluded_set, participant_id: int
             log_event(logger, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
     attention_pool, non_attention_pool, _all_pool = load_image_pool(db)
     row: ImagePoolItem | None = None
+    pool_type = POOL_TYPE_ATTENTION if should_prioritize_attention else POOL_TYPE_SURVEY
     target_pool = attention_pool if should_prioritize_attention else non_attention_pool
-    target_attempts = IMAGE_PICK_ATTEMPTS_ATTENTION if should_prioritize_attention else IMAGE_PICK_ATTEMPTS_NON_ATTENTION
-    attempt_limit = max(3, min(10, len(target_pool) or 3))
-    for _ in range(attempt_limit):
-        row = pick_from_pool(
-            target_pool,
-            excluded_set,
-            target_attempts,
-        )
-
-        if not row:
-            break
-
-        if reserve_image(db, row[0], participant_id, now_ts):
-            try:
-                db.commit()
-            except Exception as exc:
-                log_event(logger, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
-            return row
-
-        excluded_set.add(row[0])
-        row = None
+    row = _reserve_next_batch_image(
+        db,
+        pool_type=pool_type,
+        target_pool=target_pool,
+        excluded_set=excluded_set,
+        participant_id=participant_id,
+        now_ts=now_ts,
+    )
+    if row:
+        try:
+            db.commit()
+        except Exception as exc:
+            log_event(logger, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, level=logging.WARNING, error=str(exc))
+        return row
     return row
