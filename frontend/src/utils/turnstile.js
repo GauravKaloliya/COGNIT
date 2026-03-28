@@ -89,14 +89,26 @@ const savePrefetchedToken = (action, token) => {
   });
 };
 
-const requestTurnstileToken = async (action = "submit") => {
+function createTurnstileClientError(message, action) {
+  const error = new Error(String(message || uiText("turnstile.unavailable")));
+  error.code = "BOT_001_0005";
+  error.category = "BOT";
+  error.action = "retry";
+  error.retryable = true;
+  error.isTurnstileClientError = true;
+  error.turnstileAction = action;
+  return error;
+}
+
+const requestTurnstileToken = async (action = "submit", options = {}) => {
+  const { reportErrors = true } = options || {};
   if (!isTurnstileRequired()) {
     // Local development should never block on Turnstile.
     return "";
   }
   const siteKey = (runtimeConfig.turnstileSiteKey || "").trim();
   if (!siteKey) {
-    throw new Error(uiText("turnstile.siteKeyMissing"));
+    throw createTurnstileClientError(uiText("turnstile.siteKeyMissing"), action);
   }
   let lastError = null;
   for (let attempt = 1; attempt <= TURNSTILE_MAX_ATTEMPTS; attempt += 1) {
@@ -104,11 +116,14 @@ const requestTurnstileToken = async (action = "submit") => {
       await Promise.race([
         ensureTurnstileScript(),
         new Promise((_, reject) =>
-          scheduleTimeout(() => reject(new Error(uiText("turnstile.loadTimedOut"))), TURNSTILE_TIMEOUT_MS)
+          scheduleTimeout(
+            () => reject(createTurnstileClientError(uiText("turnstile.loadTimedOut"), action)),
+            TURNSTILE_TIMEOUT_MS
+          )
         ),
       ]);
       if (!window.turnstile) {
-        throw new Error(uiText("turnstile.notInitialized"));
+        throw createTurnstileClientError(uiText("turnstile.notInitialized"), action);
       }
 
       const container = document.createElement("div");
@@ -148,58 +163,77 @@ const requestTurnstileToken = async (action = "submit") => {
                 const safeToken = String(token || "").trim();
                 cleanup();
                 if (!safeToken) {
-                  reject(new Error(uiText("turnstile.executionFailed")));
+                  reject(createTurnstileClientError(uiText("turnstile.executionFailed"), action));
                   return;
                 }
                 resolve(safeToken);
               },
               "error-callback": async (errorCode) => {
                 cleanup();
-                await reportClientError({
-                  message: uiText("turnstile.executionFailed"),
-                  context: "turnstile_error_callback",
-                  route: typeof window !== "undefined" ? window.location.pathname : "",
-                  tag: "turnstile_client_error",
-                  meta: {
-                    action,
-                    attempt,
-                    errorCode: String(errorCode || ""),
-                  },
-                });
-                reject(new Error(uiText("turnstile.executionFailed")));
+                if (reportErrors) {
+                  await reportClientError({
+                    message: uiText("turnstile.executionFailed"),
+                    context: "turnstile_error_callback",
+                    route: typeof window !== "undefined" ? window.location.pathname : "",
+                    tag: "turnstile_client_error",
+                    meta: {
+                      action,
+                      attempt,
+                      errorCode: String(errorCode || ""),
+                    },
+                  });
+                }
+                reject(createTurnstileClientError(uiText("turnstile.executionFailed"), action));
               },
               "expired-callback": async () => {
                 cleanup();
-                await reportClientError({
-                  message: uiText("turnstile.tokenExpired"),
-                  context: "turnstile_expired_callback",
-                  route: typeof window !== "undefined" ? window.location.pathname : "",
-                  tag: "turnstile_client_error",
-                  meta: { action, attempt },
-                });
-                reject(new Error(uiText("turnstile.tokenExpired")));
+                if (reportErrors) {
+                  await reportClientError({
+                    message: uiText("turnstile.tokenExpired"),
+                    context: "turnstile_expired_callback",
+                    route: typeof window !== "undefined" ? window.location.pathname : "",
+                    tag: "turnstile_client_error",
+                    meta: { action, attempt },
+                  });
+                }
+                reject(createTurnstileClientError(uiText("turnstile.tokenExpired"), action));
               },
             });
             window.turnstile.execute(widgetId);
           } catch (error) {
             cleanup();
-            reject(error instanceof Error ? error : new Error(uiText("turnstile.renderFailed")));
+            if (error instanceof Error) {
+              error.code = error.code || "BOT_001_0005";
+              error.category = error.category || "BOT";
+              error.action = error.action || "retry";
+              error.retryable = typeof error.retryable === "boolean" ? error.retryable : true;
+              error.isTurnstileClientError = true;
+              error.turnstileAction = action;
+              reject(error);
+              return;
+            }
+            reject(createTurnstileClientError(uiText("turnstile.renderFailed"), action));
           }
         }),
         new Promise((_, reject) =>
-          scheduleTimeout(() => reject(new Error(uiText("turnstile.executionTimedOut"))), TURNSTILE_TIMEOUT_MS)
+          scheduleTimeout(
+            () => reject(createTurnstileClientError(uiText("turnstile.executionTimedOut"), action)),
+            TURNSTILE_TIMEOUT_MS
+          )
         ),
       ]);
       return String(token || "").trim();
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(uiText("turnstile.unavailable"));
-      await reportClientError({
-        message: lastError.message,
-        context: "turnstile_get_token",
-        route: typeof window !== "undefined" ? window.location.pathname : "",
-        tag: "turnstile_client_error",
-        meta: { action, attempt },
-      });
+      lastError = error instanceof Error ? error : createTurnstileClientError(uiText("turnstile.unavailable"), action);
+      if (reportErrors) {
+        await reportClientError({
+          message: lastError.message,
+          context: "turnstile_get_token",
+          route: typeof window !== "undefined" ? window.location.pathname : "",
+          tag: "turnstile_client_error",
+          meta: { action, attempt },
+        });
+      }
 
       const shouldRetry = attempt < TURNSTILE_MAX_ATTEMPTS && isTurnstileRetryableError(lastError);
       if (!shouldRetry) {
@@ -213,7 +247,7 @@ const requestTurnstileToken = async (action = "submit") => {
     }
   }
   if (isLocalhost()) return "";
-  throw lastError instanceof Error ? lastError : new Error(uiText("turnstile.unavailable"));
+  throw lastError instanceof Error ? lastError : createTurnstileClientError(uiText("turnstile.unavailable"), action);
 };
 
 export const preloadTurnstileScript = async () => {
@@ -227,7 +261,7 @@ export const prefetchTurnstileToken = async (action = "submit") => {
   if (cached) return cached;
   const inflight = PREFETCH_INFLIGHT.get(action);
   if (inflight) return inflight;
-  const task = requestTurnstileToken(action)
+  const task = requestTurnstileToken(action, { reportErrors: false })
     .then((token) => {
       savePrefetchedToken(action, token);
       return token;
@@ -245,6 +279,22 @@ export const getTurnstileToken = async (action = "submit", options = {}) => {
   if (preferPrefetched) {
     const prefetched = readPrefetchedToken(action, { consume: consumePrefetched });
     if (prefetched) return prefetched;
+    const inflight = PREFETCH_INFLIGHT.get(action);
+    if (inflight) {
+      try {
+        const resolved = await inflight;
+        const token = String(resolved || "").trim()
+          || readPrefetchedToken(action, { consume: consumePrefetched });
+        if (token) {
+          if (consumePrefetched) {
+            PREFETCHED_TOKEN_CACHE.delete(action);
+          }
+          return token;
+        }
+      } catch {
+        // Fall through to a foreground challenge attempt for the real submit.
+      }
+    }
   }
   return requestTurnstileToken(action);
 };

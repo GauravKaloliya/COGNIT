@@ -29,6 +29,7 @@ const TEXT = {
     "common.loading": "Loading...",
     "common.processing": "Processing...",
     "common.submitting": "Submitting...",
+    "common.verifyingSecurity": "Verifying security check...",
     "common.pleaseWait": "Please wait...",
     "common.retry": "Retry",
     "common.reload": "Reload",

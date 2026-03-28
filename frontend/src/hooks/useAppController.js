@@ -97,6 +97,7 @@ export function useAppController() {
     addToast,
     initial: {
       survey: readCoreValue(runtimeConfig.storageKeys.survey, null, scopeId),
+      loadState: readCoreValue(runtimeConfig.storageKeys.surveyLoadState, null, scopeId),
       surveyCompleted: readCoreValue(runtimeConfig.storageKeys.surveyCompleted, 0, scopeId),
       surveyFeedbackReady: readCoreValue(runtimeConfig.storageKeys.surveyFeedbackReady, false, scopeId),
       lastSubmissionSucceeded: readCoreValue(runtimeConfig.storageKeys.lastSubmissionSucceeded, false, scopeId),
@@ -228,7 +229,7 @@ export function useAppController() {
     };
   }, [publicId, sessionId, stage]);
 
-  const createParticipant = useCallback(async () => {
+  const createParticipant = useCallback(async (options = {}) => {
     if (userDetailsSubmitted && publicId) {
       return { public_id: publicId, session_id: sessionId || "" };
     }
@@ -244,7 +245,7 @@ export function useAppController() {
       location: demographics.location,
       language_code: demographics.language_code,
       prior_experience: demographics.prior_experience,
-    }).then((participant) => {
+    }, options).then((participant) => {
       const nextPublicId = String(participant?.public_id || "").trim();
       resetTelemetrySession(APP_FLOW.stages.userDetails);
       if (nextPublicId) {
@@ -318,9 +319,9 @@ export function useAppController() {
     addToast(uiText("consent.saved"), "success");
   }, [addToast, dispatchWorkflow]);
 
-  const handleUserDetailsSubmit = useCallback(async () => {
+  const handleUserDetailsSubmit = useCallback(async (options = {}) => {
     try {
-      const participant = await createParticipant();
+      const participant = await createParticipant(options);
       if (consentGiven) {
         await recordConsent(participant?.public_id || publicId);
       }
@@ -383,6 +384,7 @@ export function useAppController() {
             [runtimeConfig.storageKeys.emailVerified]: true,
             [runtimeConfig.storageKeys.demographics]: demographics,
             [runtimeConfig.storageKeys.sessionId]: sessionId,
+            [runtimeConfig.storageKeys.surveyLoadState]: "ready",
             [runtimeConfig.storageKeys.surveyCompleted]: nextCompleted,
             [runtimeConfig.storageKeys.surveyFeedbackReady]: reachedPostSurvey,
             [runtimeConfig.storageKeys.lastSubmissionSucceeded]: reachedPostSurvey,

@@ -9,7 +9,9 @@ export default function UserDetailsSubmitFooter({
   submitting,
   handleSubmit,
   submitLabel,
+  optimisticMessage,
 }) {
+  const activeLabel = submitting && optimisticMessage ? optimisticMessage : submitLabel;
   return (
     <PageActions sticky className={`actions survey-submit-actions survey-sticky-footer ${submitting ? "is-submitting" : ""}`}>
       {errors.general && <span className="error-text">{errors.general}</span>}
@@ -23,7 +25,7 @@ export default function UserDetailsSubmitFooter({
           {submitting ? (
             <>
               <span className="button-spinner" />
-              {submitLabel}
+              {activeLabel}
             </>
           ) : submitLabel}
         </DSButton>
