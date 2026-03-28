@@ -52,7 +52,6 @@ function SurveyCommentsField({
           onKeyDown={copyPasteDisabled ? preventClipboardShortcuts : undefined}
           onBlur={onBlur}
         />
-        <div className="textarea-counter">{uiText("survey.charsCount", { count: commentsCharCount, max: maxFeedbackLength })}</div>
       </div>
       <div className="counts">
         <span className={showValidationErrors && commentsCharCount < minFeedbackLength ? "warning" : ""}>

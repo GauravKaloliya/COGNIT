@@ -142,7 +142,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   React.useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
     if (!media.matches) return;
-    window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [stage, systemReady]);
 
   React.useEffect(() => {
