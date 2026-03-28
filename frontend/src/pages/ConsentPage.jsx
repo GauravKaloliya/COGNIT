@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import PageSkeleton from "../components/PageSkeleton.jsx";
 import PanelState from "../components/PanelState.jsx";
 import { useConsentPage } from "../hooks/useConsentPage";
 import { uiText } from "../utils/uiText.js";
@@ -31,16 +30,6 @@ export default function ConsentPage({
     systemReady,
     sessionHydrated,
   });
-
-  if (submitting) {
-    return (
-      <PageSkeleton
-        title={uiText("consent.savingTitle")}
-        subtitle={uiText("consent.savingSubtitle")}
-        variant="consent"
-      />
-    );
-  }
 
   return (
     <div className="panel panel-with-corner-status consent-page-shell">
@@ -141,13 +130,21 @@ export default function ConsentPage({
       </div>
       
       <div className="stage-section consent-actions" style={{ "--section-index": 6 }}>
-        <PageActions sticky>
+        <PageActions
+          sticky
+          className={`survey-submit-actions survey-sticky-footer ${submitting ? "is-submitting" : ""}`}
+        >
           <DSButton
-            className="primary"
+            className={`primary survey-submit-button ${submitting ? "wiggle is-submitting" : ""}`}
             onClick={handleSubmit}
             disabled={!systemReady || submitting || !consentChecked}
           >
-            {submitting ? uiText("common.processing") : uiText("common.continue")}
+            {submitting ? (
+              <>
+                <span className="button-spinner" aria-hidden="true" />
+                <span>{uiText("common.processing")}</span>
+              </>
+            ) : uiText("common.continue")}
           </DSButton>
         </PageActions>
       </div>

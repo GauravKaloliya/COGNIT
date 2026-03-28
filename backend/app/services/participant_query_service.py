@@ -51,7 +51,8 @@ QUERY_FETCH_PARTICIPANT_SESSION_STATUS = text("""
     SELECT
         ps.id,
         ps.ended_at,
-        ps.last_seen_at
+        ps.last_seen_at,
+        ps.hidden_at
     FROM participant_sessions ps
     JOIN participants p ON p.id = ps.participant_id
     WHERE p.public_id = :pub
@@ -62,13 +63,14 @@ QUERY_FETCH_PARTICIPANT_SESSION_STATUS = text("""
 
 QUERY_UPSERT_PARTICIPANT_SESSION = text("""
     INSERT INTO participant_sessions (
-        participant_id, session_id, started_at, last_seen_at
+        participant_id, session_id, started_at, last_seen_at, hidden_at
     ) VALUES (
-        :pid, :sid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        :pid, :sid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
     )
     ON CONFLICT (participant_id, session_id) DO UPDATE
     SET
         last_seen_at = CURRENT_TIMESTAMP,
+        hidden_at = NULL,
         updated_at = CURRENT_TIMESTAMP
     WHERE participant_sessions.ended_at IS NULL
     RETURNING id, ended_at
@@ -77,6 +79,7 @@ QUERY_UPSERT_PARTICIPANT_SESSION = text("""
 QUERY_TOUCH_PARTICIPANT_SESSION = text("""
     UPDATE participant_sessions ps
     SET last_seen_at = CURRENT_TIMESTAMP,
+        hidden_at = NULL,
         updated_at = CURRENT_TIMESTAMP
     FROM participants p
     WHERE p.id = ps.participant_id
@@ -84,13 +87,28 @@ QUERY_TOUCH_PARTICIPANT_SESSION = text("""
       AND p.is_deleted = false
       AND ps.session_id = :sid
       AND ps.ended_at IS NULL
-    RETURNING ps.id, ps.ended_at, ps.last_seen_at
+    RETURNING ps.id, ps.ended_at, ps.last_seen_at, ps.hidden_at
+""")
+
+QUERY_MARK_PARTICIPANT_SESSION_HIDDEN = text("""
+    UPDATE participant_sessions ps
+    SET last_seen_at = CURRENT_TIMESTAMP,
+        hidden_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    FROM participants p
+    WHERE p.id = ps.participant_id
+      AND p.public_id = :pub
+      AND p.is_deleted = false
+      AND ps.session_id = :sid
+      AND ps.ended_at IS NULL
+    RETURNING ps.id, ps.ended_at, ps.last_seen_at, ps.hidden_at
 """)
 
 QUERY_CLOSE_PARTICIPANT_SESSION_BY_KEY = text("""
     UPDATE participant_sessions ps
     SET ended_at = CURRENT_TIMESTAMP,
         last_seen_at = CURRENT_TIMESTAMP,
+        hidden_at = NULL,
         updated_at = CURRENT_TIMESTAMP
     FROM participants p
     WHERE p.id = ps.participant_id

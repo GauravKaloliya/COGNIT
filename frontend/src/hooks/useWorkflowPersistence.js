@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { endpoints } from "../utils/api.js";
 import { runtimeConfig } from "../config/runtime";
+import { APP_FLOW } from "../config/appFlow";
 import { saveStoredValue } from "../utils/storage";
 import { writeCoreValue } from "../utils/appControllerState";
 import { SURVEY_API_FIELDS } from "../constants/fields";
@@ -10,6 +11,10 @@ import { useDebouncedPersistence } from "./useDebouncedPersistence";
 
 const CORE_STATE_STORAGE_AREA = "local";
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
+const initialSessionValidationState = {
+  inflight: null,
+  completedAt: 0,
+};
 
 function normalizeSurvey(value) {
   if (!value || typeof value !== "object") return null;
@@ -39,6 +44,18 @@ export function useWorkflowPersistence({
   const migratedScopePairRef = useRef("");
   const migrationOwnerIdRef = useRef(`tab_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
   const validationInFlightRef = useRef(null);
+  const lastValidatedAtRef = useRef(0);
+  const previousOnlineRef = useRef(isOnline);
+  const bootGraceUntilRef = useRef(Date.now() + runtimeConfig.sessionValidationBootGraceMs);
+  const lastVisibilityStateRef = useRef(
+    typeof document !== "undefined" ? document.visibilityState : "visible"
+  );
+  const validationContextRef = useRef({
+    publicId: "",
+    sessionId: "",
+    stage: APP_FLOW.stages.consent,
+    consentGiven: false,
+  });
   const canPersist = Boolean(sessionHydrated && scopeId);
   const {
     publicId,
@@ -58,86 +75,142 @@ export function useWorkflowPersistence({
   } = surveyState;
 
   useEffect(() => {
-    let cancelled = false;
-
-    const validateSession = async () => {
-      if (validationInFlightRef.current) {
-        return validationInFlightRef.current;
-      }
-
-      const localPublicId = String(publicId || "").trim();
-      const localSessionId = String(sessionId || "").trim();
-      const requiresActiveSession = Boolean(localSessionId || (localPublicId && consentGiven));
-
-      const request = (async () => {
-        try {
-          const session = await endpoints.getParticipantSessionFresh();
-          if (cancelled) return;
-
-          const backendPublicId = String(session?.public_id || "").trim();
-          const backendSessionId = String(session?.session_id || "").trim();
-          const backendClosed = session?.session_closed || session?.clear_client_state;
-
-          if (backendClosed) {
-            onSessionClosed?.(localPublicId || null);
-            return;
-          }
-
-          if (requiresActiveSession && (!backendPublicId || !backendSessionId)) {
-            onSessionClosed?.(localPublicId || null);
-            return;
-          }
-
-          if (!localPublicId && (backendPublicId || backendSessionId)) {
-            updateWorkflowState({
-              ...(backendPublicId ? { publicId: backendPublicId } : {}),
-              ...(backendSessionId ? { sessionId: backendSessionId } : {}),
-            });
-          } else if (backendPublicId || backendSessionId) {
-            updateWorkflowState((prev) => ({
-              ...(backendPublicId && !prev.publicId ? { publicId: backendPublicId } : {}),
-              ...(backendSessionId && backendSessionId !== prev.sessionId ? { sessionId: backendSessionId } : {}),
-            }));
-          }
-        } catch {
-          // Storage-first boot should still continue even when cookies fail.
-        } finally {
-          if (!cancelled) {
-            setSessionHydrated(true);
-          }
-          validationInFlightRef.current = null;
-        }
-      })();
-
-      validationInFlightRef.current = request;
-      return request;
+    validationContextRef.current = {
+      publicId: String(publicId || "").trim(),
+      sessionId: String(sessionId || "").trim(),
+      stage: String(stage || APP_FLOW.stages.consent).trim() || APP_FLOW.stages.consent,
+      consentGiven: consentGiven === true,
     };
+  }, [consentGiven, publicId, sessionId, stage]);
 
-    void validateSession();
+  const validateSession = useCallback(async ({
+    forceFresh = false,
+    dedupeInitial = false,
+  } = {}) => {
+    const now = Date.now();
 
-    const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === "hidden") return;
+    if (dedupeInitial) {
+      if (initialSessionValidationState.inflight) {
+        return initialSessionValidationState.inflight;
+      }
+      if (now - initialSessionValidationState.completedAt < runtimeConfig.sessionValidationCooldownMs) {
+        setSessionHydrated(true);
+        return null;
+      }
+    }
+
+    if (validationInFlightRef.current) {
+      return validationInFlightRef.current;
+    }
+
+    if (!forceFresh && now - lastValidatedAtRef.current < runtimeConfig.sessionValidationCooldownMs) {
+      return null;
+    }
+
+    lastValidatedAtRef.current = now;
+    const currentContext = validationContextRef.current;
+    const localPublicId = currentContext.publicId;
+    const localSessionId = currentContext.sessionId;
+    const normalizedStage = currentContext.stage;
+    if (normalizedStage === APP_FLOW.stages.postSurvey && localPublicId) {
+      setSessionHydrated(true);
+      return null;
+    }
+    const stageRequiresActiveSession = normalizedStage === APP_FLOW.stages.survey;
+    const requiresActiveSession = Boolean(
+      stageRequiresActiveSession && (localSessionId || (localPublicId && currentContext.consentGiven))
+    );
+
+    const request = (async () => {
+      try {
+        const session = await (
+          forceFresh
+            ? endpoints.getParticipantSessionFresh()
+            : endpoints.getParticipantSession()
+        );
+
+        const backendPublicId = String(session?.public_id || "").trim();
+        const backendSessionId = String(session?.session_id || "").trim();
+        const backendClosed = session?.session_closed || session?.clear_client_state;
+
+        if (backendClosed) {
+          onSessionClosed?.(localPublicId || null);
+          return;
+        }
+
+        if (requiresActiveSession && (!backendPublicId || !backendSessionId)) {
+          onSessionClosed?.(localPublicId || null);
+          return;
+        }
+
+        if (!localPublicId && (backendPublicId || backendSessionId)) {
+          updateWorkflowState({
+            ...(backendPublicId ? { publicId: backendPublicId } : {}),
+            ...(backendSessionId ? { sessionId: backendSessionId } : {}),
+          });
+        } else if (backendPublicId || backendSessionId) {
+          updateWorkflowState((prev) => ({
+            ...(backendPublicId && !prev.publicId ? { publicId: backendPublicId } : {}),
+            ...(backendSessionId && backendSessionId !== prev.sessionId ? { sessionId: backendSessionId } : {}),
+          }));
+        }
+      } catch {
+        // Storage-first boot should still continue even when cookies fail.
+      } finally {
+        if (dedupeInitial) {
+          initialSessionValidationState.completedAt = Date.now();
+          initialSessionValidationState.inflight = null;
+        }
+        setSessionHydrated(true);
+        validationInFlightRef.current = null;
+      }
+    })();
+
+    validationInFlightRef.current = request;
+    if (dedupeInitial) {
+      initialSessionValidationState.inflight = request;
+    }
+    return request;
+  }, [onSessionClosed, setSessionHydrated, updateWorkflowState]);
+
+  useEffect(() => {
+    bootGraceUntilRef.current = Date.now() + runtimeConfig.sessionValidationBootGraceMs;
+    void validateSession({ dedupeInitial: true });
+  }, [validateSession]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const previousVisibilityState = lastVisibilityStateRef.current;
+      const nextVisibilityState = document.visibilityState;
+      lastVisibilityStateRef.current = nextVisibilityState;
       if (!isOnline) return;
+      if (Date.now() < bootGraceUntilRef.current) return;
+      if (previousVisibilityState !== "hidden" || nextVisibilityState !== "visible") return;
       void validateSession();
     };
 
-    window.addEventListener("focus", handleVisibilityOrFocus);
-    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      cancelled = true;
-      window.removeEventListener("focus", handleVisibilityOrFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [
-    consentGiven,
-    isOnline,
-    onSessionClosed,
-    publicId,
-    sessionId,
-    setSessionHydrated,
-    updateWorkflowState,
-  ]);
+  }, [isOnline, validateSession]);
+
+  useEffect(() => {
+    const wasOnline = previousOnlineRef.current;
+    previousOnlineRef.current = isOnline;
+    if (!isOnline || wasOnline) return;
+    void validateSession({ forceFresh: true });
+  }, [isOnline, validateSession]);
+
+  useEffect(() => {
+    const normalizedPublicId = String(publicId || "").trim();
+    const normalizedSessionId = String(sessionId || "").trim();
+    if (!isOnline) return;
+    if (stage !== APP_FLOW.stages.survey) return;
+    if (!normalizedPublicId || normalizedSessionId) return;
+    void validateSession({ forceFresh: true });
+  }, [isOnline, publicId, sessionId, stage, validateSession]);
 
   useEffect(() => {
     saveStoredValue(runtimeConfig.storageKeys.publicId, publicId, { area: CORE_STATE_STORAGE_AREA });

@@ -10,9 +10,8 @@ from __future__ import annotations
 from app.constants.error_codes import ERROR_CODES_TEMPLATE
 
 ERROR_KEYS = tuple(sorted(str(key) for key in ERROR_CODES_TEMPLATE.keys()))
-ERROR_KEY_SET = frozenset(ERROR_KEYS)
 
 for _key in ERROR_KEYS:
     globals()[_key] = _key
 
-__all__ = ["ERROR_KEYS", "ERROR_KEY_SET", *ERROR_KEYS]
+__all__ = ["ERROR_KEYS", *ERROR_KEYS]

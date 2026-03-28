@@ -14,7 +14,6 @@ import {
   countSurveyDescriptionChars,
   countSurveyDescriptionWords,
   getSubmitTooltip,
-  sanitizeSurveyDescription,
 } from "../utils/surveyPageHelpers";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { REQUEST_CODES } from "../constants/request";
@@ -64,6 +63,7 @@ export function useSurveyPage({
   const [confidenceRating, setConfidenceRating] = useState(0);
   const [comments, setComments] = useState("");
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [showValidationErrors, setShowValidationErrors] = useState(false);
@@ -138,6 +138,7 @@ export function useSurveyPage({
     setImageLoaded(false);
     setImageError(false);
     setIsZoomed(false);
+    setIsFullscreen(false);
     setSubmitError("");
     setShowValidationErrors(false);
     setSubmitLocked(false);
@@ -545,7 +546,9 @@ export function useSurveyPage({
     handleSubmit,
     submitLocked,
     isZoomed,
+    isFullscreen,
     setIsZoomed,
+    setIsFullscreen,
     setDifficultyRating,
     imageReady,
   });
@@ -593,6 +596,7 @@ export function useSurveyPage({
     },
     mediaState: {
       isZoomed,
+      isFullscreen,
       imageLoaded,
       imageError,
       imageReady,
@@ -614,6 +618,7 @@ export function useSurveyPage({
       setConfidenceRating,
       setComments: updateComments,
       setIsZoomed,
+      setIsFullscreen,
       handleRetryImage,
       handleSubmit,
       handleImageLoad,

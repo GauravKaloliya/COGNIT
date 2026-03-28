@@ -142,6 +142,7 @@ export default function UserDetailsPage({
         ? uiText("common.submitting")
         : uiText("common.continue");
   const submitDisabled = !systemReady || !canSubmit;
+  const effectiveSubmitDisabled = submitDisabled || submitting;
   const firstEmptyOtpIndex = otpDigits.findIndex((digit) => !digit);
   const editableOtpIndex = firstEmptyOtpIndex === -1 ? otpLength - 1 : firstEmptyOtpIndex;
   const formatOtpTimer = (seconds) => {
@@ -270,7 +271,8 @@ export default function UserDetailsPage({
       <UserDetailsSubmitFooter
         errors={errors}
         showOtpField={showOtpField}
-        submitDisabled={submitDisabled}
+        submitDisabled={effectiveSubmitDisabled}
+        submitting={submitting}
         handleSubmit={handleSubmit}
         submitLabel={submitLabel}
       />

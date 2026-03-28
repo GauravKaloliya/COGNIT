@@ -339,8 +339,12 @@ export const endpoints = {
     swr: true,
   }),
   getParticipantSessionFresh: (options = {}) => api.get(API_ROUTES.participantSession, options),
+  updateParticipantSessionPresence: (payload = {}, options = {}) =>
+    api.post(API_ROUTES.participantSessionPresence, payload, options),
   closeParticipantSession: (payload = {}, options = {}) =>
     api.post(API_ROUTES.participantSessionClose, payload, options),
+  signalParticipantSessionPresence: (payload = {}) =>
+    closeSessionTransport(API_ROUTES.participantSessionPresence, payload),
   signalParticipantSessionClose: (payload = {}) =>
     closeSessionTransport(API_ROUTES.participantSessionClose, payload),
 };

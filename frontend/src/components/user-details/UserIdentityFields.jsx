@@ -24,7 +24,7 @@ function UserIdentityFields({
   return (
     <>
       <div className={`form-field username-field ${usernameError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
-        <label>{uiText("user.username")} <span className="required" aria-label="required">*</span></label>
+        <label>{uiText("user.username")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
         <input
           type="text"
           className={usernameError ? "error-input" : ""}
@@ -42,7 +42,7 @@ function UserIdentityFields({
       </div>
 
       <div className={`form-field email-field ${emailError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
-        <label>{uiText("user.email")} <span className="required" aria-label="required">*</span></label>
+        <label>{uiText("user.email")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
         <div className="input-with-ghost">
           <input
             type="email"

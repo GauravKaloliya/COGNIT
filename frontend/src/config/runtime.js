@@ -122,6 +122,8 @@ export const runtimeConfig = {
   submitUnlockCompleteDelayMs: 1000,
   accountFlaggedRedirectDelayMs: 4000,
   surveyTimerTickMs: 1000,
+  sessionValidationCooldownMs: 10000,
+  sessionValidationBootGraceMs: 3000,
   healthCheckTimeoutMs: 10000,
   healthCheckIntervalMs: 30000,
   networkProbeTimeoutMs: 4000,

@@ -137,7 +137,7 @@ export function useAppController() {
       stage: APP_FLOW.stages.consent,
     });
     surveyActions.resetSession();
-    addToast("Your session has ended. Starting fresh.", "info");
+    addToast(uiText("app.sessionResetToast"), "info");
   }, [
     addToast,
     clearUserStorage,
@@ -193,19 +193,38 @@ export function useAppController() {
     if (!publicId || !sessionId) return undefined;
     if (stage === APP_FLOW.stages.postSurvey || stage === APP_FLOW.stages.consent) return undefined;
 
-    const closePayload = { public_id: publicId, session_id: sessionId };
-    const signalClose = () => {
-      const dedupeKey = `${publicId}:${sessionId}:${stage}`;
+    const sessionPayload = { public_id: publicId, session_id: sessionId };
+    const signalHidden = () => {
+      const dedupeKey = `${publicId}:${sessionId}:${stage}:hidden`;
       if (sessionCloseSignalSentRef.current === dedupeKey) return;
       sessionCloseSignalSentRef.current = dedupeKey;
-      endpoints.signalParticipantSessionClose(closePayload);
+      endpoints.signalParticipantSessionPresence({
+        ...sessionPayload,
+        presence_state: "hidden",
+      });
+    };
+    const signalActive = () => {
+      const dedupeKey = `${publicId}:${sessionId}:${stage}:active`;
+      if (sessionCloseSignalSentRef.current === dedupeKey) return;
+      sessionCloseSignalSentRef.current = dedupeKey;
+      void endpoints.updateParticipantSessionPresence({
+        ...sessionPayload,
+        presence_state: "active",
+      }).catch(() => {});
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        signalHidden();
+        return;
+      }
+      signalActive();
     };
 
-    window.addEventListener("pagehide", signalClose);
-    window.addEventListener("beforeunload", signalClose);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", signalActive);
     return () => {
-      window.removeEventListener("pagehide", signalClose);
-      window.removeEventListener("beforeunload", signalClose);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", signalActive);
     };
   }, [publicId, sessionId, stage]);
 
@@ -346,29 +365,35 @@ export function useAppController() {
     try {
       const result = await submitSurvey(formData);
       const backendStage = normalizeAppStage(result?.workflow_status?.stage);
-      if (result?.session_closed || result?.clear_client_state) {
-        clearUserStorage(publicId, {
-          preserveDarkMode: true,
-          preserveKeys: [
-            runtimeConfig.storageKeys.publicId,
-            runtimeConfig.storageKeys.stage,
-            runtimeConfig.storageKeys.consentGiven,
-            runtimeConfig.storageKeys.userDetailsSubmitted,
-            runtimeConfig.storageKeys.emailVerified,
-            runtimeConfig.storageKeys.demographics,
-            runtimeConfig.storageKeys.sessionId,
-          ],
-        });
-      }
-
-      if (backendStage === APP_FLOW.stages.postSurvey) {
-        dispatchWorkflow({ type: WORKFLOW_EVENT_TYPES.ADVANCE_TO_POST_SURVEY });
-        return result;
-      }
-
       const nextCompleted = Number(surveyCompleted || 0) + 1;
       const requiredSubmissions = Math.max(1, Number(runtimeConfig.requiredSurveySubmissions || 2));
-      if (nextCompleted >= requiredSubmissions) {
+      const reachedPostSurvey = backendStage === APP_FLOW.stages.postSurvey || nextCompleted >= requiredSubmissions;
+
+      if (reachedPostSurvey || result?.session_closed || result?.clear_client_state) {
+        clearUserStorage(publicId, {
+          preserveDarkMode: true,
+          dropPreAuthScope: true,
+          preserveRootValues: {
+            [runtimeConfig.storageKeys.publicId]: publicId,
+          },
+          preserveScopedValues: {
+            [runtimeConfig.storageKeys.stage]: APP_FLOW.stages.postSurvey,
+            [runtimeConfig.storageKeys.consentGiven]: true,
+            [runtimeConfig.storageKeys.userDetailsSubmitted]: true,
+            [runtimeConfig.storageKeys.emailVerified]: true,
+            [runtimeConfig.storageKeys.demographics]: demographics,
+            [runtimeConfig.storageKeys.sessionId]: sessionId,
+            [runtimeConfig.storageKeys.surveyCompleted]: nextCompleted,
+            [runtimeConfig.storageKeys.surveyFeedbackReady]: reachedPostSurvey,
+            [runtimeConfig.storageKeys.lastSubmissionSucceeded]: reachedPostSurvey,
+          },
+        });
+        if (!reachedPostSurvey) {
+          surveyActions.resetSession();
+        }
+      }
+
+      if (reachedPostSurvey) {
         dispatchWorkflow({ type: WORKFLOW_EVENT_TYPES.ADVANCE_TO_POST_SURVEY });
         return result;
       }
@@ -392,9 +417,11 @@ export function useAppController() {
     }
   }, [
     clearUserStorage,
+    demographics,
     fetchImage,
     handleClosedSessionReset,
     publicId,
+    sessionId,
     stage,
     submitSurvey,
     surveyCompleted,
