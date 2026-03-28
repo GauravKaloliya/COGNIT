@@ -69,6 +69,7 @@ from app.utils.helpers import (
     count_words,
     calculate_quality_score,
     create_error_response,
+    normalize_submission_text,
     success_response,
 )
 from app.utils.decorators import track_performance, require_idempotency_key
@@ -135,11 +136,11 @@ def submit():
     if not image_id_str:
         return create_error_response("VAL_SUBMISSION_IMAGE_ID_REQUIRED")
 
-    description = (d.get(REQUEST_KEY_DESCRIPTION) or "").strip()
+    description = normalize_submission_text(d.get(REQUEST_KEY_DESCRIPTION) or "")
     if len(description) < MIN_DESCRIPTION_LENGTH or len(description) > MAX_DESCRIPTION_LENGTH:
         return create_error_response("VAL_DESC_LENGTH")
 
-    feedback = (d.get(REQUEST_KEY_FEEDBACK) or "").strip()
+    feedback = normalize_submission_text(d.get(REQUEST_KEY_FEEDBACK) or "")
     if len(feedback) < MIN_FEEDBACK_LENGTH or len(feedback) > MAX_FEEDBACK_LENGTH:
         return create_error_response("VAL_FEEDBACK_LENGTH")
 

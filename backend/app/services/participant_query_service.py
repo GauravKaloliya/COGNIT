@@ -27,9 +27,10 @@ QUERY_INSERT_PARTICIPANT = text("""
 QUERY_RECORD_PARTICIPANT_CONSENT = text("""
     UPDATE participants
     SET consent_given = true,
-        consent_at = CURRENT_TIMESTAMP
+        consent_at = COALESCE(consent_at, CURRENT_TIMESTAMP),
+        session_id = COALESCE(NULLIF(session_id, ''), :sid)
     WHERE public_id = :pub AND is_deleted = false
-    RETURNING id, stage
+    RETURNING id, stage, session_id
 """)
 
 QUERY_UPDATE_PARTICIPANT_STAGE = text("""
@@ -57,6 +58,20 @@ QUERY_FETCH_PARTICIPANT_SESSION_STATUS = text("""
       AND p.is_deleted = false
       AND ps.session_id = :sid
     LIMIT 1
+""")
+
+QUERY_UPSERT_PARTICIPANT_SESSION = text("""
+    INSERT INTO participant_sessions (
+        participant_id, session_id, started_at, last_seen_at
+    ) VALUES (
+        :pid, :sid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (participant_id, session_id) DO UPDATE
+    SET
+        last_seen_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE participant_sessions.ended_at IS NULL
+    RETURNING id, ended_at
 """)
 
 QUERY_TOUCH_PARTICIPANT_SESSION = text("""
