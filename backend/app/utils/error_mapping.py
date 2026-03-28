@@ -55,13 +55,14 @@ def _match_error_key(value: str, mapping: dict[str, str]) -> Optional[str]:
     return None
 
 
-def build_existing_participant_response(*, public_id: str, session_id: str, set_cookies: Callable):
+def build_existing_participant_response(*, public_id: str, session_id: str | None, set_cookies: Callable | None = None):
     response = success_response({
         "status": PARTICIPANT_STATUS_EXISTS,
         "public_id": public_id,
         "session_id": session_id,
     })
-    response = set_cookies(response, public_id, session_id)
+    if session_id and callable(set_cookies):
+        response = set_cookies(response, public_id, session_id)
     return response, 200
 
 
@@ -70,7 +71,7 @@ def map_participant_create_exception(
     error: Exception,
     public_id: str,
     get_existing_session_id: Callable[[str], Optional[str]],
-    set_cookies: Callable,
+    set_cookies: Callable | None = None,
 ):
     error_str = str(error).lower()
     constraint_name = ""

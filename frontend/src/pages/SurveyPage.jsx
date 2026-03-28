@@ -1,7 +1,7 @@
 import React from "react";
 import { uiText } from "../utils/uiText.js";
 import PageStatusBanners from "../components/PageStatusBanners.jsx";
-import { sanitizeAlphaNumericSpace, useSurveyPage } from "../hooks/useSurveyPage";
+import { sanitizeAlphaNumericSpace, sanitizeSurveyDescription, useSurveyPage } from "../hooks/useSurveyPage";
 import SurveyImagePanel from "../components/survey/SurveyImagePanel.jsx";
 import SurveyDescriptionField from "../components/survey/SurveyDescriptionField.jsx";
 import SurveyRatingField from "../components/survey/SurveyRatingField.jsx";
@@ -221,7 +221,7 @@ export default function SurveyPage({
             copyPasteDisabled={COPY_PASTE_DISABLED}
             preventCopyPaste={preventCopyPaste}
             preventClipboardShortcuts={preventClipboardShortcuts}
-            sanitizeAlphaNumericSpace={sanitizeAlphaNumericSpace}
+            sanitizeSurveyDescription={sanitizeSurveyDescription}
             onBlur={() => touchField("description")}
           />
         </div>

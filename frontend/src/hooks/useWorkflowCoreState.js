@@ -53,6 +53,7 @@ function readStoredSurvey(scopeId) {
 function buildScopeSnapshot(scope) {
   const scopeId = getScopeId(scope);
   if (!scopeId) return null;
+  const isPreAuthScope = scopeId.startsWith("preauth_");
 
   const survey = readStoredSurvey(scopeId);
   const stage = normalizeAppStage(
@@ -70,7 +71,7 @@ function buildScopeSnapshot(scope) {
   );
 
   return {
-    publicId: scopeId,
+    publicId: isPreAuthScope ? "" : scopeId,
     sessionId: readCoreValue(runtimeConfig.storageKeys.sessionId, "", scopeId),
     stage,
     consentGiven,
@@ -99,6 +100,8 @@ function getCandidateScopes() {
   const scopes = new Set();
   const rootPublicId = getScopeId(getStoredValue(runtimeConfig.storageKeys.publicId, "", { area: CORE_STATE_STORAGE_AREA }));
   if (rootPublicId) scopes.add(rootPublicId);
+  const rootPreAuthId = getScopeId(getStoredValue(runtimeConfig.storageKeys.preAuthId, "", { area: CORE_STATE_STORAGE_AREA }));
+  if (rootPreAuthId) scopes.add(rootPreAuthId);
 
   forEachStoredKey(CORE_STATE_STORAGE_AREA, (key) => {
     const rawKey = String(key || "");
@@ -167,7 +170,7 @@ export function useWorkflowCoreState({ addToast }) {
   ));
   const [sessionHydrated, setSessionHydrated] = useState(Boolean(initialSnapshot?.publicId));
   const [frontendSessionExpired] = useState(false);
-  const scopeId = getScopeId(workflowState.publicId);
+  const scopeId = getScopeId(workflowState.publicId || preAuthId);
   const publicId = workflowState.publicId;
 
   const updateWorkflowState = useCallback((patch) => {
@@ -264,6 +267,7 @@ export function useWorkflowCoreState({ addToast }) {
   const clearUserStorage = useCallback((scopeOverride = null, options = {}) => {
     const clearAll = options?.clearAll === true;
     const preserveDarkMode = options?.preserveDarkMode !== false;
+    const preserveKeys = Array.isArray(options?.preserveKeys) ? options.preserveKeys.filter(Boolean) : [];
     const preservedDarkMode = preserveDarkMode
       ? readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
         area: "local",
@@ -292,6 +296,32 @@ export function useWorkflowCoreState({ addToast }) {
     }
 
     const targetScope = getScopeId(scopeOverride || publicId);
+    const preservedEntries = [];
+    preserveKeys.forEach((key) => {
+      forEachStorageArea((area) => {
+        const rootMeta = readStoredMeta(key, area);
+        if (rootMeta) {
+          preservedEntries.push({
+            key,
+            area,
+            value: getStoredValue(key, null, { area }),
+            meta: rootMeta,
+          });
+        }
+        if (targetScope) {
+          const scopedKey = makeScopedKey(key, targetScope);
+          const scopedMeta = readStoredMeta(scopedKey, area);
+          if (scopedMeta) {
+            preservedEntries.push({
+              key: scopedKey,
+              area,
+              value: getStoredValue(scopedKey, null, { area }),
+              meta: scopedMeta,
+            });
+          }
+        }
+      });
+    });
     const keysToClear = [
       runtimeConfig.storageKeys.activeTabLock,
       runtimeConfig.storageKeys.publicId,
@@ -353,6 +383,17 @@ export function useWorkflowCoreState({ addToast }) {
         ttlMs: runtimeConfig.uiStateTtlMs,
       });
     }
+
+    preservedEntries.forEach(({ key, area, value, meta }) => {
+      writeExpiringValue(key, value, {
+        area,
+        schemaVersion: meta?.schemaVersion ?? runtimeConfig.uiStateSchemaVersion,
+        ttlMs: Math.max(
+          0,
+          Number(meta?.expiresAt || 0) - Date.now(),
+        ) || runtimeConfig.uiStateTtlMs,
+      });
+    });
   }, [publicId]);
 
   return {

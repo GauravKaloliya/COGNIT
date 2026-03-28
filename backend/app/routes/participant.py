@@ -84,10 +84,12 @@ from app.services import (
     fetch_participant_options,
     generate_public_id,
     generate_session_id,
+    ensure_participant_session,
     is_participant_session_stale,
     is_participant_field_available,
     is_valid_prior_experience_code,
     is_valid_public_id,
+    set_participant_cookies,
     touch_participant_session,
     create_participant_workflow,
     request_email_otp_workflow,
@@ -137,8 +139,6 @@ def create_participant():
     public_id = generate_public_id(data)
     if data.get("public_id") and not is_valid_public_id(public_id):
         return create_error_response("VAL_INVALID_REQUEST_ID", {"field": "public_id"})
-    session_id = generate_session_id(data)
-
     iph = get_ip_hash()
     ua = request.headers.get("User-Agent", "")[:512]
 
@@ -159,7 +159,6 @@ def create_participant():
             db=db,
             payload=data,
             public_id=public_id,
-            session_id=session_id,
             ip_hash=iph,
             user_agent=ua,
         )
@@ -219,11 +218,27 @@ def record_consent():
 
     try:
         db = get_db()
-        row = record_participant_consent(db, public_id=public_id)
+        session_id = generate_session_id(data)
+        row = record_participant_consent(db, public_id=public_id, session_id=session_id)
         if not row:
             return create_error_response("NF_CONSENT_PARTICIPANT_NOT_FOUND")
         pid = row[0]
         current_stage = row[1]
+        active_session_id = str(row[2] or "").strip()
+        if active_session_id:
+            participant_session_id = ensure_participant_session(
+                db,
+                participant_id=int(pid),
+                session_id=active_session_id,
+            )
+            if participant_session_id is None:
+                return create_error_response("VAL_INVALID_STATE", {
+                    "current_stage": current_stage,
+                    "reason": "session_closed",
+                    "session_closed": True,
+                    "clear_client_state": True,
+                    "session_id": active_session_id,
+                })
         apply_participant_stage_event(
             db,
             participant_id=int(pid),
@@ -236,9 +251,15 @@ def record_consent():
             participant_id=pid,
             details=AUDIT_DETAIL_CONSENT_RECORDED.format(participant_id=pid),
         )
-        response_payload = {RESPONSE_KEY_STATUS: PARTICIPANT_STATUS_CONSENT_RECORDED}
+        response_payload = {
+            RESPONSE_KEY_STATUS: PARTICIPANT_STATUS_CONSENT_RECORDED,
+            RESPONSE_KEY_SESSION_ID: active_session_id or None,
+        }
         db.commit()
-        return success_response(response_payload)
+        response = success_response(response_payload)
+        if active_session_id:
+            response = set_participant_cookies(response, public_id, active_session_id)
+        return response
     except Exception as e:
         with suppress(Exception):
             db.rollback()

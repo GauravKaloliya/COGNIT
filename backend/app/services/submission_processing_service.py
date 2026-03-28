@@ -66,38 +66,32 @@ def evaluate_attention_result(
     attention_min_recall: float,
     too_fast: bool,
 ):
-    attention_passed = None
-    attention_expected_terms: list[str] = []
-    attention_matched_terms: list[str] = []
-    attention_failure_reasons: list[str] = []
-    hard_fail_reasons: list[str] = []
-    soft_risk_reasons: list[str] = []
-    description_fingerprint = None
-    strict = False
-    recall_weak = False
-    keyword_missing = False
-    copied_pattern_detected = False
-    descriptive_token_count = 0
-    repetitive_template_detected = False
-    repetition_metrics: dict[str, float] = {}
+    result = {
+        "attention_passed": None,
+        "attention_expected_terms": [],
+        "attention_matched_terms": [],
+        "attention_failure_reasons": [],
+        "hard_fail_reasons": [],
+        "soft_risk_reasons": [],
+        "description_fingerprint": None,
+        "strict": False,
+        "attention_recall_weak": False,
+        "attention_keyword_missing": False,
+        "copied_pattern_detected": False,
+        "descriptive_token_count": 0,
+        "expected_term_recall": 0.0,
+        "expected_term_count": 0,
+        "matched_term_count": 0,
+        "distinct_word_count": distinct_word_count,
+        "repetition_metrics": {},
+        "repetitive_template_detected": False,
+        "submission_meta": {},
+    }
+    hard_fail_reasons: list[str] = result["hard_fail_reasons"]
+    soft_risk_reasons: list[str] = result["soft_risk_reasons"]
 
     if not is_attention:
-        return {
-            "attention_passed": attention_passed,
-            "attention_expected_terms": attention_expected_terms,
-            "attention_matched_terms": attention_matched_terms,
-            "attention_failure_reasons": attention_failure_reasons,
-            "hard_fail_reasons": hard_fail_reasons,
-            "soft_risk_reasons": soft_risk_reasons,
-            "description_fingerprint": description_fingerprint,
-            "strict": strict,
-            "attention_recall_weak": recall_weak,
-            "attention_keyword_missing": keyword_missing,
-            "copied_pattern_detected": copied_pattern_detected,
-            "descriptive_token_count": descriptive_token_count,
-            "repetitive_template_detected": repetitive_template_detected,
-            "submission_meta": {},
-        }
+        return result
 
     expected = attention_check_row[0].strip().lower()
     strict = bool(attention_check_row[1])
@@ -113,7 +107,6 @@ def evaluate_attention_result(
         round(matched_term_count / expected_term_count, 4)
         if expected_term_count > 0 else 0.0
     )
-    attention_passed = True
     keyword_missing = matched_term_count == 0
     recall_weak = expected_term_recall < float(attention_min_recall)
     descriptive_token_count = count_attention_descriptive_tokens(description, attention_matched_terms)
@@ -141,8 +134,8 @@ def evaluate_attention_result(
         soft_risk_reasons.append(ATTENTION_FAILURE_TOO_FAST)
     attention_failure_reasons = hard_fail_reasons + soft_risk_reasons
 
-    return {
-        "attention_passed": attention_passed,
+    result.update({
+        "attention_passed": True,
         "attention_expected_terms": attention_expected_terms,
         "attention_matched_terms": attention_matched_terms,
         "attention_failure_reasons": attention_failure_reasons,
@@ -165,7 +158,8 @@ def evaluate_attention_result(
                 SUBMISSION_META_KEY_STRICT: strict,
             }
         },
-    }
+    })
+    return result
 
 
 def finalize_attention_assessment(

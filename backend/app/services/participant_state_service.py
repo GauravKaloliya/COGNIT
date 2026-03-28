@@ -9,8 +9,11 @@ from app.services.participant_query_service import (
 from app.services.state_machine_service import transition_participant_stage
 
 
-def record_participant_consent(db, *, public_id: str):
-    return db.execute(QUERY_RECORD_PARTICIPANT_CONSENT, {"pub": str(public_id)}).fetchone()
+def record_participant_consent(db, *, public_id: str, session_id: str):
+    return db.execute(
+        QUERY_RECORD_PARTICIPANT_CONSENT,
+        {"pub": str(public_id), "sid": str(session_id or "").strip()[:128] or None},
+    ).fetchone()
 
 
 def update_participant_stage(db, *, participant_id: int, stage: str) -> None:
