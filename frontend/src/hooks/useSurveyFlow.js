@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { endpoints } from "../utils/api";
 import { getErrorMessage } from "../utils/errorRegistry";
 import { getDisplayErrorMessage } from "../utils/appError";
@@ -51,6 +51,7 @@ export function useSurveyFlow({
     initial,
     createSurveyState
   );
+  const [restoreAttempted, setRestoreAttempted] = useState(false);
 
   const prefetchedSurveyRef = useRef(null);
   const imageAbortRef = useRef(null);
@@ -60,6 +61,10 @@ export function useSurveyFlow({
   initialRef.current = initial;
 
   useEffect(() => {
+    if (!publicId) {
+      setRestoreAttempted(false);
+      return;
+    }
     const restoredSurvey = normalizeSurvey(initialRef.current?.survey) || readStoredSurvey(publicId);
     dispatchSurvey({
       type: SURVEY_EVENT_TYPES.HYDRATE,
@@ -69,6 +74,7 @@ export function useSurveyFlow({
       lastSubmissionSucceeded: initialRef.current?.lastSubmissionSucceeded,
       shownImages: initialRef.current?.shownImages,
     });
+    setRestoreAttempted(true);
   }, [publicId]);
 
   const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
@@ -130,7 +136,9 @@ export function useSurveyFlow({
   useEffect(() => {
     if (!sessionHydrated || !systemReady || stage !== APP_FLOW.stages.survey) return;
     if (!publicId || surveyState.surveyFeedbackReady) return;
+    if (!restoreAttempted) return;
     if (surveyState.isFetchingImage || surveyState.isTransitioningToNext) return;
+    if (surveyState.imageError && !normalizeSurvey(surveyState.survey)) return;
     if (normalizeSurvey(surveyState.survey)) return;
 
     const storedSurvey = readStoredSurvey(publicId);
@@ -143,8 +151,10 @@ export function useSurveyFlow({
   }, [
     fetchImage,
     publicId,
+    restoreAttempted,
     sessionHydrated,
     stage,
+    surveyState.imageError,
     surveyState.isFetchingImage,
     surveyState.isTransitioningToNext,
     surveyState.survey,
