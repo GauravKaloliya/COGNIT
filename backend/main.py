@@ -52,6 +52,7 @@ from app.config import (
     HEALTH_RATE_LIMIT,
     FLASK_DEBUG,
     PORT,
+    START_DURABLE_EVENT_WORKER,
 )
 from app.logging_config import configure_logging
 
@@ -60,8 +61,9 @@ configure_logging()
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
-start_durable_event_worker()
-atexit.register(stop_durable_event_worker)
+if START_DURABLE_EVENT_WORKER:
+    start_durable_event_worker()
+    atexit.register(stop_durable_event_worker)
 # ────────────────────────────────────────────────
 # Register Blueprints
 # ────────────────────────────────────────────────

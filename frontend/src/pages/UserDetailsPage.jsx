@@ -10,7 +10,6 @@ import UserProfileFields from "../components/user-details/UserProfileFields.jsx"
 import UserDetailsSubmitFooter from "../components/user-details/UserDetailsSubmitFooter.jsx";
 import { useRenderProfiler } from "../hooks/useRenderProfiler.js";
 import { prefetchBehaviorChunks } from "../components/app/AppStageRouter.jsx";
-import SubmitStatusBanner from "../components/SubmitStatusBanner.jsx";
 
 export default function UserDetailsPage({
   storageScope,
@@ -269,11 +268,6 @@ export default function UserDetailsPage({
           />
         </div>
       </React.Profiler>
-
-      <SubmitStatusBanner
-        visible={submitting}
-        message={optimisticMessage}
-      />
 
       <UserDetailsSubmitFooter
         errors={errors}

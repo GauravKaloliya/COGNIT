@@ -10,7 +10,6 @@ import SurveySubmitFooter from "../components/survey/SurveySubmitFooter.jsx";
 import { useRenderProfiler } from "../hooks/useRenderProfiler.js";
 import AsyncStatePanel from "../components/AsyncStatePanel.jsx";
 import { prefetchBehaviorChunks } from "../components/app/AppStageRouter.jsx";
-import SubmitStatusBanner from "../components/SubmitStatusBanner.jsx";
 
 export default function SurveyPage({
   survey,
@@ -172,10 +171,6 @@ export default function SurveyPage({
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {optimisticMessage || visibleSubmitError}
       </div>
-      <SubmitStatusBanner
-        visible={submitting}
-        message={optimisticMessage}
-      />
       <div className="stage-section" style={{ "--section-index": 0 }}>
         <PageStatusBanners
           saveError={deferredSaveError}

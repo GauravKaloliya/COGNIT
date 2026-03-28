@@ -16,6 +16,7 @@ from app.config import (
     API_LATENCY_SLO_MS,
     ENABLE_AUDIT_LOGGING,
     ENABLE_PERFORMANCE_METRICS,
+    ENABLE_REQUEST_DB_OBSERVABILITY,
     ASYNC_EXECUTOR_WORKERS_METRICS,
     METRICS_ASYNC_BASE_BACKOFF_MS,
     METRICS_ASYNC_MAX_ATTEMPTS,
@@ -122,6 +123,8 @@ def _enqueue_request_observability(
     audit_event_type: str,
     audit_details: str,
 ) -> None:
+    if not ENABLE_REQUEST_DB_OBSERVABILITY:
+        return
     if not ENABLE_PERFORMANCE_METRICS and not ENABLE_AUDIT_LOGGING:
         return
 
