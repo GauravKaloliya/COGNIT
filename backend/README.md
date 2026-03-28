@@ -17,6 +17,12 @@ Implements the participant lifecycle APIs for C.O.G.N.I.T., including consent, p
 - `app/services/submission_service.py`: submission persistence and audit handling
 - `app/utils/`: shared helpers, decorators, runtime, observability
 
+## Production Notes
+- Web instances should run with `APP_PROCESS_ROLE=web` so they do not start the durable queue worker.
+- Dedicated background workers can run with `APP_PROCESS_ROLE=worker` when durable queue processing is needed.
+- Request-level DB observability writes can be disabled with `ENABLE_REQUEST_DB_OBSERVABILITY=false` to avoid hammering hosted Postgres on every request.
+- On Vercel-style deployments, the backend now defaults to smaller SQLAlchemy pool settings and disables request-level DB observability writes by default.
+
 ## Key Tables
 - `participants`
 - `participant_consents`
