@@ -110,6 +110,13 @@ def validate_url(name: str, value: str) -> None:
         raise ValueError(f"{name} must start with http:// or https://")
 
 
+def truthy_env(name: str) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return False
+    return str(raw).strip().lower() in {"true", "1", "yes", "on"}
+
+
 # Load env files as soon as env helpers are imported so section modules
 # can safely resolve required values at import time.
 load_candidate_env_files()
