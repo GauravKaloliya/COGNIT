@@ -32,6 +32,7 @@ const RESTORE_BASE_KEYS = [
   runtimeConfig.storageKeys.emailVerified,
   runtimeConfig.storageKeys.demographics,
   runtimeConfig.storageKeys.survey,
+  runtimeConfig.storageKeys.surveyLoadState,
   runtimeConfig.storageKeys.surveyCompleted,
 ];
 
@@ -339,6 +340,7 @@ export function useWorkflowCoreState({ addToast }) {
       runtimeConfig.storageKeys.emailVerified,
       runtimeConfig.storageKeys.demographics,
       runtimeConfig.storageKeys.survey,
+      runtimeConfig.storageKeys.surveyLoadState,
       runtimeConfig.storageKeys.surveyCompleted,
       runtimeConfig.storageKeys.surveyFeedbackReady,
       runtimeConfig.storageKeys.lastSubmissionSucceeded,

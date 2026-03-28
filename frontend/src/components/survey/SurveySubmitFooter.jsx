@@ -10,7 +10,9 @@ export default function SurveySubmitFooter({
   submitLocked,
   handleSubmit,
   getSubmitTooltip,
+  optimisticMessage,
 }) {
+  const activeLabel = submitting && optimisticMessage ? optimisticMessage : uiText("survey.submitBusy");
   return (
     <>
       {visibleSubmitError && <div className="banner warning">{visibleSubmitError}</div>}
@@ -28,7 +30,7 @@ export default function SurveySubmitFooter({
           {submitting ? (
             <>
               <span className="button-spinner" />
-              {uiText("survey.submitBusy")}
+              {activeLabel}
             </>
           ) : submitLocked ? uiText("survey.submitLocked") : uiText("survey.submit")}
         </DSButton>

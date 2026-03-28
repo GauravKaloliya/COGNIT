@@ -15,6 +15,7 @@ import {
 import { API_ROUTES, APP_ROUTES } from "../constants/routes";
 import { ERROR_UI_EVENTS } from "../constants/errorUiEvents";
 import { reportClientError } from "./errorReporter";
+import { PROTECTED_SUBMIT_PHASES } from "./protectedSubmitStatus";
 
 const SAFE_GET_CACHE = new Map();
 
@@ -72,6 +73,57 @@ function closeSessionTransport(endpoint, payload) {
     // Ignore unload transport failures.
   }
   return false;
+}
+
+function notifyProtectedSubmitPhase(callback, phase) {
+  if (typeof callback === "function") {
+    callback(phase);
+  }
+}
+
+async function withTurnstileProtection(action, options, operation) {
+  const protectedSubmitCallback = options?.onProtectedSubmitPhaseChange;
+  notifyProtectedSubmitPhase(protectedSubmitCallback, PROTECTED_SUBMIT_PHASES.verifyingSecurity);
+  let turnstileToken = "";
+  try {
+    turnstileToken = await getTurnstileToken(action);
+  } catch (error) {
+    notifyProtectedSubmitPhase(protectedSubmitCallback, PROTECTED_SUBMIT_PHASES.idle);
+    if (error?.isTurnstileClientError) {
+      throw createStructuredError({
+        code: error.code || "BOT_001_0005",
+        message: error.message || getErrorMessage("BOT_001_0005"),
+        category: error.category || "BOT",
+        severity: REQUEST_SEVERITY.error,
+        action: REQUEST_ACTIONS.retry,
+        status: 400,
+        retryable: true,
+        details: {
+          source: "turnstile_client",
+          action: error.turnstileAction || action,
+        },
+      });
+    }
+    throw error;
+  }
+  if (isTurnstileRequired() && !String(turnstileToken || "").trim()) {
+    notifyProtectedSubmitPhase(protectedSubmitCallback, PROTECTED_SUBMIT_PHASES.idle);
+    throw createStructuredError({
+      code: action === "register_submit" ? "BOT_001_0002" : "BOT_001_0005",
+      message: getErrorMessage(action === "register_submit" ? "BOT_001_0002" : "BOT_001_0005"),
+      category: "BOT",
+      severity: REQUEST_SEVERITY.error,
+      action: REQUEST_ACTIONS.retry,
+      status: 400,
+      retryable: true,
+    });
+  }
+  notifyProtectedSubmitPhase(protectedSubmitCallback, PROTECTED_SUBMIT_PHASES.submitting);
+  try {
+    return await operation(turnstileToken);
+  } finally {
+    notifyProtectedSubmitPhase(protectedSubmitCallback, PROTECTED_SUBMIT_PHASES.idle);
+  }
 }
 
 function isAbortSignal(signal) {
@@ -273,22 +325,13 @@ export const api = {
 
 export const endpoints = {
   createParticipant: async (data, options = {}) => {
-    const turnstileToken = await getTurnstileToken("register_submit");
-    if (isTurnstileRequired() && !String(turnstileToken || "").trim()) {
-      throw createStructuredError({
-        code: "BOT_001_0002",
-        message: getErrorMessage("BOT_001_0002"),
-        category: "BOT",
-        severity: REQUEST_SEVERITY.error,
-        action: REQUEST_ACTIONS.retry,
-        status: 400,
-        retryable: true,
-      });
-    }
+    const { onProtectedSubmitPhaseChange, ...requestOptions } = options || {};
     const payload = { ...(data || {}) };
     delete payload.public_id;
     delete payload.session_id;
-    return api.post(API_ROUTES.participants, { ...payload, turnstile_token: turnstileToken || undefined }, options);
+    return withTurnstileProtection("register_submit", { onProtectedSubmitPhaseChange }, (turnstileToken) =>
+      api.post(API_ROUTES.participants, { ...payload, turnstile_token: turnstileToken || undefined }, requestOptions)
+    );
   },
   checkUsername: (username, options = {}) => api.get(API_ROUTES.checkUsername(username), options),
   checkEmail: (email, options = {}) => api.get(API_ROUTES.checkEmail(email), options),
@@ -317,20 +360,11 @@ export const endpoints = {
     return api.get(API_ROUTES.randomImage(params.toString()), options);
   },
   submitDescription: async (data, options = {}) => {
-    const turnstileToken = await getTurnstileToken("submission_submit");
-    if (isTurnstileRequired() && !String(turnstileToken || "").trim()) {
-      throw createStructuredError({
-        code: "BOT_001_0005",
-        message: getErrorMessage("BOT_001_0005"),
-        category: "BOT",
-        severity: REQUEST_SEVERITY.error,
-        action: REQUEST_ACTIONS.retry,
-        status: 400,
-        retryable: true,
-      });
-    }
+    const { onProtectedSubmitPhaseChange, ...requestOptions } = options || {};
     const safePublicId = assertPublicId(data?.public_id, null, { message: getErrorMessage("NF_001_0001") });
-    return api.post(API_ROUTES.submit, { ...data, public_id: safePublicId, turnstile_token: turnstileToken || undefined }, options);
+    return withTurnstileProtection("submission_submit", { onProtectedSubmitPhaseChange }, (turnstileToken) =>
+      api.post(API_ROUTES.submit, { ...data, public_id: safePublicId, turnstile_token: turnstileToken || undefined }, requestOptions)
+    );
   },
   getParticipantSession: (options = {}) => api.getCached(API_ROUTES.participantSession, options, {
     key: "participant-session",

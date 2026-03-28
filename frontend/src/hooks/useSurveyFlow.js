@@ -11,18 +11,39 @@ import { REQUEST_CODES } from "../constants/request";
 import { scheduleTimeout } from "../utils/timing";
 import { forEachStorageArea, getStoredValue, makeScopedKey, removeStoredKey } from "../utils/storage";
 import { consumeSurveyTelemetrySnapshot } from "../utils/clientTelemetry";
-import { readCoreValue } from "../utils/appControllerState";
+import { readCoreValue, writeCoreValue } from "../utils/appControllerState";
 import { APP_FLOW } from "../config/appFlow";
 import {
   createSurveyState,
   normalizeSurvey,
   surveyStateReducer,
+  SURVEY_LOAD_STATES,
   SURVEY_EVENT_TYPES,
 } from "../utils/surveyStateMachine";
 
 function readStoredSurvey(publicId) {
   if (!publicId) return null;
   return normalizeSurvey(readCoreValue(runtimeConfig.storageKeys.survey, null, publicId));
+}
+
+function readStoredSurveyLoadState(publicId) {
+  if (!publicId) return SURVEY_LOAD_STATES.idle;
+  const stored = String(readCoreValue(runtimeConfig.storageKeys.surveyLoadState, "", publicId) || "").trim();
+  return Object.values(SURVEY_LOAD_STATES).includes(stored) ? stored : SURVEY_LOAD_STATES.idle;
+}
+
+function persistSurveySnapshot(publicId, snapshot = {}) {
+  const scope = String(publicId || "").trim();
+  if (!scope) return;
+  if (Object.prototype.hasOwnProperty.call(snapshot, "survey")) {
+    writeCoreValue(runtimeConfig.storageKeys.survey, normalizeSurvey(snapshot.survey), scope);
+  }
+  if (Object.prototype.hasOwnProperty.call(snapshot, "loadState")) {
+    writeCoreValue(runtimeConfig.storageKeys.surveyLoadState, snapshot.loadState, scope);
+  }
+  if (Object.prototype.hasOwnProperty.call(snapshot, "shownImages")) {
+    writeCoreValue(runtimeConfig.storageKeys.shownImages, snapshot.shownImages, scope);
+  }
 }
 
 function resolveActiveParticipantContext(publicId, sessionId) {
@@ -69,6 +90,7 @@ export function useSurveyFlow({
     dispatchSurvey({
       type: SURVEY_EVENT_TYPES.HYDRATE,
       survey: restoredSurvey,
+      loadState: initialRef.current?.loadState || readStoredSurveyLoadState(publicId),
       surveyCompleted: initialRef.current?.surveyCompleted,
       surveyFeedbackReady: initialRef.current?.surveyFeedbackReady,
       lastSubmissionSucceeded: initialRef.current?.lastSubmissionSucceeded,
@@ -86,7 +108,11 @@ export function useSurveyFlow({
 
     const storedSurvey = !clearCurrent ? readStoredSurvey(publicId) : null;
     if (storedSurvey) {
-      dispatchSurvey({ type: SURVEY_EVENT_TYPES.HYDRATE, survey: storedSurvey });
+      dispatchSurvey({
+        type: SURVEY_EVENT_TYPES.HYDRATE,
+        survey: storedSurvey,
+        loadState: SURVEY_LOAD_STATES.ready,
+      });
       return storedSurvey;
     }
 
@@ -103,6 +129,11 @@ export function useSurveyFlow({
     }
     const controller = new AbortController();
     imageAbortRef.current = controller;
+    persistSurveySnapshot(publicId, {
+      survey: clearCurrent ? null : currentSurvey,
+      loadState: clearCurrent ? SURVEY_LOAD_STATES.awaitingNextImage : SURVEY_LOAD_STATES.bootstrapping,
+      shownImages: surveyState.shownImages,
+    });
     dispatchSurvey({ type: SURVEY_EVENT_TYPES.FETCH_STARTED, clearCurrent });
 
     try {
@@ -111,6 +142,14 @@ export function useSurveyFlow({
       if (!nextSurvey) {
         throw new Error(getErrorMessage("SYS_002_0016"));
       }
+      const nextShownImages = surveyState.shownImages.includes(nextSurvey[SURVEY_API_FIELDS.imageId])
+        ? surveyState.shownImages
+        : [...surveyState.shownImages, nextSurvey[SURVEY_API_FIELDS.imageId]];
+      persistSurveySnapshot(publicId, {
+        survey: nextSurvey,
+        loadState: SURVEY_LOAD_STATES.ready,
+        shownImages: nextShownImages,
+      });
       dispatchSurvey({ type: SURVEY_EVENT_TYPES.FETCH_SUCCEEDED, survey: nextSurvey });
       return nextSurvey;
     } catch (error) {
@@ -121,6 +160,11 @@ export function useSurveyFlow({
         type: SURVEY_EVENT_TYPES.FETCH_FAILED,
         keepSurvey: Boolean(currentSurvey && !clearCurrent),
         imageError: currentSurvey && !clearCurrent ? null : "image_unavailable",
+      });
+      persistSurveySnapshot(publicId, {
+        survey: currentSurvey && !clearCurrent ? currentSurvey : null,
+        loadState: SURVEY_LOAD_STATES.error,
+        shownImages: surveyState.shownImages,
       });
       if (throwOnError) {
         throw error;
@@ -138,12 +182,27 @@ export function useSurveyFlow({
     if (!publicId || surveyState.surveyFeedbackReady) return;
     if (!restoreAttempted) return;
     if (surveyState.isFetchingImage || surveyState.isTransitioningToNext) return;
-    if (surveyState.imageError && !normalizeSurvey(surveyState.survey)) return;
+    if (surveyState.loadState === SURVEY_LOAD_STATES.error && !normalizeSurvey(surveyState.survey)) return;
     if (normalizeSurvey(surveyState.survey)) return;
 
     const storedSurvey = readStoredSurvey(publicId);
     if (storedSurvey) {
-      dispatchSurvey({ type: SURVEY_EVENT_TYPES.HYDRATE, survey: storedSurvey });
+      dispatchSurvey({
+        type: SURVEY_EVENT_TYPES.HYDRATE,
+        survey: storedSurvey,
+        loadState: SURVEY_LOAD_STATES.ready,
+      });
+      return;
+    }
+
+    const storedLoadState = readStoredSurveyLoadState(publicId);
+    if (storedLoadState === SURVEY_LOAD_STATES.error) {
+      dispatchSurvey({
+        type: SURVEY_EVENT_TYPES.HYDRATE,
+        survey: null,
+        loadState: SURVEY_LOAD_STATES.error,
+        replaceSurvey: true,
+      });
       return;
     }
 
@@ -156,6 +215,7 @@ export function useSurveyFlow({
     stage,
     surveyState.imageError,
     surveyState.isFetchingImage,
+    surveyState.loadState,
     surveyState.isTransitioningToNext,
     surveyState.survey,
     surveyState.surveyFeedbackReady,
@@ -263,6 +323,7 @@ export function useSurveyFlow({
   return {
     surveyState,
     survey: surveyState.survey,
+    surveyLoadState: surveyState.loadState,
     surveyCompleted: surveyState.surveyCompleted,
     surveyFeedbackReady: surveyState.surveyFeedbackReady,
     lastSubmissionSucceeded: surveyState.lastSubmissionSucceeded,
@@ -273,7 +334,14 @@ export function useSurveyFlow({
     showConfetti: surveyState.showConfetti,
     surveyActions: {
       resetSession: (nextState = null) => dispatchSurvey({ type: SURVEY_EVENT_TYPES.RESET, nextState }),
-      prepareNextSurvey: () => dispatchSurvey({ type: SURVEY_EVENT_TYPES.PREPARE_NEXT_SURVEY }),
+      prepareNextSurvey: () => {
+        persistSurveySnapshot(publicId, {
+          survey: null,
+          loadState: SURVEY_LOAD_STATES.awaitingNextImage,
+          shownImages: surveyState.shownImages,
+        });
+        dispatchSurvey({ type: SURVEY_EVENT_TYPES.PREPARE_NEXT_SURVEY });
+      },
       hydrateSurvey: (snapshot) => dispatchSurvey({ type: SURVEY_EVENT_TYPES.HYDRATE, ...(snapshot || {}) }),
     },
     fetchImage,
