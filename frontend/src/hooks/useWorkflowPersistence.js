@@ -8,6 +8,7 @@ import { SURVEY_API_FIELDS } from "../constants/fields";
 import { telemetryIncrement } from "../utils/clientTelemetry";
 import { migratePreAuthScopeToPublic } from "../utils/preAuthMigration";
 import { useDebouncedPersistence } from "./useDebouncedPersistence";
+import { SURVEY_LOAD_STATES } from "../utils/surveyStateMachine";
 
 const CORE_STATE_STORAGE_AREA = "local";
 const PII_STATE_TTL_MS = runtimeConfig.piiStateTtlMs;
@@ -28,6 +29,20 @@ function normalizeSurvey(value) {
     [SURVEY_API_FIELDS.imageId]: imageId,
     [SURVEY_API_FIELDS.url]: imageUrl,
   };
+}
+
+function normalizeSurveyLoadState(value, fallback = SURVEY_LOAD_STATES.idle) {
+  const normalized = String(value || "").trim();
+  return Object.values(SURVEY_LOAD_STATES).includes(normalized) ? normalized : fallback;
+}
+
+function deriveSessionSurveyLoadState(session) {
+  const stage = String(session?.workflow_status?.stage || "").trim();
+  if (session?.current_survey) return SURVEY_LOAD_STATES.ready;
+  if (stage === APP_FLOW.stages.survey && session?.workflow_status?.needs_image_allocation) {
+    return SURVEY_LOAD_STATES.awaitingNextImage;
+  }
+  return SURVEY_LOAD_STATES.idle;
 }
 
 export function useWorkflowPersistence({
@@ -68,6 +83,7 @@ export function useWorkflowPersistence({
   } = workflowState;
   const {
     survey,
+    loadState,
     surveyCompleted,
     surveyFeedbackReady,
     lastSubmissionSucceeded,
@@ -153,6 +169,25 @@ export function useWorkflowPersistence({
             ...(backendPublicId && !prev.publicId ? { publicId: backendPublicId } : {}),
             ...(backendSessionId && backendSessionId !== prev.sessionId ? { sessionId: backendSessionId } : {}),
           }));
+        }
+
+        const effectiveScope = String(backendPublicId || localPublicId || "").trim();
+        if (effectiveScope) {
+          const backendSurvey = normalizeSurvey(session?.current_survey);
+          const backendShownImages = Array.isArray(session?.shown_images)
+            ? session.shown_images.map((imageId) => String(imageId || "").trim()).filter(Boolean)
+            : [];
+          const backendCompleted = Math.max(0, Number(session?.workflow_status?.survey_completed) || 0);
+          const backendStage = String(session?.workflow_status?.stage || "").trim();
+          const backendLoadState = deriveSessionSurveyLoadState(session);
+
+          writeCoreValue(runtimeConfig.storageKeys.survey, backendSurvey, effectiveScope);
+          writeCoreValue(runtimeConfig.storageKeys.surveyLoadState, backendLoadState, effectiveScope);
+          writeCoreValue(runtimeConfig.storageKeys.surveyCompleted, backendCompleted, effectiveScope);
+          writeCoreValue(runtimeConfig.storageKeys.shownImages, backendShownImages, effectiveScope);
+          if (backendStage) {
+            updateWorkflowState((prev) => ({ ...prev, stage: backendStage }));
+          }
         }
       } catch {
         // Storage-first boot should still continue even when cookies fail.
@@ -274,6 +309,15 @@ export function useWorkflowPersistence({
     if (!canPersist) return;
     writeCoreValue(runtimeConfig.storageKeys.survey, normalizeSurvey(survey), scopeId);
   }, [canPersist, scopeId, survey]);
+
+  useEffect(() => {
+    if (!canPersist) return;
+    writeCoreValue(
+      runtimeConfig.storageKeys.surveyLoadState,
+      normalizeSurveyLoadState(loadState, survey ? SURVEY_LOAD_STATES.ready : SURVEY_LOAD_STATES.idle),
+      scopeId
+    );
+  }, [canPersist, loadState, scopeId, survey]);
 
   useEffect(() => {
     if (!canPersist) return;

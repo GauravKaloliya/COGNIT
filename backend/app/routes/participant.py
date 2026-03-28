@@ -6,6 +6,7 @@ import logging
 from contextlib import suppress
 
 from flask import Blueprint, g, request
+from sqlalchemy import text
 
 from app.constants.event_constants import (
     AUDIT_EVENT_CONSENT_RECORDED,
@@ -78,6 +79,7 @@ from app.services import (
     close_participant_session_by_key,
     clear_participant_cookies,
     collect_missing_participant_fields,
+    fetch_active_reserved_image,
     fetch_participant_session_status,
     fetch_participant_options,
     generate_public_id,
@@ -98,6 +100,7 @@ from app.services.participant_state_service import (
     record_participant_consent,
 )
 from app.services.state_machine_service import PARTICIPANT_STAGE_EVENTS
+from app.services.survey_sequence_service import REQUIRED_SUBMISSIONS
 from app.utils.decorators import require_idempotency_key, track_performance
 from app.utils.helpers import (
     create_error_response,
@@ -112,6 +115,82 @@ from app.utils.cache import cache
 participant_bp = Blueprint('participant', __name__)
 logger = logging.getLogger(__name__)
 PARTICIPANT_OPTIONS_CACHE_KEY = "participant_options:v1"
+QUERY_FETCH_PARTICIPANT_WORKFLOW_STATUS = text(
+    """
+    SELECT
+        p.id,
+        p.stage,
+        p.extra_metadata,
+        COUNT(s.id) AS total_submissions,
+        ARRAY_REMOVE(ARRAY_AGG(i.image_id ORDER BY s.survey_index), NULL) AS shown_images
+    FROM participants p
+    LEFT JOIN submissions s ON s.participant_id = p.id
+    LEFT JOIN images i ON i.id = s.image_id
+    WHERE p.public_id = :pub AND p.is_deleted = false
+    GROUP BY p.id, p.stage, p.extra_metadata
+    """
+)
+
+
+def _build_participant_session_payload(
+    db,
+    *,
+    public_id: str,
+    session_id: str,
+):
+    payload = {
+        RESPONSE_KEY_PUBLIC_ID: public_id or None,
+        RESPONSE_KEY_SESSION_ID: session_id or None,
+        RESPONSE_KEY_SESSION_CLOSED: False,
+        RESPONSE_KEY_CLEAR_CLIENT_STATE: False,
+        "workflow_status": None,
+        "current_survey": None,
+        "shown_images": [],
+    }
+    if not public_id:
+        return payload
+
+    participant_row = db.execute(
+        QUERY_FETCH_PARTICIPANT_WORKFLOW_STATUS,
+        {"pub": public_id},
+    ).fetchone()
+    if participant_row is None:
+        return payload
+
+    participant_id = int(participant_row[0])
+    stage = str(participant_row[1] or "").strip() or "consent"
+    total_submissions = int(participant_row[3] or 0)
+    shown_images = [
+        str(image_id).strip()
+        for image_id in (participant_row[4] or [])
+        if str(image_id or "").strip()
+    ]
+
+    active_reserved = fetch_active_reserved_image(db, participant_id)
+    current_survey = None
+    if active_reserved:
+        is_attention_check = bool(active_reserved[3]) if len(active_reserved) > 3 else False
+        current_survey = {
+            "image_id": active_reserved[0],
+            "url": active_reserved[1],
+            "is_survey": (bool(active_reserved[2]) if len(active_reserved) > 2 else True) and not is_attention_check,
+            "is_attention_check": is_attention_check,
+        }
+
+    payload["shown_images"] = shown_images
+    payload["current_survey"] = current_survey
+    payload["workflow_status"] = {
+        "stage": stage,
+        "survey_completed": total_submissions,
+        "required_submissions": REQUIRED_SUBMISSIONS,
+        "has_active_survey": current_survey is not None,
+        "needs_image_allocation": bool(
+            stage == "survey"
+            and total_submissions < REQUIRED_SUBMISSIONS
+            and current_survey is None
+        ),
+    }
+    return payload
 
 # ────────────────────────────────────────────────
 # Routes
@@ -289,10 +368,32 @@ def get_participant_session():
                         RESPONSE_KEY_SESSION_ID: None,
                         RESPONSE_KEY_SESSION_CLOSED: True,
                         RESPONSE_KEY_CLEAR_CLIENT_STATE: True,
+                        "workflow_status": None,
+                        "current_survey": None,
+                        "shown_images": [],
                     })
                     return clear_participant_cookies(response)
                 touch_participant_session(db, public_id=public_id, session_id=session_id)
                 db.commit()
+                return success_response(
+                    _build_participant_session_payload(
+                        db,
+                        public_id=public_id,
+                        session_id=session_id,
+                    )
+                )
+        except Exception:
+            pass
+    if public_id:
+        try:
+            db = get_db()
+            return success_response(
+                _build_participant_session_payload(
+                    db,
+                    public_id=public_id,
+                    session_id=session_id,
+                )
+            )
         except Exception:
             pass
     return success_response({
@@ -300,6 +401,9 @@ def get_participant_session():
         RESPONSE_KEY_SESSION_ID: session_id or None,
         RESPONSE_KEY_SESSION_CLOSED: False,
         RESPONSE_KEY_CLEAR_CLIENT_STATE: False,
+        "workflow_status": None,
+        "current_survey": None,
+        "shown_images": [],
     })
 
 

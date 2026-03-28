@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { getDisplayErrorMessage } from "../utils/appError.js";
 import { runtimeConfig } from "../config/runtime";
@@ -17,6 +17,10 @@ import {
 } from "../utils/surveyPageHelpers";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
 import { REQUEST_CODES } from "../constants/request";
+import {
+  PROTECTED_SUBMIT_PHASES,
+  useProtectedSubmitStatus,
+} from "../utils/protectedSubmitStatus";
 
 export { sanitizeAlphaNumericSpace, sanitizeSurveyDescription } from "../utils/surveyPageHelpers";
 
@@ -72,9 +76,13 @@ export function useSurveyPage({
   const [retryDisabled, setRetryDisabled] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [submitLocked, setSubmitLocked] = useState(false);
-  const [optimisticMessage, setOptimisticMessage] = useState("");
   const [formDisabled, setFormDisabled] = useState(false);
   const [typingDynamics, setTypingDynamics] = useState(EMPTY_TYPING_DYNAMICS);
+  const {
+    optimisticMessage,
+    setSubmitPhase,
+    resetSubmitPhase,
+  } = useProtectedSubmitStatus();
 
   const imageElementRef = useRef(null);
   const previousSurveyImageIdRef = useRef("");
@@ -142,14 +150,14 @@ export function useSurveyPage({
     setSubmitError("");
     setShowValidationErrors(false);
     setSubmitLocked(false);
-    setOptimisticMessage("");
     setFormDisabled(false);
     setTypingDynamics(EMPTY_TYPING_DYNAMICS);
+    resetSubmitPhase();
     resetEngagement();
     prefetchTriggeredRef.current = false;
     turnstilePrefetchTriggeredRef.current = false;
     lastSubmitErrorWasValidationRef.current = false;
-  }, [resetEngagement]);
+  }, [resetEngagement, resetSubmitPhase]);
 
   const unlockSubmit = useCallback((delayMs = runtimeConfig.submitUnlockDelayMs) => {
     if (submitUnlockTimeoutRef.current) {
@@ -391,9 +399,7 @@ export function useSurveyPage({
     setSubmitting(true);
     setTimerActive(false);
     setSubmitError("");
-    startTransition(() => {
-      setOptimisticMessage(uiText("common.submitting"));
-    });
+    setSubmitPhase(PROTECTED_SUBMIT_PHASES.verifyingSecurity);
 
     const submitAtSeconds = Date.now() / runtimeConfig.msPerSecond;
     const hasWrittenContent = charCount > 0 || commentsCharCount > 0;
@@ -434,7 +440,7 @@ export function useSurveyPage({
     };
 
     try {
-      await onSubmit(payload);
+      await onSubmit(payload, { onProtectedSubmitPhaseChange: setSubmitPhase });
       clearDrafts();
       resetEngagement();
       setTypingDynamics(EMPTY_TYPING_DYNAMICS);
@@ -442,18 +448,14 @@ export function useSurveyPage({
       setDifficultyRating(0);
       setConfidenceRating(0);
       setComments("");
-      startTransition(() => {
-        setOptimisticMessage("");
-      });
+      resetSubmitPhase();
     } catch (error) {
       if (error?.code === REQUEST_CODES.accountFlagged) {
         setFormDisabled(true);
         setSubmitLocked(true);
         setTimerActive(false);
         setSubmitError(getDisplayErrorMessage(error, "SYS_002_0006"));
-        startTransition(() => {
-          setOptimisticMessage("");
-        });
+        resetSubmitPhase();
         if (accountFlaggedTimeoutRef.current) {
           clearScheduledTimeout(accountFlaggedTimeoutRef.current);
         }
@@ -467,11 +469,10 @@ export function useSurveyPage({
       if (imageReady) {
         setTimerActive(true);
       }
-      startTransition(() => {
-        setOptimisticMessage("");
-      });
+      resetSubmitPhase();
     } finally {
       setSubmitting(false);
+      resetSubmitPhase();
       if (!formDisabled) {
         unlockSubmit(runtimeConfig.submitUnlockCompleteDelayMs);
       }
@@ -491,6 +492,8 @@ export function useSurveyPage({
     isOnline,
     onAccountFlagged,
     onSubmit,
+    resetSubmitPhase,
+    setSubmitPhase,
     publicId,
     submitLocked,
     setTimerActive,

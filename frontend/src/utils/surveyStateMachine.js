@@ -1,5 +1,18 @@
 import { SURVEY_API_FIELDS } from "../constants/fields";
 
+export const SURVEY_LOAD_STATES = {
+  idle: "idle",
+  bootstrapping: "bootstrapping",
+  awaitingNextImage: "awaiting-next-image",
+  ready: "ready",
+  error: "error",
+};
+
+function normalizeSurveyLoadState(value, fallback = SURVEY_LOAD_STATES.idle) {
+  const normalized = String(value || "").trim();
+  return Object.values(SURVEY_LOAD_STATES).includes(normalized) ? normalized : fallback;
+}
+
 function normalizeSurvey(value) {
   if (!value || typeof value !== "object") return null;
   const imageId = String(value[SURVEY_API_FIELDS.imageId] || value.image_id || value.imageId || "").trim();
@@ -34,8 +47,12 @@ export const SURVEY_EVENT_TYPES = {
 };
 
 export function createSurveyState(initial = null) {
+  const survey = normalizeSurvey(initial?.survey);
   return {
-    survey: normalizeSurvey(initial?.survey),
+    survey,
+    loadState: survey
+      ? SURVEY_LOAD_STATES.ready
+      : normalizeSurveyLoadState(initial?.loadState, SURVEY_LOAD_STATES.idle),
     surveyCompleted: Math.max(0, Number(initial?.surveyCompleted) || 0),
     surveyFeedbackReady: initial?.surveyFeedbackReady === true,
     lastSubmissionSucceeded: initial?.lastSubmissionSucceeded === true,
@@ -62,26 +79,34 @@ export function surveyStateReducer(state, event) {
   switch (event?.type) {
     case SURVEY_EVENT_TYPES.HYDRATE: {
       const nextSurvey = normalizeSurvey(event.survey);
+      const nextLoadState = nextSurvey
+        ? SURVEY_LOAD_STATES.ready
+        : normalizeSurveyLoadState(event.loadState, state.loadState);
       const nextShownImages = Array.isArray(event.shownImages) && event.shownImages.length > 0
         ? event.shownImages
         : appendShownImage(state.shownImages, nextSurvey);
       return {
         ...state,
+        loadState: nextLoadState,
         ...(nextSurvey && !areSurveysEqual(state.survey, nextSurvey)
           ? { survey: nextSurvey, imageError: null }
           : {}),
+        ...(!nextSurvey && event.replaceSurvey === true ? { survey: null } : {}),
         ...(Number.isFinite(event.surveyCompleted)
           ? { surveyCompleted: Math.max(state.surveyCompleted, Number(event.surveyCompleted) || 0) }
           : {}),
         ...(event.surveyFeedbackReady === true ? { surveyFeedbackReady: true } : {}),
         ...(event.lastSubmissionSucceeded === true ? { lastSubmissionSucceeded: true } : {}),
         ...(nextShownImages.length > 0 ? { shownImages: nextShownImages } : {}),
-        ...(nextSurvey ? { isTransitioningToNext: false } : {}),
+        ...((nextSurvey || nextLoadState !== SURVEY_LOAD_STATES.awaitingNextImage)
+          ? { isTransitioningToNext: false }
+          : {}),
       };
     }
     case SURVEY_EVENT_TYPES.FETCH_STARTED:
       return {
         ...state,
+        loadState: event.clearCurrent ? SURVEY_LOAD_STATES.awaitingNextImage : SURVEY_LOAD_STATES.bootstrapping,
         isFetchingImage: true,
         isTransitioningToNext: Boolean(event.clearCurrent),
         surveyFeedbackReady: false,
@@ -93,6 +118,7 @@ export function surveyStateReducer(state, event) {
       const nextSurvey = normalizeSurvey(event.survey);
       return {
         ...state,
+        loadState: nextSurvey ? SURVEY_LOAD_STATES.ready : SURVEY_LOAD_STATES.error,
         isFetchingImage: false,
         isTransitioningToNext: false,
         imageError: null,
@@ -103,6 +129,7 @@ export function surveyStateReducer(state, event) {
     case SURVEY_EVENT_TYPES.FETCH_FAILED:
       return {
         ...state,
+        loadState: SURVEY_LOAD_STATES.error,
         isFetchingImage: false,
         isTransitioningToNext: false,
         survey: event.keepSurvey ? state.survey : null,
@@ -124,6 +151,7 @@ export function surveyStateReducer(state, event) {
     case SURVEY_EVENT_TYPES.PREPARE_NEXT_SURVEY:
       return {
         ...state,
+        loadState: SURVEY_LOAD_STATES.awaitingNextImage,
         survey: null,
         surveyFeedbackReady: false,
         lastSubmissionSucceeded: false,

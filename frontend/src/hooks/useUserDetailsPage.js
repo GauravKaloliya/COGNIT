@@ -19,6 +19,10 @@ import { useUserDetailsLocation } from "./user-details/useUserDetailsLocation";
 import { useUserDetailsValidationDraft } from "./user-details/useUserDetailsValidationDraft";
 import { useUserDetailsVerification } from "./user-details/useUserDetailsVerification";
 import { useStableSelector } from "./useStableSelector";
+import {
+  PROTECTED_SUBMIT_PHASES,
+  useProtectedSubmitStatus,
+} from "../utils/protectedSubmitStatus";
 
 const USERNAME_MIN_LENGTH = runtimeConfig.usernameMinLength;
 const AGE_MIN = runtimeConfig.ageMin;
@@ -44,6 +48,11 @@ export function useUserDetailsPage({
   const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
   const submitInFlightRef = useRef(false);
+  const {
+    optimisticMessage,
+    setSubmitPhase,
+    resetSubmitPhase,
+  } = useProtectedSubmitStatus();
 
   const {
     errors,
@@ -141,6 +150,7 @@ export function useUserDetailsPage({
     startSubmitValidation();
     submitInFlightRef.current = true;
     setSubmitting(true);
+    setSubmitPhase(PROTECTED_SUBMIT_PHASES.verifyingSecurity);
 
     try {
       const normalizedUsername = String(demographics.username || "").trim();
@@ -171,7 +181,9 @@ export function useUserDetailsPage({
         return;
       }
 
-      const participant = await onSubmit();
+      const participant = await onSubmit({
+        onProtectedSubmitPhaseChange: setSubmitPhase,
+      });
       const effectivePublicId = requirePublicId(participant?.public_id || publicId, () => {
         addToast?.(getErrorMessage("NF_001_0001"), "warning");
       });
@@ -224,6 +236,7 @@ export function useUserDetailsPage({
     } finally {
       submitInFlightRef.current = false;
       setSubmitting(false);
+      resetSubmitPhase();
       endSubmitValidation();
     }
   }, [
@@ -242,6 +255,8 @@ export function useUserDetailsPage({
     setGeneralError,
     startSubmitValidation,
     validateForm,
+    resetSubmitPhase,
+    setSubmitPhase,
   ]);
 
   useEffect(() => {
@@ -321,6 +336,7 @@ export function useUserDetailsPage({
     optionsLoading,
     errors,
     submitting,
+    optimisticMessage,
     checking,
     locating,
     locationStatus,
