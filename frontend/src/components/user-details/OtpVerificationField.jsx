@@ -29,7 +29,7 @@ export default function OtpVerificationField({
 
   return (
     <div className="form-field otp-field">
-      <label>{uiText("email.otpLabel")} <span className="required" aria-label="required">*</span></label>
+      <label>{uiText("email.otpLabel")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
 
       <div className="otp-row">
         <div className="otp-inputs" role="group" aria-label={uiText("email.otpLabel")}>

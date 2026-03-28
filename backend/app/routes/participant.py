@@ -9,7 +9,6 @@ from flask import Blueprint, g, request
 
 from app.constants.event_constants import (
     AUDIT_EVENT_CONSENT_RECORDED,
-    AUDIT_EVENT_PARTICIPANT_CREATED,
     HTTP_METHOD_GET,
     HTTP_METHOD_POST,
 )
@@ -23,7 +22,6 @@ from app.constants.log_messages import (
 from app.utils.observability import log_event
 from app.constants.audit_details import (
     AUDIT_DETAIL_CONSENT_RECORDED,
-    AUDIT_DETAIL_PARTICIPANT_CREATED,
 )
 from app.constants.observability_constants import OBS_EVENT_PARTICIPANT_CREATE_ROLLBACK_FAILED
 from app.constants.participant_constants import (
@@ -36,17 +34,15 @@ from app.constants.request_keys import (
     REQUEST_KEY_EMAIL_UPDATE,
     REQUEST_KEY_IDEMPOTENCY_KEY,
     REQUEST_KEY_OTP,
+    REQUEST_KEY_PRESENCE_STATE,
     REQUEST_KEY_PUBLIC_ID,
     REQUEST_KEY_SESSION_ID,
     REQUEST_KEY_TURNSTILE_TOKEN,
-    REQUEST_KEY_USERNAME,
 )
 from app.constants.response_keys import (
     RESPONSE_KEY_AVAILABLE,
     RESPONSE_KEY_CLEAR_CLIENT_STATE,
-    RESPONSE_KEY_EMAIL,
-    RESPONSE_KEY_EMAIL_VERIFIED,
-    RESPONSE_KEY_EXPIRES_AT,
+    RESPONSE_KEY_PRESENCE_STATE,
     RESPONSE_KEY_PUBLIC_ID,
     RESPONSE_KEY_SESSION_CLOSED,
     RESPONSE_KEY_SESSION_ID,
@@ -61,6 +57,7 @@ from app.constants.route_constants import (
     PARTICIPANTS_ROUTE,
     PARTICIPANT_OPTIONS_ROUTE,
     PARTICIPANT_SESSION_ROUTE,
+    PARTICIPANT_SESSION_PRESENCE_ROUTE,
     PARTICIPANT_SESSION_CLOSE_ROUTE,
 )
 from app.config import (
@@ -70,6 +67,7 @@ from app.config import (
     EMAIL_OTP_VERIFY_RATE_LIMIT,
     PARTICIPANT_CHECK_RATE_LIMIT,
     PARTICIPANT_CREATE_RATE_LIMIT,
+    PARTICIPANT_SESSION_RATE_LIMIT,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
     PARTICIPANT_SESSION_COOKIE_NAME,
     PARTICIPANT_OPTIONS_CACHE_TTL_SECONDS,
@@ -87,8 +85,8 @@ from app.services import (
     ensure_participant_session,
     is_participant_session_stale,
     is_participant_field_available,
-    is_valid_prior_experience_code,
     is_valid_public_id,
+    mark_participant_session_hidden,
     set_participant_cookies,
     touch_participant_session,
     create_participant_workflow,
@@ -268,7 +266,7 @@ def record_consent():
 
 
 @participant_bp.route(PARTICIPANT_SESSION_ROUTE, methods=[HTTP_METHOD_GET])
-@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
+@limiter.limit(PARTICIPANT_SESSION_RATE_LIMIT)
 @track_performance
 def get_participant_session():
     """Return participant identifiers from httpOnly cookies (if present)."""
@@ -281,7 +279,8 @@ def get_participant_session():
             if session_row is not None:
                 ended_at = session_row[1]
                 last_seen_at = session_row[2]
-                if ended_at is not None or is_participant_session_stale(last_seen_at):
+                hidden_at = session_row[3]
+                if ended_at is not None or is_participant_session_stale(last_seen_at, hidden_at):
                     if ended_at is None:
                         close_participant_session_by_key(db, public_id=public_id, session_id=session_id)
                         db.commit()
@@ -304,8 +303,64 @@ def get_participant_session():
     })
 
 
+@participant_bp.route(PARTICIPANT_SESSION_PRESENCE_ROUTE, methods=[HTTP_METHOD_POST])
+@limiter.limit(PARTICIPANT_SESSION_RATE_LIMIT)
+@track_performance
+def update_participant_session_presence():
+    payload = request.json or {}
+    public_id = str(
+        payload.get(REQUEST_KEY_PUBLIC_ID)
+        or request.cookies.get(PARTICIPANT_PUBLIC_COOKIE_NAME)
+        or ""
+    ).strip()
+    session_id = str(
+        payload.get(REQUEST_KEY_SESSION_ID)
+        or request.cookies.get(PARTICIPANT_SESSION_COOKIE_NAME)
+        or ""
+    ).strip()
+    presence_state = str(payload.get(REQUEST_KEY_PRESENCE_STATE) or "").strip().lower()
+
+    if not public_id or not session_id:
+        response = success_response({
+            RESPONSE_KEY_PRESENCE_STATE: "ignored",
+            RESPONSE_KEY_SESSION_CLOSED: False,
+            RESPONSE_KEY_CLEAR_CLIENT_STATE: False,
+        })
+        return clear_participant_cookies(response)
+
+    if presence_state not in {"active", "hidden"}:
+        return create_error_response("VAL_INVALID_STATE", {"field": REQUEST_KEY_PRESENCE_STATE})
+
+    try:
+        db = get_db()
+        if presence_state == "hidden":
+            row = mark_participant_session_hidden(db, public_id=public_id, session_id=session_id)
+        else:
+            row = touch_participant_session(db, public_id=public_id, session_id=session_id)
+        db.commit()
+        if row is None:
+            response = success_response({
+                RESPONSE_KEY_PRESENCE_STATE: presence_state,
+                RESPONSE_KEY_SESSION_CLOSED: True,
+                RESPONSE_KEY_CLEAR_CLIENT_STATE: True,
+            })
+            return clear_participant_cookies(response)
+    except Exception:
+        return success_response({
+            RESPONSE_KEY_PRESENCE_STATE: presence_state,
+            RESPONSE_KEY_SESSION_CLOSED: False,
+            RESPONSE_KEY_CLEAR_CLIENT_STATE: False,
+        })
+
+    return success_response({
+        RESPONSE_KEY_PRESENCE_STATE: presence_state,
+        RESPONSE_KEY_SESSION_CLOSED: False,
+        RESPONSE_KEY_CLEAR_CLIENT_STATE: False,
+    })
+
+
 @participant_bp.route(PARTICIPANT_SESSION_CLOSE_ROUTE, methods=[HTTP_METHOD_POST])
-@limiter.limit(PARTICIPANT_CHECK_RATE_LIMIT)
+@limiter.limit(PARTICIPANT_SESSION_RATE_LIMIT)
 @track_performance
 def close_participant_session():
     payload = request.json or {}

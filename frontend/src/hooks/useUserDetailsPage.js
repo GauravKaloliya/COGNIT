@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { endpoints } from "../utils/api.js";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { getDisplayErrorMessage } from "../utils/appError.js";
@@ -43,6 +43,7 @@ export function useUserDetailsPage({
   const isOnline = useOnlineStatus();
   const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
+  const submitInFlightRef = useRef(false);
 
   const {
     errors,
@@ -103,6 +104,7 @@ export function useUserDetailsPage({
     handleResend,
     setOtpDigit,
     setOtpFromPaste,
+    shouldSkipEmailAvailabilityCheck,
   } = verification;
 
   const showOtpField = [
@@ -125,6 +127,7 @@ export function useUserDetailsPage({
   }, []);
 
   const handleSubmit = useCallback(async () => {
+    if (submitInFlightRef.current) return;
     if (!isOnline) {
       setGeneralError(uiText("user.offlineSubmit"));
       if (canPersistScoped && scopedUserDetailsPendingKey) {
@@ -136,6 +139,7 @@ export function useUserDetailsPage({
 
     clearGeneralError();
     startSubmitValidation();
+    submitInFlightRef.current = true;
     setSubmitting(true);
 
     try {
@@ -218,6 +222,7 @@ export function useUserDetailsPage({
       }
       setGeneralError(error?.message || getErrorMessage("SYS_001_0001"));
     } finally {
+      submitInFlightRef.current = false;
       setSubmitting(false);
       endSubmitValidation();
     }
@@ -301,6 +306,12 @@ export function useUserDetailsPage({
     locationMin: LOCATION_MIN_LENGTH,
   }), []);
 
+  const handleValidatedFieldBlur = useCallback((field, value, checkDuplicate = false) => {
+    const skipDuplicateCheck = field === USER_DETAIL_FIELDS.email
+      && shouldSkipEmailAvailabilityCheck(value);
+    handleFieldBlur(field, value, checkDuplicate && !skipDuplicateCheck);
+  }, [handleFieldBlur, shouldSkipEmailAvailabilityCheck]);
+
   return {
     constants,
     isOnline,
@@ -319,7 +330,7 @@ export function useUserDetailsPage({
     canSubmit: formFlags.canSubmit,
     detectLocation,
     handleSubmit,
-    handleFieldBlur,
+    handleFieldBlur: handleValidatedFieldBlur,
     updateField,
     otpDigits,
     otpLength,

@@ -13,7 +13,7 @@ import {
   writeExpiringValue,
 } from "../utils/storage";
 import { APP_FLOW, normalizeAppStage } from "../config/appFlow";
-import { getScopeId, readCoreValue } from "../utils/appControllerState";
+import { getScopeId, readCoreValue, writeCoreValue } from "../utils/appControllerState";
 import {
   createWorkflowState,
   EMPTY_DEMOGRAPHICS,
@@ -268,6 +268,13 @@ export function useWorkflowCoreState({ addToast }) {
     const clearAll = options?.clearAll === true;
     const preserveDarkMode = options?.preserveDarkMode !== false;
     const preserveKeys = Array.isArray(options?.preserveKeys) ? options.preserveKeys.filter(Boolean) : [];
+    const preserveRootValues = options?.preserveRootValues && typeof options.preserveRootValues === "object"
+      ? options.preserveRootValues
+      : null;
+    const preserveScopedValues = options?.preserveScopedValues && typeof options.preserveScopedValues === "object"
+      ? options.preserveScopedValues
+      : null;
+    const dropPreAuthScope = options?.dropPreAuthScope === true;
     const preservedDarkMode = preserveDarkMode
       ? readExpiringValue(runtimeConfig.storageKeys.darkMode, null, {
         area: "local",
@@ -376,6 +383,28 @@ export function useWorkflowCoreState({ addToast }) {
         });
       });
 
+    if (dropPreAuthScope && preAuthId) {
+      const staleScope = getScopeId(preAuthId);
+      if (staleScope) {
+        forEachStorageArea((area) => {
+          forEachStoredKey(area, (key) => {
+            if (!key) return;
+            if (key.endsWith(`:${staleScope}`)) {
+              removeStoredKey(key, area);
+              return;
+            }
+            if (key.startsWith(`${runtimeConfig.storageKeys.surveyDraftPrefix}_${staleScope}_`)) {
+              removeStoredKey(key, area);
+              return;
+            }
+            if (key === `${runtimeConfig.storageKeys.surveyDraftActivePrefix}_${staleScope}`) {
+              removeStoredKey(key, area);
+            }
+          });
+        });
+      }
+    }
+
     if (typeof preservedDarkMode === "boolean") {
       writeExpiringValue(runtimeConfig.storageKeys.darkMode, preservedDarkMode, {
         area: "local",
@@ -394,7 +423,25 @@ export function useWorkflowCoreState({ addToast }) {
         ) || runtimeConfig.uiStateTtlMs,
       });
     });
-  }, [publicId]);
+
+    if (preserveRootValues) {
+      Object.entries(preserveRootValues).forEach(([key, value]) => {
+        if (!key) return;
+        writeExpiringValue(key, value, {
+          area: CORE_STATE_STORAGE_AREA,
+          schemaVersion: runtimeConfig.uiStateSchemaVersion,
+          ttlMs: runtimeConfig.uiStateTtlMs,
+        });
+      });
+    }
+
+    if (preserveScopedValues && targetScope) {
+      Object.entries(preserveScopedValues).forEach(([key, value]) => {
+        if (!key) return;
+        writeCoreValue(key, value, targetScope);
+      });
+    }
+  }, [preAuthId, publicId]);
 
   return {
     workflowState,

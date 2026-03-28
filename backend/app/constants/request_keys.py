@@ -2,6 +2,7 @@
 
 REQUEST_KEY_PUBLIC_ID = "public_id"
 REQUEST_KEY_SESSION_ID = "session_id"
+REQUEST_KEY_PRESENCE_STATE = "presence_state"
 REQUEST_KEY_IDEMPOTENCY_KEY = "idempotency_key"
 REQUEST_KEY_TURNSTILE_TOKEN = "turnstile_token"
 REQUEST_KEY_IMAGE_ID = "image_id"

@@ -28,7 +28,7 @@ function SurveyDescriptionField({
 
   return (
     <div className="field">
-      <label>{uiText("survey.descriptionLabel")} <span className="required" aria-label="required">*</span></label>
+      <label>{uiText("survey.descriptionLabel")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
       <div className="textarea-wrap">
         <textarea
           ref={descriptionRef}

@@ -65,6 +65,7 @@ export default function SurveyPage({
   } = formState;
   const {
     isZoomed,
+    isFullscreen,
     imageLoaded,
     imageError,
     imageReady,
@@ -83,6 +84,7 @@ export default function SurveyPage({
     setConfidenceRating,
     setComments,
     setIsZoomed,
+    setIsFullscreen,
     handleSubmit,
     handleImageLoad,
     handleImageError,
@@ -185,13 +187,15 @@ export default function SurveyPage({
           showImageError={retryExhausted}
           errorMessage={imagePanelErrorMessage}
           isZoomed={isZoomed}
+          isFullscreen={isFullscreen}
           setIsZoomed={setIsZoomed}
+          setIsFullscreen={setIsFullscreen}
           retryDisabled={retryDisabled}
           imageRef={imageElementRef}
-        handleRetryImage={handleRetryImage}
-        handleImageLoad={handleImageLoad}
-        handleImageError={handleImageError}
-      />
+          handleRetryImage={handleRetryImage}
+          handleImageLoad={handleImageLoad}
+          handleImageError={handleImageError}
+        />
       </div>
 
       <div className="meta meta-timer-row stage-section" style={{ "--section-index": 3 }}>

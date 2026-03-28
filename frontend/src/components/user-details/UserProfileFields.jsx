@@ -35,7 +35,7 @@ function UserProfileFields({
   return (
     <>
       <div className={`form-field gender-field ${genderError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
-        <label>{uiText("user.gender")} <span className="required" aria-label="required">*</span></label>
+        <label>{uiText("user.gender")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
         <select
           className={genderError ? "error-input" : ""}
           value={genderCode || ""}
@@ -53,7 +53,7 @@ function UserProfileFields({
       </div>
 
       <div className={`form-field age-field ${ageError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
-        <label>{uiText("user.age")} <span className="required" aria-label="required">*</span></label>
+        <label>{uiText("user.age")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
         <input
           type="number"
           inputMode="numeric"
@@ -74,7 +74,7 @@ function UserProfileFields({
       </div>
 
       <div className={`form-field location-field ${locationError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
-        <label>{uiText("user.location")} <span className="required" aria-label="required">*</span></label>
+        <label>{uiText("user.location")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
         <input
           type="text"
           className={locationError ? "error-input" : ""}
@@ -110,7 +110,7 @@ function UserProfileFields({
       </div>
 
       <div className={`form-field language-field ${languageError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
-        <label>{uiText("user.language")} <span className="required" aria-label="required">*</span></label>
+        <label>{uiText("user.language")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
         <select
           className={languageError ? "error-input" : ""}
           value={languageCode || ""}
@@ -128,7 +128,7 @@ function UserProfileFields({
       </div>
 
       <div className={`form-field prior-experience-field ${priorExperienceError ? "error" : ""} ${optionsLoading ? "loading" : ""}`}>
-        <label>{uiText("user.priorExperience")} <span className="required" aria-label="required">*</span></label>
+        <label>{uiText("user.priorExperience")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
         <select
           className={priorExperienceError ? "error-input" : ""}
           value={priorExperience || ""}

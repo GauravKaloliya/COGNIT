@@ -131,6 +131,7 @@ function AppStageRouter({
         <PostSurveyPage
           surveyCompleted={surveyCompleted}
           publicId={publicId}
+          email={demographics?.email || ""}
           clearUserStorage={clearUserStorage}
           resetWorkflowToConsent={resetWorkflowToConsent}
         />

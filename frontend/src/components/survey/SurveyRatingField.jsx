@@ -19,7 +19,7 @@ function RatingScale({
   return (
     <div className="field effort-rating">
       <label>
-        {label} <span className="required" aria-label="required">*</span> {value > 0 ? `${value}/${maxRating}` : ""}
+        {label} <span className="required" aria-label={uiText("common.requiredAria")}>*</span> {value > 0 ? `${value}/${maxRating}` : ""}
       </label>
       <div className={`rating-scale ${(!imageReady || disabled) ? "rating-scale-disabled" : ""}`}>
         {ratingValues.map((option) => (

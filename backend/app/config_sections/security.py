@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .env import bool_env, required_bool_env, required_env, required_float_env, str_env
+from .env import bool_env, int_env, required_bool_env, required_env, required_float_env, str_env
 
 
 WEBSITE_URL = required_env("WEBSITE_URL")
@@ -11,7 +11,7 @@ SESSION_COOKIE_SECURE = _default_cookie_secure
 SESSION_COOKIE_SAMESITE = "None" if SESSION_COOKIE_SECURE else "Lax"
 PARTICIPANT_SESSION_COOKIE_NAME = "cognit_session"
 PARTICIPANT_PUBLIC_COOKIE_NAME = "cognit_public_id"
-PARTICIPANT_SESSION_STALE_TTL_SECONDS = 60
+PARTICIPANT_SESSION_STALE_TTL_SECONDS = int_env("PARTICIPANT_SESSION_STALE_TTL_SECONDS", 600, min_value=60)
 
 TURNSTILE_ENABLED = required_bool_env("TURNSTILE_ENABLED")
 TURNSTILE_SECRET_KEY = required_env("TURNSTILE_SECRET_KEY") if TURNSTILE_ENABLED else ""

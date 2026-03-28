@@ -364,6 +364,7 @@ CREATE TABLE IF NOT EXISTS participant_sessions (
     session_id     VARCHAR(128) NOT NULL,
     started_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    hidden_at      TIMESTAMPTZ,
     ended_at       TIMESTAMPTZ,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -384,6 +385,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_sessions_id_participant
 CREATE INDEX IF NOT EXISTS idx_participant_sessions_active
     ON participant_sessions (participant_id, last_seen_at DESC)
     WHERE ended_at IS NULL;
+ALTER TABLE participant_sessions
+    ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
 
 -- Legacy compatibility migrations for older live schemas.
 INSERT INTO participant_sessions (

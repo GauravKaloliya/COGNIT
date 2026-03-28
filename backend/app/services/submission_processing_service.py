@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
 
 from app.constants.response_keys import (
     RESPONSE_KEY_ATTENTION_PASSED,
