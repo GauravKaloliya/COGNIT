@@ -15,22 +15,23 @@ from sqlalchemy import text
 from app.config import (
     API_LATENCY_SLO_MS,
     ENABLE_AUDIT_LOGGING,
-    ENABLE_PERFORMANCE_METRICS,
     ENABLE_REQUEST_DB_OBSERVABILITY,
-    ASYNC_EXECUTOR_WORKERS_METRICS,
-    METRICS_ASYNC_BASE_BACKOFF_MS,
-    METRICS_ASYNC_MAX_ATTEMPTS,
-    METRICS_INSERT_STATEMENT_TIMEOUT_MS,
+    ASYNC_EXECUTOR_WORKERS_OBSERVABILITY,
+    OBS_ASYNC_BASE_BACKOFF_MS,
+    OBS_ASYNC_MAX_ATTEMPTS,
     PARTICIPANT_PUBLIC_COOKIE_NAME,
 )
-from app.constants.observability_constants import OBS_EVENT_METRICS_EMIT_FAILED, OBS_EVENT_METRICS_ENQUEUE_FAILED
+from app.constants.observability_constants import (
+    OBS_EVENT_REQUEST_OBSERVABILITY_EMIT_FAILED,
+    OBS_EVENT_REQUEST_OBSERVABILITY_ENQUEUE_FAILED,
+)
 from app.database import engine
 from app.utils.helpers import create_error_response, get_ip_hash
 from app.utils.observability import log_event
 
 _METRICS_EXECUTOR = ThreadPoolExecutor(
-    max_workers=ASYNC_EXECUTOR_WORKERS_METRICS,
-    thread_name_prefix="perf-metrics",
+    max_workers=ASYNC_EXECUTOR_WORKERS_OBSERVABILITY,
+    thread_name_prefix="request-observability",
 )
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,8 @@ def _persist_request_observability(
     slo_breached: bool,
     details: str = "",
 ) -> None:
-    """Write request audit and performance rows together in one transaction."""
+    """Write request observability rows in one transaction."""
     with engine.begin() as conn:
-        conn.execute(text("SET LOCAL statement_timeout = :timeout_ms"), {"timeout_ms": int(METRICS_INSERT_STATEMENT_TIMEOUT_MS)})
         params = {
             "ep": str(endpoint or "")[:120],
             "secs": max(0.0, float(response_time_seconds or 0)),
@@ -70,19 +70,6 @@ def _persist_request_observability(
             "det": str(details or "")[:8000],
             "rid": request_id,
         }
-        if ENABLE_PERFORMANCE_METRICS:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO performance_metrics (
-                        endpoint, response_time_seconds, status_code,
-                        request_size_bytes, response_size_bytes,
-                        slo_target_seconds, slo_breached
-                    ) VALUES (:ep, :secs, :st, :req, :resp, :slo_target, :slo_breached)
-                    """
-                ),
-                params,
-            )
         if ENABLE_AUDIT_LOGGING:
             conn.execute(
                 text(
@@ -125,7 +112,7 @@ def _enqueue_request_observability(
 ) -> None:
     if not ENABLE_REQUEST_DB_OBSERVABILITY:
         return
-    if not ENABLE_PERFORMANCE_METRICS and not ENABLE_AUDIT_LOGGING:
+    if not ENABLE_AUDIT_LOGGING:
         return
 
     payload = {
@@ -151,7 +138,7 @@ def _enqueue_request_observability(
     ).hexdigest()[:32]
 
     def _run_with_retry():
-        attempts = max(1, int(METRICS_ASYNC_MAX_ATTEMPTS))
+        attempts = max(1, int(OBS_ASYNC_MAX_ATTEMPTS))
         for attempt in range(1, attempts + 1):
             try:
                 _persist_request_observability(**payload)
@@ -160,7 +147,7 @@ def _enqueue_request_observability(
                 if attempt >= attempts:
                     log_event(
                         logger,
-                        OBS_EVENT_METRICS_ENQUEUE_FAILED,
+                        OBS_EVENT_REQUEST_OBSERVABILITY_ENQUEUE_FAILED,
                         level=logging.WARNING,
                         error=str(exc),
                         endpoint=endpoint,
@@ -169,7 +156,7 @@ def _enqueue_request_observability(
                         attempt=attempt,
                     )
                     return
-                delay_ms = int(METRICS_ASYNC_BASE_BACKOFF_MS) * (2 ** max(0, attempt - 1))
+                delay_ms = int(OBS_ASYNC_BASE_BACKOFF_MS) * (2 ** max(0, attempt - 1))
                 time.sleep(max(0.05, min(60000, delay_ms) / 1000.0))
 
     try:
@@ -177,7 +164,7 @@ def _enqueue_request_observability(
     except Exception as exc:
         log_event(
             logger,
-            OBS_EVENT_METRICS_ENQUEUE_FAILED,
+            OBS_EVENT_REQUEST_OBSERVABILITY_ENQUEUE_FAILED,
             level=logging.WARNING,
             error=str(exc),
             endpoint=endpoint,
@@ -258,7 +245,7 @@ def track_performance(f):
                         audit_details=f"duration_seconds={response_time_seconds:.6f}",
                     )
             except Exception:
-                log_event(logger, OBS_EVENT_METRICS_EMIT_FAILED, level=logging.WARNING)
+                log_event(logger, OBS_EVENT_REQUEST_OBSERVABILITY_EMIT_FAILED, level=logging.WARNING)
 
             if slo_breached:
                 log_event(
@@ -297,7 +284,7 @@ def track_performance(f):
                         audit_details=f"duration_seconds={response_time_seconds:.6f}; error={type(exc).__name__}",
                     )
                 except Exception:
-                    log_event(logger, OBS_EVENT_METRICS_EMIT_FAILED, level=logging.WARNING)
+                    log_event(logger, OBS_EVENT_REQUEST_OBSERVABILITY_EMIT_FAILED, level=logging.WARNING)
             raise exc
 
     return wrapper
