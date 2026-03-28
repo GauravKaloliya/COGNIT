@@ -42,7 +42,12 @@ export function useUserDetailsVerification({
   const autoVerifyRef = useRef("");
   const resendEndsAtRef = useRef(null);
   const otpExpiresAtRef = useRef(null);
-  const resendSeconds = useRetryCountdown(resendCountdownActive, resendInitialSeconds);
+  const resendCountdownPaused = otpStatus === OTP_STATUS.verifying;
+  const resendSeconds = useRetryCountdown(
+    resendCountdownActive,
+    resendInitialSeconds,
+    resendCountdownPaused
+  );
   const otpValue = otpDigits.join("");
 
   useEffect(() => {
