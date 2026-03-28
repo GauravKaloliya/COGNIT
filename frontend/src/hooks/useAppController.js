@@ -17,6 +17,7 @@ import { useToastState } from "./useToastState";
 import { useActiveTabOwnership } from "./useActiveTabOwnership";
 import { useWorkflowCoreState } from "./useWorkflowCoreState";
 import { useWorkflowPersistence } from "./useWorkflowPersistence";
+import { useIsMobile } from "./useIsMobile.js";
 import { clearAllSurveyDraftsForUser } from "../utils/surveyDraft";
 import { WORKFLOW_EVENT_TYPES } from "../utils/workflowStateMachine";
 import { resetTelemetrySession } from "../utils/clientTelemetry";
@@ -60,6 +61,7 @@ function hasUsableSurvey(survey) {
 
 export function useAppController() {
   const isOnline = useOnlineStatus();
+  const isMobile = useIsMobile();
   const { toasts, addToast, dismissToast } = useToastState();
   const { isActiveTabOwner, claimActiveTabLock } = useActiveTabOwnership();
   const submitAbortRef = useRef(null);
@@ -215,6 +217,9 @@ export function useAppController() {
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
+        // Mobile app-switching for OTP/email commonly backgrounds the page
+        // without meaning the participant intentionally closed the session.
+        if (isMobile) return;
         signalHidden();
         return;
       }
@@ -227,7 +232,7 @@ export function useAppController() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", signalActive);
     };
-  }, [publicId, sessionId, stage]);
+  }, [isMobile, publicId, sessionId, stage]);
 
   const createParticipant = useCallback(async (options = {}) => {
     if (userDetailsSubmitted && publicId) {
