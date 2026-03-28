@@ -195,7 +195,7 @@ const TEXT = {
     "finish.documentTitle": "Thank You - C.O.G.N.I.T.",
     "finish.thankYouTitle": "Thank you for completing the C.O.G.N.I.T. survey",
     "finish.pageSubtitle": "You have completed {count} survey{suffix}! Your responses have been recorded.",
-    "finish.responsesRecorded": "Your responses were recorded successfully and help improve image-text research quality.",
+    "finish.responsesRecorded": "Your responses were recorded successfully and help improve the C.O.G.N.I.T. survey.",
     "finish.reportNotice": "You will get email notified to {email} once your cognitive report is ready.",
     "finish.debrief": "Debrief: C.O.G.N.I.T. (Cognitive Network for Image & Text Modeling) advances our understanding of how humans describe visual content and how AI can better model this cognitive process. Your responses contribute to improving image-text understanding and generation systems.",
     "finish.finishButton": "Finish",
