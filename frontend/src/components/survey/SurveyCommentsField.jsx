@@ -26,7 +26,7 @@ function SurveyCommentsField({
 
   return (
     <div className="field feedback-field">
-      <label>{uiText("survey.commentsLabel")} <span className="required" aria-label="required">*</span></label>
+      <label>{uiText("survey.commentsLabel")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
       <div className="textarea-wrap">
         <textarea
           ref={commentsRef}

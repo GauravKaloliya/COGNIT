@@ -30,6 +30,7 @@ from app.services.participant_query_service import (
     QUERY_FIND_EXISTING_PARTICIPANT_CONFLICT,
     QUERY_GET_EXISTING_SESSION_ID,
     QUERY_INSERT_PARTICIPANT,
+    QUERY_MARK_PARTICIPANT_SESSION_HIDDEN,
     QUERY_TOUCH_PARTICIPANT_SESSION,
     QUERY_UPSERT_PARTICIPANT_SESSION,
 )
@@ -185,6 +186,17 @@ def touch_participant_session(db, *, public_id: str, session_id: str):
     ).fetchone()
 
 
+def mark_participant_session_hidden(db, *, public_id: str, session_id: str):
+    safe_public_id = str(public_id or "").strip()
+    safe_session_id = str(session_id or "").strip()
+    if not safe_public_id or not safe_session_id:
+        return None
+    return db.execute(
+        QUERY_MARK_PARTICIPANT_SESSION_HIDDEN,
+        {"pub": safe_public_id, "sid": safe_session_id[:128]},
+    ).fetchone()
+
+
 def close_participant_session_by_key(db, *, public_id: str, session_id: str):
     safe_public_id = str(public_id or "").strip()
     safe_session_id = str(session_id or "").strip()
@@ -196,13 +208,14 @@ def close_participant_session_by_key(db, *, public_id: str, session_id: str):
     ).fetchone()
 
 
-def is_participant_session_stale(last_seen_at, *, now_utc: datetime | None = None) -> bool:
-    if last_seen_at is None:
+def is_participant_session_stale(last_seen_at, hidden_at=None, *, now_utc: datetime | None = None) -> bool:
+    reference_point = hidden_at or last_seen_at
+    if reference_point is None:
         return False
     reference_time = now_utc or datetime.now(timezone.utc)
-    if getattr(last_seen_at, "tzinfo", None) is None:
-        last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
-    age_seconds = max(0.0, (reference_time - last_seen_at).total_seconds())
+    if getattr(reference_point, "tzinfo", None) is None:
+        reference_point = reference_point.replace(tzinfo=timezone.utc)
+    age_seconds = max(0.0, (reference_time - reference_point).total_seconds())
     return age_seconds >= float(PARTICIPANT_SESSION_STALE_TTL_SECONDS)
 
 

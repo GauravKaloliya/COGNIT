@@ -1,6 +1,7 @@
 import React from "react";
 import DSButton from "./design/DSButton.jsx";
 import { DOG_ILLUSTRATION } from "../content/notFoundIllustration.js";
+import { uiText } from "../utils/uiText.js";
 
 export default function OfflinePage({ onRetry, darkMode, onToggleDarkMode }) {
   return (
@@ -23,14 +24,14 @@ export default function OfflinePage({ onRetry, darkMode, onToggleDarkMode }) {
             }))}
           </svg>
         </div>
-        <h1>You are offline</h1>
-        <p>Connection was lost, so local progress was cleared. Reconnect and refresh to continue.</p>
+        <h1>{uiText("offline.title")}</h1>
+        <p>{uiText("offline.message")}</p>
         <div className="offline-actions">
           <DSButton className="primary" onClick={onRetry}>
-            Retry
+            {uiText("common.retry")}
           </DSButton>
           <DSButton variant="ghost" onClick={onToggleDarkMode}>
-            {darkMode ? "Light mode" : "Dark mode"}
+            {darkMode ? uiText("offline.lightMode") : uiText("offline.darkMode")}
           </DSButton>
         </div>
       </div>

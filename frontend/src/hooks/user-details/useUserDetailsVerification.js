@@ -312,6 +312,22 @@ export function useUserDetailsVerification({
     });
   }, [demographicsEmail, isOnline, publicId, requestOtp]);
 
+  const shouldSkipEmailAvailabilityCheck = useCallback((rawEmail) => {
+    const normalizedEmail = String(rawEmail || "").trim().toLowerCase();
+    if (!normalizedEmail) return false;
+    const submittedEmail = String(submittedEmailRef.current || "").trim().toLowerCase();
+    const effectivePublicId = String(submittedPublicIdRef.current || publicId || "").trim();
+    if (!effectivePublicId || !submittedEmail) return false;
+    if (normalizedEmail !== submittedEmail) return false;
+    return [
+      OTP_STATUS.sending,
+      OTP_STATUS.sent,
+      OTP_STATUS.verifying,
+      OTP_STATUS.verifyFailed,
+      OTP_STATUS.verified,
+    ].includes(otpStatus);
+  }, [otpStatus, publicId]);
+
   return {
     otpStatus,
     otpDigits,
@@ -324,5 +340,6 @@ export function useUserDetailsVerification({
     handleResend,
     setOtpDigit,
     setOtpFromPaste,
+    shouldSkipEmailAvailabilityCheck,
   };
 }

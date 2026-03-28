@@ -1,9 +1,18 @@
 import { getApiUrl } from "./apiBase";
 
-const CONTROL_CHAR_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 const COLLAPSE_WHITESPACE_RE = /[\t\r\n]+/g;
 const DISALLOWED_DESCRIPTION_CHAR_RE = /[^ \p{L}\p{N}.]/gu;
 const NATURAL_LANGUAGE_WORD_RE = /\b[\p{L}][\p{L}\p{N}'-]*\b/gu;
+
+function stripControlCharacters(value) {
+  return Array.from(String(value || ""))
+    .filter((char) => {
+      const codePoint = char.codePointAt(0);
+      if (typeof codePoint !== "number") return false;
+      return !((codePoint <= 0x08) || codePoint === 0x0B || codePoint === 0x0C || (codePoint >= 0x0E && codePoint <= 0x1F) || codePoint === 0x7F);
+    })
+    .join("");
+}
 
 export function buildSurveyImageState(survey) {
   const resolvedImageId = survey?.image_id || survey?.imageId || null;
@@ -50,9 +59,8 @@ export function getSubmitTooltip({
 }
 
 export const sanitizeSurveyDescription = (value) =>
-  String(value || "")
+  stripControlCharacters(value)
     .replace(COLLAPSE_WHITESPACE_RE, " ")
-    .replace(CONTROL_CHAR_RE, "")
     .replace(DISALLOWED_DESCRIPTION_CHAR_RE, "");
 
 export const sanitizeAlphaNumericSpace = (value) =>

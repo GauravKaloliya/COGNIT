@@ -56,6 +56,7 @@ from .participant_service import (
     is_participant_session_stale,
     is_valid_prior_experience_code,
     is_valid_public_id,
+    mark_participant_session_hidden,
     set_participant_cookies,
     touch_participant_session,
 )
@@ -153,6 +154,7 @@ __all__ = [
     "is_participant_session_stale",
     "is_valid_prior_experience_code",
     "is_valid_public_id",
+    "mark_participant_session_hidden",
     "set_participant_cookies",
     "touch_participant_session",
     "apply_participant_stage_event",

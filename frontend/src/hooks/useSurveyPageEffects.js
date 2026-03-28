@@ -49,7 +49,9 @@ export function useSurveyPageEffects({
   handleSubmit,
   submitLocked,
   isZoomed,
+  isFullscreen,
   setIsZoomed,
+  setIsFullscreen,
   setDifficultyRating,
   imageReady,
 }) {
@@ -222,6 +224,10 @@ export function useSurveyPageEffects({
   useEffect(() => {
     const onRatingAndZoomKeys = (event) => {
       const activeTag = String(document.activeElement?.tagName || "").toLowerCase();
+      if (event.key === "Escape" && isFullscreen) {
+        setIsFullscreen(false);
+        return;
+      }
       if (event.key === "Escape" && isZoomed) {
         setIsZoomed(false);
         return;
@@ -238,7 +244,7 @@ export function useSurveyPageEffects({
     };
     window.addEventListener("keydown", onRatingAndZoomKeys);
     return () => window.removeEventListener("keydown", onRatingAndZoomKeys);
-  }, [imageReady, isZoomed, setDifficultyRating, setIsZoomed]);
+  }, [imageReady, isFullscreen, isZoomed, setDifficultyRating, setIsFullscreen, setIsZoomed]);
 }
 
 export function queuePendingSurveySubmit() {

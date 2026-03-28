@@ -15,15 +15,10 @@ from app.config import (
     MIN_RATING,
     MAX_RATING,
     MIN_WORD_COUNT,
-    TOO_FAST_SECONDS,
     SUBMIT_RATE_LIMIT,
 )
 from app.constants.event_constants import HTTP_METHOD_POST
 from app.constants.log_messages import LOG_SUBMISSION_FAILED
-from app.constants.participant_constants import (
-    PARTICIPANT_STAGE_SURVEY,
-    PARTICIPANT_STAGE_POST_SURVEY,
-)
 from app.utils.observability import log_event
 from app.constants.request_keys import (
     REQUEST_KEY_AVG_KEYSTROKE_INTERVAL_SECONDS,
@@ -59,7 +54,6 @@ from app.constants.request_keys import (
 )
 from app.constants.route_constants import SUBMIT_ROUTE
 from app.constants.observability_constants import (
-    OBS_EVENT_SUBMISSION_COMMIT_FAILED,
     OBS_EVENT_SUBMISSION_ROLLBACK_FAILED,
 )
 from app.extensions import limiter
@@ -67,7 +61,6 @@ from app.database import get_db, engine
 from app.utils.helpers import (
     get_ip_hash,
     count_words,
-    calculate_quality_score,
     create_error_response,
     normalize_submission_text,
     success_response,
@@ -75,16 +68,12 @@ from app.utils.helpers import (
 from app.utils.decorators import track_performance, require_idempotency_key
 from app.utils.turnstile import verify_turnstile_token
 from app.services import (
-    alphabetic_tokens,
     build_request_hash,
     clear_participant_cookies,
-    compute_alignment,
     load_idempotent_response,
     save_idempotent_response,
     clamp_time_spent_seconds,
-    normalize_engagement_counts,
     enqueue_submit_post_commit_tasks,
-    StateTransitionError,
     emit_domain_event,
     extract_submission_phase_metrics,
     extract_survey_metrics,

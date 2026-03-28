@@ -13,7 +13,6 @@ from sqlalchemy import text
 
 from app.config import (
     ERROR_CODES,
-    TOO_FAST_SECONDS,
     ENABLE_AUDIT_LOGGING,
     IP_HASH_SALT,
     TRUST_PROXY_HEADERS,

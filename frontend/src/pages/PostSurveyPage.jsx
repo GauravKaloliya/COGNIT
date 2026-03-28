@@ -8,6 +8,7 @@ import { usePostSurveyPage } from "../hooks/usePostSurveyPage";
 export default function PostSurveyPage({
   surveyCompleted = 0,
   publicId = "",
+  email = "",
   clearUserStorage = null,
   resetWorkflowToConsent = null,
 }) {
@@ -33,6 +34,9 @@ export default function PostSurveyPage({
         <p className="page-subtitle">
           {uiText("finish.pageSubtitle", { count: surveyCompleted, suffix: surveyCompleted !== 1 ? "s" : "" })}
         </p>
+        <div className="finish-report-notice" role="status" aria-live="polite">
+          {uiText("finish.reportNotice", { email: email || "your registered email" })}
+        </div>
         <p className="debrief">{uiText("finish.debrief")}</p>
         <PageActions sticky inline className="survey-feedback-actions">
           <DSButton

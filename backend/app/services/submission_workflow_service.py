@@ -21,9 +21,6 @@ from app.constants.observability_constants import (
     OBS_EVENT_SUBMIT_BLOCKED_STATE_MACHINE,
 )
 from app.constants.submission_constants import (
-    ATTENTION_FAILURE_LOW_EXPECTED_TERM_RECALL,
-    ATTENTION_FAILURE_LOW_RECALL,
-    ATTENTION_FAILURE_MISSING_EXPECTED_KEYWORD,
     SUBMISSION_META_KEY_ATTENTION,
 )
 from app.services.submission_processing_service import (
@@ -61,7 +58,6 @@ from app.services.submission_service import (
     detect_repetitive_attention_template,
     compute_alignment,
     dynamic_too_fast_threshold,
-    extract_objects,
     get_ground_truth_objects,
     match_attention_terms,
     normalize_engagement_counts,
@@ -73,7 +69,6 @@ from app.services.state_machine_service import (
     PARTICIPANT_STAGE_EVENTS,
     StateTransitionError,
     require_participant_stage,
-    transition_participant_stage,
 )
 from app.services.survey_sequence_service import (
     REQUIRED_SUBMISSIONS,
@@ -385,6 +380,7 @@ def process_submission_workflow(
         attention_meta = dict(submission_meta.get(SUBMISSION_META_KEY_ATTENTION, {}))
         attention_meta.update({
             "core_term_count": len(attention_expected_terms),
+            "distinct_word_count": attention_distinct_word_count,
             "keyword_missing": attention_keyword_missing,
             "recall_weak": attention_recall_weak,
             "alignment_weak": alignment_recall < float(ATTENTION_MIN_RECALL),
