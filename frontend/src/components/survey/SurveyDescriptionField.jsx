@@ -55,9 +55,6 @@ function SurveyDescriptionField({
           onKeyDown={copyPasteDisabled ? preventClipboardShortcuts : undefined}
           onBlur={onBlur}
         />
-        <div className="textarea-counter">
-          {uiText("survey.wordsChars", { words: wordCount, chars: charCount, max: maxDescriptionLength })}
-        </div>
       </div>
       <div className="counts">
         <span>{uiText("survey.wordsMin", { words: wordCount, min: minWords })}</span>

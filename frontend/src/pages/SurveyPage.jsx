@@ -10,6 +10,7 @@ import SurveySubmitFooter from "../components/survey/SurveySubmitFooter.jsx";
 import { useRenderProfiler } from "../hooks/useRenderProfiler.js";
 import AsyncStatePanel from "../components/AsyncStatePanel.jsx";
 import { prefetchBehaviorChunks } from "../components/app/AppStageRouter.jsx";
+import { useIsMobile } from "../hooks/useIsMobile.js";
 
 export default function SurveyPage({
   survey,
@@ -24,6 +25,7 @@ export default function SurveyPage({
   isTransitioningToNext = false,
 }) {
   const profileRender = useRenderProfiler("SurveyPage", 20);
+  const isMobile = useIsMobile();
   const [showDeferredDecorations, setShowDeferredDecorations] = React.useState(false);
   const {
     constants,
@@ -120,6 +122,11 @@ export default function SurveyPage({
       surveyLikelyComplete: minimumMet,
     });
   }, [minimumMet]);
+
+  React.useLayoutEffect(() => {
+    if (!isMobile || !surveyImageId) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [isMobile, surveyImageId]);
 
   React.useEffect(() => {
     if (!minimumMet) {

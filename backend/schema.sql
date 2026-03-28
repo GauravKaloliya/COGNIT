@@ -1107,22 +1107,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_durable_queue_dedupe
 CREATE INDEX IF NOT EXISTS idx_durable_queue_dead
     ON durable_event_queue (status, updated_at DESC)
     WHERE status = 'dead';
-
--- =====================================================================
--- PERFORMANCE METRICS (optional but useful)
--- =====================================================================
-CREATE TABLE IF NOT EXISTS performance_metrics (
-    id                BIGSERIAL PRIMARY KEY,
-    endpoint          VARCHAR(120) NOT NULL,
-    response_time_seconds REAL NOT NULL CHECK (response_time_seconds >= 0),
-    status_code       SMALLINT,
-    request_size_bytes  INTEGER,
-    response_size_bytes INTEGER,
-    slo_target_seconds REAL NOT NULL DEFAULT 1.2 CHECK (slo_target_seconds > 0),
-    slo_breached      BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_perf_created  ON performance_metrics (created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_perf_endpoint ON performance_metrics (endpoint, created_at);
-CREATE INDEX IF NOT EXISTS idx_perf_slo_breached ON performance_metrics (slo_breached, created_at DESC);
