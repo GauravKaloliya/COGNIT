@@ -8,7 +8,9 @@ from sqlalchemy import text
 
 from app.constants.log_messages import LOG_RANDOM_IMAGE_FAILED
 from app.constants.route_constants import IMAGES_RANDOM_ROUTE
+from app.config import IMAGES_RANDOM_RATE_LIMIT
 from app.database import get_db
+from app.extensions import limiter
 from app.services.state_machine_service import StateTransitionError, require_participant_stage
 from app.utils.helpers import create_error_response, success_response
 from app.utils.decorators import track_performance
@@ -38,6 +40,7 @@ image_bp = Blueprint('image', __name__)
 
 
 @image_bp.route(IMAGES_RANDOM_ROUTE)
+@limiter.limit(IMAGES_RANDOM_RATE_LIMIT)
 @track_performance
 def random_image():
     """Get a random image with two-step participant-specific sequence enforcement."""

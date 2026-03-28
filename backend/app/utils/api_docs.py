@@ -9,6 +9,7 @@ from app.config import (
     EMAIL_OTP_REQUEST_RATE_LIMIT,
     EMAIL_OTP_VERIFY_RATE_LIMIT,
     HEALTH_RATE_LIMIT,
+    IMAGES_RANDOM_RATE_LIMIT,
     PARTICIPANT_CHECK_RATE_LIMIT,
     PARTICIPANT_CREATE_RATE_LIMIT,
     ROOT_RATE_LIMIT,
@@ -163,7 +164,7 @@ _ENDPOINT_METADATA: dict[tuple[str, str], dict[str, Any]] = {
         "summary": "Select the next image for the active participant flow (survey or attention step).",
         "auth": "none",
         "idempotency": "n/a",
-        "rate_limit": "none",
+        "rate_limit": IMAGES_RANDOM_RATE_LIMIT,
         "query": [
             "public_id=<participant_public_id> (optional)",
             "exclude=image_001,image_002 (optional)",
