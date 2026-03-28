@@ -1,45 +1,60 @@
 # Backend
 
-Implements the participant lifecycle APIs for C.O.G.N.I.T., including consent, participant registration, email OTP verification, image delivery, and survey submission.
+Flask backend for the C.O.G.N.I.T. participant workflow. It handles participant registration, consent, session recovery, email OTP verification, image delivery, survey submission, observability, and API docs.
 
-## Current Scope
-- Participant onboarding and consent
-- Email OTP verification
-- Image selection for survey and attention checks
-- Submission quality processing and attention evaluation
-- Audit-grade observability for participant and submission flows
+## Main Responsibilities
 
-## Architecture
-- `app/routes/participant.py`: participant creation, consent, username/email checks, OTP flows
-- `app/routes/image.py`: random image selection
-- `app/routes/submission.py`: submission validation and persistence
-- `app/services/image_service.py`: image/query orchestration
-- `app/services/submission_service.py`: submission persistence and audit handling
-- `app/utils/`: shared helpers, decorators, runtime, observability
+- Participant onboarding and availability checks
+- Consent capture and session continuity
+- Email OTP request and verification
+- Random survey and attention-check image delivery
+- Submission validation, persistence, and audit logging
+- Health checks, client error intake, and documentation routes
 
-## Production Notes
-- Web instances should run with `APP_PROCESS_ROLE=web` so they do not start the durable queue worker.
-- Dedicated background workers can run with `APP_PROCESS_ROLE=worker` when durable queue processing is needed.
-- Request-level DB observability writes can be disabled with `ENABLE_REQUEST_DB_OBSERVABILITY=false` to avoid hammering hosted Postgres on every request.
-- On Vercel-style deployments, the backend now defaults to smaller SQLAlchemy pool settings and disables request-level DB observability writes by default.
+## Important Routes
 
-## Key Tables
-- `participants`
-- `participant_consents`
-- `images`
-- `attention_checks`
-- `submissions`
-- `audit_log`
-
-## Primary Endpoints
 - `GET /health`
+- `GET /participant-options`
+- `GET /participants/session`
 - `POST /participants`
 - `GET /check-username`
 - `GET /check-email`
 - `POST /consent`
-- `GET /participant-options`
-- `GET /participants/session`
 - `POST /email-otp/request`
 - `POST /email-otp/verify`
 - `GET /images/random`
 - `POST /submit`
+- `POST /client-error`
+
+## Config
+
+Environment variables are documented in `backend/.env.example`.
+
+Boot requirements:
+
+- `DATABASE_URL`
+- `WEBSITE_URL`
+- `SECRET_KEY`
+- `IP_HASH_SALT`
+- `EMAIL_OTP_WEBHOOK_URL`
+- `EMAIL_OTP_JWT_SECRET`
+
+Optional production tuning includes:
+
+- `RATELIMIT_STORAGE_URI`
+- `DB_POOL_SIZE`
+- `DB_MAX_OVERFLOW`
+- `DB_POOL_TIMEOUT_SECONDS`
+- `DB_POOL_RECYCLE_SECONDS`
+- `APP_PROCESS_ROLE`
+- `ENABLE_REQUEST_DB_OBSERVABILITY`
+
+## Run Locally
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python main.py
+```
