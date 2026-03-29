@@ -218,6 +218,8 @@ def submit():
             request_payload=d,
             route_path=SUBMIT_ROUTE,
             request_id=getattr(g, "request_id", None),
+            request_ip_hash=iph,
+            request_user_agent=ua,
         )
         response = success_response(response_payload)
         if response_payload.get("session_closed") or response_payload.get("clear_client_state"):

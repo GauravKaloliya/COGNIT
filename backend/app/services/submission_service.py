@@ -888,6 +888,9 @@ def enqueue_submit_post_commit_tasks(
     quality: float,
     word_count: int,
     idempotency_key: str = "",
+    request_id: str = "",
+    ip_hash: str = "",
+    user_agent: str = "",
 ):
     """Run non-critical side effects outside the request transaction."""
     def _run():
@@ -908,14 +911,14 @@ def enqueue_submit_post_commit_tasks(
                         "ep": SUBMIT_ROUTE,
                         "meth": HTTP_METHOD_POST,
                         "st": 200,
-                        "iph": "0" * 64,
-                        "ua": "",
+                        "iph": (str(ip_hash or "").strip()[:64]) or ("0" * 64),
+                        "ua": (str(user_agent or "").strip()[:512]) or "unknown",
                         "det": AUDIT_DETAIL_SUBMISSION.format(
                             word_count=word_count,
                             quality=quality,
                             is_survey=is_survey,
                         ),
-                        "rid": None,
+                        "rid": (str(request_id or "").strip()[:128]) or None,
                     })
                     emit_domain_event_fn(
                         conn,

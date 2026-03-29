@@ -126,6 +126,8 @@ def process_submission_workflow(
     request_payload: dict,
     route_path: str,
     request_id=None,
+    request_ip_hash: str = "",
+    request_user_agent: str = "",
 ):
     _idem, replay = load_idempotent_response_fn(
         db,
@@ -572,6 +574,9 @@ def process_submission_workflow(
         quality=float(quality),
         word_count=word_count,
         idempotency_key=str(idempotency_key or ""),
+        request_id=str(request_id or "")[:128],
+        ip_hash=str(request_ip_hash or ip_hash or "")[:64],
+        user_agent=str(request_user_agent or user_agent or "")[:512],
     )
 
     response_payload = build_submission_response_payload(
