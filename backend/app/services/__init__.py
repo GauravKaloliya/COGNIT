@@ -65,7 +65,10 @@ from .participant_state_service import (
     record_participant_consent,
     update_participant_stage,
 )
-from .image_service import fetch_active_reserved_image
+from .image_service import (
+    fetch_active_reserved_image,
+    select_random_image_for_participant,
+)
 from .email_otp_service import (
     build_email_otp_payload,
     enqueue_email_otp,
@@ -162,6 +165,7 @@ __all__ = [
     "record_participant_consent",
     "update_participant_stage",
     "fetch_active_reserved_image",
+    "select_random_image_for_participant",
     "build_email_otp_payload",
     "enqueue_email_otp",
     "EmailOtpSendError",
