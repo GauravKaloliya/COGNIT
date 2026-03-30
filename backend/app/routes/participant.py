@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import time
 from contextlib import suppress
 
 from flask import Blueprint, g, request
@@ -89,6 +90,7 @@ from app.services import (
     is_participant_field_available,
     is_valid_public_id,
     mark_participant_session_hidden,
+    select_random_image_for_participant,
     set_participant_cookies,
     touch_participant_session,
     create_participant_workflow,
@@ -100,7 +102,13 @@ from app.services.participant_state_service import (
     record_participant_consent,
 )
 from app.services.state_machine_service import PARTICIPANT_STAGE_EVENTS
-from app.services.survey_sequence_service import REQUIRED_SUBMISSIONS
+from app.services.submission_query_service import update_participant_metadata
+from app.services.survey_sequence_service import (
+    REQUIRED_SUBMISSIONS,
+    STEP_ATTENTION,
+    expected_step_for_submission_count,
+    resolve_two_step_sequence,
+)
 from app.utils.decorators import require_idempotency_key, track_performance
 from app.utils.helpers import (
     create_error_response,
@@ -132,6 +140,41 @@ QUERY_FETCH_PARTICIPANT_WORKFLOW_STATUS = text(
 )
 
 
+def _resolve_session_survey(
+    db,
+    *,
+    participant_id: int,
+    participant_stage: str,
+    participant_meta: dict,
+    total_submissions: int,
+):
+    active_reserved = fetch_active_reserved_image(db, participant_id)
+    if active_reserved:
+        return active_reserved
+
+    if participant_stage != "survey" or total_submissions >= REQUIRED_SUBMISSIONS:
+        return None
+
+    sequence_order, sequence_created = resolve_two_step_sequence(participant_meta)
+    if sequence_created:
+        update_participant_metadata(
+            db,
+            participant_id=participant_id,
+            participant_meta=participant_meta,
+        )
+        db.commit()
+
+    expected_step = expected_step_for_submission_count(sequence_order, total_submissions)
+    should_prioritize_attention = expected_step == STEP_ATTENTION
+    return select_random_image_for_participant(
+        db,
+        excluded_set=set(),
+        participant_id=participant_id,
+        should_prioritize_attention=should_prioritize_attention,
+        now_ts=int(time.time()),
+    )
+
+
 def _build_participant_session_payload(
     db,
     *,
@@ -159,6 +202,7 @@ def _build_participant_session_payload(
 
     participant_id = int(participant_row[0])
     stage = str(participant_row[1] or "").strip() or "consent"
+    participant_meta = dict(participant_row[2] or {}) if isinstance(participant_row[2], dict) else {}
     total_submissions = int(participant_row[3] or 0)
     shown_images = [
         str(image_id).strip()
@@ -166,7 +210,13 @@ def _build_participant_session_payload(
         if str(image_id or "").strip()
     ]
 
-    active_reserved = fetch_active_reserved_image(db, participant_id)
+    active_reserved = _resolve_session_survey(
+        db,
+        participant_id=participant_id,
+        participant_stage=stage,
+        participant_meta=participant_meta,
+        total_submissions=total_submissions,
+    )
     current_survey = None
     if active_reserved:
         is_attention_check = bool(active_reserved[3]) if len(active_reserved) > 3 else False
