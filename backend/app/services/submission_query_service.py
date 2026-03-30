@@ -28,11 +28,12 @@ QUERY_FETCH_SUBMISSION_PARTICIPANT = text("""
 QUERY_FETCH_IMAGE_TARGET = text("""
     SELECT
         i.id,
-        CASE
-            WHEN i.tags IS NULL THEN true
-            WHEN 'non-survey' = ANY(i.tags) THEN false
-            ELSE true
-        END AS is_survey_image
+        NOT EXISTS (
+            SELECT 1
+            FROM attention_checks ac
+            WHERE ac.image_id = i.id
+              AND ac.is_active = true
+        ) AS is_survey_image
     FROM images i
     WHERE i.image_id = :iid
 """)

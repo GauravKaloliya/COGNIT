@@ -441,11 +441,7 @@ CREATE TABLE IF NOT EXISTS images (
     id           BIGSERIAL PRIMARY KEY,
     image_id     VARCHAR(64) NOT NULL UNIQUE,
     url          TEXT NOT NULL,
-    width        INTEGER CHECK (width > 0),
-    height       INTEGER CHECK (height > 0),
-    object_count SMALLINT CHECK (object_count >= 0),
-    difficulty   NUMERIC(3,2) CHECK (difficulty BETWEEN 0 AND 10),
-    tags         TEXT[],
+    is_active    BOOLEAN NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -455,7 +451,7 @@ CREATE TRIGGER trg_images_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE INDEX IF NOT EXISTS idx_images_image_id   ON images (image_id);
-CREATE INDEX IF NOT EXISTS idx_images_difficulty ON images (difficulty);
+CREATE INDEX IF NOT EXISTS idx_images_is_active  ON images (is_active);
 
 CREATE TABLE IF NOT EXISTS attention_checks (
     id            BIGSERIAL PRIMARY KEY,
@@ -860,6 +856,9 @@ CREATE INDEX IF NOT EXISTS idx_submission_cognitive_difficulty
     WHERE difficulty_self_report IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submission_cognitive_reference_coverage
     ON submission_cognitive_metrics (reference_coverage DESC);
+
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- =====================================================================
 -- SUBMISSION ALIGNMENT MENTIONS (NO-DUP SOURCE OF TRUTH)

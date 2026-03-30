@@ -7,17 +7,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 
-from app.constants.error_keys import (
-    AUTH_EMAIL_OTP_SEND_HTTP_ERROR,
-    AUTH_EMAIL_OTP_SEND_TIMEOUT,
-)
 from app.constants.response_keys import (
     RESPONSE_KEY_EMAIL,
     RESPONSE_KEY_EMAIL_VERIFIED,
     RESPONSE_KEY_EXPIRES_AT,
 )
 from app.services.email_otp_service import (
-    EmailOtpSendError,
     build_email_otp_payload,
     email_in_use_by_other,
     enqueue_email_otp,
@@ -34,7 +29,6 @@ from app.services.email_otp_service import (
     otp_expiry_timestamp,
     otp_is_expired,
     otp_is_over_attempts,
-    send_email_otp,
     update_participant_email,
 )
 from app.services.participant_state_service import apply_participant_stage_event
@@ -100,31 +94,20 @@ def request_email_otp_workflow(*, db, public_id: str, email: str, email_update: 
             otp_id=otp_id,
             idempotency_key=f"email-otp-request:{public_id}:{otp_id}",
         )
-    except Exception:
-        try:
-            send_email_otp(build_email_otp_payload(email=stored_email, otp=otp, public_id=public_id))
-        except EmailOtpSendError as exc:
-            error_key = "AUTH_EMAIL_OTP_SEND_FAILED"
-            if exc.kind == "timeout":
-                error_key = AUTH_EMAIL_OTP_SEND_TIMEOUT
-            elif exc.kind == "http_error":
-                error_key = AUTH_EMAIL_OTP_SEND_HTTP_ERROR
-            logger.warning(
-                "email_otp_send_failed",
-                extra={
-                    "event": "email_otp_send_failed",
-                    "kind": exc.kind,
-                    "status_code": exc.status_code,
-                    "request_id": request_id,
-                },
-            )
-            mark_email_otp_used(db, otp_id=otp_id)
-            db.commit()
-            return EmailOtpWorkflowResult(create_error_response(error_key), 502)
-        except Exception:
-            mark_email_otp_used(db, otp_id=otp_id)
-            db.commit()
-            return EmailOtpWorkflowResult(create_error_response("AUTH_EMAIL_OTP_SEND_FAILED"), 502)
+    except Exception as exc:
+        logger.warning(
+            "email_otp_enqueue_failed",
+            extra={
+                "event": "email_otp_enqueue_failed",
+                "request_id": request_id,
+                "otp_id": int(otp_id),
+                "public_id": str(public_id),
+                "error": str(exc),
+            },
+        )
+        mark_email_otp_used(db, otp_id=otp_id)
+        db.commit()
+        return EmailOtpWorkflowResult(create_error_response("AUTH_EMAIL_OTP_SEND_FAILED"), 502)
 
     return EmailOtpWorkflowResult(success_response({
         RESPONSE_KEY_EMAIL: stored_email,
