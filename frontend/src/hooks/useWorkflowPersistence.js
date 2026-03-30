@@ -140,7 +140,7 @@ export function useWorkflowPersistence({
     const request = (async () => {
       try {
         const session = await (
-          forceFresh
+          forceFresh || normalizedStage === APP_FLOW.stages.survey
             ? endpoints.getParticipantSessionFresh()
             : endpoints.getParticipantSession()
         );
@@ -179,14 +179,15 @@ export function useWorkflowPersistence({
             : [];
           const backendCompleted = Math.max(0, Number(session?.workflow_status?.survey_completed) || 0);
           const backendStage = String(session?.workflow_status?.stage || "").trim();
+          const effectiveBackendStage = backendSurvey ? APP_FLOW.stages.survey : backendStage;
           const backendLoadState = deriveSessionSurveyLoadState(session);
 
           writeCoreValue(runtimeConfig.storageKeys.survey, backendSurvey, effectiveScope);
           writeCoreValue(runtimeConfig.storageKeys.surveyLoadState, backendLoadState, effectiveScope);
           writeCoreValue(runtimeConfig.storageKeys.surveyCompleted, backendCompleted, effectiveScope);
           writeCoreValue(runtimeConfig.storageKeys.shownImages, backendShownImages, effectiveScope);
-          if (backendStage) {
-            updateWorkflowState((prev) => ({ ...prev, stage: backendStage }));
+          if (effectiveBackendStage) {
+            updateWorkflowState((prev) => ({ ...prev, stage: effectiveBackendStage }));
           }
         }
       } catch {

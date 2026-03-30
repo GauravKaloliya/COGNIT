@@ -14,6 +14,7 @@ QUERY_LOAD_IMAGE_POOL = text("""
             WHERE ac.image_id = i.id AND ac.is_active = true
         ) AS is_attention
     FROM images i
+    WHERE i.is_active = true
 """)
 
 QUERY_FETCH_ACTIVE_PARTICIPANT_RESERVATION = text("""

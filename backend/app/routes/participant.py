@@ -177,15 +177,19 @@ def _build_participant_session_payload(
             "is_attention_check": is_attention_check,
         }
 
+    effective_stage = stage
+    if current_survey is not None and total_submissions < REQUIRED_SUBMISSIONS:
+        effective_stage = "survey"
+
     payload["shown_images"] = shown_images
     payload["current_survey"] = current_survey
     payload["workflow_status"] = {
-        "stage": stage,
+        "stage": effective_stage,
         "survey_completed": total_submissions,
         "required_submissions": REQUIRED_SUBMISSIONS,
         "has_active_survey": current_survey is not None,
         "needs_image_allocation": bool(
-            stage == "survey"
+            effective_stage == "survey"
             and total_submissions < REQUIRED_SUBMISSIONS
             and current_survey is None
         ),
