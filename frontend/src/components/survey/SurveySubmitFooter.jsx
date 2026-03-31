@@ -8,6 +8,7 @@ export default function SurveySubmitFooter({
   submitting,
   canSubmit,
   submitLocked,
+  submitBlockReason,
   handleSubmit,
   getSubmitTooltip,
   optimisticMessage,
@@ -16,11 +17,11 @@ export default function SurveySubmitFooter({
   return (
     <>
       {visibleSubmitError && <div className="banner warning">{visibleSubmitError}</div>}
+      {!visibleSubmitError && !canSubmit && !submitting && submitBlockReason && (
+        <div className="banner warning">{submitBlockReason}</div>
+      )}
 
       <PageActions sticky className={`actions survey-submit-actions survey-sticky-footer ${submitting ? "is-submitting" : ""} ${submitLocked ? "is-locked" : ""}`}>
-        <div className="submit-info-box">
-          <p className="submit-shortcut-hint">{uiText("survey.submitShortcut")}</p>
-        </div>
         <DSButton
           className={`primary survey-submit-button ${submitting ? "wiggle is-submitting" : ""}`}
           onClick={handleSubmit}

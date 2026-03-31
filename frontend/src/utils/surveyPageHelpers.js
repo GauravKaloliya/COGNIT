@@ -1,4 +1,5 @@
 import { getApiUrl } from "./apiBase";
+import { getErrorMessage } from "./errorRegistry";
 
 const COLLAPSE_WHITESPACE_RE = /[\t\r\n]+/g;
 const DISALLOWED_DESCRIPTION_CHAR_RE = /[^ \p{L}\p{N}.]/gu;
@@ -28,6 +29,8 @@ export function buildSurveyImageState(survey) {
 
 export function getSubmitTooltip({
   imageReady,
+  imageError,
+  surveyLoaded = true,
   submitting,
   submitLocked,
   wordCount,
@@ -43,19 +46,41 @@ export function getSubmitTooltip({
   getErrorMessage,
   uiText,
 }) {
-  if (!imageReady) return getErrorMessage("SYS_002_0018");
-  if (submitting || submitLocked) return uiText("survey.submitBusy");
+  if (!surveyLoaded) return uiText("survey.footerLoadNextImage");
+  if (!imageReady) return imageError ? uiText("survey.footerRestoreImage") : uiText("survey.footerLoadingImage");
+  if (submitting) return uiText("survey.submitBusy");
+  if (submitLocked) return uiText("survey.submitLocked");
   if (wordCount < minWords) {
-    return getErrorMessage("VAL_002_0004", "en", { min_words: minWords, actual: wordCount });
+    return uiText("survey.footerNeedWords", { remaining: Math.max(0, minWords - wordCount) });
   }
-  if (descriptionCharCount < minDescriptionLength) return getErrorMessage("VAL_002_0002");
-  if (descriptionCharCount > maxDescriptionLength) return getErrorMessage("VAL_002_0003");
-  if (difficultyRating === 0) return uiText("survey.difficultyRequired");
-  if (confidenceRating === 0) return uiText("survey.confidenceRequired");
+  if (descriptionCharCount < minDescriptionLength) return uiText("survey.footerNeedDescriptionDetail");
+  if (descriptionCharCount > maxDescriptionLength) return uiText("survey.footerDescriptionTooLong");
+  if (difficultyRating === 0) return uiText("survey.footerNeedDifficulty");
+  if (confidenceRating === 0) return uiText("survey.footerNeedConfidence");
   const commentsLength = countAlphaNumericChars(comments);
-  if (commentsLength < minFeedbackLength) return getErrorMessage("VAL_002_0006");
-  if (commentsLength > maxFeedbackLength) return getErrorMessage("VAL_002_0007");
+  if (commentsLength < minFeedbackLength) {
+    return uiText("survey.footerNeedComments", { remaining: Math.max(0, minFeedbackLength - commentsLength) });
+  }
+  if (commentsLength > maxFeedbackLength) return uiText("survey.footerCommentsTooLong");
   return uiText("survey.submit");
+}
+
+export function getFriendlySurveySubmitErrorMessage(rawMessage, { uiText }) {
+  const normalized = String(rawMessage || "").trim();
+  if (!normalized) return "";
+  if (normalized === uiText("survey.submit")) return "";
+  if (normalized === uiText("survey.submitBusy")) return "";
+  if (normalized === uiText("survey.submitLocked")) return "";
+  if (normalized === uiText("survey.offlineSubmit")) return uiText("survey.footerOffline");
+  if (normalized === uiText("survey.imageRestoreFailed")) return uiText("survey.footerRestoreImage");
+  if (normalized === uiText("survey.feedLoadFailed")) return uiText("survey.footerLoadNextImage");
+  if (normalized === getErrorMessage("UI_001_0002")) return uiText("survey.footerImageMissing");
+  if (normalized.includes("At least") && normalized.includes("words")) return uiText("survey.footerNeedDescriptionDetail");
+  if (normalized.includes("difficulty")) return uiText("survey.footerNeedDifficulty");
+  if (normalized.includes("confidence")) return uiText("survey.footerNeedConfidence");
+  if (normalized.includes("comments") || normalized.includes("feedback")) return uiText("survey.footerNeedComments", { remaining: "a few" });
+  if (normalized.includes("Please wait")) return uiText("survey.submitLocked");
+  return normalized || uiText("survey.footerGenericError");
 }
 
 export const sanitizeSurveyDescription = (value) =>

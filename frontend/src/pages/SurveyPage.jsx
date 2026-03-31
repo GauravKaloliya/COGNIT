@@ -104,6 +104,14 @@ export default function SurveyPage({
   const MAX_FEEDBACK_LENGTH = constants.maxFeedbackLength;
   const UI_TOTAL_STEPS = constants.uiTotalSteps;
   const COPY_PASTE_DISABLED = constants.copyPasteDisabled;
+  const remainingSurveys = Math.max(0, UI_TOTAL_STEPS - currentStep);
+  const surveyProgressPercent = Math.min(100, Math.max(0, (currentStep / Math.max(UI_TOTAL_STEPS, 1)) * 100));
+  const progressNotice = remainingSurveys > 0
+    ? uiText(
+      remainingSurveys === 1 ? "survey.remainingNotice" : "survey.remainingNoticePlural",
+      { current: currentStep, total: UI_TOTAL_STEPS, remaining: remainingSurveys }
+    )
+    : uiText("survey.finalNotice");
   const visibleSubmitError = submitError
     && submitError !== uiText("survey.submit")
     && submitError !== uiText("survey.submitBusy")
@@ -183,10 +191,28 @@ export default function SurveyPage({
           saveError={deferredSaveError}
         />
       </div>
-      <div className="meta meta-step-top stage-section" style={{ "--section-index": 1 }}>
-        <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: UI_TOTAL_STEPS })}</span>
+      <div className="stage-section" style={{ "--section-index": 2 }}>
+        <div className="field-progress survey-progress-card">
+          <div className="survey-progress-copy">
+            <span className="step-chip">{uiText("survey.stepLabel", { current: currentStep, total: UI_TOTAL_STEPS })}</span>
+            <div
+              className="field-progress-track survey-progress-track"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(surveyProgressPercent)}
+              aria-label={uiText("common.progress")}
+            >
+              <span
+                className="field-progress-fill survey-progress-fill"
+                style={{ width: `${surveyProgressPercent}%` }}
+              />
+            </div>
+            <div className="survey-progress-notice">{progressNotice}</div>
+          </div>
+        </div>
       </div>
-      <div className="stage-section parallax-deep survey-image-stage" style={{ "--section-index": 2 }}>
+      <div className="stage-section parallax-deep survey-image-stage" style={{ "--section-index": 3 }}>
         <SurveyImagePanel
           imageSrc={imageSrc}
           imageLoaded={imageLoaded}
@@ -205,18 +231,18 @@ export default function SurveyPage({
         />
       </div>
 
-      <div className="meta meta-timer-row stage-section" style={{ "--section-index": 3 }}>
+      <div className="meta meta-timer-row stage-section" style={{ "--section-index": 4 }}>
         <span className="timer">{uiText("survey.timeElapsed", { seconds: elapsed })}</span>
       </div>
 
       {minimumMet && showDeferredDecorations && (
-        <div className="survey-badges stage-section" style={{ "--section-index": 4 }}>
+        <div className="survey-badges stage-section" style={{ "--section-index": 5 }}>
           {minimumMet && <span className="status-badge met">{uiText("survey.minimumMet")}</span>}
         </div>
       )}
 
       <React.Profiler id="survey-fields" onRender={profileRender}>
-        <div className="stage-section" style={{ "--section-index": 5 }}>
+        <div className="stage-section" style={{ "--section-index": 6 }}>
           <SurveyDescriptionField
             description={description}
             setDescription={setDescription}
@@ -237,7 +263,7 @@ export default function SurveyPage({
           />
         </div>
 
-        <div className="stage-section" style={{ "--section-index": 6 }}>
+        <div className="stage-section" style={{ "--section-index": 7 }}>
           <SurveyRatingField
             difficultyRating={difficultyRating}
             setDifficultyRating={setDifficultyRating}
@@ -250,7 +276,7 @@ export default function SurveyPage({
           />
         </div>
 
-        <div className="stage-section" style={{ "--section-index": 7 }}>
+        <div className="stage-section" style={{ "--section-index": 8 }}>
           <SurveyCommentsField
             comments={comments}
             setComments={setComments}
@@ -270,7 +296,7 @@ export default function SurveyPage({
         </div>
       </React.Profiler>
 
-      <div className="stage-section" style={{ "--section-index": 8 }}>
+      <div className="stage-section" style={{ "--section-index": 9 }}>
         <SurveySubmitFooter
           visibleSubmitError={visibleSubmitError}
           submitting={submitting}

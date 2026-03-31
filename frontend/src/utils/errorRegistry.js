@@ -7,6 +7,12 @@ import {
 
 const DEFAULT_LANGUAGE = "en";
 
+function interpolateMessage(template, params = {}) {
+  return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (_, paramKey) => (
+    Object.prototype.hasOwnProperty.call(params, paramKey) ? String(params[paramKey]) : ""
+  ));
+}
+
 const TRANSLATIONS = {
   en: {
     "AUTH_001_0001": "Please agree to the consent terms to continue.",
@@ -125,19 +131,14 @@ export function hasErrorCode(errorCode) {
 export function getErrorMessage(errorCode, lang = DEFAULT_LANGUAGE, params = {}) {
   const messages = TRANSLATIONS[lang] || TRANSLATIONS[DEFAULT_LANGUAGE];
   const normalizedCode = SHARED_KEY_TO_CODE[errorCode] || errorCode;
-  let message =
+  const message =
     messages[normalizedCode] ||
     (lang === DEFAULT_LANGUAGE ? SHARED_MESSAGES_EN[normalizedCode] : null) ||
     messages["SYS_001_0001"] ||
     SHARED_MESSAGES_EN["SYS_001_0001"] ||
     "An error occurred";
 
-  Object.keys(params).forEach((key) => {
-    const pattern = new RegExp(`\\{${key}\\}`, "g");
-    message = message.replace(pattern, String(params[key]));
-  });
-
-  return message;
+  return interpolateMessage(message, params);
 }
 
 export function parseErrorResponse(response) {
