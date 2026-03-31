@@ -91,6 +91,11 @@ QUERY_CLEANUP_STALE_RESERVATIONS = text("""
       AND expires_at <= CURRENT_TIMESTAMP
 """)
 
+QUERY_DELETE_UNOWNED_RESERVATIONS = text("""
+    DELETE FROM image_reservations
+    WHERE participant_id IS NULL
+""")
+
 QUERY_RELEASE_PARTICIPANT_RESERVATIONS = text("""
     UPDATE image_reservations
     SET released_at = CURRENT_TIMESTAMP
