@@ -1,5 +1,6 @@
 import React from "react";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import PageSkeleton from "./PageSkeleton.jsx";
 import PanelState from "./PanelState.jsx";
 import ThemeToggleIcon from "./ThemeToggleIcon.jsx";
@@ -98,7 +99,7 @@ export default function RateLimitPage({
             variant="warning"
             icon="⏳"
             title={uiText("rateLimit.title")}
-            message={error?.message || getErrorMessage("ERR_RATE_LIMIT")}
+            message={getDisplayErrorMessage(error, "RATE_001_0001") || getErrorMessage("RATE_001_0001")}
             actionLabel={retryIn > 0 ? uiText("common.tryAgainIn", { seconds: retryIn }) : uiText("common.reload")}
             onAction={handleRetry}
             disabled={retryIn > 0}

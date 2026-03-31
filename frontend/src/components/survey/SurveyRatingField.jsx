@@ -2,6 +2,26 @@ import React from "react";
 import { runtimeConfig } from "../../config/runtime";
 import { uiText } from "../../utils/uiText.js";
 
+function detectEmojiSupport() {
+  if (typeof document === "undefined") return false;
+  const canvas = document.createElement("canvas");
+  canvas.width = 32;
+  canvas.height = 32;
+  const context = canvas.getContext("2d");
+  if (!context) return false;
+  context.textBaseline = "top";
+  context.font = "28px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillText("😄", 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let index = 3; index < pixels.length; index += 4) {
+    if (pixels[index] !== 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function RatingScale({
   name,
   label,
@@ -10,6 +30,8 @@ function RatingScale({
   imageReady,
   disabled,
   onBlur,
+  displayValues = null,
+  emojiMode = false,
 }) {
   const maxRating = runtimeConfig.maxRating;
   const ratingValues = Array.from(
@@ -18,9 +40,14 @@ function RatingScale({
   );
   return (
     <div className="field effort-rating">
-      <label>
-        {label} <span className="required" aria-label={uiText("common.requiredAria")}>*</span> {value > 0 ? `${value}/${maxRating}` : ""}
-      </label>
+      <div className="field-header">
+        <label>
+          {label} <span className="required" aria-label={uiText("common.requiredAria")}>*</span> {value > 0 ? `${value}/${maxRating}` : ""}
+        </label>
+        <span className={`status-badge ${value > 0 ? "met" : "pending"}`}>
+          {value > 0 ? uiText("survey.minimumMet") : uiText("survey.ratingBadge")}
+        </span>
+      </div>
       <div className={`rating-scale ${(!imageReady || disabled) ? "rating-scale-disabled" : ""}`}>
         {ratingValues.map((option) => (
           <label key={`${name}-${option}`} className="rating-option">
@@ -33,7 +60,15 @@ function RatingScale({
               onBlur={onBlur}
               disabled={disabled || !imageReady}
             />
-            <span className="rating-label">{option}</span>
+            <span className={`rating-label rating-label-${option} ${emojiMode ? "rating-label-emoji" : ""}`}>
+              {emojiMode ? (
+                <span className="rating-emoji-glyph" aria-hidden="true">
+                  {displayValues?.[option] || option}
+                </span>
+              ) : (
+                displayValues?.[option] || option
+              )}
+            </span>
           </label>
         ))}
       </div>
@@ -55,6 +90,24 @@ function SurveyRatingField({
   onDifficultyBlur,
   onConfidenceBlur,
 }) {
+  const [emojiSupported, setEmojiSupported] = React.useState(false);
+
+  React.useEffect(() => {
+    setEmojiSupported(detectEmojiSupport());
+  }, []);
+
+  const confidenceDisplayValues = React.useMemo(() => (
+    emojiSupported
+      ? {
+          1: "😟",
+          2: "🙂",
+          3: "😌",
+          4: "😄",
+          5: "🤩",
+        }
+      : null
+  ), [emojiSupported]);
+
   return (
     <>
       <RatingScale
@@ -74,6 +127,8 @@ function SurveyRatingField({
         imageReady={imageReady}
         disabled={disabled}
         onBlur={onConfidenceBlur}
+        displayValues={confidenceDisplayValues}
+        emojiMode={emojiSupported}
       />
     </>
   );

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { endpoints } from "../../utils/api.js";
 import { runtimeConfig } from "../../config/runtime";
 import { getErrorMessage } from "../../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../../utils/appError.js";
 import { uiText } from "../../utils/uiText";
 import { REQUEST_CODES } from "../../constants/request";
 import { ERROR_UI_EVENTS } from "../../constants/errorUiEvents";
@@ -123,7 +124,7 @@ export function useUserDetailsVerification({
       setOtpStatus(OTP_STATUS.verifyFailed);
       setResendCountdownActive(false);
       resendEndsAtRef.current = null;
-      setOtpError(detail?.message || getErrorMessage("AUTH_003_0002"));
+      setOtpError(getDisplayErrorMessage(detail, "AUTH_003_0002"));
     };
     window.addEventListener(ERROR_UI_EVENTS.otpResendReady, handleOtpResendReady);
     return () => window.removeEventListener(ERROR_UI_EVENTS.otpResendReady, handleOtpResendReady);
@@ -224,7 +225,7 @@ export function useUserDetailsVerification({
       setResendCountdownActive(false);
       resendEndsAtRef.current = null;
       setEmailEditable(true);
-      setOtpError(error?.message || getErrorMessage("SYS_002_0002"));
+      setOtpError(getDisplayErrorMessage(error, "SYS_002_0002"));
       onFailure?.(error);
       return false;
     }
@@ -286,7 +287,7 @@ export function useUserDetailsVerification({
       autoVerifyRef.current = "";
       setOtpDigits(Array.from({ length: otpLength }, () => ""));
       setEmailEditable(true);
-      setOtpError(error?.message || getErrorMessage("SYS_002_0002"));
+      setOtpError(getDisplayErrorMessage(error, "SYS_002_0002"));
     }
   }, [addToast, demographicsEmail, isOnline, onEmailVerified, otpLength, otpValue, publicId, scopedOtpKey]);
 

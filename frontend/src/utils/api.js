@@ -359,6 +359,10 @@ export const endpoints = {
     if (publicId) params.set("public_id", publicId);
     return api.get(API_ROUTES.randomImage(params.toString()), options);
   },
+  renewImageReservation: (publicId, imageId, options = {}) => {
+    const safePublicId = assertPublicId(publicId, null, { message: getErrorMessage("NF_001_0001") });
+    return api.post(API_ROUTES.renewImageReservation, { public_id: safePublicId, image_id: imageId }, options);
+  },
   submitDescription: async (data, options = {}) => {
     const { onProtectedSubmitPhaseChange, ...requestOptions } = options || {};
     const safePublicId = assertPublicId(data?.public_id, null, { message: getErrorMessage("NF_001_0001") });

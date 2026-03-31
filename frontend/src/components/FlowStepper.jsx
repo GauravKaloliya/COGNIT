@@ -1,16 +1,24 @@
 import React from "react";
-import { APP_STAGE_ORDER } from "../config/appFlow";
 import { uiText } from "../utils/uiText";
 
-const STEP_LABELS = {
-  consent: "step.consent",
-  "user-details": "step.details",
-  survey: "step.survey",
-  "post-survey": "step.done",
-};
+const DISPLAY_STEPS = [
+  { key: "consent", labelKey: "step.consent" },
+  { key: "user-details", labelKey: "step.details" },
+  { key: "survey-1", labelKey: "step.survey1" },
+  { key: "survey-2", labelKey: "step.survey2" },
+  { key: "post-survey", labelKey: "step.done" },
+];
 
-export default function FlowStepper({ stage }) {
-  const currentIndex = Math.max(0, APP_STAGE_ORDER.indexOf(stage));
+function getActiveStepKey(stage, surveyCompleted) {
+  if (stage === "survey") {
+    return Number(surveyCompleted) >= 1 ? "survey-2" : "survey-1";
+  }
+  return stage || "consent";
+}
+
+export default function FlowStepper({ stage, surveyCompleted = 0 }) {
+  const activeStepKey = getActiveStepKey(stage, surveyCompleted);
+  const currentIndex = Math.max(0, DISPLAY_STEPS.findIndex((step) => step.key === activeStepKey));
   const stepperRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -18,22 +26,21 @@ export default function FlowStepper({ stage }) {
     if (!el) return;
     const active = el.querySelector('[aria-current="step"]');
     if (active && typeof active.scrollIntoView === "function") {
-      active.scrollIntoView({ block: "nearest", inline: "start" });
+      active.scrollIntoView({ block: "nearest", inline: "center" });
     } else {
       el.scrollLeft = 0;
     }
-  }, [stage]);
+  }, [activeStepKey]);
 
   return (
     <div className="flow-stepper-wrap" aria-label={uiText("common.progress")}>
       <div
         ref={stepperRef}
         className="flow-stepper"
-        style={{ "--flow-step-count": APP_STAGE_ORDER.length }}
+        style={{ "--flow-step-count": DISPLAY_STEPS.length }}
       >
-        {APP_STAGE_ORDER.map((key, index) => {
+        {DISPLAY_STEPS.map(({ key, labelKey }, index) => {
           const state = index < currentIndex ? "done" : index === currentIndex ? "active" : "upcoming";
-          const labelKey = STEP_LABELS[key] || key;
           return (
             <div
               key={key}

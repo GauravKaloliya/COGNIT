@@ -24,6 +24,7 @@ export default function UserDetailsPage({
 }) {
   const [emailFocused, setEmailFocused] = React.useState(false);
   const [emailPlaceholderIndex, setEmailPlaceholderIndex] = React.useState(0);
+  const [showOtpDeliveryNotice, setShowOtpDeliveryNotice] = React.useState(false);
   const profileRender = useRenderProfiler("UserDetailsPage", 20);
   const isMobile = useIsMobile();
   const {
@@ -122,15 +123,19 @@ export default function UserDetailsPage({
   const inputRefs = React.useRef([]);
   const toOtpDigits = (value) => String(value || "").replace(/\D/g, "");
   const OTP_STATUS = runtimeConfig.otpStatus;
+  const showOtpExpiry = showOtpField && otpStatus !== OTP_STATUS.sending;
+  const otpExpired = showOtpExpiry && otpExpirySeconds <= 0;
   const otpStatusMessage = React.useMemo(() => (
-    otpStatus === OTP_STATUS.sending
+    otpError || otpExpired
+      ? ""
+      : otpStatus === OTP_STATUS.sending
       ? uiText("email.requesting")
       : otpStatus === OTP_STATUS.sent
         ? uiText("email.sentToast")
         : otpStatus === OTP_STATUS.verifying
           ? uiText("email.verifying")
           : ""
-  ), [OTP_STATUS.sending, OTP_STATUS.sent, OTP_STATUS.verifying, otpStatus]);
+  ), [OTP_STATUS.sending, OTP_STATUS.sent, OTP_STATUS.verifying, otpError, otpExpired, otpStatus]);
   const resendLabel = resendSeconds > 0
     ? uiText("email.resendIn", { seconds: resendSeconds })
     : uiText("email.sendAgain");
@@ -152,10 +157,10 @@ export default function UserDetailsPage({
     const secs = Math.floor(clamped % 60);
     return `${mins}:${String(secs).padStart(2, "0")}`;
   };
-  const showOtpExpiry = showOtpField && otpStatus !== OTP_STATUS.sending;
   const otpExpiryMessage = otpExpirySeconds > 0
     ? uiText("email.otpExpiresIn", { time: formatOtpTimer(otpExpirySeconds) })
     : uiText("email.otpExpired");
+  const initialOtpSentRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!showEmailGhost) return undefined;
@@ -175,6 +180,12 @@ export default function UserDetailsPage({
   }, [showOtpField, otpStatus, editableOtpIndex, OTP_STATUS.sending, OTP_STATUS.verifying]);
 
   React.useEffect(() => {
+    if (otpStatus !== OTP_STATUS.sent || initialOtpSentRef.current) return;
+    initialOtpSentRef.current = true;
+    setShowOtpDeliveryNotice(true);
+  }, [OTP_STATUS.sent, otpStatus]);
+
+  React.useEffect(() => {
     prefetchBehaviorChunks({
       fromStage: "user-details",
       userDetailsLikelyComplete: isFormComplete,
@@ -187,6 +198,11 @@ export default function UserDetailsPage({
       <p className="page-subtitle left">
         {uiText("user.pageSubtitle")}
       </p>
+      {showOtpDeliveryNotice && (
+        <div className="banner warning">
+          {uiText("email.deliveryDelayNotice")}
+        </div>
+      )}
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {otpStatusMessage}
       </div>
@@ -221,6 +237,7 @@ export default function UserDetailsPage({
             otpStatus={otpStatus}
             otpStatusConfig={OTP_STATUS}
             otpError={otpError}
+            otpExpired={otpExpired}
             otpExpiryMessage={otpExpiryMessage}
             showOtpExpiry={showOtpExpiry}
             resendSeconds={resendSeconds}

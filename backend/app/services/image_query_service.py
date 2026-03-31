@@ -66,6 +66,24 @@ QUERY_RESERVE_IMAGE = text("""
     RETURNING image_public_id
 """)
 
+QUERY_RENEW_PARTICIPANT_IMAGE_RESERVATION = text("""
+    UPDATE image_reservations
+    SET expires_at = CURRENT_TIMESTAMP + (:ttl_seconds * INTERVAL '1 second')
+    WHERE participant_id = :pid
+      AND image_public_id = :iid
+      AND released_at IS NULL
+      AND expires_at > CURRENT_TIMESTAMP
+      AND expires_at <= CURRENT_TIMESTAMP + (:renewal_window_seconds * INTERVAL '1 second')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM submissions s
+          JOIN images si ON si.id = s.image_id
+          WHERE s.participant_id = :pid
+            AND si.image_id = :iid
+      )
+    RETURNING expires_at
+""")
+
 QUERY_CLEANUP_STALE_RESERVATIONS = text("""
     UPDATE image_reservations
     SET released_at = CURRENT_TIMESTAMP

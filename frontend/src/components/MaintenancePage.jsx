@@ -1,5 +1,6 @@
 import React from "react";
 import { getErrorMessage } from "../utils/errorRegistry.js";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import PageSkeleton from "./PageSkeleton.jsx";
 import PanelState from "./PanelState.jsx";
 import ThemeToggleIcon from "./ThemeToggleIcon.jsx";
@@ -96,7 +97,7 @@ export default function MaintenancePage({
             variant="warning"
             icon="!"
             title={uiText("maintenance.title")}
-            message={error?.message || getErrorMessage("SYS_002_0021")}
+            message={getDisplayErrorMessage(error, "SYS_002_0021") || getErrorMessage("SYS_002_0021")}
             actionLabel={retryIn > 0 ? uiText("common.tryAgainIn", { seconds: retryIn }) : uiText("common.reload")}
             onAction={handleRetry}
             disabled={retryIn > 0}

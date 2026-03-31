@@ -15,6 +15,7 @@ import { readCoreValue, writeCoreValue } from "../utils/appControllerState";
 import { APP_FLOW } from "../config/appFlow";
 import {
   createSurveyState,
+  areSurveysEqual,
   normalizeSurvey,
   surveyStateReducer,
   SURVEY_LOAD_STATES,
@@ -30,6 +31,58 @@ function readStoredSurveyLoadState(publicId) {
   if (!publicId) return SURVEY_LOAD_STATES.idle;
   const stored = String(readCoreValue(runtimeConfig.storageKeys.surveyLoadState, "", publicId) || "").trim();
   return Object.values(SURVEY_LOAD_STATES).includes(stored) ? stored : SURVEY_LOAD_STATES.idle;
+}
+
+function normalizeSurveyLoadState(value, fallback = SURVEY_LOAD_STATES.idle) {
+  const normalizedLoadState = String(value || "").trim();
+  return Object.values(SURVEY_LOAD_STATES).includes(normalizedLoadState) ? normalizedLoadState : fallback;
+}
+
+function normalizeShownImages(shownImages) {
+  if (!Array.isArray(shownImages)) return [];
+  const uniqueShownImages = [];
+  shownImages.forEach((imageId) => {
+    const normalizedImageId = String(imageId || "").trim();
+    if (!normalizedImageId || uniqueShownImages.includes(normalizedImageId)) return;
+    uniqueShownImages.push(normalizedImageId);
+  });
+  return uniqueShownImages;
+}
+
+function normalizeAuthoritativeSnapshot(publicId, initial = null) {
+  const normalizedSurvey = normalizeSurvey(initial?.survey) || readStoredSurvey(publicId);
+  const fallbackLoadState = publicId ? readStoredSurveyLoadState(publicId) : SURVEY_LOAD_STATES.idle;
+  return {
+    survey: normalizedSurvey,
+    loadState: normalizedSurvey
+      ? SURVEY_LOAD_STATES.ready
+      : normalizeSurveyLoadState(initial?.loadState, fallbackLoadState),
+    surveyCompleted: Math.max(0, Number(initial?.surveyCompleted) || 0),
+    surveyFeedbackReady: initial?.surveyFeedbackReady === true,
+    lastSubmissionSucceeded: initial?.lastSubmissionSucceeded === true,
+    shownImages: normalizeShownImages(initial?.shownImages),
+  };
+}
+
+function buildSnapshotSignature(snapshot) {
+  const normalizedSnapshot = snapshot || {};
+  const normalizedSurvey = normalizeSurvey(normalizedSnapshot.survey);
+  return JSON.stringify({
+    surveyImageId: normalizedSurvey?.[SURVEY_API_FIELDS.imageId] || "",
+    surveyUrl: normalizedSurvey?.[SURVEY_API_FIELDS.url] || "",
+    loadState: String(normalizedSnapshot.loadState || SURVEY_LOAD_STATES.idle).trim(),
+    surveyCompleted: Math.max(0, Number(normalizedSnapshot.surveyCompleted) || 0),
+    surveyFeedbackReady: normalizedSnapshot.surveyFeedbackReady === true,
+    lastSubmissionSucceeded: normalizedSnapshot.lastSubmissionSucceeded === true,
+    shownImages: normalizeShownImages(normalizedSnapshot.shownImages),
+  });
+}
+
+function areShownImagesEqual(left, right) {
+  const normalizedLeft = normalizeShownImages(left);
+  const normalizedRight = normalizeShownImages(right);
+  if (normalizedLeft.length !== normalizedRight.length) return false;
+  return normalizedLeft.every((imageId, index) => imageId === normalizedRight[index]);
 }
 
 function persistSurveySnapshot(publicId, snapshot = {}) {
@@ -80,24 +133,76 @@ export function useSurveyFlow({
   const submitAbortRef = useRef(null);
   const initialRef = useRef(initial);
   initialRef.current = initial;
+  const lastAppliedSnapshotSignatureRef = useRef("");
 
   useEffect(() => {
     if (!publicId) {
       setRestoreAttempted(false);
+      lastAppliedSnapshotSignatureRef.current = "";
       return;
     }
-    const restoredSurvey = normalizeSurvey(initialRef.current?.survey) || readStoredSurvey(publicId);
+    const authoritativeSnapshot = normalizeAuthoritativeSnapshot(publicId, initialRef.current);
     dispatchSurvey({
       type: SURVEY_EVENT_TYPES.HYDRATE,
-      survey: restoredSurvey,
-      loadState: initialRef.current?.loadState || readStoredSurveyLoadState(publicId),
-      surveyCompleted: initialRef.current?.surveyCompleted,
-      surveyFeedbackReady: initialRef.current?.surveyFeedbackReady,
-      lastSubmissionSucceeded: initialRef.current?.lastSubmissionSucceeded,
-      shownImages: initialRef.current?.shownImages,
+      survey: authoritativeSnapshot.survey,
+      loadState: authoritativeSnapshot.loadState,
+      surveyCompleted: authoritativeSnapshot.surveyCompleted,
+      surveyFeedbackReady: authoritativeSnapshot.surveyFeedbackReady,
+      lastSubmissionSucceeded: authoritativeSnapshot.lastSubmissionSucceeded,
+      shownImages: authoritativeSnapshot.shownImages,
+      replaceSurvey: !authoritativeSnapshot.survey,
     });
+    lastAppliedSnapshotSignatureRef.current = buildSnapshotSignature(authoritativeSnapshot);
     setRestoreAttempted(true);
   }, [publicId]);
+
+  useEffect(() => {
+    if (!publicId || !restoreAttempted) return;
+
+    const authoritativeSnapshot = normalizeAuthoritativeSnapshot(publicId, initial);
+    const nextSnapshotSignature = buildSnapshotSignature(authoritativeSnapshot);
+    if (nextSnapshotSignature === lastAppliedSnapshotSignatureRef.current) {
+      return;
+    }
+
+    const currentSurvey = normalizeSurvey(surveyState.survey);
+    const shouldHydrateSurvey =
+      !areSurveysEqual(currentSurvey, authoritativeSnapshot.survey)
+      || (authoritativeSnapshot.survey == null && currentSurvey != null);
+    const shouldHydrateMeta =
+      surveyState.loadState !== authoritativeSnapshot.loadState
+      || surveyState.surveyCompleted < authoritativeSnapshot.surveyCompleted
+      || (authoritativeSnapshot.surveyFeedbackReady && !surveyState.surveyFeedbackReady)
+      || (authoritativeSnapshot.lastSubmissionSucceeded && !surveyState.lastSubmissionSucceeded)
+      || !areShownImagesEqual(surveyState.shownImages, authoritativeSnapshot.shownImages);
+
+    if (!shouldHydrateSurvey && !shouldHydrateMeta) {
+      lastAppliedSnapshotSignatureRef.current = nextSnapshotSignature;
+      return;
+    }
+
+    dispatchSurvey({
+      type: SURVEY_EVENT_TYPES.HYDRATE,
+      survey: authoritativeSnapshot.survey,
+      loadState: authoritativeSnapshot.loadState,
+      surveyCompleted: authoritativeSnapshot.surveyCompleted,
+      surveyFeedbackReady: authoritativeSnapshot.surveyFeedbackReady,
+      lastSubmissionSucceeded: authoritativeSnapshot.lastSubmissionSucceeded,
+      shownImages: authoritativeSnapshot.shownImages,
+      replaceSurvey: !authoritativeSnapshot.survey,
+    });
+    lastAppliedSnapshotSignatureRef.current = nextSnapshotSignature;
+  }, [
+    initial,
+    publicId,
+    restoreAttempted,
+    surveyState.lastSubmissionSucceeded,
+    surveyState.loadState,
+    surveyState.shownImages,
+    surveyState.survey,
+    surveyState.surveyCompleted,
+    surveyState.surveyFeedbackReady,
+  ]);
 
   const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
     const currentSurvey = normalizeSurvey(surveyState.survey);

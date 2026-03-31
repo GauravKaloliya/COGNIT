@@ -15,6 +15,7 @@ export const API_ROUTES = {
   emailOtpVerify: "/email-otp/verify",
   submit: "/submit",
   clientError: "/client-errors",
+  renewImageReservation: "/images/reservation/renew",
   checkUsername: (username) => `/check-username?username=${encodeURIComponent(username)}`,
   checkEmail: (email) => `/check-email?email=${encodeURIComponent(email)}`,
   randomImage: (queryString = "") => `/images/random${queryString ? `?${queryString}` : ""}`,

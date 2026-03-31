@@ -165,7 +165,7 @@ export function useUserDetailsPage({
         ]);
       } catch (error) {
         if (error?.code === REQUEST_CODES.aborted) return;
-        setGeneralError(error?.message || getErrorMessage("SYS_001_0001"));
+        setGeneralError(getDisplayErrorMessage(error, "SYS_001_0001"));
         return;
       }
 
@@ -232,7 +232,7 @@ export function useUserDetailsPage({
           // Fall through to generic message.
         }
       }
-      setGeneralError(error?.message || getErrorMessage("SYS_001_0001"));
+      setGeneralError(getDisplayErrorMessage(error, "SYS_001_0001"));
     } finally {
       submitInFlightRef.current = false;
       setSubmitting(false);

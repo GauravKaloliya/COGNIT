@@ -12,6 +12,7 @@ export default function AppContainer({
   isMobile,
   storageOk,
   stage,
+  surveyCompleted = 0,
   children,
 }) {
   const openApiDocs = React.useCallback(() => {
@@ -52,7 +53,7 @@ export default function AppContainer({
         </div>
       )}
 
-      <FlowStepper stage={stage} />
+      <FlowStepper stage={stage} surveyCompleted={surveyCompleted} />
 
       <div className={`route-transition stage-${stage || "consent"}`}>{children}</div>
 
