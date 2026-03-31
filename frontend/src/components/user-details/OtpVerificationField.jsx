@@ -1,7 +1,6 @@
 import React from "react";
 import { uiText } from "../../utils/uiText.js";
 import DSButton from "../design/DSButton.jsx";
-import RefreshIcon from "../icons/RefreshIcon.jsx";
 import LoadingSpinner from "../icons/LoadingSpinner.jsx";
 
 export default function OtpVerificationField({
@@ -11,6 +10,7 @@ export default function OtpVerificationField({
   otpStatus,
   otpStatusConfig,
   otpError,
+  otpExpired = false,
   otpExpiryMessage,
   showOtpExpiry,
   resendSeconds,
@@ -26,6 +26,15 @@ export default function OtpVerificationField({
   focusAdvanceDelayMs,
 }) {
   if (!showOtpField) return null;
+
+  const helperMessage = otpError || otpExpired
+    ? uiText("email.otpErrorHint")
+    : otpStatus === otpStatusConfig.sending
+      ? uiText("email.otpSendingHint", { length: otpLength })
+      : otpStatus === otpStatusConfig.verifying
+        ? uiText("email.otpVerifyingHint")
+        : uiText("email.otpSentHint", { length: otpLength });
+  const visibleStatusMessage = otpError || otpExpired ? "" : otpStatusMessage;
 
   return (
     <div className="form-field otp-field">
@@ -103,26 +112,34 @@ export default function OtpVerificationField({
             />
           ))}
         </div>
-
-        <DSButton
-          className="otp-resend-btn"
-          variant="ghost"
-          type="button"
-          onClick={canResend ? handleResend : undefined}
-          aria-disabled={!canResend}
-          aria-label={resendLabel}
-          title={resendLabel}
-        >
-          {otpStatus === otpStatusConfig.sending ? <LoadingSpinner /> : <RefreshIcon />}
-        </DSButton>
       </div>
 
       {otpError && <span className="error-text">{otpError}</span>}
       {showOtpExpiry && <span className="helper-text warning">{otpExpiryMessage}</span>}
-      {resendSeconds > 0 && (
+      {resendSeconds > 0 && !otpError && !otpExpired && (
         <span className="helper-text">{uiText("email.resendIn", { seconds: resendSeconds })}</span>
       )}
-      {otpStatusMessage && <span className="checking-text">{otpStatusMessage}</span>}
+      <DSButton
+        className="otp-resend-btn"
+        variant="ghost"
+        type="button"
+        onClick={canResend ? handleResend : undefined}
+        disabled={!canResend}
+        aria-label={resendLabel}
+        title={resendLabel}
+      >
+        {otpStatus === otpStatusConfig.sending ? (
+          <>
+            <LoadingSpinner />
+            {uiText("email.requesting")}
+          </>
+        ) : uiText("email.sendAgain")}
+      </DSButton>
+      <span className="helper-text">{helperMessage}</span>
+      {canResend && otpStatus !== otpStatusConfig.sending && otpStatus !== otpStatusConfig.verifying && (
+        <span className="helper-text">{uiText("email.otpResendHint")}</span>
+      )}
+      {visibleStatusMessage && <span className="checking-text">{visibleStatusMessage}</span>}
     </div>
   );
 }

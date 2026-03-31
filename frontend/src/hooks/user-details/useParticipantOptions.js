@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { endpoints } from "../../utils/api";
 import { getErrorMessage } from "../../utils/errorRegistry";
+import { getDisplayErrorMessage } from "../../utils/appError.js";
 import { REQUEST_CODES } from "../../constants/request";
 import { prioritizeEnglishOptions } from "../../utils/userDetailsHelpers";
 
@@ -43,7 +44,7 @@ export function useParticipantOptions({
         onGeneralError?.("");
       } catch (error) {
         if (cancelled || error?.code === REQUEST_CODES.aborted) return;
-        onGeneralError?.(error?.message || getErrorMessage("SYS_001_0001"));
+        onGeneralError?.(getDisplayErrorMessage(error, "SYS_001_0001"));
       } finally {
         if (!cancelled) setOptionsLoading(false);
       }
@@ -74,4 +75,3 @@ export function useParticipantOptions({
     optionsLoading,
   };
 }
-

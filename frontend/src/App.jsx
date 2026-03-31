@@ -61,7 +61,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     stage,
     publicId,
   } = appState;
-  const { showConfetti } = surveyState;
+  const { showConfetti, surveyCompleted } = surveyState;
   const { systemReady, systemError, systemChecking } = systemState;
   const { toasts } = toastState;
   const {
@@ -241,6 +241,7 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
           isMobile={isMobile}
           storageOk={storageOk}
           stage={stage}
+          surveyCompleted={surveyCompleted}
         >
           <AppStageRouter
             appState={appState}

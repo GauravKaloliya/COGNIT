@@ -8,6 +8,7 @@ API_DOCS_ERRORS_ROUTE = "/api-docs/errors"
 API_DOCS_EXAMPLES_ROUTE = "/api-docs/examples"
 
 IMAGES_RANDOM_ROUTE = "/images/random"
+IMAGES_RESERVATION_RENEW_ROUTE = "/images/reservation/renew"
 PARTICIPANTS_ROUTE = "/participants"
 CHECK_USERNAME_ROUTE = "/check-username"
 CHECK_EMAIL_ROUTE = "/check-email"

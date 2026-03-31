@@ -1,5 +1,6 @@
 import React from 'react';
 import { getErrorMessage } from '../utils/errorRegistry.js';
+import { getDisplayErrorMessage } from "../utils/appError.js";
 import { runtimeConfig } from "../config/runtime";
 import PageSkeleton from './PageSkeleton.jsx';
 import PanelState from './PanelState.jsx';
@@ -125,7 +126,7 @@ export default function ErrorPage({ error, resetError, darkMode = false, onToggl
             variant="error"
             icon="!"
             title={uiText("error.title")}
-            message={error?.message || getErrorMessage('SYS_002_0017')}
+            message={getDisplayErrorMessage(error, "SYS_002_0017") || getErrorMessage("SYS_002_0017")}
             actionLabel={uiText("common.reload")}
             onAction={handleReset}
           />

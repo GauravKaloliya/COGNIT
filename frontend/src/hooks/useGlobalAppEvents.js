@@ -4,6 +4,7 @@ import { ERROR_UI_EVENTS } from "../constants/errorUiEvents";
 import { initErrorReporter, reportClientError } from "../utils/errorReporter";
 import { uiText } from "../utils/uiText";
 import { getErrorMessage } from "../utils/errorRegistry";
+import { getDisplayErrorMessage } from "../utils/appError.js";
 
 function defer(callback) {
   const schedule = typeof queueMicrotask === "function"
@@ -61,12 +62,13 @@ export function useGlobalAppEvents() {
 
     const handleAccountFlagged = (event) => {
       const detail = event?.detail || {};
+      const code = detail?.code || "AUTH_001_0002";
       setRateLimitError(null);
       setMaintenanceError(null);
       setDeferredError({
         ...detail,
-        code: detail?.code || "AUTH_001_0002",
-        message: detail?.message || getErrorMessage("AUTH_001_0002"),
+        code,
+        message: getDisplayErrorMessage({ ...detail, code }, "AUTH_001_0002") || getErrorMessage("AUTH_001_0002"),
       });
     };
 

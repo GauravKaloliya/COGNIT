@@ -26,9 +26,16 @@ function SurveyDescriptionField({
     element.style.height = `${element.scrollHeight}px`;
   }, [description, descriptionRef]);
 
+  const wordProgressPct = Math.max(0, Math.min(100, Math.round((wordCount / Math.max(1, minWords)) * 100)));
+
   return (
     <div className="field">
-      <label>{uiText("survey.descriptionLabel")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
+      <div className="field-header">
+        <label>{uiText("survey.descriptionLabel")} <span className="required" aria-label={uiText("common.requiredAria")}>*</span></label>
+        <span className={`status-badge ${wordCount >= minWords ? "met" : "pending"}`}>
+          {wordCount >= minWords ? uiText("survey.minimumMet") : uiText("survey.descriptionBadge")}
+        </span>
+      </div>
       <div className="textarea-wrap">
         <textarea
           ref={descriptionRef}
@@ -56,16 +63,29 @@ function SurveyDescriptionField({
           onBlur={onBlur}
         />
       </div>
-      <div className="counts">
-        <span>{uiText("survey.wordsMin", { words: wordCount, min: minWords })}</span>
-        <span className={showValidationErrors && wordCount < minWords ? "warning" : "ok"}>
+      <div className="helper-text">
+        {uiText("survey.wordsHelper", { min: minWords })}
+      </div>
+      <div className={`field-progress ${wordCount >= minWords ? "met" : "pending"}`}>
+        <div className="field-progress-track" aria-hidden="true">
+          <span className="field-progress-fill" style={{ width: `${wordProgressPct}%` }} />
+        </div>
+        <div className="field-progress-meta">
+          <span className={showValidationErrors && wordCount < minWords ? "warning" : "ok"}>
+            {uiText("survey.fieldProgress", { progress: wordProgressPct })}
+          </span>
+          <span className={showValidationErrors && wordCount < minWords ? "warning" : "ok"}>
           {uiText("survey.minimumWords", { min: minWords })}
-        </span>
+          </span>
+        </div>
       </div>
       <div className={`helper-text ${wordCount >= minWords ? "ok" : "warning"}`}>
         {wordCount >= minWords
           ? uiText("survey.wordsGood")
           : uiText("survey.wordsRemaining", { remaining: minWords - wordCount })}
+      </div>
+      <div className="helper-text info field-note">
+        <strong>{uiText("survey.descriptionNoteTitle")}</strong> {uiText("survey.descriptionNote")}
       </div>
     </div>
   );

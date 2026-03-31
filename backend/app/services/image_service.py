@@ -27,6 +27,7 @@ from app.services.image_query_service import (
     QUERY_LOCK_IMAGE_POOL_ALLOCATION_STATE,
     QUERY_LOAD_IMAGE_POOL,
     QUERY_RELEASE_PARTICIPANT_RESERVATIONS,
+    QUERY_RENEW_PARTICIPANT_IMAGE_RESERVATION,
     QUERY_RESERVE_IMAGE,
     QUERY_UPDATE_IMAGE_POOL_ALLOCATION_STATE,
     serialize_image_order,
@@ -118,6 +119,40 @@ def release_participant_reservations(db, participant_id: int | None) -> None:
         QUERY_RELEASE_PARTICIPANT_RESERVATIONS,
         {"pid": int(participant_id), "keep_image_id": None},
     )
+
+
+def renew_participant_image_reservation(
+    db,
+    *,
+    participant_id: int | None,
+    image_id: str | None,
+    ttl_seconds: int | None = None,
+    renewal_window_seconds: int | None = None,
+):
+    normalized_image_id = str(image_id or "").strip()
+    if participant_id is None or not normalized_image_id:
+        return None
+
+    effective_ttl_seconds = max(900, int(ttl_seconds or IMAGE_RESERVATION_TTL_SECONDS))
+    effective_renewal_window_seconds = max(
+        60,
+        min(
+            effective_ttl_seconds,
+            int(renewal_window_seconds or max(300, effective_ttl_seconds // 3)),
+        ),
+    )
+    row = db.execute(
+        QUERY_RENEW_PARTICIPANT_IMAGE_RESERVATION,
+        {
+            "pid": int(participant_id),
+            "iid": normalized_image_id,
+            "ttl_seconds": effective_ttl_seconds,
+            "renewal_window_seconds": effective_renewal_window_seconds,
+        },
+    ).fetchone()
+    if not row:
+        return None
+    return row[0]
 
 
 def _configured_batch_size_for_pool(pool_type: str) -> int:

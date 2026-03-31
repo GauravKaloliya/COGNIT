@@ -13,6 +13,7 @@ import {
   countAlphaNumericChars,
   countSurveyDescriptionChars,
   countSurveyDescriptionWords,
+  getFriendlySurveySubmitErrorMessage,
   getSubmitTooltip,
 } from "../utils/surveyPageHelpers";
 import { clearScheduledTimeout, scheduleTimeout } from "../utils/timing";
@@ -21,6 +22,7 @@ import {
   PROTECTED_SUBMIT_PHASES,
   useProtectedSubmitStatus,
 } from "../utils/protectedSubmitStatus";
+import { reportClientError } from "../utils/errorReporter";
 
 export { sanitizeAlphaNumericSpace, sanitizeSurveyDescription } from "../utils/surveyPageHelpers";
 
@@ -92,6 +94,8 @@ export function useSurveyPage({
   const prefetchTriggeredRef = useRef(false);
   const turnstilePrefetchTriggeredRef = useRef(false);
   const lastSubmitErrorWasValidationRef = useRef(false);
+  const submitBlockTraceRef = useRef("");
+  const imageFailureTraceRef = useRef("");
   const descriptionValueRef = useRef("");
   const commentsValueRef = useRef("");
   const difficultyRatingRef = useRef(0);
@@ -122,14 +126,22 @@ export function useSurveyPage({
   const charCount = useMemo(() => countSurveyDescriptionChars(description), [description]);
   const commentsCharCount = useMemo(() => countAlphaNumericChars(comments), [comments]);
   const imageReady = imageLoaded && !imageError;
-  const canSubmit = wordCount >= MIN_WORDS
-    && charCount >= MIN_DESCRIPTION_LENGTH
-    && charCount <= MAX_DESCRIPTION_LENGTH
-    && commentsCharCount >= MIN_FEEDBACK_LENGTH
-    && commentsCharCount <= MAX_FEEDBACK_LENGTH
-    && difficultyRating > 0
-    && confidenceRating > 0
+  const surveyLoaded = Boolean(surveyImageId && hasUsableSurveyImage);
+  const descriptionReady = charCount >= MIN_DESCRIPTION_LENGTH && charCount <= MAX_DESCRIPTION_LENGTH;
+  const commentsReady = commentsCharCount >= MIN_FEEDBACK_LENGTH && commentsCharCount <= MAX_FEEDBACK_LENGTH;
+  const difficultyReady = difficultyRating > 0;
+  const confidenceReady = confidenceRating > 0;
+  const visuallyComplete = descriptionReady
+    && commentsReady
+    && difficultyReady
+    && confidenceReady;
+  const canSubmit = surveyLoaded
     && imageReady
+    && wordCount >= MIN_WORDS
+    && descriptionReady
+    && commentsReady
+    && difficultyReady
+    && confidenceReady
     && !submitting;
   const inputsDisabled = formDisabled || submitting;
   const minimumMet = wordCount >= MIN_WORDS
@@ -310,6 +322,8 @@ export function useSurveyPage({
 
   const getSubmitTooltipText = useCallback(() => getSubmitTooltip({
     imageReady,
+    imageError,
+    surveyLoaded,
     submitting,
     submitLocked,
     wordCount,
@@ -335,10 +349,154 @@ export function useSurveyPage({
     wordCount,
   ]);
 
+  const submitBlockReason = useMemo(() => {
+    if (formDisabled) return uiText("survey.submitLocked");
+    if (!surveyLoaded) return uiText("survey.footerLoadNextImage");
+    if (!imageReady) return imageError ? uiText("survey.footerRestoreImage") : uiText("survey.footerLoadingImage");
+    if (wordCount < MIN_WORDS) {
+      return uiText("survey.footerNeedWords", { remaining: Math.max(0, MIN_WORDS - wordCount) });
+    }
+    if (charCount < MIN_DESCRIPTION_LENGTH) return uiText("survey.footerNeedDescriptionDetail");
+    if (charCount > MAX_DESCRIPTION_LENGTH) return uiText("survey.footerDescriptionTooLong");
+    if (!difficultyReady) return uiText("survey.footerNeedDifficulty");
+    if (!confidenceReady) return uiText("survey.footerNeedConfidence");
+    if (commentsCharCount < MIN_FEEDBACK_LENGTH) {
+      return uiText("survey.footerNeedComments", { remaining: Math.max(0, MIN_FEEDBACK_LENGTH - commentsCharCount) });
+    }
+    if (commentsCharCount > MAX_FEEDBACK_LENGTH) return uiText("survey.footerCommentsTooLong");
+    if (submitLocked) return uiText("survey.submitLocked");
+    if (submitting) return uiText("survey.submitBusy");
+    return uiText("survey.submit");
+  }, [
+    charCount,
+    commentsCharCount,
+    confidenceReady,
+    difficultyReady,
+    formDisabled,
+    imageError,
+    imageReady,
+    submitLocked,
+    submitting,
+    surveyLoaded,
+    wordCount,
+  ]);
+
+  useEffect(() => {
+    if (!surveyImageId || !visuallyComplete || canSubmit) {
+      submitBlockTraceRef.current = "";
+      return;
+    }
+    const traceKey = JSON.stringify({
+      surveyImageId,
+      surveyLoaded,
+      imageReady,
+      imageError,
+      wordCount,
+      charCount,
+      commentsCharCount,
+      difficultyReady,
+      confidenceReady,
+      submitting,
+      submitLocked,
+      formDisabled,
+    });
+    if (submitBlockTraceRef.current === traceKey) return;
+    submitBlockTraceRef.current = traceKey;
+    console.warn("survey_submit_blocked", {
+      surveyImageId,
+      surveyLoaded,
+      imageReady,
+      imageError,
+      wordCount,
+      charCount,
+      commentsCharCount,
+      difficultyReady,
+      confidenceReady,
+      submitting,
+      submitLocked,
+      formDisabled,
+    });
+    void reportClientError({
+      message: "Survey submit blocked while form looked complete",
+      context: "survey_submit_blocked",
+      route: "/survey",
+      tag: "survey_submit_blocked",
+      meta: {
+        surveyImageId,
+        surveyLoaded,
+        imageReady,
+        imageError,
+        wordCount,
+        charCount,
+        commentsCharCount,
+        difficultyReady,
+        confidenceReady,
+        submitting,
+        submitLocked,
+        formDisabled,
+      },
+    });
+  }, [
+    canSubmit,
+    charCount,
+    commentsCharCount,
+    confidenceReady,
+    difficultyReady,
+    formDisabled,
+    imageError,
+    imageReady,
+    submitLocked,
+    submitting,
+    surveyImageId,
+    surveyLoaded,
+    visuallyComplete,
+    wordCount,
+  ]);
+
   const setValidationError = useCallback(() => {
     lastSubmitErrorWasValidationRef.current = true;
     setSubmitError(getSubmitTooltipText());
   }, [getSubmitTooltipText]);
+
+  const reportSurveyImageFailure = useCallback((reason, extraMeta = {}) => {
+    const traceKey = JSON.stringify({
+      reason,
+      surveyImageId,
+      imageSrc,
+      publicId,
+      fetchError: fetchError || "",
+    });
+    if (imageFailureTraceRef.current === traceKey) return;
+    imageFailureTraceRef.current = traceKey;
+    void reportClientError({
+      message: `Survey image load failed: ${reason}`,
+      context: "survey_image_load_failed",
+      route: "/survey",
+      tag: `survey_image_load_failed:${reason}`,
+      meta: {
+        reason,
+        publicId: publicId || "",
+        surveyImageId,
+        imageSrc,
+        fetchError: fetchError || "",
+        surveyLoaded,
+        imageLoaded,
+        imageError,
+        isFetchingImage,
+        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        ...extraMeta,
+      },
+    });
+  }, [
+    fetchError,
+    imageError,
+    imageLoaded,
+    imageSrc,
+    isFetchingImage,
+    publicId,
+    surveyImageId,
+    surveyLoaded,
+  ]);
 
   const handleRetryImage = useCallback(() => {
     if (formDisabled || retryDisabled || isFetchingImage || typeof onRetry !== "function") return;
@@ -355,20 +513,22 @@ export function useSurveyPage({
       clearScheduledTimeout(imageLoadTimeoutRef.current);
       imageLoadTimeoutRef.current = null;
     }
+    imageFailureTraceRef.current = "";
     setImageLoaded(true);
     setImageError(false);
     setTimerActive(true);
   }, [setTimerActive]);
 
-  const handleImageError = useCallback(() => {
+  const handleImageError = useCallback((extraMeta = {}) => {
     if (imageLoadTimeoutRef.current) {
       clearScheduledTimeout(imageLoadTimeoutRef.current);
       imageLoadTimeoutRef.current = null;
     }
+    reportSurveyImageFailure("img.onerror", extraMeta);
     setImageError(true);
     setImageLoaded(false);
     setTimerActive(false);
-  }, [setTimerActive]);
+  }, [reportSurveyImageFailure, setTimerActive]);
 
   const touchField = useCallback(() => {}, []);
 
@@ -376,7 +536,7 @@ export function useSurveyPage({
     if (submitting || submitLocked) return;
 
     if (!isOnline) {
-      setSubmitError(uiText("survey.offlineSubmit"));
+      setSubmitError(uiText("survey.footerOffline"));
       queuePendingSurveySubmit();
       return;
     }
@@ -391,7 +551,7 @@ export function useSurveyPage({
     }
 
     if (!surveyImageId) {
-      setSubmitError(getErrorMessage("UI_001_0002"));
+      setSubmitError(uiText("survey.footerImageMissing"));
       unlockSubmit(runtimeConfig.submitUnlockInvalidDelayMs);
       return;
     }
@@ -454,7 +614,7 @@ export function useSurveyPage({
         setFormDisabled(true);
         setSubmitLocked(true);
         setTimerActive(false);
-        setSubmitError(getDisplayErrorMessage(error, "SYS_002_0006"));
+        setSubmitError(getFriendlySurveySubmitErrorMessage(getDisplayErrorMessage(error, "SYS_002_0006"), { uiText }));
         resetSubmitPhase();
         if (accountFlaggedTimeoutRef.current) {
           clearScheduledTimeout(accountFlaggedTimeoutRef.current);
@@ -465,7 +625,7 @@ export function useSurveyPage({
         }, runtimeConfig.accountFlaggedRedirectDelayMs);
         return;
       }
-      setSubmitError(getDisplayErrorMessage(error, "SYS_002_0006"));
+      setSubmitError(getFriendlySurveySubmitErrorMessage(getDisplayErrorMessage(error, "SYS_002_0006"), { uiText }));
       if (imageReady) {
         setTimerActive(true);
       }
@@ -554,6 +714,7 @@ export function useSurveyPage({
     setIsFullscreen,
     setDifficultyRating,
     imageReady,
+    reportSurveyImageFailure,
   });
 
   useNavigationBlocker({
@@ -587,6 +748,7 @@ export function useSurveyPage({
       canSubmit,
       currentStep,
       minimumMet,
+      submitBlockReason,
       showValidationErrors,
       submitError,
       submitting,

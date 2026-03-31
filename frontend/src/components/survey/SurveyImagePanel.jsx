@@ -99,7 +99,7 @@ export default function SurveyImagePanel({
           alt={uiText("survey.promptAlt")}
           onClick={openFullscreen}
           onLoad={handleImageLoad}
-          onError={handleImageError}
+          onError={() => handleImageError({ reasonHint: "img_element_error" })}
           onAnimationEnd={(event) => {
             if (event.animationName === "survey-image-content-enter") {
               setAnimateIn(false);

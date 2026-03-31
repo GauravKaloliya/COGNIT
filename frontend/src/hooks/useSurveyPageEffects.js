@@ -1,10 +1,13 @@
 import { useEffect } from "react";
 import { runtimeConfig } from "../config/runtime";
+import { endpoints } from "../utils/api";
 import { clearPendingFlag, getPendingFlag, setPendingFlag } from "../utils/storage";
 import { clearScheduledInterval, clearScheduledTimeout, scheduleInterval, scheduleTimeout } from "../utils/timing";
 import { preloadTurnstileScript, prefetchTurnstileToken } from "../utils/turnstile";
 
 const SURVEY_PENDING_SUBMIT_KEY = runtimeConfig.storageKeys.surveyPendingSubmit;
+const RESERVATION_HEARTBEAT_MS = 120 * runtimeConfig.msPerSecond;
+const RESERVATION_ACTIVITY_WINDOW_MS = 5 * 60 * runtimeConfig.msPerSecond;
 
 export function useSurveyPageEffects({
   surveyImageId,
@@ -54,6 +57,7 @@ export function useSurveyPageEffects({
   setIsFullscreen,
   setDifficultyRating,
   imageReady,
+  reportSurveyImageFailure,
 }) {
   useEffect(() => {
     const previousSurveyImageId = previousSurveyImageIdRef.current;
@@ -121,6 +125,11 @@ export function useSurveyPageEffects({
       return undefined;
     }
     imageLoadTimeoutRef.current = scheduleTimeout(() => {
+      reportSurveyImageFailure("timeout", {
+        timeoutMs: 10000,
+        complete: Boolean(imageElementRef.current?.complete),
+        naturalWidth: Number(imageElementRef.current?.naturalWidth || 0),
+      });
       setImageError(true);
       setImageLoaded(false);
       setTimerActive(false);
@@ -134,10 +143,12 @@ export function useSurveyPageEffects({
   }, [
     fetchError,
     imageError,
+    imageElementRef,
     imageLoadTimeoutRef,
     imageLoaded,
     imageSrc,
     isFetchingImage,
+    reportSurveyImageFailure,
     setImageError,
     setImageLoaded,
     setTimerActive,
@@ -152,7 +163,11 @@ export function useSurveyPageEffects({
       handleImageLoad();
       return;
     }
-    handleImageError();
+    handleImageError({
+      reasonHint: "complete_without_natural_width",
+      complete: true,
+      naturalWidth: Number(imageEl.naturalWidth || 0),
+    });
   }, [handleImageError, handleImageLoad, imageElementRef, imageError, imageLoaded, imageSrc, surveyImageId]);
 
   useEffect(() => {
@@ -209,6 +224,54 @@ export function useSurveyPageEffects({
     clearPendingFlag(SURVEY_PENDING_SUBMIT_KEY);
     void handleSubmit();
   }, [canSubmit, handleSubmit, isOnline, submitLocked, submitting]);
+
+  useEffect(() => {
+    if (!publicId || !surveyImageId || !imageReady || !isOnline || submitting) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let renewInFlight = false;
+    let lastActivityAt = Date.now();
+
+    const markActivity = () => {
+      lastActivityAt = Date.now();
+    };
+
+    const maybeRenewReservation = async () => {
+      if (cancelled || renewInFlight) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (Date.now() - lastActivityAt > RESERVATION_ACTIVITY_WINDOW_MS) return;
+
+      renewInFlight = true;
+      try {
+        await endpoints.renewImageReservation(publicId, surveyImageId);
+      } catch {
+        // Best-effort heartbeat; the session recovery flow still handles misses.
+      } finally {
+        renewInFlight = false;
+      }
+    };
+
+    const activityEvents = ["pointerdown", "keydown", "scroll", "focus", "input"];
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, markActivity, { passive: true });
+    });
+    document.addEventListener("visibilitychange", markActivity);
+
+    const intervalId = scheduleInterval(() => {
+      void maybeRenewReservation();
+    }, RESERVATION_HEARTBEAT_MS);
+
+    return () => {
+      cancelled = true;
+      clearScheduledInterval(intervalId);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, markActivity);
+      });
+      document.removeEventListener("visibilitychange", markActivity);
+    };
+  }, [imageReady, isOnline, publicId, submitting, surveyImageId]);
 
   useEffect(() => {
     const onKeyboardSubmit = (event) => {
