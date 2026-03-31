@@ -143,13 +143,16 @@ def update_participant_email(db, *, participant_id: int, email: str) -> None:
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+_HTML_BLOCK_BREAK_RE = re.compile(r"</(p|div|li|h[1-6])>", re.IGNORECASE)
 
 
 def _html_to_text(html: str) -> str:
     # Minimal, dependency-free HTML -> text fallback for email clients that don't render HTML.
-    text = html.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    text = _HTML_BLOCK_BREAK_RE.sub("\n", html)
+    text = text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
     text = _HTML_TAG_RE.sub("", text)
-    return " ".join(text.split()).strip()
+    lines = [line.strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line)
 
 
 def build_email_otp_payload(*, email: str, otp: str, public_id: str) -> dict:
@@ -158,6 +161,8 @@ def build_email_otp_payload(*, email: str, otp: str, public_id: str) -> dict:
     return {
         "to": email,
         "otp": otp,
+        "code": otp,
+        "verification_code": otp,
         "from": EMAIL_OTP_SENDER,
         "subject": EMAIL_OTP_SUBJECT,
         # Keep both fields for compatibility with existing n8n mappings; both are derived from the HTML template.
