@@ -24,7 +24,7 @@ export default function SurveySubmitFooter({
         <DSButton
           className={`primary survey-submit-button ${submitting ? "wiggle is-submitting" : ""}`}
           onClick={handleSubmit}
-          disabled={!canSubmit || submitLocked}
+          disabled={submitLocked}
           title={getSubmitTooltip()}
         >
           {submitting ? (
