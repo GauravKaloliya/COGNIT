@@ -22,6 +22,7 @@ from app.constants.image_constants import (
 )
 from app.services.image_query_service import (
     QUERY_CLEANUP_STALE_RESERVATIONS,
+    QUERY_DELETE_UNOWNED_RESERVATIONS,
     QUERY_ENSURE_IMAGE_POOL_ALLOCATION_STATE,
     QUERY_FETCH_ACTIVE_PARTICIPANT_RESERVATION,
     QUERY_LOCK_IMAGE_POOL_ALLOCATION_STATE,
@@ -76,6 +77,8 @@ def load_image_pool(db) -> tuple[list[ImagePoolItem], list[ImagePoolItem], list[
 
 
 def reserve_image(db, image_id: str, participant_id: int | None, now_ts):
+    if participant_id is None:
+        return False
     try:
         row = db.execute(QUERY_RESERVE_IMAGE, {"iid": image_id, "pid": participant_id, "now": now_ts}).fetchone()
         if participant_id is not None:
@@ -86,7 +89,7 @@ def reserve_image(db, image_id: str, participant_id: int | None, now_ts):
         return bool(row)
     except Exception as exc:
         log_event(logger, OBS_EVENT_IMAGE_RESERVE_FAILED, level=logging.WARNING, error=str(exc))
-        return True
+        return False
 
 
 def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
@@ -96,6 +99,7 @@ def cleanup_stale_reservations(db, ttl_seconds: int | None = None):
     if now < IMAGE_RESERVATION_CLEANUP_EXPIRES_AT:
         return
     try:
+        db.execute(QUERY_DELETE_UNOWNED_RESERVATIONS)
         db.execute(QUERY_CLEANUP_STALE_RESERVATIONS)
         IMAGE_RESERVATION_CLEANUP_EXPIRES_AT = now + min(60.0, max(5.0, float(ttl_value) / 4.0))
     except Exception as exc:
@@ -259,7 +263,7 @@ def _reserve_next_batch_image(
     participant_id: int | None,
     now_ts: int,
 ):
-    if not target_pool:
+    if participant_id is None or not target_pool:
         return None
 
     pool_items = {str(item[0]): item for item in target_pool}
@@ -319,6 +323,8 @@ def _reserve_next_batch_image(
 
 
 def select_random_image_for_participant(db, *, excluded_set, participant_id: int | None, should_prioritize_attention: bool, now_ts: int):
+    if participant_id is None:
+        return None
     cleanup_stale_reservations(db)
     active_reserved = fetch_active_reserved_image(db, participant_id)
     if active_reserved:
