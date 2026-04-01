@@ -46,6 +46,7 @@ from app.utils.app_runtime import (
 from app.routes import participant_bp, image_bp, submission_bp
 from app.utils.observability import log_event_async
 from app.utils.durable_event_queue import enqueue_durable_event, start_durable_event_worker, stop_durable_event_worker
+from app.services.image_health_service import capture_client_image_failure_signal
 from app.config import (
     ROOT_RATE_LIMIT,
     DOCS_RATE_LIMIT,
@@ -181,6 +182,23 @@ def api_docs_examples():
 @limiter.limit(ROOT_RATE_LIMIT)
 def client_error():
     payload = request.json or {}
+    db = None
+    try:
+        from app.database import get_db
+
+        db = get_db()
+        if capture_client_image_failure_signal(
+            db,
+            payload=payload,
+            request_id=getattr(g, "request_id", None),
+        ):
+            db.commit()
+    except Exception:
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
     enqueue_durable_event(OBS_EVENT_CLIENT_ERROR, {
         "message": payload.get(REQUEST_KEY_ERROR_MESSAGE),
         "stack": payload.get(REQUEST_KEY_ERROR_STACK),

@@ -3,6 +3,8 @@ Decorators module for C.O.G.N.I.T. backend.
 Provides error logging, performance tracking, and request audit logging.
 """
 
+from __future__ import annotations
+
 import functools
 import hashlib
 import logging

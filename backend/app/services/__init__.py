@@ -70,6 +70,10 @@ from .image_service import (
     renew_participant_image_reservation,
     select_random_image_for_participant,
 )
+from .image_health_service import (
+    capture_client_image_failure_signal,
+    mark_image_delivery_success,
+)
 from .email_otp_service import (
     build_email_otp_payload,
     enqueue_email_otp,
@@ -168,6 +172,8 @@ __all__ = [
     "fetch_active_reserved_image",
     "renew_participant_image_reservation",
     "select_random_image_for_participant",
+    "capture_client_image_failure_signal",
+    "mark_image_delivery_success",
     "build_email_otp_payload",
     "enqueue_email_otp",
     "EmailOtpSendError",

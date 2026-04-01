@@ -73,8 +73,6 @@ export default function SurveyPage({
     imageReady,
     retryExhausted,
     imagePanelErrorMessage,
-    retryDisabled,
-    retryCountdown,
     imageElementRef,
     imageSrc,
     hasUsableSurveyImage,
@@ -90,7 +88,6 @@ export default function SurveyPage({
     handleSubmit,
     handleImageLoad,
     handleImageError,
-    handleRetryImage,
     getSubmitTooltip,
     preventCopyPaste,
     preventClipboardShortcuts,
@@ -165,17 +162,11 @@ export default function SurveyPage({
 
   // Show loading state if we're waiting for survey data
   if (isTransitioningToNext || !survey || !surveyImageId || !hasUsableSurveyImage) {
-    const retryLabel = retryDisabled && retryCountdown > 0
-      ? uiText("common.tryAgainIn", { seconds: retryCountdown })
-      : uiText("common.retry");
     return (
       <div className="panel status-panel">
         <AsyncStatePanel
           loading={isFetchingImage || !surveyImageId}
           error={visibleFetchError || (surveyImageId && !imageSrc ? uiText("survey.imageRestoreFailed") : "")}
-          retryLabel={retryLabel}
-          onRetry={handleRetryImage}
-          retryDisabled={retryDisabled}
         />
       </div>
     );
@@ -223,9 +214,7 @@ export default function SurveyPage({
           isFullscreen={isFullscreen}
           setIsZoomed={setIsZoomed}
           setIsFullscreen={setIsFullscreen}
-          retryDisabled={retryDisabled}
           imageRef={imageElementRef}
-          handleRetryImage={handleRetryImage}
           handleImageLoad={handleImageLoad}
           handleImageError={handleImageError}
         />

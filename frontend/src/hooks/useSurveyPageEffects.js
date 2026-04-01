@@ -15,6 +15,7 @@ export function useSurveyPageEffects({
   previousSurveyImageIdRef,
   submitUnlockTimeoutRef,
   imageLoadTimeoutRef,
+  imageRecoveryTimeoutRef,
   accountFlaggedTimeoutRef,
   retryDisabled,
   retryCountdown,
@@ -24,13 +25,12 @@ export function useSurveyPageEffects({
   flushDraft,
   buildCurrentDraftState,
   imageSrc,
-  imageLoaded,
+  imageReady,
+  imageLoading,
   imageError,
+  imageRecoveryTerminal,
   fetchError,
   isFetchingImage,
-  setImageError,
-  setImageLoaded,
-  setTimerActive,
   imageElementRef,
   handleImageLoad,
   handleImageError,
@@ -56,8 +56,9 @@ export function useSurveyPageEffects({
   setIsZoomed,
   setIsFullscreen,
   setDifficultyRating,
-  imageReady,
   reportSurveyImageFailure,
+  beginImageRecovery,
+  recoverSurveyImage,
 }) {
   useEffect(() => {
     const previousSurveyImageId = previousSurveyImageIdRef.current;
@@ -70,8 +71,9 @@ export function useSurveyPageEffects({
   useEffect(() => () => {
     if (submitUnlockTimeoutRef.current) clearScheduledTimeout(submitUnlockTimeoutRef.current);
     if (imageLoadTimeoutRef.current) clearScheduledTimeout(imageLoadTimeoutRef.current);
+    if (imageRecoveryTimeoutRef.current) clearScheduledTimeout(imageRecoveryTimeoutRef.current);
     if (accountFlaggedTimeoutRef.current) clearScheduledTimeout(accountFlaggedTimeoutRef.current);
-  }, [accountFlaggedTimeoutRef, imageLoadTimeoutRef, submitUnlockTimeoutRef]);
+  }, [accountFlaggedTimeoutRef, imageLoadTimeoutRef, imageRecoveryTimeoutRef, submitUnlockTimeoutRef]);
 
   useEffect(() => {
     if (!retryDisabled || runtimeConfig.serviceRetrySeconds <= 0) {
@@ -89,6 +91,31 @@ export function useSurveyPageEffects({
       setRetryDisabled(false);
     }
   }, [retryCountdown, retryDisabled, setRetryDisabled]);
+
+  useEffect(() => {
+    if (!isOnline || imageRecoveryTerminal || typeof recoverSurveyImage !== "function" || isFetchingImage || retryDisabled) {
+      return;
+    }
+    const shouldRecoverFailedImage = Boolean(imageError && surveyImageId);
+    const shouldRecoverMissingImage = Boolean(fetchError && (!surveyImageId || !imageSrc));
+    if (!shouldRecoverFailedImage && !shouldRecoverMissingImage) {
+      return;
+    }
+    const timeoutId = scheduleTimeout(() => {
+      recoverSurveyImage({ automatic: true });
+    }, 250);
+    return () => clearScheduledTimeout(timeoutId);
+  }, [
+    fetchError,
+    imageError,
+    imageRecoveryTerminal,
+    imageSrc,
+    isFetchingImage,
+    isOnline,
+    recoverSurveyImage,
+    retryDisabled,
+    surveyImageId,
+  ]);
 
   useEffect(() => {
     if (!publicId || !surveyImageId) return undefined;
@@ -121,18 +148,15 @@ export function useSurveyPageEffects({
       clearScheduledTimeout(imageLoadTimeoutRef.current);
       imageLoadTimeoutRef.current = null;
     }
-    if (!imageSrc || !surveyImageId || imageLoaded || imageError || fetchError || isFetchingImage) {
+    if (!imageSrc || !surveyImageId || imageReady || imageError || fetchError || isFetchingImage || !imageLoading) {
       return undefined;
     }
     imageLoadTimeoutRef.current = scheduleTimeout(() => {
-      reportSurveyImageFailure("timeout", {
+      beginImageRecovery("timeout", {
         timeoutMs: 10000,
         complete: Boolean(imageElementRef.current?.complete),
         naturalWidth: Number(imageElementRef.current?.naturalWidth || 0),
       });
-      setImageError(true);
-      setImageLoaded(false);
-      setTimerActive(false);
     }, 10000);
     return () => {
       if (imageLoadTimeoutRef.current) {
@@ -141,22 +165,20 @@ export function useSurveyPageEffects({
       }
     };
   }, [
+    beginImageRecovery,
     fetchError,
-    imageError,
     imageElementRef,
+    imageError,
     imageLoadTimeoutRef,
-    imageLoaded,
+    imageLoading,
+    imageReady,
     imageSrc,
     isFetchingImage,
-    reportSurveyImageFailure,
-    setImageError,
-    setImageLoaded,
-    setTimerActive,
     surveyImageId,
   ]);
 
   useEffect(() => {
-    if (!imageSrc || !surveyImageId || imageLoaded || imageError) return;
+    if (!imageSrc || !surveyImageId || imageReady || imageError || !imageLoading) return;
     const imageEl = imageElementRef.current;
     if (!imageEl || !imageEl.complete) return;
     if (Number(imageEl.naturalWidth || 0) > 0) {
@@ -168,7 +190,7 @@ export function useSurveyPageEffects({
       complete: true,
       naturalWidth: Number(imageEl.naturalWidth || 0),
     });
-  }, [handleImageError, handleImageLoad, imageElementRef, imageError, imageLoaded, imageSrc, surveyImageId]);
+  }, [handleImageError, handleImageLoad, imageElementRef, imageError, imageLoading, imageReady, imageSrc, surveyImageId]);
 
   useEffect(() => {
     if (!isOnline || submitting || typeof onWarmNextSurvey !== "function" || !surveyImageId || prefetchTriggeredRef.current) {
@@ -308,6 +330,14 @@ export function useSurveyPageEffects({
     window.addEventListener("keydown", onRatingAndZoomKeys);
     return () => window.removeEventListener("keydown", onRatingAndZoomKeys);
   }, [imageReady, isFullscreen, isZoomed, setDifficultyRating, setIsFullscreen, setIsZoomed]);
+
+  useEffect(() => {
+    if (!fetchError || !surveyImageId) return;
+    reportSurveyImageFailure("fetch-failed", {
+      fetchError,
+      surfacedToUser: true,
+    });
+  }, [fetchError, reportSurveyImageFailure, surveyImageId]);
 }
 
 export function queuePendingSurveySubmit() {

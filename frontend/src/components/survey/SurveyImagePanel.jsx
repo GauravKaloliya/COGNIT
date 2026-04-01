@@ -1,9 +1,9 @@
 import React from "react";
 import { uiText } from "../../utils/uiText.js";
 import SectionSkeleton from "../SectionSkeleton.jsx";
-import DSButton from "../design/DSButton.jsx";
 import FullscreenIcon from "../icons/FullscreenIcon.jsx";
 import ZoomIcon from "../icons/ZoomIcon.jsx";
+import DSButton from "../design/DSButton.jsx";
 
 export default function SurveyImagePanel({
   imageSrc,
@@ -15,8 +15,6 @@ export default function SurveyImagePanel({
   isFullscreen,
   setIsZoomed,
   setIsFullscreen,
-  retryDisabled,
-  handleRetryImage,
   handleImageLoad,
   handleImageError,
   imageRef,
@@ -80,9 +78,6 @@ export default function SurveyImagePanel({
       <div className="image-container premium-image-surface">
         <div className="image-error">
           <p>{errorMessage || uiText("survey.imageRestoreFailed")}</p>
-          <DSButton variant="primary" className="small button-top" onClick={handleRetryImage} disabled={retryDisabled}>
-            {uiText("common.retry")}
-          </DSButton>
         </div>
       </div>
     );
