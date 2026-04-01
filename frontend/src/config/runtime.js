@@ -39,6 +39,7 @@ export const runtimeConfig = {
   confettiDurationMs: 1200,
   serviceRetrySeconds: 8,
   serviceRetryMaxAttempts: 4,
+  serviceReplacementMaxAttempts: 2,
   clientErrorMaxQueue: 20,
   clientErrorMaxFieldLength: 600,
   clientErrorMaxSendAttempts: 5,

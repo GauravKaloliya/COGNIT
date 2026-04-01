@@ -204,14 +204,14 @@ export function useSurveyFlow({
     surveyState.surveyFeedbackReady,
   ]);
 
-  const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false } = {}) => {
+  const fetchImage = useCallback(async ({ clearCurrent = false, throwOnError = false, force = false } = {}) => {
     const currentSurvey = normalizeSurvey(surveyState.survey);
-    if (!clearCurrent && currentSurvey) {
+    if (!force && !clearCurrent && currentSurvey) {
       dispatchSurvey({ type: SURVEY_EVENT_TYPES.FETCH_FAILED, imageError: null, keepSurvey: true });
       return currentSurvey;
     }
 
-    const storedSurvey = !clearCurrent ? readStoredSurvey(publicId) : null;
+    const storedSurvey = !force && !clearCurrent ? readStoredSurvey(publicId) : null;
     if (storedSurvey) {
       dispatchSurvey({
         type: SURVEY_EVENT_TYPES.HYDRATE,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { getErrorMessage } from "../utils/errorRegistry.js";
 import { getDisplayErrorMessage } from "../utils/appError.js";
 import { runtimeConfig } from "../config/runtime";
@@ -23,6 +23,13 @@ import {
   useProtectedSubmitStatus,
 } from "../utils/protectedSubmitStatus";
 import { reportClientError } from "../utils/errorReporter";
+import {
+  buildReloadableSurveyImageSrc,
+  createSurveyImageState,
+  surveyImageStateReducer,
+  SURVEY_IMAGE_EVENT_TYPES,
+  SURVEY_IMAGE_PHASES,
+} from "../utils/surveyImageState";
 
 export { sanitizeAlphaNumericSpace, sanitizeSurveyDescription } from "../utils/surveyPageHelpers";
 
@@ -73,13 +80,17 @@ export function useSurveyPage({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [showValidationErrors, setShowValidationErrors] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
   const [retryDisabled, setRetryDisabled] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [submitLocked, setSubmitLocked] = useState(false);
   const [formDisabled, setFormDisabled] = useState(false);
   const [typingDynamics, setTypingDynamics] = useState(EMPTY_TYPING_DYNAMICS);
+  const [imageReloadToken, setImageReloadToken] = useState(0);
+  const [imageState, dispatchImageState] = useReducer(
+    surveyImageStateReducer,
+    undefined,
+    createSurveyImageState
+  );
   const {
     optimisticMessage,
     setSubmitPhase,
@@ -90,6 +101,7 @@ export function useSurveyPage({
   const previousSurveyImageIdRef = useRef("");
   const submitUnlockTimeoutRef = useRef(null);
   const imageLoadTimeoutRef = useRef(null);
+  const imageRecoveryTimeoutRef = useRef(null);
   const accountFlaggedTimeoutRef = useRef(null);
   const prefetchTriggeredRef = useRef(false);
   const turnstilePrefetchTriggeredRef = useRef(false);
@@ -121,12 +133,33 @@ export function useSurveyPage({
 
   const surveyImageId = getSurveyImageId(survey);
   const { imageSrc, hasUsableSurveyImage } = useMemo(() => buildSurveyImageState(survey), [survey]);
+  const surveyLoaded = Boolean(surveyImageId && hasUsableSurveyImage);
+  const reloadableImageSrc = useMemo(
+    () => buildReloadableSurveyImageSrc(imageSrc, imageReloadToken),
+    [imageReloadToken, imageSrc]
+  );
+
+  useEffect(() => {
+    const canLoadImage = Boolean(surveyLoaded && imageSrc && !fetchError);
+    dispatchImageState({
+      type: SURVEY_IMAGE_EVENT_TYPES.SURVEY_CHANGED,
+      canLoad: canLoadImage,
+    });
+    setImageReloadToken(0);
+    imageFailureTraceRef.current = "";
+    if (imageRecoveryTimeoutRef.current) {
+      clearScheduledTimeout(imageRecoveryTimeoutRef.current);
+      imageRecoveryTimeoutRef.current = null;
+    }
+  }, [fetchError, imageSrc, surveyImageId, surveyLoaded]);
 
   const wordCount = useMemo(() => countSurveyDescriptionWords(description), [description]);
   const charCount = useMemo(() => countSurveyDescriptionChars(description), [description]);
   const commentsCharCount = useMemo(() => countAlphaNumericChars(comments), [comments]);
-  const imageReady = imageLoaded && !imageError;
-  const surveyLoaded = Boolean(surveyImageId && hasUsableSurveyImage);
+  const imageReady = imageState.phase === SURVEY_IMAGE_PHASES.ready;
+  const imageLoading = imageState.phase === SURVEY_IMAGE_PHASES.loading || imageState.phase === SURVEY_IMAGE_PHASES.recovering;
+  const imageError = imageState.phase === SURVEY_IMAGE_PHASES.failed;
+  const imageRecoveryTerminal = imageState.phase === SURVEY_IMAGE_PHASES.terminal;
   const descriptionReady = charCount >= MIN_DESCRIPTION_LENGTH && charCount <= MAX_DESCRIPTION_LENGTH;
   const commentsReady = commentsCharCount >= MIN_FEEDBACK_LENGTH && commentsCharCount <= MAX_FEEDBACK_LENGTH;
   const difficultyReady = difficultyRating > 0;
@@ -155,8 +188,12 @@ export function useSurveyPage({
     setDifficultyRating(0);
     setConfidenceRating(0);
     setComments("");
-    setImageLoaded(false);
-    setImageError(false);
+    if (imageRecoveryTimeoutRef.current) {
+      clearScheduledTimeout(imageRecoveryTimeoutRef.current);
+      imageRecoveryTimeoutRef.current = null;
+    }
+    dispatchImageState({ type: SURVEY_IMAGE_EVENT_TYPES.RESET });
+    setImageReloadToken(0);
     setIsZoomed(false);
     setIsFullscreen(false);
     setSubmitError("");
@@ -323,6 +360,7 @@ export function useSurveyPage({
   const getSubmitTooltipText = useCallback(() => getSubmitTooltip({
     imageReady,
     imageError,
+    imageRecoveryTerminal,
     surveyLoaded,
     submitting,
     submitLocked,
@@ -343,16 +381,21 @@ export function useSurveyPage({
     comments,
     confidenceRating,
     difficultyRating,
+    imageError,
+    imageRecoveryTerminal,
     imageReady,
     submitLocked,
     submitting,
+    surveyLoaded,
     wordCount,
   ]);
 
   const submitBlockReason = useMemo(() => {
     if (formDisabled) return uiText("survey.submitLocked");
     if (!surveyLoaded) return uiText("survey.footerLoadNextImage");
-    if (!imageReady) return imageError ? uiText("survey.footerRestoreImage") : uiText("survey.footerLoadingImage");
+    if (!imageReady) {
+      return imageRecoveryTerminal ? uiText("survey.footerRestoreImageTerminal") : imageError ? uiText("survey.footerRestoreImage") : uiText("survey.footerLoadingImage");
+    }
     if (wordCount < MIN_WORDS) {
       return uiText("survey.footerNeedWords", { remaining: Math.max(0, MIN_WORDS - wordCount) });
     }
@@ -374,6 +417,7 @@ export function useSurveyPage({
     difficultyReady,
     formDisabled,
     imageError,
+    imageRecoveryTerminal,
     imageReady,
     submitLocked,
     submitting,
@@ -381,8 +425,13 @@ export function useSurveyPage({
     wordCount,
   ]);
 
+  const fullyReadyForSubmit = surveyLoaded
+    && imageReady
+    && wordCount >= MIN_WORDS
+    && visuallyComplete;
+
   useEffect(() => {
-    if (!surveyImageId || !visuallyComplete || canSubmit) {
+    if (!surveyImageId || !fullyReadyForSubmit || canSubmit || submitting || submitLocked || formDisabled) {
       submitBlockTraceRef.current = "";
       return;
     }
@@ -443,13 +492,13 @@ export function useSurveyPage({
     confidenceReady,
     difficultyReady,
     formDisabled,
+    fullyReadyForSubmit,
     imageError,
     imageReady,
     submitLocked,
     submitting,
     surveyImageId,
     surveyLoaded,
-    visuallyComplete,
     wordCount,
   ]);
 
@@ -464,6 +513,7 @@ export function useSurveyPage({
       surveyImageId,
       imageSrc,
       publicId,
+      retryAttempt: imageState.retryAttempt,
       fetchError: fetchError || "",
     });
     if (imageFailureTraceRef.current === traceKey) return;
@@ -480,8 +530,8 @@ export function useSurveyPage({
         imageSrc,
         fetchError: fetchError || "",
         surveyLoaded,
-        imageLoaded,
-        imageError,
+        imagePhase: imageState.phase,
+        retryAttempt: imageState.retryAttempt,
         isFetchingImage,
         userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
         ...extraMeta,
@@ -489,46 +539,144 @@ export function useSurveyPage({
     });
   }, [
     fetchError,
-    imageError,
-    imageLoaded,
     imageSrc,
+    imageState.phase,
+    imageState.retryAttempt,
     isFetchingImage,
     publicId,
     surveyImageId,
     surveyLoaded,
   ]);
 
-  const handleRetryImage = useCallback(() => {
-    if (formDisabled || retryDisabled || isFetchingImage || typeof onRetry !== "function") return;
+  const scheduleImageReload = useCallback(() => {
+    dispatchImageState({ type: SURVEY_IMAGE_EVENT_TYPES.LOAD_STARTED });
+    setImageReloadToken((current) => current + 1);
+  }, []);
+
+  const beginImageRecovery = useCallback((reason, extraMeta = {}) => {
+    if (imageLoadTimeoutRef.current) {
+      clearScheduledTimeout(imageLoadTimeoutRef.current);
+      imageLoadTimeoutRef.current = null;
+    }
+    if (imageRecoveryTimeoutRef.current) {
+      clearScheduledTimeout(imageRecoveryTimeoutRef.current);
+      imageRecoveryTimeoutRef.current = null;
+    }
+
+    const nextAttempt = imageState.retryAttempt + 1;
+    setTimerActive(false);
+
+    if (nextAttempt <= runtimeConfig.serviceRetryMaxAttempts) {
+      const delayMs = Math.min(
+        runtimeConfig.serviceRetrySeconds * runtimeConfig.msPerSecond,
+        Math.max(600, nextAttempt * 800)
+      );
+      dispatchImageState({
+        type: SURVEY_IMAGE_EVENT_TYPES.AUTO_RETRY_SCHEDULED,
+        retryAttempt: nextAttempt,
+        reason,
+        meta: extraMeta,
+      });
+      imageRecoveryTimeoutRef.current = scheduleTimeout(() => {
+        imageRecoveryTimeoutRef.current = null;
+        scheduleImageReload();
+      }, delayMs);
+      return;
+    }
+
+    dispatchImageState({
+      type: SURVEY_IMAGE_EVENT_TYPES.LOAD_FAILED,
+      retryAttempt: nextAttempt,
+      reason,
+      meta: extraMeta,
+    });
+    reportSurveyImageFailure(reason, {
+      ...extraMeta,
+      surfacedToUser: true,
+      recoveryExhausted: true,
+      attemptedAutoRetries: nextAttempt,
+    });
+  }, [
+    imageState.retryAttempt,
+    reportSurveyImageFailure,
+    scheduleImageReload,
+    setTimerActive,
+  ]);
+
+  const recoverSurveyImage = useCallback(({ automatic = false, reason = "replacement_failed", meta = null } = {}) => {
+    if (formDisabled || retryDisabled || isFetchingImage) return;
+
+    const nextReplacementAttempt = imageState.replacementAttempt + 1;
+    if (nextReplacementAttempt > runtimeConfig.serviceReplacementMaxAttempts) {
+      dispatchImageState({
+        type: SURVEY_IMAGE_EVENT_TYPES.TERMINAL_FAILURE,
+        reason,
+        meta: {
+          ...(meta || {}),
+          replacementAttempt: imageState.replacementAttempt,
+        },
+      });
+      setSubmitError(uiText("survey.imageRestoreTerminal"));
+      setTimerActive(false);
+      return;
+    }
+
     setRetryDisabled(true);
     setRetryCountdown(runtimeConfig.serviceRetrySeconds);
-    setImageError(false);
-    setImageLoaded(false);
     setTimerActive(false);
-    onRetry({ clearCurrent: false });
-  }, [formDisabled, isFetchingImage, onRetry, retryDisabled, setTimerActive]);
+    imageFailureTraceRef.current = "";
+    dispatchImageState({
+      type: SURVEY_IMAGE_EVENT_TYPES.REPLACEMENT_STARTED,
+      replacementAttempt: nextReplacementAttempt,
+      reason,
+      meta,
+    });
+
+    if (typeof onRetry === "function" && (automatic || imageError || fetchError)) {
+      onRetry({ clearCurrent: true, force: true });
+      return;
+    }
+
+    if (!surveyLoaded || !reloadableImageSrc) {
+      if (typeof onRetry === "function") {
+        onRetry({ clearCurrent: true, force: true });
+      }
+      return;
+    }
+
+    scheduleImageReload();
+  }, [
+    fetchError,
+    formDisabled,
+    imageError,
+    imageState.replacementAttempt,
+    isFetchingImage,
+    onRetry,
+    reloadableImageSrc,
+    retryDisabled,
+    scheduleImageReload,
+    setSubmitError,
+    setTimerActive,
+    surveyLoaded,
+  ]);
 
   const handleImageLoad = useCallback(() => {
     if (imageLoadTimeoutRef.current) {
       clearScheduledTimeout(imageLoadTimeoutRef.current);
       imageLoadTimeoutRef.current = null;
     }
+    if (imageRecoveryTimeoutRef.current) {
+      clearScheduledTimeout(imageRecoveryTimeoutRef.current);
+      imageRecoveryTimeoutRef.current = null;
+    }
     imageFailureTraceRef.current = "";
-    setImageLoaded(true);
-    setImageError(false);
+    dispatchImageState({ type: SURVEY_IMAGE_EVENT_TYPES.LOAD_SUCCEEDED });
     setTimerActive(true);
   }, [setTimerActive]);
 
   const handleImageError = useCallback((extraMeta = {}) => {
-    if (imageLoadTimeoutRef.current) {
-      clearScheduledTimeout(imageLoadTimeoutRef.current);
-      imageLoadTimeoutRef.current = null;
-    }
-    reportSurveyImageFailure("img.onerror", extraMeta);
-    setImageError(true);
-    setImageLoaded(false);
-    setTimerActive(false);
-  }, [reportSurveyImageFailure, setTimerActive]);
+    beginImageRecovery("img.onerror", extraMeta);
+  }, [beginImageRecovery]);
 
   const touchField = useCallback(() => {}, []);
 
@@ -652,18 +800,18 @@ export function useSurveyPage({
     isOnline,
     onAccountFlagged,
     onSubmit,
+    publicId,
+    resetEngagement,
     resetSubmitPhase,
     setSubmitPhase,
-    publicId,
-    submitLocked,
     setTimerActive,
+    setValidationError,
+    submitLocked,
     submitting,
     surveyImageId,
     surveyStartTime,
     typingDynamics,
     unlockSubmit,
-    setValidationError,
-    resetEngagement,
   ]);
 
   useSurveyPageEffects({
@@ -672,6 +820,7 @@ export function useSurveyPage({
     previousSurveyImageIdRef,
     submitUnlockTimeoutRef,
     imageLoadTimeoutRef,
+    imageRecoveryTimeoutRef,
     accountFlaggedTimeoutRef,
     retryDisabled,
     retryCountdown,
@@ -680,14 +829,13 @@ export function useSurveyPage({
     publicId,
     flushDraft,
     buildCurrentDraftState,
-    imageSrc,
-    imageLoaded,
+    imageSrc: reloadableImageSrc,
+    imageReady,
+    imageLoading,
     imageError,
+    imageRecoveryTerminal,
     fetchError,
     isFetchingImage,
-    setImageError,
-    setImageLoaded,
-    setTimerActive,
     imageElementRef,
     handleImageLoad,
     handleImageError,
@@ -713,8 +861,9 @@ export function useSurveyPage({
     setIsZoomed,
     setIsFullscreen,
     setDifficultyRating,
-    imageReady,
     reportSurveyImageFailure,
+    beginImageRecovery,
+    recoverSurveyImage,
   });
 
   useNavigationBlocker({
@@ -762,14 +911,17 @@ export function useSurveyPage({
     mediaState: {
       isZoomed,
       isFullscreen,
-      imageLoaded,
+      imageLoaded: imageReady,
       imageError,
       imageReady,
-      retryDisabled,
-      retryCountdown,
-      retryExhausted: Boolean(imageError || (!hasUsableSurveyImage && fetchError)),
-      imagePanelErrorMessage: imageError ? uiText("survey.imageRestoreFailed") : uiText("survey.feedLoadFailed"),
-      imageSrc,
+      imageRecoveryTerminal,
+      retryExhausted: Boolean(imageError || imageRecoveryTerminal || (!hasUsableSurveyImage && fetchError)),
+      imagePanelErrorMessage: imageRecoveryTerminal
+        ? uiText("survey.imageRestoreTerminal")
+        : imageError
+          ? uiText("survey.imageRestoreFailed")
+          : uiText("survey.feedLoadFailed"),
+      imageSrc: reloadableImageSrc,
       hasUsableSurveyImage,
       imageElementRef,
     },
@@ -784,7 +936,6 @@ export function useSurveyPage({
       setComments: updateComments,
       setIsZoomed,
       setIsFullscreen,
-      handleRetryImage,
       handleSubmit,
       handleImageLoad,
       handleImageError,

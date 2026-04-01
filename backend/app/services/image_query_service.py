@@ -17,6 +17,112 @@ QUERY_LOAD_IMAGE_POOL = text("""
     WHERE i.is_active = true
 """)
 
+QUERY_IMAGE_DELIVERY_HEALTH_TABLE_EXISTS = text("""
+    SELECT to_regclass('public.image_delivery_health') IS NOT NULL
+""")
+
+QUERY_LOAD_QUARANTINED_IMAGE_IDS = text("""
+    SELECT image_public_id
+    FROM image_delivery_health
+    WHERE quarantine_until IS NOT NULL
+      AND quarantine_until > CURRENT_TIMESTAMP
+""")
+
+QUERY_IS_IMAGE_QUARANTINED = text("""
+    SELECT 1
+    FROM image_delivery_health
+    WHERE image_public_id = :iid
+      AND quarantine_until IS NOT NULL
+      AND quarantine_until > CURRENT_TIMESTAMP
+    LIMIT 1
+""")
+
+QUERY_RECORD_IMAGE_DELIVERY_FAILURE = text("""
+    INSERT INTO image_delivery_health (
+        image_public_id,
+        total_failure_count,
+        recent_failure_count,
+        total_success_count,
+        last_failure_reason,
+        last_failure_at,
+        last_failure_request_id,
+        last_failure_route,
+        last_failure_meta,
+        quarantine_until
+    ) VALUES (
+        :iid,
+        1,
+        1,
+        0,
+        :failure_reason,
+        CURRENT_TIMESTAMP,
+        :request_id,
+        :route,
+        CAST(:failure_meta AS jsonb),
+        CASE
+            WHEN :threshold <= 1
+            THEN CURRENT_TIMESTAMP + (:quarantine_seconds * INTERVAL '1 second')
+            ELSE NULL
+        END
+    )
+    ON CONFLICT (image_public_id) DO UPDATE SET
+        total_failure_count = image_delivery_health.total_failure_count + 1,
+        recent_failure_count = CASE
+            WHEN image_delivery_health.last_failure_at IS NOT NULL
+             AND image_delivery_health.last_failure_at >= CURRENT_TIMESTAMP - (:window_seconds * INTERVAL '1 second')
+            THEN image_delivery_health.recent_failure_count + 1
+            ELSE 1
+        END,
+        last_failure_reason = EXCLUDED.last_failure_reason,
+        last_failure_at = CURRENT_TIMESTAMP,
+        last_failure_request_id = EXCLUDED.last_failure_request_id,
+        last_failure_route = EXCLUDED.last_failure_route,
+        last_failure_meta = EXCLUDED.last_failure_meta,
+        quarantine_until = CASE
+            WHEN (
+                CASE
+                    WHEN image_delivery_health.last_failure_at IS NOT NULL
+                     AND image_delivery_health.last_failure_at >= CURRENT_TIMESTAMP - (:window_seconds * INTERVAL '1 second')
+                    THEN image_delivery_health.recent_failure_count + 1
+                    ELSE 1
+                END
+            ) >= :threshold
+            THEN GREATEST(
+                COALESCE(image_delivery_health.quarantine_until, CURRENT_TIMESTAMP),
+                CURRENT_TIMESTAMP + (:quarantine_seconds * INTERVAL '1 second')
+            )
+            ELSE image_delivery_health.quarantine_until
+        END,
+        updated_at = CURRENT_TIMESTAMP
+    RETURNING recent_failure_count, quarantine_until
+""")
+
+QUERY_MARK_IMAGE_DELIVERY_SUCCESS = text("""
+    INSERT INTO image_delivery_health (
+        image_public_id,
+        total_failure_count,
+        recent_failure_count,
+        total_success_count,
+        last_failure_meta,
+        last_success_at,
+        quarantine_until
+    ) VALUES (
+        :iid,
+        0,
+        0,
+        1,
+        '{}'::jsonb,
+        CURRENT_TIMESTAMP,
+        NULL
+    )
+    ON CONFLICT (image_public_id) DO UPDATE SET
+        total_success_count = image_delivery_health.total_success_count + 1,
+        recent_failure_count = 0,
+        last_success_at = CURRENT_TIMESTAMP,
+        quarantine_until = NULL,
+        updated_at = CURRENT_TIMESTAMP
+""")
+
 QUERY_FETCH_ACTIVE_PARTICIPANT_RESERVATION = text("""
     SELECT
         i.image_id,

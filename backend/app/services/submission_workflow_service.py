@@ -30,6 +30,7 @@ from app.services.submission_processing_service import (
     finalize_attention_assessment,
     merge_submission_engagement,
 )
+from app.services.image_health_service import mark_image_delivery_success
 from app.services.submission_query_service import (
     end_participant_session,
     fetch_attention_check,
@@ -561,6 +562,7 @@ def process_submission_workflow(
     except Exception:
         log_event(logger, OBS_EVENT_SUBMISSION_RELEASE_RESERVATION_FAILED, level=logging.WARNING)
 
+    mark_image_delivery_success(db, image_public_id=image_id_str)
     db.commit()
     enqueue_submit_post_commit_tasks_fn(
         engine=engine,
