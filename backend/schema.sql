@@ -495,6 +495,33 @@ CREATE INDEX IF NOT EXISTS idx_image_reservations_expires_active
     ON image_reservations (expires_at)
     WHERE released_at IS NULL;
 
+CREATE TABLE IF NOT EXISTS image_delivery_health (
+    image_public_id        VARCHAR(64) PRIMARY KEY REFERENCES images(image_id) ON DELETE CASCADE,
+    total_failure_count    INTEGER NOT NULL DEFAULT 0 CHECK (total_failure_count >= 0),
+    recent_failure_count   INTEGER NOT NULL DEFAULT 0 CHECK (recent_failure_count >= 0),
+    total_success_count    INTEGER NOT NULL DEFAULT 0 CHECK (total_success_count >= 0),
+    last_failure_reason    VARCHAR(64),
+    last_failure_at        TIMESTAMPTZ,
+    last_failure_request_id VARCHAR(128),
+    last_failure_route     VARCHAR(255),
+    last_failure_meta      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_success_at        TIMESTAMPTZ,
+    quarantine_until       TIMESTAMPTZ,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_image_delivery_health_updated_at
+    BEFORE UPDATE ON image_delivery_health
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_image_delivery_health_quarantine_active
+    ON image_delivery_health (quarantine_until DESC)
+    WHERE quarantine_until IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_image_delivery_health_failure_recent
+    ON image_delivery_health (recent_failure_count DESC, last_failure_at DESC);
+
 CREATE TABLE IF NOT EXISTS image_pool_allocation_state (
     pool_type    VARCHAR(16) PRIMARY KEY CHECK (pool_type IN ('attention', 'survey')),
     batch_number INTEGER NOT NULL DEFAULT 0 CHECK (batch_number >= 0),

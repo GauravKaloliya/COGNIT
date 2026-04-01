@@ -33,6 +33,7 @@ from app.services.image_query_service import (
     QUERY_UPDATE_IMAGE_POOL_ALLOCATION_STATE,
     serialize_image_order,
 )
+from app.services.image_health_service import load_quarantined_image_ids, is_image_quarantined
 from app.utils.cache import cache
 from app.utils.observability import log_event
 from app.constants.observability_constants import OBS_EVENT_IMAGE_CLEANUP_FAILED, OBS_EVENT_IMAGE_RESERVE_COMMIT_FAILED, OBS_EVENT_IMAGE_RESERVE_FAILED
@@ -52,11 +53,14 @@ def load_image_pool(db) -> tuple[list[ImagePoolItem], list[ImagePoolItem], list[
             return attention_rows, non_attention_rows, all_rows
 
     rows = db.execute(QUERY_LOAD_IMAGE_POOL).fetchall()
+    quarantined_image_ids = load_quarantined_image_ids(db)
     attention_rows: list[ImagePoolItem] = []
     non_attention_rows: list[ImagePoolItem] = []
     all_rows: list[ImagePoolItem] = []
     for image_id, image_url, is_attention in rows:
         if not image_url:
+            continue
+        if str(image_id) in quarantined_image_ids:
             continue
         item = (str(image_id), image_url, True, bool(is_attention))
         all_rows.append(item)
@@ -113,7 +117,12 @@ def fetch_active_reserved_image(db, participant_id: int | None):
         QUERY_FETCH_ACTIVE_PARTICIPANT_RESERVATION,
         {"pid": int(participant_id)},
     ).fetchone()
-    return tuple(row) if row else None
+    if not row:
+        return None
+    reservation = tuple(row)
+    if is_image_quarantined(db, reservation[0]):
+        return None
+    return reservation
 
 
 def release_participant_reservations(db, participant_id: int | None) -> None:
@@ -135,6 +144,8 @@ def renew_participant_image_reservation(
 ):
     normalized_image_id = str(image_id or "").strip()
     if participant_id is None or not normalized_image_id:
+        return None
+    if is_image_quarantined(db, normalized_image_id):
         return None
 
     effective_ttl_seconds = max(900, int(ttl_seconds or IMAGE_RESERVATION_TTL_SECONDS))

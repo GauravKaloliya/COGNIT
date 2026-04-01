@@ -30,6 +30,7 @@ export function buildSurveyImageState(survey) {
 export function getSubmitTooltip({
   imageReady,
   imageError,
+  imageRecoveryTerminal = false,
   surveyLoaded = true,
   submitting,
   submitLocked,
@@ -43,11 +44,14 @@ export function getSubmitTooltip({
   comments,
   minFeedbackLength,
   maxFeedbackLength,
-  getErrorMessage,
+  getErrorMessage: _getErrorMessage,
   uiText,
 }) {
   if (!surveyLoaded) return uiText("survey.footerLoadNextImage");
-  if (!imageReady) return imageError ? uiText("survey.footerRestoreImage") : uiText("survey.footerLoadingImage");
+  if (!imageReady) {
+    if (imageRecoveryTerminal) return uiText("survey.footerRestoreImageTerminal");
+    return imageError ? uiText("survey.footerRestoreImage") : uiText("survey.footerLoadingImage");
+  }
   if (submitting) return uiText("survey.submitBusy");
   if (submitLocked) return uiText("survey.submitLocked");
   if (wordCount < minWords) {
@@ -73,6 +77,7 @@ export function getFriendlySurveySubmitErrorMessage(rawMessage, { uiText }) {
   if (normalized === uiText("survey.submitLocked")) return "";
   if (normalized === uiText("survey.offlineSubmit")) return uiText("survey.footerOffline");
   if (normalized === uiText("survey.imageRestoreFailed")) return uiText("survey.footerRestoreImage");
+  if (normalized === uiText("survey.imageRestoreTerminal")) return uiText("survey.footerRestoreImageTerminal");
   if (normalized === uiText("survey.feedLoadFailed")) return uiText("survey.footerLoadNextImage");
   if (normalized === getErrorMessage("UI_001_0002")) return uiText("survey.footerImageMissing");
   if (normalized.includes("At least") && normalized.includes("words")) return uiText("survey.footerNeedDescriptionDetail");
