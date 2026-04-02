@@ -74,6 +74,11 @@ MIGRATION_STATEMENTS = [
     """,
     """
     ALTER TABLE participant_attention_stats
+        ADD COLUMN IF NOT EXISTS participant_enforcement_score NUMERIC(5,4) NOT NULL DEFAULT 0
+        CHECK (participant_enforcement_score BETWEEN 0 AND 1)
+    """,
+    """
+    ALTER TABLE participant_attention_stats
         ADD COLUMN IF NOT EXISTS watchlist_triggered BOOLEAN NOT NULL DEFAULT FALSE
     """,
     """

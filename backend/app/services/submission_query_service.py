@@ -255,6 +255,7 @@ QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG = text("""
     UPDATE participant_attention_stats
     SET attention_score = COALESCE(:attention_score, attention_score),
         recent_attention_score = COALESCE(:recent_attention_score, recent_attention_score),
+        participant_enforcement_score = COALESCE(:participant_enforcement_score, participant_enforcement_score),
         consecutive_failures = COALESCE(:consecutive_failures, consecutive_failures),
         hard_flag_triggered = COALESCE(:hard_flag_triggered, hard_flag_triggered),
         soft_flag_triggered = COALESCE(:soft_flag_triggered, soft_flag_triggered),
@@ -296,7 +297,8 @@ QUERY_FETCH_PARTICIPANT_ATTENTION_STATS = text("""
         is_flagged,
         last_checked_at,
         watchlist_triggered,
-        enforcement_status
+        enforcement_status,
+        participant_enforcement_score
     FROM participant_attention_stats
     WHERE participant_id = :pid
 """)
@@ -534,6 +536,7 @@ def update_participant_attention_flag(
     enforcement_status: str = "normal",
     attention_score: float | None = None,
     recent_attention_score: float | None = None,
+    participant_enforcement_score: float | None = None,
     consecutive_failures: int | None = None,
     checked_at=None,
 ):
@@ -543,6 +546,7 @@ def update_participant_attention_flag(
         "soft_flag": bool(soft_flag_triggered),
         "attention_score": float(attention_score) if attention_score is not None else None,
         "recent_attention_score": float(recent_attention_score) if recent_attention_score is not None else None,
+        "participant_enforcement_score": float(participant_enforcement_score) if participant_enforcement_score is not None else None,
         "consecutive_failures": int(consecutive_failures) if consecutive_failures is not None else None,
         "hard_flag_triggered": bool(hard_flag_triggered),
         "soft_flag_triggered": bool(soft_flag_triggered),
