@@ -561,9 +561,16 @@ CREATE TABLE IF NOT EXISTS submissions (
     distinct_word_count SMALLINT CHECK (distinct_word_count >= 0),
     descriptive_token_count SMALLINT CHECK (descriptive_token_count >= 0),
     flagged_too_fast    BOOLEAN NOT NULL DEFAULT FALSE,
+    too_fast_score      NUMERIC(5,4) CHECK (too_fast_score BETWEEN 0 AND 1),
+    too_fast_threshold_seconds REAL CHECK (too_fast_threshold_seconds >= 0),
+    too_fast_margin_seconds REAL,
     quality_score       NUMERIC(5,4) CHECK (quality_score BETWEEN 0 AND 1),
     writing_quality_score NUMERIC(5,4) CHECK (writing_quality_score BETWEEN 0 AND 1),
     behavior_risk_score NUMERIC(5,4) CHECK (behavior_risk_score BETWEEN 0 AND 1),
+    copy_paste_likelihood_score NUMERIC(5,4) CHECK (copy_paste_likelihood_score BETWEEN 0 AND 1),
+    typing_effort_risk  NUMERIC(5,4) CHECK (typing_effort_risk BETWEEN 0 AND 1),
+    speed_risk          NUMERIC(5,4) CHECK (speed_risk BETWEEN 0 AND 1),
+    session_integrity_risk NUMERIC(5,4) CHECK (session_integrity_risk BETWEEN 0 AND 1),
     alignment_score     NUMERIC(5,4) CHECK (alignment_score BETWEEN 0 AND 1),
     alignment_precision NUMERIC(5,4) CHECK (alignment_precision BETWEEN 0 AND 1),
     alignment_recall NUMERIC(5,4) CHECK (alignment_recall BETWEEN 0 AND 1),
@@ -577,6 +584,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     consecutive_failures SMALLINT NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
     hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
     soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    watchlist_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    enforcement_status  VARCHAR(16) NOT NULL DEFAULT 'normal'
+        CHECK (enforcement_status IN ('normal','watchlist','soft_flag','hard_flag')),
     ip_hash             CHAR(64) NOT NULL,
     user_agent          VARCHAR(512),
     device_type         VARCHAR(20),
@@ -641,11 +651,31 @@ ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS descriptive_token_count SMALLINT
     CHECK (descriptive_token_count >= 0);
 ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS too_fast_score NUMERIC(5,4)
+    CHECK (too_fast_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS too_fast_threshold_seconds REAL
+    CHECK (too_fast_threshold_seconds >= 0);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS too_fast_margin_seconds REAL;
+ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS writing_quality_score NUMERIC(5,4)
     CHECK (writing_quality_score BETWEEN 0 AND 1);
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS behavior_risk_score NUMERIC(5,4)
     CHECK (behavior_risk_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS copy_paste_likelihood_score NUMERIC(5,4)
+    CHECK (copy_paste_likelihood_score BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS typing_effort_risk NUMERIC(5,4)
+    CHECK (typing_effort_risk BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS speed_risk NUMERIC(5,4)
+    CHECK (speed_risk BETWEEN 0 AND 1);
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS session_integrity_risk NUMERIC(5,4)
+    CHECK (session_integrity_risk BETWEEN 0 AND 1);
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS alignment_precision NUMERIC(5,4)
     CHECK (alignment_precision BETWEEN 0 AND 1);
@@ -679,6 +709,11 @@ ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS watchlist_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS enforcement_status VARCHAR(16) NOT NULL DEFAULT 'normal'
+    CHECK (enforcement_status IN ('normal','watchlist','soft_flag','hard_flag'));
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS survey_time_spent_seconds REAL NOT NULL DEFAULT 0
     CHECK (survey_time_spent_seconds >= 0);
@@ -1002,6 +1037,9 @@ CREATE TABLE IF NOT EXISTS participant_attention_stats (
     consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
     hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
     soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    watchlist_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    enforcement_status VARCHAR(16) NOT NULL DEFAULT 'normal'
+        CHECK (enforcement_status IN ('normal','watchlist','soft_flag','hard_flag')),
     is_flagged      BOOLEAN NOT NULL DEFAULT FALSE,
     last_checked_at TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1020,6 +1058,11 @@ ALTER TABLE participant_attention_stats
     ADD COLUMN IF NOT EXISTS hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE participant_attention_stats
     ADD COLUMN IF NOT EXISTS soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE participant_attention_stats
+    ADD COLUMN IF NOT EXISTS watchlist_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE participant_attention_stats
+    ADD COLUMN IF NOT EXISTS enforcement_status VARCHAR(16) NOT NULL DEFAULT 'normal'
+    CHECK (enforcement_status IN ('normal','watchlist','soft_flag','hard_flag'));
 
 CREATE TRIGGER trg_attention_stats_updated
     BEFORE UPDATE ON participant_attention_stats

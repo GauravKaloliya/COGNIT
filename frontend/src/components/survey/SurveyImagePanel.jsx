@@ -18,6 +18,8 @@ export default function SurveyImagePanel({
   handleImageLoad,
   handleImageError,
   imageRef,
+  copyPasteDisabled = false,
+  preventCopyPaste,
 }) {
   const [animateIn, setAnimateIn] = React.useState(true);
   const fullscreenShellRef = React.useRef(null);
@@ -92,9 +94,17 @@ export default function SurveyImagePanel({
           className={`survey-image ${animateIn && !isZoomed ? "image-animate-in" : ""} ${isZoomed ? "image-is-zoomed" : ""}`.trim()}
           src={imageSrc}
           alt={uiText("survey.promptAlt")}
+          draggable={copyPasteDisabled ? false : undefined}
           onClick={openFullscreen}
           onLoad={handleImageLoad}
           onError={() => handleImageError({ reasonHint: "img_element_error" })}
+          onCopy={copyPasteDisabled ? preventCopyPaste : undefined}
+          onCut={copyPasteDisabled ? preventCopyPaste : undefined}
+          onPaste={copyPasteDisabled ? preventCopyPaste : undefined}
+          onContextMenu={copyPasteDisabled ? preventCopyPaste : undefined}
+          onDragStart={copyPasteDisabled ? preventCopyPaste : undefined}
+          onDrop={copyPasteDisabled ? preventCopyPaste : undefined}
+          onDragOver={copyPasteDisabled ? preventCopyPaste : undefined}
           onAnimationEnd={(event) => {
             if (event.animationName === "survey-image-content-enter") {
               setAnimateIn(false);
@@ -166,6 +176,14 @@ export default function SurveyImagePanel({
                   className="image-fullscreen-asset"
                   src={imageSrc}
                   alt={uiText("survey.promptAlt")}
+                  draggable={copyPasteDisabled ? false : undefined}
+                  onCopy={copyPasteDisabled ? preventCopyPaste : undefined}
+                  onCut={copyPasteDisabled ? preventCopyPaste : undefined}
+                  onPaste={copyPasteDisabled ? preventCopyPaste : undefined}
+                  onContextMenu={copyPasteDisabled ? preventCopyPaste : undefined}
+                  onDragStart={copyPasteDisabled ? preventCopyPaste : undefined}
+                  onDrop={copyPasteDisabled ? preventCopyPaste : undefined}
+                  onDragOver={copyPasteDisabled ? preventCopyPaste : undefined}
                 />
               </div>
             </div>

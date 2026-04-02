@@ -14,7 +14,10 @@ from app.config import (
     ATTENTION_MIN_DISTINCT_WORDS,
     ATTENTION_MIN_RECALL,
     STAGE_STALE_TIMEOUT_SECONDS,
-    TOO_FAST_SECONDS,
+    TOO_FAST_ATTENTION_BASE_SECONDS,
+    TOO_FAST_ATTENTION_MAX_THRESHOLD_SECONDS,
+    TOO_FAST_SURVEY_BASE_SECONDS,
+    TOO_FAST_SURVEY_MAX_THRESHOLD_SECONDS,
 )
 from app.constants.observability_constants import (
     OBS_EVENT_SUBMISSION_RELEASE_RESERVATION_FAILED,
@@ -41,6 +44,7 @@ from app.services.submission_query_service import (
     fetch_submission_image_target,
     fetch_submission_participant,
     has_copied_attention_pattern,
+    has_copied_survey_pattern,
     has_duplicate_non_survey_submission,
     insert_attention_event_record,
     insert_submission_record,
@@ -251,6 +255,13 @@ def process_submission_workflow(
 
     if not is_survey and has_duplicate_non_survey_submission(db, participant_id=participant_id, image_id_fk=image_id_fk):
         raise SubmissionWorkflowError("DUP_SUBMISSION")
+    if is_survey and has_copied_survey_pattern(
+        db,
+        image_id_fk=image_id_fk,
+        normalized_description=normalize_for_attention(description),
+        participant_id=participant_id,
+    ):
+        raise SubmissionWorkflowError("DUP_COPIED_SUBMISSION")
 
     submitted_step = STEP_ATTENTION if is_attention else STEP_SURVEY
     expected_step = expected_step_for_submission_count(sequence_order, total_submissions)
@@ -277,11 +288,14 @@ def process_submission_workflow(
 
     distinct_word_count = len(set(alphabetic_tokens(description)))
     dynamic_threshold = dynamic_too_fast_threshold(
-        TOO_FAST_SECONDS,
         word_count,
         is_attention=bool(is_attention),
         description=description,
         behavior_metrics=phase_data["behavior_metrics"],
+        attention_base_threshold=TOO_FAST_ATTENTION_BASE_SECONDS,
+        survey_base_threshold=TOO_FAST_SURVEY_BASE_SECONDS,
+        attention_max_threshold=TOO_FAST_ATTENTION_MAX_THRESHOLD_SECONDS,
+        survey_max_threshold=TOO_FAST_SURVEY_MAX_THRESHOLD_SECONDS,
     )
     too_fast = time_spent_seconds is not None and time_spent_seconds < dynamic_threshold
 
@@ -403,10 +417,11 @@ def process_submission_workflow(
     network_disconnects = engagement_result["network_disconnects"]
     survey_metrics = engagement_result["survey_metrics"]
 
-    writing_quality_score, behavior_risk_score, quality = calculate_quality(
+    scorecard = calculate_quality(
         word_count=word_count,
         attention_passed=attention_passed,
         attention_suspicious=attention_suspicious,
+        attention_tier=attention_tier,
         attention_confidence=attention_confidence,
         time_spent_seconds=time_spent_seconds,
         feedback=feedback,
@@ -420,7 +435,14 @@ def process_submission_workflow(
         too_fast=too_fast,
         copied_pattern_detected=copied_pattern_detected,
         behavior_metrics=phase_data["behavior_metrics"],
+        description=description,
+        device_type=device_type,
+        user_agent=user_agent,
     )
+    writing_quality_score = scorecard["writing_quality_score"]
+    behavior_risk_score = scorecard["behavior_risk_score"]
+    quality = scorecard["quality_score"]
+    too_fast = bool(scorecard["flagged_too_fast"])
     attention_checked_at = datetime.now(timezone.utc) if is_attention else None
     monitor_result = apply_attention_monitor(
         participant_meta=participant_meta,
@@ -472,15 +494,24 @@ def process_submission_workflow(
         distinct_word_count=distinct_word_count,
         descriptive_token_count=descriptive_token_count,
         too_fast=too_fast,
+        too_fast_score=scorecard["too_fast_score"],
+        too_fast_threshold_seconds=scorecard["too_fast_threshold_seconds"],
+        too_fast_margin_seconds=scorecard["too_fast_margin_seconds"],
         quality=quality,
         writing_quality_score=writing_quality_score,
         behavior_risk_score=behavior_risk_score,
+        copy_paste_likelihood_score=scorecard["copy_paste_likelihood_score"],
+        typing_effort_risk=scorecard["typing_effort_risk"],
+        speed_risk=scorecard["speed_risk"],
+        session_integrity_risk=scorecard["session_integrity_risk"],
         alignment_score=alignment_score,
         alignment=alignment,
         supporting_signals=supporting_signals,
         consecutive_failures=consecutive_failures,
         hard_flag_triggered=hard_flag_triggered,
         soft_flag_triggered=soft_flag_triggered,
+        watchlist_triggered=monitor_result.get("watchlist_triggered", False),
+        enforcement_status=monitor_result.get("enforcement_status", "normal"),
         ip_hash=ip_hash,
         user_agent=user_agent,
         device_type=device_type,
@@ -528,6 +559,8 @@ def process_submission_workflow(
             participant_id=participant_id,
             hard_flag_triggered=hard_flag_triggered,
             soft_flag_triggered=soft_flag_triggered,
+            watchlist_triggered=monitor_result.get("watchlist_triggered", False),
+            enforcement_status=monitor_result.get("enforcement_status", "normal"),
             attention_score=recent_attention_score,
             recent_attention_score=recent_attention_score,
             consecutive_failures=consecutive_failures,
@@ -540,20 +573,13 @@ def process_submission_workflow(
         post_passed_checks = int(post_stats_row[1] or 0)
         post_failed_checks = int(post_stats_row[2] or 0)
         post_attention_score = float(post_stats_row[3] or 1.0)
-        post_is_flagged = bool(post_stats_row[4])
     else:
         post_total_checks = pre_total_checks
         post_passed_checks = pre_passed_checks
         post_failed_checks = pre_failed_checks
         post_attention_score = pre_attention_score
-        post_is_flagged = pre_is_flagged
 
     recent_attention_score = post_attention_score
-    soft_flag_triggered = (
-        post_total_checks >= ATTENTION_FLAG_MIN_CHECKS
-        and post_attention_score < float(ATTENTION_FLAG_THRESHOLD)
-    )
-    hard_flag_triggered = bool(post_is_flagged and not soft_flag_triggered)
 
     try:
         release_image_reservation(db, image_id=image_id_str, participant_id=participant_id)
@@ -588,6 +614,14 @@ def process_submission_workflow(
         behavior_risk_score=behavior_risk_score,
         attention_passed=attention_passed,
         too_fast=too_fast,
+        too_fast_score=scorecard["too_fast_score"],
+        too_fast_threshold_seconds=scorecard["too_fast_threshold_seconds"],
+        too_fast_margin_seconds=scorecard["too_fast_margin_seconds"],
+        copy_paste_likelihood_score=scorecard["copy_paste_likelihood_score"],
+        typing_effort_risk=scorecard["typing_effort_risk"],
+        speed_risk=scorecard["speed_risk"],
+        session_integrity_risk=scorecard["session_integrity_risk"],
+        contradiction_signals=scorecard["contradiction_signals"],
         survey_index=survey_index,
         is_survey=is_survey,
         is_attention=is_attention,
@@ -606,6 +640,9 @@ def process_submission_workflow(
         consecutive_failures=consecutive_failures,
         recent_attention_score=recent_attention_score,
         hard_flag_triggered=hard_flag_triggered,
+        soft_flag_triggered=soft_flag_triggered,
+        watchlist_triggered=monitor_result.get("watchlist_triggered", False),
+        enforcement_status=monitor_result.get("enforcement_status", "normal"),
         attention_total_checks=post_total_checks,
         attention_passed_checks=post_passed_checks,
         attention_failed_checks=post_failed_checks,
@@ -646,6 +683,7 @@ def calculate_quality(
     word_count: int,
     attention_passed,
     attention_suspicious: bool,
+    attention_tier,
     attention_confidence,
     time_spent_seconds: float,
     feedback: str,
@@ -659,9 +697,12 @@ def calculate_quality(
     too_fast: bool,
     copied_pattern_detected: bool,
     behavior_metrics: dict,
+    description: str = "",
+    device_type: str = "unknown",
+    user_agent: str = "",
 ):
     from app.utils.helpers import (
-        calculate_behavior_risk_score,
+        calculate_behavior_scorecard,
         calculate_quality_score,
         calculate_writing_quality_score,
     )
@@ -673,23 +714,37 @@ def calculate_quality(
         distinct_word_count=distinct_word_count,
         alignment_score=alignment_score,
     )
-    behavior_risk = calculate_behavior_risk_score(
+    scorecard = calculate_behavior_scorecard(
         attention_suspicious=bool(attention_suspicious),
-        too_fast=bool(too_fast),
+        attention_tier=attention_tier,
         tab_switch_count=tab_switch_count,
         page_close_attempts=page_close_attempts,
         network_disconnects=network_disconnects,
         copied_pattern=bool(copied_pattern_detected),
+        word_count=word_count,
         behavior_metrics=behavior_metrics,
+        time_spent_seconds=time_spent_seconds,
+        description=description,
+        device_type=device_type,
+        user_agent=user_agent,
     )
     quality = calculate_quality_score(
         writing_quality_score=writing_quality,
-        behavior_risk_score=behavior_risk,
+        behavior_risk_score=scorecard["behavior_risk_score"],
+        copy_paste_likelihood_score=scorecard["copy_paste_likelihood_score"],
         alignment_score=alignment_score,
         attention_trust_score=attention_confidence if attention_passed is not None else None,
+        attention_tier=attention_tier,
+        contradiction_signals=scorecard["contradiction_signals"],
         bot=False,
     )
     if alignment_score is not None and alignment and alignment["wrong"]:
         quality *= 0.95
     quality = round(max(0.0, min(1.0, quality)), 4)
-    return round(writing_quality, 4), round(behavior_risk, 4), quality
+    scorecard = dict(scorecard)
+    scorecard["writing_quality_score"] = round(writing_quality, 4)
+    scorecard["quality_score"] = quality
+    scorecard["flagged_too_fast"] = bool(too_fast or scorecard["flagged_too_fast"])
+    scorecard["too_fast_threshold_seconds"] = round(max(dynamic_too_fast_threshold, scorecard["too_fast_threshold_seconds"]), 2)
+    scorecard["too_fast_margin_seconds"] = round(scorecard["too_fast_threshold_seconds"] - max(0.0, float(time_spent_seconds or 0.0)), 2)
+    return scorecard
