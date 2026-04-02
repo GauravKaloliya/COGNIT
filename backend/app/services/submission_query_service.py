@@ -113,7 +113,7 @@ QUERY_INSERT_SUBMISSION = text("""
         alignment_score, alignment_precision, alignment_recall, alignment_object_f1,
         alignment_relation_score, alignment_scene_consistency_score, alignment_wrong_object_penalty,
         alignment_natural_language_score, alignment_stuffing_penalty, supporting_signals,
-        consecutive_failures, hard_flag_triggered, soft_flag_triggered, watchlist_triggered, enforcement_status,
+        consecutive_failures, hard_flag_triggered, soft_flag_triggered, watchlist_triggered, soft_review_recommended, enforcement_status,
         ip_hash, user_agent, device_type, extra_metadata,
         tab_switch_count, page_close_attempts, network_disconnects,
         survey_time_spent_seconds, survey_page_views, survey_tab_switches,
@@ -129,7 +129,7 @@ QUERY_INSERT_SUBMISSION = text("""
         :als, :alignment_precision, :alignment_recall, :alignment_object_f1,
         :alignment_relation_score, :alignment_scene_consistency_score, :alignment_wrong_object_penalty,
         :alignment_natural_language_score, :alignment_stuffing_penalty, CAST(:supporting_signals AS JSONB),
-        :consecutive_failures, :hard_flag_triggered, :soft_flag_triggered, :watchlist_triggered, :enforcement_status,
+        :consecutive_failures, :hard_flag_triggered, :soft_flag_triggered, :watchlist_triggered, :soft_review_recommended, :enforcement_status,
         :iph, :ua, :dt, :meta,
         :tsc, :pca, :nd,
         :survey_time_spent_seconds, :survey_page_views, :survey_tab_switches,
@@ -388,7 +388,7 @@ def end_participant_session(db, *, participant_id: int, participant_session_id) 
     })
 
 
-def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, attention_tier, attention_confidence, expected_term_recall: float, matched_term_count: int, expected_term_count: int, distinct_word_count: int, descriptive_token_count: int, too_fast: bool, too_fast_score: float, too_fast_threshold_seconds: float, too_fast_margin_seconds: float, quality: float, writing_quality_score: float, behavior_risk_score: float, copy_paste_likelihood_score: float, typing_effort_risk: float, speed_risk: float, session_integrity_risk: float, alignment_score, alignment: dict | None, supporting_signals: dict | None, consecutive_failures: int, hard_flag_triggered: bool, soft_flag_triggered: bool, watchlist_triggered: bool, enforcement_status: str, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
+def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, attention_tier, attention_confidence, expected_term_recall: float, matched_term_count: int, expected_term_count: int, distinct_word_count: int, descriptive_token_count: int, too_fast: bool, too_fast_score: float, too_fast_threshold_seconds: float, too_fast_margin_seconds: float, quality: float, writing_quality_score: float, behavior_risk_score: float, copy_paste_likelihood_score: float, typing_effort_risk: float, speed_risk: float, session_integrity_risk: float, alignment_score, alignment: dict | None, supporting_signals: dict | None, consecutive_failures: int, hard_flag_triggered: bool, soft_flag_triggered: bool, watchlist_triggered: bool, enforcement_status: str, soft_review_recommended: bool, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
     alignment = alignment or {}
     is_attention_submission = bool(is_attention)
     supporting_signals = supporting_signals or {}
@@ -435,8 +435,9 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "consecutive_failures": int(consecutive_failures) if is_attention_submission else 0,
         "hard_flag_triggered": bool(hard_flag_triggered) if is_attention_submission else False,
         "soft_flag_triggered": bool(soft_flag_triggered) if is_attention_submission else False,
-        "watchlist_triggered": bool(watchlist_triggered) if is_attention_submission else False,
-        "enforcement_status": str(enforcement_status or "normal") if is_attention_submission else "normal",
+        "watchlist_triggered": bool(watchlist_triggered),
+        "soft_review_recommended": bool(soft_review_recommended),
+        "enforcement_status": str(enforcement_status or "normal"),
         "iph": ip_hash,
         "ua": user_agent,
         "dt": str(device_type or "unknown")[:20],

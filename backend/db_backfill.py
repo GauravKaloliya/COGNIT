@@ -4,13 +4,21 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from dotenv import dotenv_values
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 ROOT = Path('/Users/kaps/Downloads/COGNIT-1')
 BACKEND = ROOT / 'backend'
 sys.path.insert(0, str(BACKEND))
-os.environ['DATABASE_URL'] = 'postgresql://neondb_owner:npg_XGug6dnRMl9j@ep-super-cloud-aif6l6hr-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+
+if 'DATABASE_URL' not in os.environ:
+    env_values = dotenv_values(BACKEND / '.env')
+    database_url = env_values.get('DATABASE_URL') or env_values.get('POSTGRES_URL') or env_values.get('NEON_DATABASE_URL')
+    if database_url:
+        os.environ['DATABASE_URL'] = database_url
+    else:
+        raise RuntimeError('DATABASE_URL is not set and was not found in backend/.env')
 
 from app.config import (
     ATTENTION_FLAG_MIN_CHECKS,
@@ -25,11 +33,16 @@ from app.config import (
     TOO_FAST_SURVEY_MAX_THRESHOLD_SECONDS,
 )
 from app.constants.submission_constants import (
+    PARTICIPANT_META_KEY_ENFORCEMENT_MONITOR,
     PARTICIPANT_META_KEY_ATTENTION_MONITOR,
+    PARTICIPANT_META_KEY_LAST_ENFORCEMENT_AT,
+    PARTICIPANT_META_KEY_LAST_SUBMISSION_REVIEW,
+    PARTICIPANT_META_KEY_PARTICIPANT_ENFORCEMENT_STATUS,
     SUBMISSION_META_KEY_ATTENTION,
 )
 from app.services.submission_processing_service import (
     apply_attention_monitor,
+    apply_submission_enforcement,
     evaluate_attention_result,
     finalize_attention_assessment,
 )
@@ -67,6 +80,11 @@ SELECT
     s.tab_switch_count,
     s.page_close_attempts,
     s.network_disconnects,
+    s.hard_flag_triggered AS stored_hard_flag_triggered,
+    s.soft_flag_triggered AS stored_soft_flag_triggered,
+    s.watchlist_triggered AS stored_watchlist_triggered,
+    s.enforcement_status AS stored_enforcement_status,
+    s.soft_review_recommended AS stored_soft_review_recommended,
     s.extra_metadata,
     s.created_at,
     sbm.time_before_typing_seconds,
@@ -95,7 +113,13 @@ participant_meta = {
     int(row.id): {
         key: value
         for key, value in (row.extra_metadata.items() if isinstance(row.extra_metadata, dict) else {})
-        if key != PARTICIPANT_META_KEY_ATTENTION_MONITOR
+        if key not in {
+            PARTICIPANT_META_KEY_ATTENTION_MONITOR,
+            PARTICIPANT_META_KEY_ENFORCEMENT_MONITOR,
+            PARTICIPANT_META_KEY_LAST_ENFORCEMENT_AT,
+            PARTICIPANT_META_KEY_LAST_SUBMISSION_REVIEW,
+            PARTICIPANT_META_KEY_PARTICIPANT_ENFORCEMENT_STATUS,
+        }
     }
     for row in read_db.execute(PARTICIPANTS_SQL).mappings()
 }
@@ -302,6 +326,8 @@ for idx, row in enumerate(submissions, start=1):
         'typing_effort_risk': float(scorecard['typing_effort_risk']),
         'speed_risk': float(scorecard['speed_risk']),
         'session_integrity_risk': float(scorecard['session_integrity_risk']),
+        'suspicious_long_answer_floor': float(scorecard.get('suspicious_long_answer_floor', 0.0)),
+        'contradiction_signals': list(scorecard.get('contradiction_signals', [])),
         'alignment_score': float(alignment_score) if alignment_score is not None else None,
         'alignment_precision': alignment.get('precision') if alignment else None,
         'alignment_recall': alignment.get('recall') if alignment else None,
@@ -322,15 +348,21 @@ for idx, row in enumerate(submissions, start=1):
         'response_seconds': time_spent_seconds,
         'content_fingerprint': attention_result['description_fingerprint'],
         'created_at': row['created_at'],
+        'copied_pattern_detected': copied_pattern_detected,
         'consecutive_failures': 0,
         'hard_flag_triggered': False,
         'soft_flag_triggered': False,
         'watchlist_triggered': False,
+        'soft_review_recommended': False,
         'enforcement_status': 'normal',
+        'stored_hard_flag_triggered': bool(row['stored_hard_flag_triggered']),
+        'stored_soft_flag_triggered': bool(row['stored_soft_flag_triggered']),
+        'stored_watchlist_triggered': bool(row['stored_watchlist_triggered']),
+        'stored_enforcement_status': str(row['stored_enforcement_status'] or 'normal'),
+        'stored_soft_review_recommended': bool(row['stored_soft_review_recommended']),
     }
     results[submission_id] = result
-    if is_attention:
-        attention_by_participant[participant_id].append(result)
+    attention_by_participant[participant_id].append(result)
 
     if idx % 50 == 0:
         print(f'computed {idx}/{len(submissions)} submissions', flush=True)
@@ -340,31 +372,69 @@ for participant_id, items in attention_by_participant.items():
     items.sort(key=lambda item: (item['created_at'], item['submission_id']))
     meta = dict(participant_meta.get(participant_id, {}))
     final_recent_score = None
+    final_consecutive_failures = 0
+    final_attention_totals = {'total_checks': 0, 'passed_checks': 0, 'failed_checks': 0}
     for item in items:
-        monitor_result = apply_attention_monitor(
+        attention_monitor_result = apply_attention_monitor(
             participant_meta=meta,
             attention_passed=item['attention_passed'],
             attention_tier=item['attention_tier'],
             attention_confidence=item['attention_confidence'],
             hard_fail_reasons=item['hard_fail_reasons'],
             soft_risk_reasons=item['soft_risk_reasons'],
-            is_attention=True,
+            is_attention=bool(item['is_attention']),
             checked_at=item['created_at'],
             hard_flag_consecutive_fails=ATTENTION_HARD_FLAG_CONSEC_FAILS,
             attention_flag_min_checks=ATTENTION_FLAG_MIN_CHECKS,
             attention_flag_threshold=ATTENTION_FLAG_THRESHOLD,
         )
-        meta = monitor_result['participant_meta']
-        item['consecutive_failures'] = int(monitor_result['consecutive_failures'] or 0)
-        item['hard_flag_triggered'] = bool(monitor_result['hard_flag_triggered'])
-        item['soft_flag_triggered'] = bool(monitor_result['soft_flag_triggered'])
-        item['watchlist_triggered'] = bool(monitor_result['watchlist_triggered'])
-        item['enforcement_status'] = str(monitor_result['enforcement_status'])
-        final_recent_score = monitor_result['recent_attention_score']
+        policy_result = apply_submission_enforcement(
+            participant_meta=attention_monitor_result['participant_meta'],
+            is_attention=bool(item['is_attention']),
+            attention_tier=item['attention_tier'],
+            hard_fail_reasons=item['hard_fail_reasons'],
+            soft_risk_reasons=item['soft_risk_reasons'],
+            quality_score=item['quality_score'],
+            behavior_risk_score=item['behavior_risk_score'],
+            copy_paste_likelihood_score=item['copy_paste_likelihood_score'],
+            too_fast_score=item['too_fast_score'],
+            typing_effort_risk=item['typing_effort_risk'],
+            contradiction_signals=item.get('contradiction_signals', []),
+            copied_pattern_detected=bool(item.get('copied_pattern_detected')),
+            scorecard={
+                'suspicious_long_answer_floor': item.get('suspicious_long_answer_floor', 0.0),
+            },
+            checked_at=item['created_at'],
+        )
+        meta = policy_result['participant_meta']
+        if item['is_attention']:
+            item['consecutive_failures'] = int(attention_monitor_result['consecutive_failures'] or 0)
+            final_consecutive_failures = item['consecutive_failures']
+        item['hard_flag_triggered'] = bool(policy_result['hard_flag_triggered'])
+        item['soft_flag_triggered'] = bool(policy_result['soft_flag_triggered'])
+        item['watchlist_triggered'] = bool(policy_result['watchlist_triggered'])
+        item['soft_review_recommended'] = bool(policy_result['soft_review_recommended'])
+        item['enforcement_status'] = str(policy_result['enforcement_status'])
+        item['extra_metadata'] = dict(item['extra_metadata'] or {})
+        item['extra_metadata']['enforcement'] = {
+            'soft_review_recommended': bool(policy_result['soft_review_recommended']),
+            'combined_suspicion': bool(policy_result['combined_suspicion']),
+            'enforcement_status': str(policy_result['enforcement_status']),
+            'watchlist_triggered': bool(policy_result['watchlist_triggered']),
+            'contradiction_signals': list(item.get('contradiction_signals', [])),
+        }
+        if attention_monitor_result['recent_attention_score'] is not None:
+            final_recent_score = attention_monitor_result['recent_attention_score']
+        if item['is_attention']:
+            final_attention_totals['total_checks'] += 1
+            if item['attention_passed'] is True:
+                final_attention_totals['passed_checks'] += 1
+            elif item['attention_passed'] is False:
+                final_attention_totals['failed_checks'] += 1
     participant_meta[participant_id] = meta
-    total_checks = len(items)
-    passed_checks = sum(1 for item in items if item['attention_passed'] is True)
-    failed_checks = sum(1 for item in items if item['attention_passed'] is False)
+    total_checks = final_attention_totals['total_checks']
+    passed_checks = final_attention_totals['passed_checks']
+    failed_checks = final_attention_totals['failed_checks']
     last_item = items[-1]
     participant_stats[participant_id] = {
         'total_checks': total_checks,
@@ -372,7 +442,7 @@ for participant_id, items in attention_by_participant.items():
         'failed_checks': failed_checks,
         'attention_score': float(final_recent_score if final_recent_score is not None else 1.0),
         'recent_attention_score': float(final_recent_score) if final_recent_score is not None else None,
-        'consecutive_failures': int(last_item['consecutive_failures'] or 0),
+        'consecutive_failures': int(final_consecutive_failures or 0),
         'hard_flag_triggered': bool(last_item['hard_flag_triggered']),
         'soft_flag_triggered': bool(last_item['soft_flag_triggered']),
         'watchlist_triggered': bool(last_item['watchlist_triggered']),
@@ -421,6 +491,7 @@ SET
     hard_flag_triggered = :hard_flag_triggered,
     soft_flag_triggered = :soft_flag_triggered,
     watchlist_triggered = :watchlist_triggered,
+    soft_review_recommended = :soft_review_recommended,
     enforcement_status = :enforcement_status
 WHERE id = :submission_id
 """)
@@ -491,7 +562,37 @@ summary = {
     'attention_submissions': sum(1 for r in results.values() if r['is_attention']),
     'too_fast_true': sum(1 for r in results.values() if r['flagged_too_fast']),
     'watchlist_rows': sum(1 for r in results.values() if r['watchlist_triggered']),
+    'soft_review_rows': sum(1 for r in results.values() if r['soft_review_recommended']),
+    'soft_flag_rows': sum(1 for r in results.values() if r['soft_flag_triggered']),
+    'hard_flag_rows': sum(1 for r in results.values() if r['hard_flag_triggered']),
+    'watchlist_state_changes': sum(
+        1 for r in results.values()
+        if bool(r['watchlist_triggered']) != bool(r['stored_watchlist_triggered'])
+    ),
+    'soft_flag_state_changes': sum(
+        1 for r in results.values()
+        if bool(r['soft_flag_triggered']) != bool(r['stored_soft_flag_triggered'])
+    ),
+    'hard_flag_state_changes': sum(
+        1 for r in results.values()
+        if bool(r['hard_flag_triggered']) != bool(r['stored_hard_flag_triggered'])
+    ),
+    'soft_review_state_changes': sum(
+        1 for r in results.values()
+        if bool(r['soft_review_recommended']) != bool(r['stored_soft_review_recommended'])
+    ),
+    'enforcement_status_changes': sum(
+        1 for r in results.values()
+        if str(r['enforcement_status']) != str(r['stored_enforcement_status'])
+    ),
+    'high_risk_high_quality_contradictions': sum(
+        1 for r in results.values()
+        if float(r['behavior_risk_score']) >= 0.30 and float(r['quality_score']) >= 0.72
+    ),
     'participant_stats_rows': len(participant_stats),
+    'participant_watchlist_rows': sum(1 for r in participant_stats.values() if r['watchlist_triggered']),
+    'participant_soft_flag_rows': sum(1 for r in participant_stats.values() if r['soft_flag_triggered']),
+    'participant_hard_flag_rows': sum(1 for r in participant_stats.values() if r['hard_flag_triggered']),
 }
 
 def chunked(seq, size):
@@ -541,9 +642,10 @@ try:
                 'supporting_signals': json.dumps(row['supporting_signals']),
                 'extra_metadata': json.dumps(row['extra_metadata']),
                 'consecutive_failures': row['consecutive_failures'],
-                'hard_flag_triggered': row['hard_flag_triggered'],
-                'soft_flag_triggered': row['soft_flag_triggered'],
+                'hard_flag_triggered': row['hard_flag_triggered'] if row['is_attention'] else False,
+                'soft_flag_triggered': row['soft_flag_triggered'] if row['is_attention'] else False,
                 'watchlist_triggered': row['watchlist_triggered'],
+                'soft_review_recommended': row['soft_review_recommended'],
                 'enforcement_status': row['enforcement_status'],
             })
         write_db.commit()
