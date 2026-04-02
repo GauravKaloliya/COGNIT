@@ -121,17 +121,17 @@ CALIBRATED_EFFORT_BASELINES = {
 
 DEVICE_PROFILE_FACTORS = {
     "desktop": {"telemetry": 1.0, "speed": 1.0},
-    "mobile": {"telemetry": 0.82, "speed": 1.16},
-    "tablet": {"telemetry": 0.88, "speed": 1.10},
-    "unknown": {"telemetry": 0.94, "speed": 1.04},
+    "mobile": {"telemetry": 0.74, "speed": 1.24},
+    "tablet": {"telemetry": 0.84, "speed": 1.12},
+    "unknown": {"telemetry": 0.90, "speed": 1.06},
 }
 
 BROWSER_PROFILE_FACTORS = {
     "chrome": {"telemetry": 1.0, "speed": 1.0},
     "edge": {"telemetry": 1.0, "speed": 1.0},
-    "safari": {"telemetry": 0.90, "speed": 1.08},
-    "firefox": {"telemetry": 1.04, "speed": 1.01},
-    "other": {"telemetry": 0.96, "speed": 1.02},
+    "safari": {"telemetry": 0.84, "speed": 1.10},
+    "firefox": {"telemetry": 1.02, "speed": 1.02},
+    "other": {"telemetry": 0.92, "speed": 1.04},
 }
 
 
@@ -556,11 +556,13 @@ def calculate_quality_score(
     elif safe_copy_paste >= 0.55:
         score = min(score, 0.72)
     if safe_writing >= 0.74 and safe_copy_paste >= 0.48 and safe_behavior_risk >= 0.28:
-        score = min(score, 0.76)
+        score = min(score, 0.72)
+    if safe_writing >= 0.72 and safe_copy_paste >= 0.58 and safe_behavior_risk >= 0.34:
+        score = min(score, 0.68)
     if contradiction_count >= 2:
-        score = min(score, 0.66)
+        score = min(score, 0.62)
     elif contradiction_count == 1:
-        score = min(score, 0.74)
+        score = min(score, 0.70 if safe_copy_paste >= 0.42 else 0.72)
 
     if bot:
         score *= 0.3

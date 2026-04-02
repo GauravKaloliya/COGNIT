@@ -463,6 +463,7 @@ def process_submission_workflow(
         participant_meta=attention_monitor_result["participant_meta"],
         is_attention=is_attention,
         attention_tier=attention_tier,
+        attention_confidence=attention_confidence,
         hard_fail_reasons=hard_fail_reasons,
         soft_risk_reasons=soft_risk_reasons,
         quality_score=quality,
@@ -491,6 +492,7 @@ def process_submission_workflow(
         "combined_suspicion": bool(policy_result["combined_suspicion"]),
         "enforcement_status": str(policy_result["enforcement_status"]),
         "watchlist_triggered": bool(policy_result["watchlist_triggered"]),
+        "participant_enforcement_score": float(policy_result.get("participant_enforcement_score", 0.0)),
         "contradiction_signals": list(scorecard["contradiction_signals"]),
         "survey_counters": dict(policy_result.get("survey_counters", {})),
     }
@@ -597,6 +599,7 @@ def process_submission_workflow(
             enforcement_status=policy_result.get("enforcement_status", "normal"),
             attention_score=recent_attention_score,
             recent_attention_score=recent_attention_score,
+            participant_enforcement_score=policy_result.get("participant_enforcement_score"),
             consecutive_failures=consecutive_failures,
             checked_at=attention_checked_at,
         )
@@ -610,6 +613,7 @@ def process_submission_workflow(
             enforcement_status=policy_result.get("enforcement_status", "normal"),
             attention_score=pre_attention_score,
             recent_attention_score=recent_attention_score,
+            participant_enforcement_score=policy_result.get("participant_enforcement_score"),
             consecutive_failures=consecutive_failures,
             checked_at=policy_checked_at,
         )
