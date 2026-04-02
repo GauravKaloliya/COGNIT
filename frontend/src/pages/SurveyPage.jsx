@@ -217,6 +217,8 @@ export default function SurveyPage({
           imageRef={imageElementRef}
           handleImageLoad={handleImageLoad}
           handleImageError={handleImageError}
+          copyPasteDisabled={COPY_PASTE_DISABLED}
+          preventCopyPaste={preventCopyPaste}
         />
       </div>
 

@@ -9,6 +9,7 @@ from app.constants.response_keys import (
     RESPONSE_KEY_ATTENTION_STATUS,
     RESPONSE_KEY_BEHAVIOR_RISK_SCORE,
     RESPONSE_KEY_CLEAR_CLIENT_STATE,
+    RESPONSE_KEY_COPY_PASTE_LIKELIHOOD_SCORE,
     RESPONSE_KEY_ENGAGEMENT,
     RESPONSE_KEY_FLAGGED_TOO_FAST,
     RESPONSE_KEY_IS_ATTENTION_CHECK,
@@ -17,6 +18,9 @@ from app.constants.response_keys import (
     RESPONSE_KEY_SESSION_CLOSED,
     RESPONSE_KEY_STATUS,
     RESPONSE_KEY_SURVEY_INDEX,
+    RESPONSE_KEY_TOO_FAST_MARGIN_SECONDS,
+    RESPONSE_KEY_TOO_FAST_SCORE,
+    RESPONSE_KEY_TOO_FAST_THRESHOLD_SECONDS,
     RESPONSE_KEY_WORD_COUNT,
     RESPONSE_KEY_WORKFLOW_STATUS,
     RESPONSE_KEY_WRITING_QUALITY_SCORE,
@@ -216,18 +220,31 @@ def finalize_attention_assessment(
     confidence -= min(0.18, max(0, len(soft) - 1) * 0.07)
     confidence = round(max(0.0, min(1.0, confidence)), 4)
 
-    if hard or (attention_recall_weak and alignment_weak):
+    repetitive_only_hard = bool(hard) and all(
+        reason == ATTENTION_FAILURE_REPETITIVE_TEMPLATE for reason in hard
+    )
+    hard_fail_present = bool(hard) and not repetitive_only_hard
+
+    if hard_fail_present or (attention_recall_weak and alignment_weak):
         tier = ATTENTION_TIER_FAIL
-    elif confidence >= 0.78 and len(soft) == 0:
+    elif repetitive_only_hard and confidence >= 0.52 and expected_term_recall >= 0.7 and alignment_recall >= 0.7:
+        tier = ATTENTION_TIER_SUSPICIOUS
+    elif confidence >= 0.82 and len(soft) == 0:
         tier = ATTENTION_TIER_PASS
-    elif confidence >= 0.58 and len(soft) <= 1:
+    elif confidence >= 0.64 and len(soft) <= 1 and not repetitive_only_hard:
         tier = ATTENTION_TIER_WEAK_PASS
-    elif confidence >= 0.40:
+    elif confidence >= 0.46 or (repetitive_only_hard and confidence >= 0.40):
         tier = ATTENTION_TIER_SUSPICIOUS
     else:
         tier = ATTENTION_TIER_FAIL
 
-    if tier == ATTENTION_TIER_FAIL and not (attention_recall_weak and alignment_weak) and not hard and len(soft) <= 1 and confidence >= 0.35:
+    if (
+        tier == ATTENTION_TIER_FAIL
+        and not (attention_recall_weak and alignment_weak)
+        and not hard_fail_present
+        and len(soft) <= 2
+        and confidence >= 0.38
+    ):
         tier = ATTENTION_TIER_SUSPICIOUS
 
     failure_reasons = hard + soft
@@ -300,6 +317,8 @@ def apply_attention_monitor(
             "recent_attention_score": None,
             "hard_flag_triggered": False,
             "soft_flag_triggered": False,
+            "watchlist_triggered": False,
+            "enforcement_status": "normal",
         }
 
     consecutive_failures = 0
@@ -331,11 +350,12 @@ def apply_attention_monitor(
     tier_weights = {
         ATTENTION_TIER_PASS: 1.0,
         ATTENTION_TIER_WEAK_PASS: 0.78,
-        ATTENTION_TIER_SUSPICIOUS: 0.32,
-        ATTENTION_TIER_FAIL: 0.0,
+        ATTENTION_TIER_SUSPICIOUS: 0.48,
+        ATTENTION_TIER_FAIL: 0.12,
     }
     weighted_total = 0.0
     weight_sum = 0.0
+    fail_recent = 0
     suspicious_recent = 0
     copied_recent = 0
     low_descriptive_recent = 0
@@ -345,26 +365,62 @@ def apply_attention_monitor(
         confidence = max(0.0, min(1.0, float(item.get("confidence") or 0.0)))
         base_score = tier_weights.get(str(item.get("tier") or ""), 0.0)
         weighted_total += weight * ((0.75 * base_score) + (0.25 * confidence))
-        if item.get("tier") in {ATTENTION_TIER_SUSPICIOUS, ATTENTION_TIER_FAIL}:
+        if item.get("tier") == ATTENTION_TIER_FAIL:
+            fail_recent += 1
+        elif item.get("tier") == ATTENTION_TIER_SUSPICIOUS:
             suspicious_recent += 1
         if item.get("copied_pattern"):
             copied_recent += 1
         if item.get("low_descriptive"):
             low_descriptive_recent += 1
     recent_attention_score = round(weighted_total / weight_sum, 4) if weight_sum else None
+    assessment_count = len(recent_assessments)
+    effective_hard_fail_threshold = max(2, int(hard_flag_consecutive_fails or 0))
+    effective_soft_min_checks = max(2, int(attention_flag_min_checks or 0))
+    effective_watchlist_min_checks = 1
+
     hard_flag_triggered = (
-        consecutive_failures >= hard_flag_consecutive_fails
-        or suspicious_recent >= 3
-        or copied_recent >= 2
+        copied_recent >= 2
+        or fail_recent >= 3
+        or (
+            assessment_count >= effective_hard_fail_threshold
+            and consecutive_failures >= effective_hard_fail_threshold
+        )
+        or (
+            assessment_count >= 3
+            and fail_recent >= 2
+            and recent_attention_score is not None
+            and recent_attention_score < max(0.28, float(attention_flag_threshold) - 0.18)
+        )
     )
     soft_flag_triggered = (
-        len(recent_assessments) >= attention_flag_min_checks
+        assessment_count >= effective_soft_min_checks
         and (
             (recent_attention_score is not None and recent_attention_score < float(attention_flag_threshold))
-            or suspicious_recent >= 2
+            or fail_recent >= 2
+            or suspicious_recent >= 4
+            or (fail_recent >= 1 and suspicious_recent >= 2)
             or low_descriptive_recent >= 2
         )
     )
+    watchlist_triggered = (
+        assessment_count >= effective_watchlist_min_checks
+        and not hard_flag_triggered
+        and (
+            (recent_attention_score is not None and recent_attention_score < float(attention_flag_threshold) + 0.10)
+            or fail_recent >= 1
+            or suspicious_recent >= 1
+            or copied_recent >= 1
+            or low_descriptive_recent >= 1
+        )
+    )
+    enforcement_status = "normal"
+    if hard_flag_triggered:
+        enforcement_status = "hard_flag"
+    elif soft_flag_triggered:
+        enforcement_status = "soft_flag"
+    elif watchlist_triggered:
+        enforcement_status = "watchlist"
 
     updated_meta = dict(participant_meta)
     updated_meta[PARTICIPANT_META_KEY_ATTENTION_MONITOR] = {
@@ -377,6 +433,8 @@ def apply_attention_monitor(
         "recent_attention_score": recent_attention_score,
         "hard_flag_triggered": hard_flag_triggered,
         "soft_flag_triggered": soft_flag_triggered,
+        "watchlist_triggered": watchlist_triggered,
+        "enforcement_status": enforcement_status,
     }
 
 
@@ -388,6 +446,14 @@ def build_submission_response_payload(
     behavior_risk_score: float | None,
     attention_passed,
     too_fast: bool,
+    too_fast_score: float | None,
+    too_fast_threshold_seconds: float | None,
+    too_fast_margin_seconds: float | None,
+    copy_paste_likelihood_score: float | None,
+    typing_effort_risk: float | None,
+    speed_risk: float | None,
+    session_integrity_risk: float | None,
+    contradiction_signals: list[str],
     survey_index,
     is_survey: bool,
     is_attention: bool,
@@ -406,6 +472,9 @@ def build_submission_response_payload(
     consecutive_failures: int,
     recent_attention_score,
     hard_flag_triggered: bool,
+    soft_flag_triggered: bool,
+    watchlist_triggered: bool,
+    enforcement_status: str,
     attention_total_checks: int | None = None,
     attention_passed_checks: int | None = None,
     attention_failed_checks: int | None = None,
@@ -422,8 +491,12 @@ def build_submission_response_payload(
         RESPONSE_KEY_QUALITY_SCORE: quality,
         RESPONSE_KEY_WRITING_QUALITY_SCORE: writing_quality_score,
         RESPONSE_KEY_BEHAVIOR_RISK_SCORE: behavior_risk_score,
+        RESPONSE_KEY_COPY_PASTE_LIKELIHOOD_SCORE: copy_paste_likelihood_score,
         RESPONSE_KEY_ATTENTION_PASSED: attention_passed,
         RESPONSE_KEY_FLAGGED_TOO_FAST: too_fast,
+        RESPONSE_KEY_TOO_FAST_SCORE: too_fast_score,
+        RESPONSE_KEY_TOO_FAST_THRESHOLD_SECONDS: too_fast_threshold_seconds,
+        RESPONSE_KEY_TOO_FAST_MARGIN_SECONDS: too_fast_margin_seconds,
         RESPONSE_KEY_SURVEY_INDEX: survey_index,
         RESPONSE_KEY_IS_SURVEY: is_survey,
         RESPONSE_KEY_IS_ATTENTION_CHECK: is_attention,
@@ -432,6 +505,10 @@ def build_submission_response_payload(
             "page_close_attempts": page_close_attempts,
             "network_disconnects": network_disconnects,
             "survey_metrics": survey_metrics,
+            "typing_effort_risk": typing_effort_risk,
+            "speed_risk": speed_risk,
+            "session_integrity_risk": session_integrity_risk,
+            "contradiction_signals": contradiction_signals,
         },
         RESPONSE_KEY_ATTENTION_STATUS: {
             RESPONSE_KEY_IS_ATTENTION_CHECK: is_attention,
@@ -447,6 +524,9 @@ def build_submission_response_payload(
             "consecutive_failures": consecutive_failures if is_attention else None,
             "recent_attention_score": recent_attention_score,
             "hard_flag_triggered": hard_flag_triggered,
+            "soft_flag_triggered": soft_flag_triggered,
+            "watchlist_triggered": watchlist_triggered,
+            "enforcement_status": enforcement_status,
             "total_checks": attention_total_checks,
             "passed_checks": attention_passed_checks,
             "failed_checks": attention_failed_checks,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -223,27 +224,87 @@ def normalize_engagement_counts(
 
 
 def dynamic_too_fast_threshold(
-    base_threshold: float,
     word_count: int,
     *,
     is_attention: bool = False,
     description: str = "",
     behavior_metrics: dict[str, Any] | None = None,
+    attention_base_threshold: float = 10.0,
+    survey_base_threshold: float = 14.0,
+    attention_max_threshold: float = 90.0,
+    survey_max_threshold: float = 100.0,
 ) -> float:
     metrics = behavior_metrics or {}
     safe_word_count = max(0, int(word_count or 0))
     char_count = len(str(description or "").strip())
     time_before_typing = max(0.0, float(metrics.get("time_before_typing_seconds", 0.0) or 0.0))
+    edit_count = max(0, int(metrics.get("edit_count", 0) or 0))
+    backspace_count = max(0, int(metrics.get("backspace_count", 0) or 0))
+    pause_count = max(0, int(metrics.get("pause_count", 0) or 0))
+    revision_bursts = max(0, int(metrics.get("revision_bursts", 0) or 0))
+    hesitation_score = _clamp_unit_interval(float(metrics.get("hesitation_score", 0.0) or 0.0))
+    normalized_word_scale = max(30.0, min(220.0, float(safe_word_count or 0)))
 
-    reading_seconds = max(5.0, min(28.0, char_count / 20.0))
-    writing_rate = 0.55 if is_attention else 0.70
-    writing_seconds = max(10.0, min(95.0, safe_word_count * writing_rate))
-    settle_seconds = min(8.0, time_before_typing * 0.6)
-    base = max(float(base_threshold or 0.0), 6.0)
-    submission_bias = 4.0 if is_attention else 8.0
+    def _scaled_signal(value: float, *, multiplier: float, upper: float) -> float:
+        if upper <= 0:
+            return 0.0
+        scaled = max(0.0, value * multiplier)
+        return max(0.0, min(1.0, math.log1p(scaled) / math.log1p(upper)))
 
-    threshold = base + (0.35 * reading_seconds) + (0.45 * writing_seconds) + settle_seconds + submission_bias
-    return round(min(150.0, max(base, threshold)), 2)
+    edit_signal = _scaled_signal(edit_count / normalized_word_scale, multiplier=10.0, upper=8.0)
+    backspace_signal = _scaled_signal(backspace_count / normalized_word_scale, multiplier=35.0, upper=12.0)
+    pause_signal = _scaled_signal(pause_count / normalized_word_scale, multiplier=55.0, upper=14.0)
+    revision_signal = _scaled_signal(
+        revision_bursts / max(1.0, normalized_word_scale / 20.0),
+        multiplier=4.5,
+        upper=10.0,
+    )
+    deliberation_signal = min(1.0, time_before_typing / (5.0 + normalized_word_scale * 0.035))
+    effort_credit = (
+        3.2 * edit_signal
+        + 2.2 * backspace_signal
+        + 2.2 * pause_signal
+        + 1.6 * revision_signal
+        + 1.4 * deliberation_signal
+        + 1.2 * hesitation_score
+    )
+    low_effort_penalty = 0.0
+    if (
+        edit_signal < 0.18
+        and backspace_signal < 0.12
+        and pause_signal < 0.12
+        and revision_signal < 0.12
+        and deliberation_signal < 0.18
+    ):
+        low_effort_penalty = 4.0 if is_attention else 6.0
+
+    if is_attention:
+        base = max(float(attention_base_threshold or 0.0), 8.0)
+        max_threshold = max(base, float(attention_max_threshold or 0.0))
+        reading_seconds = max(9.0, min(22.0, char_count / 29.0))
+        writing_seconds = max(18.0, min(46.0, safe_word_count * 0.27))
+        planning_seconds = min(
+            8.0,
+            2.0
+            + min(3.5, math.sqrt(max(0.0, float(safe_word_count))) / 3.2)
+            + min(2.5, time_before_typing / 7.0),
+        )
+        telemetry_credit = min(13.0, effort_credit)
+    else:
+        base = max(float(survey_base_threshold or 0.0), 10.0)
+        max_threshold = max(base, float(survey_max_threshold or 0.0))
+        reading_seconds = max(11.0, min(26.0, char_count / 28.0))
+        writing_seconds = max(24.0, min(62.0, safe_word_count * 0.32))
+        planning_seconds = min(
+            10.0,
+            2.5
+            + min(4.5, math.sqrt(max(0.0, float(safe_word_count))) / 2.8)
+            + min(3.0, time_before_typing / 6.5),
+        )
+        telemetry_credit = min(17.0, effort_credit * 1.1)
+
+    threshold = base + reading_seconds + writing_seconds + planning_seconds + low_effort_penalty - telemetry_credit
+    return round(min(max_threshold, max(base, threshold)), 2)
 
 
 def normalize_for_attention(text: str) -> str:

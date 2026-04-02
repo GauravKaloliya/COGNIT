@@ -91,17 +91,29 @@ QUERY_HAS_COPIED_ATTENTION_PATTERN = text("""
     LIMIT 1
 """)
 
+QUERY_HAS_COPIED_SURVEY_PATTERN = text("""
+    SELECT 1
+    FROM submissions s
+    WHERE s.image_id = :img_id
+      AND s.is_survey = true
+      AND s.participant_id <> :pid
+      AND regexp_replace(lower(COALESCE(s.description, '')), '[^a-z0-9]+', ' ', 'g') = :normalized_desc
+    LIMIT 1
+""")
+
 QUERY_INSERT_SUBMISSION = text("""
     INSERT INTO submissions (
         participant_id, participant_session_id, image_id, survey_index, description, word_count,
         feedback, time_spent_seconds, is_survey, is_attention_check,
         attention_passed, attention_tier, attention_confidence, expected_term_recall,
         matched_term_count, expected_term_count, distinct_word_count, descriptive_token_count,
-        flagged_too_fast, quality_score, writing_quality_score, behavior_risk_score,
+        flagged_too_fast, too_fast_score, too_fast_threshold_seconds, too_fast_margin_seconds,
+        quality_score, writing_quality_score, behavior_risk_score,
+        copy_paste_likelihood_score, typing_effort_risk, speed_risk, session_integrity_risk,
         alignment_score, alignment_precision, alignment_recall, alignment_object_f1,
         alignment_relation_score, alignment_scene_consistency_score, alignment_wrong_object_penalty,
         alignment_natural_language_score, alignment_stuffing_penalty, supporting_signals,
-        consecutive_failures, hard_flag_triggered, soft_flag_triggered,
+        consecutive_failures, hard_flag_triggered, soft_flag_triggered, watchlist_triggered, enforcement_status,
         ip_hash, user_agent, device_type, extra_metadata,
         tab_switch_count, page_close_attempts, network_disconnects,
         survey_time_spent_seconds, survey_page_views, survey_tab_switches,
@@ -111,11 +123,13 @@ QUERY_INSERT_SUBMISSION = text("""
         :pid, :psid, :iid, :sidx, :desc, :wc, :fb, :ts, :isv, :isa,
         :ap, :attention_tier, :attention_confidence, :expected_term_recall,
         :matched_term_count, :expected_term_count, :distinct_word_count, :descriptive_token_count,
-        :tf, :qs, :writing_quality_score, :behavior_risk_score,
+        :tf, :too_fast_score, :too_fast_threshold_seconds, :too_fast_margin_seconds,
+        :qs, :writing_quality_score, :behavior_risk_score,
+        :copy_paste_likelihood_score, :typing_effort_risk, :speed_risk, :session_integrity_risk,
         :als, :alignment_precision, :alignment_recall, :alignment_object_f1,
         :alignment_relation_score, :alignment_scene_consistency_score, :alignment_wrong_object_penalty,
         :alignment_natural_language_score, :alignment_stuffing_penalty, CAST(:supporting_signals AS JSONB),
-        :consecutive_failures, :hard_flag_triggered, :soft_flag_triggered,
+        :consecutive_failures, :hard_flag_triggered, :soft_flag_triggered, :watchlist_triggered, :enforcement_status,
         :iph, :ua, :dt, :meta,
         :tsc, :pca, :nd,
         :survey_time_spent_seconds, :survey_page_views, :survey_tab_switches,
@@ -244,9 +258,11 @@ QUERY_UPDATE_PARTICIPANT_ATTENTION_FLAG = text("""
         consecutive_failures = COALESCE(:consecutive_failures, consecutive_failures),
         hard_flag_triggered = COALESCE(:hard_flag_triggered, hard_flag_triggered),
         soft_flag_triggered = COALESCE(:soft_flag_triggered, soft_flag_triggered),
+        watchlist_triggered = COALESCE(:watchlist_triggered, watchlist_triggered),
+        enforcement_status = COALESCE(:enforcement_status, enforcement_status),
         is_flagged = CASE
             WHEN :hard_flag OR :soft_flag THEN true
-            ELSE is_flagged
+            ELSE false
         END,
         last_checked_at = :checked_at
     WHERE participant_id = :pid
@@ -278,7 +294,9 @@ QUERY_FETCH_PARTICIPANT_ATTENTION_STATS = text("""
         failed_checks,
         attention_score,
         is_flagged,
-        last_checked_at
+        last_checked_at,
+        watchlist_triggered,
+        enforcement_status
     FROM participant_attention_stats
     WHERE participant_id = :pid
 """)
@@ -342,6 +360,14 @@ def has_copied_attention_pattern(db, *, image_id_fk: int, description_fingerprin
     }).scalar())
 
 
+def has_copied_survey_pattern(db, *, image_id_fk: int, normalized_description: str, participant_id: int) -> bool:
+    return bool(db.execute(QUERY_HAS_COPIED_SURVEY_PATTERN, {
+        "img_id": int(image_id_fk),
+        "normalized_desc": str(normalized_description or "").strip(),
+        "pid": int(participant_id),
+    }).scalar())
+
+
 def fetch_participant_attention_stats(db, *, participant_id: int):
     return db.execute(QUERY_FETCH_PARTICIPANT_ATTENTION_STATS, {"pid": int(participant_id)}).fetchone()
 
@@ -362,7 +388,7 @@ def end_participant_session(db, *, participant_id: int, participant_session_id) 
     })
 
 
-def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, attention_tier, attention_confidence, expected_term_recall: float, matched_term_count: int, expected_term_count: int, distinct_word_count: int, descriptive_token_count: int, too_fast: bool, quality: float, writing_quality_score: float, behavior_risk_score: float, alignment_score, alignment: dict | None, supporting_signals: dict | None, consecutive_failures: int, hard_flag_triggered: bool, soft_flag_triggered: bool, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
+def insert_submission_record(db, *, participant_id: int, participant_session_id, image_id_fk: int, survey_index, description: str, word_count: int, feedback: str, time_spent_seconds, is_survey: bool, is_attention: bool, attention_passed, attention_tier, attention_confidence, expected_term_recall: float, matched_term_count: int, expected_term_count: int, distinct_word_count: int, descriptive_token_count: int, too_fast: bool, too_fast_score: float, too_fast_threshold_seconds: float, too_fast_margin_seconds: float, quality: float, writing_quality_score: float, behavior_risk_score: float, copy_paste_likelihood_score: float, typing_effort_risk: float, speed_risk: float, session_integrity_risk: float, alignment_score, alignment: dict | None, supporting_signals: dict | None, consecutive_failures: int, hard_flag_triggered: bool, soft_flag_triggered: bool, watchlist_triggered: bool, enforcement_status: str, ip_hash: str, user_agent: str, device_type: str, submission_meta: dict, tab_switch_count: int, page_close_attempts: int, network_disconnects: int, survey_metrics: dict, phase_metrics: dict, behavior_metrics: dict):
     alignment = alignment or {}
     is_attention_submission = bool(is_attention)
     supporting_signals = supporting_signals or {}
@@ -386,9 +412,16 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "distinct_word_count": int(distinct_word_count),
         "descriptive_token_count": int(descriptive_token_count) if is_attention_submission else None,
         "tf": bool(too_fast),
+        "too_fast_score": float(too_fast_score),
+        "too_fast_threshold_seconds": float(too_fast_threshold_seconds),
+        "too_fast_margin_seconds": float(too_fast_margin_seconds),
         "qs": float(quality),
         "writing_quality_score": float(writing_quality_score),
         "behavior_risk_score": float(behavior_risk_score),
+        "copy_paste_likelihood_score": float(copy_paste_likelihood_score),
+        "typing_effort_risk": float(typing_effort_risk),
+        "speed_risk": float(speed_risk),
+        "session_integrity_risk": float(session_integrity_risk),
         "als": float(alignment_score) if alignment_score is not None else None,
         "alignment_precision": alignment.get("precision"),
         "alignment_recall": alignment.get("recall"),
@@ -402,6 +435,8 @@ def insert_submission_record(db, *, participant_id: int, participant_session_id,
         "consecutive_failures": int(consecutive_failures) if is_attention_submission else 0,
         "hard_flag_triggered": bool(hard_flag_triggered) if is_attention_submission else False,
         "soft_flag_triggered": bool(soft_flag_triggered) if is_attention_submission else False,
+        "watchlist_triggered": bool(watchlist_triggered) if is_attention_submission else False,
+        "enforcement_status": str(enforcement_status or "normal") if is_attention_submission else "normal",
         "iph": ip_hash,
         "ua": user_agent,
         "dt": str(device_type or "unknown")[:20],
@@ -494,6 +529,8 @@ def update_participant_attention_flag(
     participant_id: int,
     hard_flag_triggered: bool,
     soft_flag_triggered: bool,
+    watchlist_triggered: bool = False,
+    enforcement_status: str = "normal",
     attention_score: float | None = None,
     recent_attention_score: float | None = None,
     consecutive_failures: int | None = None,
@@ -508,6 +545,8 @@ def update_participant_attention_flag(
         "consecutive_failures": int(consecutive_failures) if consecutive_failures is not None else None,
         "hard_flag_triggered": bool(hard_flag_triggered),
         "soft_flag_triggered": bool(soft_flag_triggered),
+        "watchlist_triggered": bool(watchlist_triggered),
+        "enforcement_status": str(enforcement_status or "normal"),
         "checked_at": checked_at,
     })
 
