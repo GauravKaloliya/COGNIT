@@ -459,6 +459,7 @@ def apply_submission_enforcement(
     participant_meta: dict,
     is_attention: bool,
     attention_tier,
+    attention_confidence,
     hard_fail_reasons,
     soft_risk_reasons,
     quality_score: float,
@@ -484,7 +485,7 @@ def apply_submission_enforcement(
     recent_survey_evidence = enforcement_monitor.get(PARTICIPANT_META_KEY_RECENT_SURVEY_EVIDENCE, [])
     if not isinstance(recent_survey_evidence, list):
         recent_survey_evidence = []
-    recent_survey_evidence = recent_survey_evidence[-11:]
+    recent_survey_evidence = recent_survey_evidence[-14:]
 
     contradiction_count = len(contradiction_signals or [])
     combined_suspicion = bool(
@@ -498,6 +499,14 @@ def apply_submission_enforcement(
             copy_paste_likelihood_score >= 0.40
             and contradiction_count >= 1
             and typing_effort_risk >= 0.32
+        )
+    )
+    strong_combined_suspicion = bool(
+        copy_paste_likelihood_score >= 0.58
+        and (
+            behavior_risk_score >= 0.34
+            or (too_fast_score >= 0.44 and typing_effort_risk >= 0.30)
+            or contradiction_count >= 2
         )
     )
     contradiction_heavy = bool(
@@ -519,25 +528,39 @@ def apply_submission_enforcement(
     )
     hard_evidence = bool(
         copied_pattern_detected
-        or (copy_paste_likelihood_score >= 0.72 and behavior_risk_score >= 0.42)
-        or (copy_paste_likelihood_score >= 0.60 and contradiction_heavy)
+        or (
+            copy_paste_likelihood_score >= 0.78
+            and contradiction_heavy
+            and typing_effort_risk >= 0.40
+        )
+        or (
+            copy_paste_likelihood_score >= 0.72
+            and behavior_risk_score >= 0.42
+            and contradiction_count >= 1
+        )
     )
     watchlist_candidate = bool(
-        soft_review_recommended
+        hard_evidence
+        or (
+            not is_attention
+            and strong_combined_suspicion
+            and copy_paste_likelihood_score >= 0.56
+        )
         or (is_attention and str(attention_tier or "") in {ATTENTION_TIER_SUSPICIOUS, ATTENTION_TIER_FAIL})
-        or hard_evidence
     )
 
     current_event = {
         "at": checked_at.isoformat() if hasattr(checked_at, "isoformat") else checked_at,
         "is_attention": bool(is_attention),
         "attention_tier": str(attention_tier or "") if is_attention else None,
+        "attention_confidence": round(float(attention_confidence or 0.0), 4) if attention_confidence is not None else None,
         "quality_score": round(float(quality_score or 0.0), 4),
         "behavior_risk_score": round(float(behavior_risk_score or 0.0), 4),
         "copy_paste_likelihood_score": round(float(copy_paste_likelihood_score or 0.0), 4),
         "too_fast_score": round(float(too_fast_score or 0.0), 4),
         "typing_effort_risk": round(float(typing_effort_risk or 0.0), 4),
         "combined_suspicion": combined_suspicion,
+        "strong_combined_suspicion": strong_combined_suspicion,
         "soft_review_recommended": soft_review_recommended,
         "copied_pattern_detected": bool(copied_pattern_detected),
         "contradiction_count": contradiction_count,
@@ -548,73 +571,133 @@ def apply_submission_enforcement(
     if not is_attention:
         recent_survey_evidence.append(current_event)
 
+    weighted_recent_events = []
+    total_events = len(recent_events)
+    for index, item in enumerate(recent_events, start=1):
+        weight = index / max(1.0, float(total_events))
+        weighted_recent_events.append((weight, item))
+
     recent_high_copy_paste_count = sum(
-        1 for item in recent_events if float(item.get("copy_paste_likelihood_score") or 0.0) >= 0.50
+        1 for _weight, item in weighted_recent_events if float(item.get("copy_paste_likelihood_score") or 0.0) >= 0.50
     )
     recent_combined_suspicion_count = sum(
-        1 for item in recent_events if bool(item.get("combined_suspicion"))
+        1 for _weight, item in weighted_recent_events if bool(item.get("combined_suspicion"))
     )
     recent_suspicious_survey_count = sum(
         1
-        for item in recent_events
+        for _weight, item in weighted_recent_events
         if (not bool(item.get("is_attention"))) and bool(item.get("soft_review_recommended"))
     )
     recent_attention_concern_count = sum(
         1
-        for item in recent_events
+        for _weight, item in weighted_recent_events
         if bool(item.get("is_attention"))
         and str(item.get("attention_tier") or "") in {ATTENTION_TIER_SUSPICIOUS, ATTENTION_TIER_FAIL}
     )
     recent_attention_fail_count = sum(
         1
-        for item in recent_events
+        for _weight, item in weighted_recent_events
         if bool(item.get("is_attention")) and str(item.get("attention_tier") or "") == ATTENTION_TIER_FAIL
     )
     recent_hard_evidence_count = sum(
-        1 for item in recent_events if bool(item.get("hard_evidence"))
+        1 for _weight, item in weighted_recent_events if bool(item.get("hard_evidence"))
+    )
+    weighted_survey_review = sum(
+        weight
+        for weight, item in weighted_recent_events
+        if (not bool(item.get("is_attention"))) and bool(item.get("soft_review_recommended"))
+    )
+    weighted_survey_watchlist = sum(
+        weight
+        for weight, item in weighted_recent_events
+        if (not bool(item.get("is_attention"))) and bool(item.get("watchlist_candidate"))
+    )
+    weighted_combined_suspicion = sum(
+        weight for weight, item in weighted_recent_events if bool(item.get("combined_suspicion"))
+    )
+    weighted_hard_evidence = sum(
+        weight for weight, item in weighted_recent_events if bool(item.get("hard_evidence"))
+    )
+    weighted_attention_concern = sum(
+        weight
+        for weight, item in weighted_recent_events
+        if bool(item.get("is_attention"))
+        and str(item.get("attention_tier") or "") in {ATTENTION_TIER_SUSPICIOUS, ATTENTION_TIER_FAIL}
+    )
+    weighted_attention_fail = sum(
+        weight
+        for weight, item in weighted_recent_events
+        if bool(item.get("is_attention")) and str(item.get("attention_tier") or "") == ATTENTION_TIER_FAIL
+    )
+    weighted_attention_confidence = sum(
+        weight * float(item.get("attention_confidence") or 0.0)
+        for weight, item in weighted_recent_events
+        if bool(item.get("is_attention"))
+    ) / max(
+        1.0,
+        sum(weight for weight, item in weighted_recent_events if bool(item.get("is_attention"))),
+    )
+    participant_enforcement_score = min(
+        1.0,
+        0.34 * min(1.0, weighted_survey_watchlist / 1.15)
+        + 0.26 * min(1.0, weighted_attention_concern / 1.05)
+        + 0.22 * min(1.0, weighted_combined_suspicion / 1.05)
+        + 0.18 * min(1.0, weighted_hard_evidence / 0.90),
     )
     single_check_attention_only = (
         recent_attention_concern_count <= 1
-        and recent_combined_suspicion_count == 0
-        and recent_high_copy_paste_count == 0
-        and recent_hard_evidence_count == 0
+        and weighted_survey_watchlist < 0.55
+        and weighted_hard_evidence < 0.35
     )
 
     soft_flag_triggered = bool(
         not single_check_attention_only
         and (
-            (recent_attention_fail_count >= 1 and recent_attention_concern_count >= 2)
-            or recent_attention_fail_count >= 2
-            or (
-                recent_attention_concern_count >= 2
-                and recent_combined_suspicion_count >= 1
+            (
+                weighted_attention_concern >= 0.95
+                and weighted_attention_fail >= 0.40
+                and weighted_attention_confidence <= 0.68
             )
             or (
-                recent_high_copy_paste_count >= 1
-                and recent_attention_fail_count >= 1
+                weighted_survey_review >= 1.05
+                and recent_high_copy_paste_count >= 2
+                and weighted_combined_suspicion >= 0.70
             )
-            or recent_combined_suspicion_count >= 2
+            or (
+                weighted_attention_concern >= 0.65
+                and weighted_survey_watchlist >= 0.70
+                and recent_high_copy_paste_count >= 1
+            )
+            or (
+                participant_enforcement_score >= 0.68
+                and weighted_combined_suspicion >= 0.82
+            )
         )
     )
     hard_flag_triggered = bool(
-        (recent_attention_fail_count >= 3)
-        or (
-            recent_attention_fail_count >= 2
-            and recent_hard_evidence_count >= 1
+        (
+            weighted_hard_evidence >= 0.90
+            and weighted_survey_review >= 0.95
+            and recent_high_copy_paste_count >= 2
         )
         or (
-            recent_hard_evidence_count >= 2
-            and recent_attention_concern_count >= 2
+            weighted_hard_evidence >= 0.72
+            and weighted_attention_fail >= 0.60
+            and weighted_attention_concern >= 0.95
         )
     )
     watchlist_triggered = bool(
         not soft_flag_triggered
         and not hard_flag_triggered
         and (
-            watchlist_candidate
-            or recent_attention_concern_count >= 1
-            or recent_high_copy_paste_count >= 1
-            or recent_combined_suspicion_count >= 1
+            weighted_attention_concern >= 0.55
+            or weighted_hard_evidence >= 0.40
+            or participant_enforcement_score >= 0.48
+            or (
+                not is_attention
+                and weighted_survey_watchlist >= 0.72
+                and recent_high_copy_paste_count >= 1
+            )
         )
     )
 
@@ -632,6 +715,7 @@ def apply_submission_enforcement(
         PARTICIPANT_META_KEY_RECENT_COMBINED_SUSPICION_COUNT: recent_combined_suspicion_count,
         PARTICIPANT_META_KEY_RECENT_ATTENTION_CONCERN_COUNT: recent_attention_concern_count,
         PARTICIPANT_META_KEY_RECENT_HARD_EVIDENCE_COUNT: recent_hard_evidence_count,
+        "participant_enforcement_score": round(float(participant_enforcement_score), 4),
     }
 
     enforcement_monitor[PARTICIPANT_META_KEY_POLICY_EVENTS] = recent_events
@@ -646,6 +730,7 @@ def apply_submission_enforcement(
         "watchlist_candidate": watchlist_candidate,
         "hard_evidence": hard_evidence,
         "contradiction_count": contradiction_count,
+        "participant_enforcement_score": round(float(participant_enforcement_score), 4),
     }
 
     return {
@@ -657,6 +742,7 @@ def apply_submission_enforcement(
         "hard_flag_triggered": hard_flag_triggered,
         "enforcement_status": enforcement_status,
         "survey_counters": survey_counters,
+        "participant_enforcement_score": round(float(participant_enforcement_score), 4),
     }
 
 

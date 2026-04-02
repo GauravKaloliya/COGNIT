@@ -392,6 +392,7 @@ for participant_id, items in attention_by_participant.items():
             participant_meta=attention_monitor_result['participant_meta'],
             is_attention=bool(item['is_attention']),
             attention_tier=item['attention_tier'],
+            attention_confidence=item['attention_confidence'],
             hard_fail_reasons=item['hard_fail_reasons'],
             soft_risk_reasons=item['soft_risk_reasons'],
             quality_score=item['quality_score'],
@@ -421,6 +422,7 @@ for participant_id, items in attention_by_participant.items():
             'combined_suspicion': bool(policy_result['combined_suspicion']),
             'enforcement_status': str(policy_result['enforcement_status']),
             'watchlist_triggered': bool(policy_result['watchlist_triggered']),
+            'participant_enforcement_score': float(policy_result.get('participant_enforcement_score', 0.0)),
             'contradiction_signals': list(item.get('contradiction_signals', [])),
         }
         if attention_monitor_result['recent_attention_score'] is not None:
@@ -442,6 +444,7 @@ for participant_id, items in attention_by_participant.items():
         'failed_checks': failed_checks,
         'attention_score': float(final_recent_score if final_recent_score is not None else 1.0),
         'recent_attention_score': float(final_recent_score) if final_recent_score is not None else None,
+        'participant_enforcement_score': float(last_item['extra_metadata'].get('enforcement', {}).get('participant_enforcement_score', 0.0)),
         'consecutive_failures': int(final_consecutive_failures or 0),
         'hard_flag_triggered': bool(last_item['hard_flag_triggered']),
         'soft_flag_triggered': bool(last_item['soft_flag_triggered']),
@@ -520,6 +523,7 @@ INSERT INTO participant_attention_stats (
     failed_checks,
     attention_score,
     recent_attention_score,
+    participant_enforcement_score,
     consecutive_failures,
     hard_flag_triggered,
     soft_flag_triggered,
@@ -534,6 +538,7 @@ INSERT INTO participant_attention_stats (
     :failed_checks,
     :attention_score,
     :recent_attention_score,
+    :participant_enforcement_score,
     :consecutive_failures,
     :hard_flag_triggered,
     :soft_flag_triggered,
@@ -548,6 +553,7 @@ ON CONFLICT (participant_id) DO UPDATE SET
     failed_checks = EXCLUDED.failed_checks,
     attention_score = EXCLUDED.attention_score,
     recent_attention_score = EXCLUDED.recent_attention_score,
+    participant_enforcement_score = EXCLUDED.participant_enforcement_score,
     consecutive_failures = EXCLUDED.consecutive_failures,
     hard_flag_triggered = EXCLUDED.hard_flag_triggered,
     soft_flag_triggered = EXCLUDED.soft_flag_triggered,
@@ -593,6 +599,10 @@ summary = {
     'participant_watchlist_rows': sum(1 for r in participant_stats.values() if r['watchlist_triggered']),
     'participant_soft_flag_rows': sum(1 for r in participant_stats.values() if r['soft_flag_triggered']),
     'participant_hard_flag_rows': sum(1 for r in participant_stats.values() if r['hard_flag_triggered']),
+    'participant_enforcement_score_avg': round(
+        sum(float(r['participant_enforcement_score']) for r in participant_stats.values()) / max(1, len(participant_stats)),
+        4,
+    ),
 }
 
 def chunked(seq, size):

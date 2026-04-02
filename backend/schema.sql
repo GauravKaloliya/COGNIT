@@ -1037,6 +1037,7 @@ CREATE TABLE IF NOT EXISTS participant_attention_stats (
     failed_checks   INTEGER NOT NULL DEFAULT 0 CHECK (failed_checks >= 0),
     attention_score NUMERIC(5,4) NOT NULL DEFAULT 1.0 CHECK (attention_score BETWEEN 0 AND 1),
     recent_attention_score NUMERIC(5,4) CHECK (recent_attention_score BETWEEN 0 AND 1),
+    participant_enforcement_score NUMERIC(5,4) NOT NULL DEFAULT 0 CHECK (participant_enforcement_score BETWEEN 0 AND 1),
     consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
     hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
     soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1054,6 +1055,9 @@ CREATE TABLE IF NOT EXISTS participant_attention_stats (
 ALTER TABLE participant_attention_stats
     ADD COLUMN IF NOT EXISTS recent_attention_score NUMERIC(5,4)
     CHECK (recent_attention_score BETWEEN 0 AND 1);
+ALTER TABLE participant_attention_stats
+    ADD COLUMN IF NOT EXISTS participant_enforcement_score NUMERIC(5,4) NOT NULL DEFAULT 0
+    CHECK (participant_enforcement_score BETWEEN 0 AND 1);
 ALTER TABLE participant_attention_stats
     ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER NOT NULL DEFAULT 0
     CHECK (consecutive_failures >= 0);
