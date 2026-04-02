@@ -585,6 +585,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     hard_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
     soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE,
     watchlist_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    soft_review_recommended BOOLEAN NOT NULL DEFAULT FALSE,
     enforcement_status  VARCHAR(16) NOT NULL DEFAULT 'normal'
         CHECK (enforcement_status IN ('normal','watchlist','soft_flag','hard_flag')),
     ip_hash             CHAR(64) NOT NULL,
@@ -711,6 +712,8 @@ ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS soft_flag_triggered BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS watchlist_triggered BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS soft_review_recommended BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS enforcement_status VARCHAR(16) NOT NULL DEFAULT 'normal'
     CHECK (enforcement_status IN ('normal','watchlist','soft_flag','hard_flag'));
