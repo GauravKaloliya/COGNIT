@@ -28,6 +28,7 @@ from app.constants.submission_constants import (
 )
 from app.services.submission_processing_service import (
     apply_attention_monitor,
+    apply_submission_enforcement,
     build_submission_response_payload,
     evaluate_attention_result,
     finalize_attention_assessment,
@@ -443,8 +444,9 @@ def process_submission_workflow(
     behavior_risk_score = scorecard["behavior_risk_score"]
     quality = scorecard["quality_score"]
     too_fast = bool(scorecard["flagged_too_fast"])
-    attention_checked_at = datetime.now(timezone.utc) if is_attention else None
-    monitor_result = apply_attention_monitor(
+    policy_checked_at = datetime.now(timezone.utc)
+    attention_checked_at = policy_checked_at if is_attention else None
+    attention_monitor_result = apply_attention_monitor(
         participant_meta=participant_meta,
         attention_passed=attention_passed,
         attention_tier=attention_tier,
@@ -457,10 +459,41 @@ def process_submission_workflow(
         attention_flag_min_checks=ATTENTION_FLAG_MIN_CHECKS,
         attention_flag_threshold=ATTENTION_FLAG_THRESHOLD,
     )
-    consecutive_failures = monitor_result["consecutive_failures"]
-    recent_attention_score = monitor_result["recent_attention_score"]
-    hard_flag_triggered = monitor_result["hard_flag_triggered"]
-    soft_flag_triggered = monitor_result["soft_flag_triggered"]
+    policy_result = apply_submission_enforcement(
+        participant_meta=attention_monitor_result["participant_meta"],
+        is_attention=is_attention,
+        attention_tier=attention_tier,
+        hard_fail_reasons=hard_fail_reasons,
+        soft_risk_reasons=soft_risk_reasons,
+        quality_score=quality,
+        behavior_risk_score=behavior_risk_score,
+        copy_paste_likelihood_score=scorecard["copy_paste_likelihood_score"],
+        too_fast_score=scorecard["too_fast_score"],
+        typing_effort_risk=scorecard["typing_effort_risk"],
+        contradiction_signals=scorecard["contradiction_signals"],
+        copied_pattern_detected=copied_pattern_detected,
+        scorecard=scorecard,
+        checked_at=policy_checked_at,
+    )
+    participant_meta = policy_result["participant_meta"]
+    consecutive_failures = (
+        attention_monitor_result["consecutive_failures"] if is_attention else None
+    )
+    recent_attention_score = (
+        attention_monitor_result["recent_attention_score"]
+        if is_attention else (pre_attention_score if pre_total_checks > 0 else None)
+    )
+    hard_flag_triggered = policy_result["hard_flag_triggered"]
+    soft_flag_triggered = policy_result["soft_flag_triggered"]
+
+    submission_meta["enforcement"] = {
+        "soft_review_recommended": bool(policy_result["soft_review_recommended"]),
+        "combined_suspicion": bool(policy_result["combined_suspicion"]),
+        "enforcement_status": str(policy_result["enforcement_status"]),
+        "watchlist_triggered": bool(policy_result["watchlist_triggered"]),
+        "contradiction_signals": list(scorecard["contradiction_signals"]),
+        "survey_counters": dict(policy_result.get("survey_counters", {})),
+    }
 
     participant_session_id = ensure_participant_session(
         db,
@@ -510,8 +543,9 @@ def process_submission_workflow(
         consecutive_failures=consecutive_failures,
         hard_flag_triggered=hard_flag_triggered,
         soft_flag_triggered=soft_flag_triggered,
-        watchlist_triggered=monitor_result.get("watchlist_triggered", False),
-        enforcement_status=monitor_result.get("enforcement_status", "normal"),
+        watchlist_triggered=policy_result.get("watchlist_triggered", False),
+        enforcement_status=policy_result.get("enforcement_status", "normal"),
+        soft_review_recommended=policy_result.get("soft_review_recommended", False),
         ip_hash=ip_hash,
         user_agent=user_agent,
         device_type=device_type,
@@ -537,8 +571,8 @@ def process_submission_workflow(
         current_stage = next_stage
         stage_updated_at = datetime.now(timezone.utc)
 
+    update_participant_metadata(db, participant_id=participant_id, participant_meta=participant_meta)
     if is_attention:
-        update_participant_metadata(db, participant_id=participant_id, participant_meta=monitor_result["participant_meta"])
         insert_attention_event_record(
             db,
             participant_id=participant_id,
@@ -559,12 +593,25 @@ def process_submission_workflow(
             participant_id=participant_id,
             hard_flag_triggered=hard_flag_triggered,
             soft_flag_triggered=soft_flag_triggered,
-            watchlist_triggered=monitor_result.get("watchlist_triggered", False),
-            enforcement_status=monitor_result.get("enforcement_status", "normal"),
+            watchlist_triggered=policy_result.get("watchlist_triggered", False),
+            enforcement_status=policy_result.get("enforcement_status", "normal"),
             attention_score=recent_attention_score,
             recent_attention_score=recent_attention_score,
             consecutive_failures=consecutive_failures,
             checked_at=attention_checked_at,
+        )
+    elif pre_total_checks > 0:
+        update_participant_attention_flag(
+            db,
+            participant_id=participant_id,
+            hard_flag_triggered=hard_flag_triggered,
+            soft_flag_triggered=soft_flag_triggered,
+            watchlist_triggered=policy_result.get("watchlist_triggered", False),
+            enforcement_status=policy_result.get("enforcement_status", "normal"),
+            attention_score=pre_attention_score,
+            recent_attention_score=recent_attention_score,
+            consecutive_failures=consecutive_failures,
+            checked_at=policy_checked_at,
         )
 
     post_stats_row = fetch_participant_attention_stats(db, participant_id=participant_id)
@@ -622,6 +669,7 @@ def process_submission_workflow(
         speed_risk=scorecard["speed_risk"],
         session_integrity_risk=scorecard["session_integrity_risk"],
         contradiction_signals=scorecard["contradiction_signals"],
+        soft_review_recommended=policy_result.get("soft_review_recommended", False),
         survey_index=survey_index,
         is_survey=is_survey,
         is_attention=is_attention,
@@ -641,8 +689,8 @@ def process_submission_workflow(
         recent_attention_score=recent_attention_score,
         hard_flag_triggered=hard_flag_triggered,
         soft_flag_triggered=soft_flag_triggered,
-        watchlist_triggered=monitor_result.get("watchlist_triggered", False),
-        enforcement_status=monitor_result.get("enforcement_status", "normal"),
+        watchlist_triggered=policy_result.get("watchlist_triggered", False),
+        enforcement_status=policy_result.get("enforcement_status", "normal"),
         attention_total_checks=post_total_checks,
         attention_passed_checks=post_passed_checks,
         attention_failed_checks=post_failed_checks,
@@ -728,6 +776,20 @@ def calculate_quality(
         device_type=device_type,
         user_agent=user_agent,
     )
+    contradiction_signals = list(scorecard.get("contradiction_signals", []))
+    if (
+        writing_quality >= 0.74
+        and scorecard["copy_paste_likelihood_score"] >= 0.42
+        and scorecard["typing_effort_risk"] >= 0.34
+    ):
+        contradiction_signals.append("high_quality_high_copy_paste_low_effort")
+    if (
+        writing_quality >= 0.70
+        and scorecard["paired_speed_risk"] >= 0.32
+        and scorecard["typing_effort_risk"] >= 0.32
+    ):
+        contradiction_signals.append("high_quality_speed_pressure_low_effort")
+    scorecard["contradiction_signals"] = list(dict.fromkeys(contradiction_signals))
     quality = calculate_quality_score(
         writing_quality_score=writing_quality,
         behavior_risk_score=scorecard["behavior_risk_score"],

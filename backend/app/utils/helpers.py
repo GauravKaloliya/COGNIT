@@ -365,13 +365,56 @@ def calculate_behavior_scorecard(
             _deficit_ratio(pauses_per_word, baseline["pauses_per_word"] * telemetry_factor),
         )
     )
-    copy_paste_likelihood_score = _bounded_unit(
-        0.36 * answer_length_vs_edit_effort_mismatch
-        + 0.28 * deliberation_then_dump
-        + 0.18 * typing_effort_risk
-        + 0.10 * (1.0 if submitted_without_typing_pause else 0.0)
-        + 0.08 * (1.0 if copied_pattern else 0.0)
+    long_answer_pressure = _bounded_unit(
+        _surplus_ratio(safe_word_count, 62.0 if is_attention else 86.0)
     )
+    low_effort_signal = _bounded_unit(
+        0.48 * typing_effort_risk
+        + 0.28 * max(answer_length_vs_edit_effort_mismatch, deliberation_then_dump)
+        + 0.14 * _deficit_ratio(edits_per_word, baseline["edits_per_word"] * telemetry_factor)
+        + 0.10 * _deficit_ratio(pauses_per_word, baseline["pauses_per_word"] * telemetry_factor)
+    )
+    suspicious_long_answer_floor = 0.0
+    if not is_attention and safe_word_count >= 90:
+        suspicious_long_answer_floor = _bounded_unit(
+            0.08
+            + 0.20 * long_answer_pressure
+            + 0.24 * answer_length_vs_edit_effort_mismatch
+            + 0.20 * deliberation_then_dump
+        )
+        if max(answer_length_vs_edit_effort_mismatch, deliberation_then_dump) < 0.24:
+            suspicious_long_answer_floor = 0.0
+
+    base_copy_paste_likelihood = _bounded_unit(
+        0.40 * answer_length_vs_edit_effort_mismatch
+        + 0.30 * deliberation_then_dump
+        + 0.20 * typing_effort_risk
+        + 0.06 * (1.0 if submitted_without_typing_pause else 0.0)
+        + 0.04 * (1.0 if copied_pattern else 0.0)
+    )
+    survey_copy_paste_bias = 0.0
+    if not is_attention:
+        survey_copy_paste_bias = _bounded_unit(
+            0.18 * long_answer_pressure
+            + 0.16 * low_effort_signal
+            + 0.10 * _surplus_ratio(time_before_typing, 16.0)
+        )
+    copy_paste_likelihood_score = _bounded_unit(
+        base_copy_paste_likelihood
+        + survey_copy_paste_bias
+        + (0.14 if copied_pattern else 0.0)
+    )
+    if not is_attention and safe_word_count >= 100 and max(answer_length_vs_edit_effort_mismatch, deliberation_then_dump) >= 0.34:
+        copy_paste_likelihood_score = max(
+            copy_paste_likelihood_score,
+            _bounded_unit(
+                0.18
+                + 0.26 * long_answer_pressure
+                + 0.24 * max(answer_length_vs_edit_effort_mismatch, deliberation_then_dump)
+                + 0.20 * low_effort_signal
+                + (0.12 if submitted_without_typing_pause else 0.0)
+            ),
+        )
 
     too_fast_metrics = calculate_too_fast_metrics(
         word_count=safe_word_count,
@@ -383,6 +426,15 @@ def calculate_behavior_scorecard(
         is_attention=is_attention,
     )
     speed_risk = _bounded_unit(too_fast_metrics["too_fast_score"])
+    paired_speed_risk = _bounded_unit(
+        speed_risk
+        * (
+            0.18
+            + 0.46 * max(copy_paste_likelihood_score, low_effort_signal)
+            + 0.20 * answer_length_vs_edit_effort_mismatch
+            + 0.16 * deliberation_then_dump
+        )
+    )
     session_integrity_risk = _bounded_unit(
         min(
             1.0,
@@ -401,16 +453,36 @@ def calculate_behavior_scorecard(
         attention_penalty = 0.08
 
     behavior_risk_score = _bounded_unit(
-        0.30 * typing_effort_risk
-        + 0.34 * copy_paste_likelihood_score
-        + 0.20 * speed_risk
+        0.28 * typing_effort_risk
+        + 0.40 * copy_paste_likelihood_score
+        + 0.16 * paired_speed_risk
         + 0.16 * session_integrity_risk
         + attention_penalty
     )
+    if not is_attention and suspicious_long_answer_floor > 0.0:
+        behavior_risk_score = max(
+            behavior_risk_score,
+            _bounded_unit(
+                suspicious_long_answer_floor
+                + 0.16 * max(copy_paste_likelihood_score, low_effort_signal)
+            ),
+        )
 
     contradiction_signals: list[str] = []
     if copy_paste_likelihood_score >= 0.72 and speed_risk <= 0.18 and safe_word_count >= 70:
         contradiction_signals.append("copy_paste_likelihood_without_speed_pressure")
+    if (
+        copy_paste_likelihood_score >= 0.52
+        and typing_effort_risk >= 0.42
+        and safe_word_count >= 85
+    ):
+        contradiction_signals.append("high_copy_paste_low_effort")
+    if (
+        paired_speed_risk >= 0.34
+        and typing_effort_risk >= 0.34
+        and copy_paste_likelihood_score >= 0.34
+    ):
+        contradiction_signals.append("speed_pressure_with_low_effort")
     if normalized_attention_tier == "fail":
         contradiction_signals.append("attention_fail_requires_quality_cap")
 
@@ -419,7 +491,10 @@ def calculate_behavior_scorecard(
         "copy_paste_likelihood_score": round(copy_paste_likelihood_score, 4),
         "answer_length_vs_edit_effort_mismatch": round(answer_length_vs_edit_effort_mismatch, 4),
         "deliberation_then_dump": round(deliberation_then_dump, 4),
+        "low_effort_signal": round(low_effort_signal, 4),
+        "suspicious_long_answer_floor": round(suspicious_long_answer_floor, 4),
         "speed_risk": round(speed_risk, 4),
+        "paired_speed_risk": round(paired_speed_risk, 4),
         "session_integrity_risk": round(session_integrity_risk, 4),
         "behavior_risk_score": round(behavior_risk_score, 4),
         "too_fast_score": too_fast_metrics["too_fast_score"],
@@ -480,6 +555,8 @@ def calculate_quality_score(
         score = min(score, 0.60)
     elif safe_copy_paste >= 0.55:
         score = min(score, 0.72)
+    if safe_writing >= 0.74 and safe_copy_paste >= 0.48 and safe_behavior_risk >= 0.28:
+        score = min(score, 0.76)
     if contradiction_count >= 2:
         score = min(score, 0.66)
     elif contradiction_count == 1:
