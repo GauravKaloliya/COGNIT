@@ -5,7 +5,6 @@ Provides common helper functions for validation, responses, and audit logging.
 
 import hashlib
 import logging
-import math
 import re
 from typing import Any, Optional
 
@@ -262,7 +261,6 @@ def calculate_too_fast_metrics(
     backspace_count = max(0.0, float(metrics.get("backspace_count", 0) or 0.0))
     pause_count = max(0.0, float(metrics.get("pause_count", 0) or 0.0))
     revision_bursts = max(0.0, float(metrics.get("revision_bursts", 0) or 0.0))
-    hesitation_score = _bounded_unit(float(metrics.get("hesitation_score", 0.0) or 0.0))
     time_before_typing = max(0.0, float(metrics.get("time_before_typing_seconds", 0.0) or 0.0))
 
     edits_per_word = edit_count / safe_word_count
