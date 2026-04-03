@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { runtimeConfig } from "../config/runtime";
+import { APP_ROUTES } from "../constants/routes.js";
 import { clearPendingFlag, getPendingFlag, setPendingFlag } from "../utils/storage";
 import { uiText } from "../utils/uiText";
 import { useOnlineStatus } from "./useOnlineStatus";
-import { APP_ROUTES } from "../constants/routes";
 const SURVEY_FEED_PENDING_FINISH_KEY = runtimeConfig.storageKeys.surveyFeedPendingFinish;
 
 export function usePostSurveyPage({

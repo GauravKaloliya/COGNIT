@@ -19,6 +19,7 @@ const toList = (value, fallback = []) => {
 export const runtimeConfig = {
   msPerSecond: 1000,
   countdownTickMs: 1000,
+  dataCollectionEndsAtIso: String(import.meta.env.VITE_DATA_COLLECTION_ENDS_AT || "2026-04-09T00:00:00+05:30").trim(),
   uiStateSchemaVersion: 1,
   uiStateTtlMs: 3600000,
   // Auto-clean all stored state after 60 minutes.
