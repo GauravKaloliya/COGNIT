@@ -7,7 +7,6 @@ import { usePostSurveyPage } from "../hooks/usePostSurveyPage";
 
 export default function PostSurveyPage({
   surveyCompleted = 0,
-  publicId = "",
   email = "",
   clearUserStorage = null,
   resetWorkflowToConsent = null,
@@ -15,7 +14,6 @@ export default function PostSurveyPage({
   const {
     handleSurveyFinish,
   } = usePostSurveyPage({
-    publicId,
     clearUserStorage,
     resetWorkflowToConsent,
   });
@@ -110,7 +108,7 @@ export default function PostSurveyPage({
         <p className="debrief">{uiText("finish.debrief")}</p>
         <PageActions sticky inline className="survey-feedback-actions">
           <DSButton
-            variant="ghost"
+            variant="primary"
             className="survey-feedback-finish"
             onClick={handleSurveyFinish}
           >

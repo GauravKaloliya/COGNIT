@@ -4705,6 +4705,594 @@ body.dark .field-progress-track {
   overflow: hidden;
 }
 
+.collection-ended-panel {
+  isolation: isolate;
+}
+
+.collection-ended-shell {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.collection-ended-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.4rem, 3vw, 2.35rem);
+  border-radius: 28px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 249, 255, 0.7)),
+    radial-gradient(circle at 20% 18%, rgba(102, 146, 255, 0.18) 0%, transparent 34%),
+    radial-gradient(circle at 84% 24%, rgba(255, 194, 92, 0.2) 0%, transparent 30%);
+  box-shadow:
+    0 24px 58px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  animation: report-sheet-enter 960ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.collection-ended-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.08) 22%, rgba(255, 255, 255, 0.24) 34%, transparent 46%);
+  transform: translateX(-130%);
+  pointer-events: none;
+  animation: report-sheen-pass 9.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.collection-ended-hero-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.collection-ended-badge {
+  animation: section-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.collection-ended-kicker {
+  margin: 0;
+  color: color-mix(in srgb, var(--primary) 72%, var(--text) 28%);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+  font-size: 0.82rem;
+  animation: report-title-enter 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.collection-ended-subtitle {
+  max-width: 62ch;
+  margin-bottom: 0;
+  animation: report-note-enter 820ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.collection-ended-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  animation: section-rise 860ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.collection-ended-meta span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0.42rem 0.88rem;
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--border) 86%);
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: var(--font-medium);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.collection-ended-summary-grid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.collection-ended-summary-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border) 84%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(247, 250, 255, 0.72));
+  box-shadow:
+    0 18px 34px rgba(15, 23, 42, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(16px);
+  animation: report-row-enter 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.collection-ended-summary-card:nth-child(1) { animation-delay: 120ms; }
+.collection-ended-summary-card:nth-child(2) { animation-delay: 220ms; }
+.collection-ended-summary-card:nth-child(3) { animation-delay: 320ms; }
+
+.collection-ended-summary-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -16% -36% auto;
+  width: min(180px, 30vw);
+  height: min(180px, 30vw);
+  background: radial-gradient(circle, rgba(108, 153, 255, 0.14) 0%, transparent 70%);
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.collection-ended-summary-index {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(225, 235, 255, 0.8));
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+  color: color-mix(in srgb, var(--primary) 74%, var(--text) 26%);
+  font-size: 0.82rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.08em;
+}
+
+.collection-ended-summary-body {
+  display: grid;
+  gap: 0.45rem;
+  text-align: left;
+}
+
+.collection-ended-summary-body strong {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: var(--leading-snug);
+}
+
+.collection-ended-summary-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: var(--leading-relaxed);
+  font-size: var(--text-sm);
+}
+
+.collection-ended-report {
+  animation-delay: 120ms;
+}
+
+.collection-ended-privacy {
+  animation-delay: 260ms;
+}
+
+.collection-ended-note {
+  margin-top: 0;
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .collection-ended-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.report-portal-panel {
+  isolation: isolate;
+}
+
+.report-portal-shell {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.report-portal-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.35rem, 3vw, 2.2rem);
+  border-radius: 28px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 249, 255, 0.72)),
+    radial-gradient(circle at 18% 18%, rgba(102, 146, 255, 0.16) 0%, transparent 34%),
+    radial-gradient(circle at 82% 24%, rgba(92, 214, 167, 0.18) 0%, transparent 32%);
+  box-shadow:
+    0 24px 58px rgba(15, 23, 42, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  animation: report-sheet-enter 920ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.report-portal-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.08) 22%, rgba(255, 255, 255, 0.24) 34%, transparent 46%);
+  transform: translateX(-130%);
+  pointer-events: none;
+  animation: report-sheen-pass 9s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.report-portal-hero-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-3);
+  justify-items: center;
+  text-align: center;
+}
+
+.report-portal-kicker {
+  margin: 0;
+  color: color-mix(in srgb, var(--primary) 72%, var(--text) 28%);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+
+.report-portal-subtitle {
+  max-width: 64ch;
+  margin-bottom: 0;
+}
+
+.report-portal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.report-portal-meta span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0.42rem 0.88rem;
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--border) 86%);
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: var(--font-medium);
+}
+
+.report-portal-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.report-validation-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.report-access-side {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.report-access-form-card,
+.report-download-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border) 84%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(247, 250, 255, 0.72));
+  box-shadow:
+    0 18px 34px rgba(15, 23, 42, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.report-access-form-card {
+  padding: var(--space-4);
+  isolation: isolate;
+}
+
+.report-access-form-card::before {
+  content: "";
+  position: absolute;
+  inset: -8% auto auto -8%;
+  width: min(260px, 34vw);
+  height: min(260px, 34vw);
+  background: radial-gradient(circle, rgba(102, 146, 255, 0.14) 0%, transparent 68%);
+  filter: blur(22px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.report-access-form-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.05) 24%, rgba(255, 255, 255, 0.2) 34%, transparent 44%);
+  transform: translateX(-130%);
+  pointer-events: none;
+  z-index: 0;
+  animation: report-sheen-pass 8.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.report-access-form-header {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  text-align: center;
+}
+
+.report-access-kicker {
+  margin: 0;
+}
+
+.report-access-title {
+  margin: 0;
+  color: var(--primary);
+  font-weight: var(--font-bold);
+  font-size: clamp(1.8rem, 3.8vw, 2.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.report-access-subtitle {
+  margin: 0;
+  max-width: 44rem;
+  justify-self: center;
+}
+
+.report-access-form-header h3,
+.report-download-card strong {
+  margin: 0;
+  color: var(--text);
+}
+
+.report-access-form-intro {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.report-access-form-intro::before,
+.report-access-form-intro::after {
+  content: "";
+  flex: 1 1 0;
+  max-width: 140px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 26%, var(--border) 74%), transparent);
+}
+
+.report-access-section-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border) 84%);
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.report-access-form-header p,
+.report-download-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: var(--leading-relaxed);
+}
+
+.report-access-form {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.report-validation-form-grid {
+  width: min(100%, 50%);
+  max-width: 560px;
+  margin: var(--space-4) auto;
+  padding-block: var(--space-2) var(--space-3);
+  justify-self: center;
+}
+
+@media (max-width: 900px) {
+  .report-validation-form-grid {
+    width: min(100%, 720px);
+    max-width: 100%;
+  }
+}
+
+.report-validation-form-grid .form-field {
+  margin-bottom: 0;
+}
+
+.report-identity-field {
+  width: 100%;
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+}
+
+.report-validation-form-grid .form-field input,
+.report-validation-form-grid .otp-input {
+  box-shadow:
+    0 8px 18px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.report-field-grid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.report-access-field {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.report-access-field span {
+  font-size: var(--text-sm);
+  color: var(--text);
+  font-weight: var(--font-medium);
+}
+
+.report-access-field input {
+  width: 100%;
+  min-height: 54px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 255, 0.88));
+  box-shadow:
+    0 8px 18px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.report-access-field input:focus {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent),
+    0 12px 24px rgba(24, 119, 242, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  transform: translateY(-1px);
+}
+
+.report-portal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.report-download-notice {
+  position: relative;
+  z-index: 1;
+}
+
+.report-access-trust-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.report-access-trust-row span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0.34rem 0.76rem;
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border) 84%);
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: var(--font-medium);
+}
+
+.report-access-helper-note {
+  padding: 0.75rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border) 84%);
+  background: linear-gradient(180deg, rgba(241, 246, 255, 0.84), rgba(248, 251, 255, 0.76));
+}
+
+.report-access-error {
+  padding: 0.72rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--warning) 24%, var(--border) 76%);
+  background: linear-gradient(180deg, rgba(255, 247, 229, 0.92), rgba(255, 251, 240, 0.78));
+}
+
+.report-access-action-bar {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+
+.report-access-submit {
+  width: 100%;
+  min-height: 54px;
+  border-radius: 16px;
+  box-shadow:
+    0 16px 28px rgba(24, 119, 242, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.report-access-submit:hover:not(:disabled),
+.report-access-submit:focus-visible:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 18px 34px rgba(24, 119, 242, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.report-access-secondary {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+}
+
+.report-download-metrics {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.report-download-card {
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.report-download-card strong {
+  font-size: clamp(1.24rem, 2vw, 1.58rem);
+  letter-spacing: -0.02em;
+}
+
+.report-download-actions {
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .report-portal-grid {
+    grid-template-columns: minmax(320px, 0.92fr) minmax(0, 1.08fr);
+    align-items: start;
+  }
+
+  .report-validation-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .report-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-download-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .finish-panel::before {
   content: "";
   position: absolute;
@@ -5092,6 +5680,191 @@ body.dark .report-explainer-body strong {
 body.dark .report-explainer-intro,
 body.dark .report-explainer-body span {
   color: rgba(221, 229, 245, 0.82);
+}
+
+body.dark .collection-ended-hero {
+  border-color: rgba(120, 152, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(17, 23, 36, 0.98), rgba(11, 16, 27, 0.96)),
+    radial-gradient(circle at 20% 18%, rgba(95, 134, 255, 0.24) 0%, transparent 34%),
+    radial-gradient(circle at 84% 24%, rgba(255, 181, 72, 0.18) 0%, transparent 30%);
+  box-shadow:
+    0 24px 54px rgba(2, 6, 23, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+body.dark .collection-ended-hero::before {
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(126, 164, 255, 0.05) 22%, rgba(255, 255, 255, 0.12) 34%, transparent 46%);
+}
+
+body.dark .collection-ended-kicker {
+  color: rgba(146, 181, 255, 0.86);
+}
+
+body.dark .collection-ended-hero h2 {
+  color: rgba(242, 246, 255, 0.96);
+}
+
+body.dark .collection-ended-subtitle,
+body.dark .collection-ended-note {
+  color: rgba(221, 229, 245, 0.82);
+}
+
+body.dark .collection-ended-meta span {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(218, 226, 243, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+body.dark .collection-ended-summary-card {
+  border-color: rgba(120, 152, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(18, 24, 38, 0.96), rgba(12, 18, 28, 0.94)),
+    linear-gradient(135deg, rgba(43, 61, 102, 0.18), rgba(12, 18, 28, 0.08));
+  box-shadow:
+    0 22px 42px rgba(2, 6, 23, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+body.dark .collection-ended-summary-card::after {
+  background: radial-gradient(circle, rgba(95, 134, 255, 0.18) 0%, transparent 70%);
+}
+
+body.dark .collection-ended-summary-index {
+  background:
+    linear-gradient(180deg, rgba(61, 86, 148, 0.42), rgba(28, 40, 68, 0.54));
+  border-color: rgba(130, 166, 255, 0.22);
+  color: rgba(237, 243, 255, 0.92);
+}
+
+body.dark .collection-ended-summary-body strong {
+  color: rgba(242, 246, 255, 0.96);
+}
+
+body.dark .collection-ended-summary-body p {
+  color: rgba(221, 229, 245, 0.8);
+}
+
+body.dark .report-portal-hero {
+  border-color: rgba(120, 152, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(18, 24, 38, 0.98), rgba(12, 18, 28, 0.96)),
+    radial-gradient(circle at 18% 18%, rgba(95, 134, 255, 0.22) 0%, transparent 34%),
+    radial-gradient(circle at 82% 24%, rgba(64, 196, 139, 0.18) 0%, transparent 32%);
+  box-shadow:
+    0 24px 54px rgba(2, 6, 23, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+body.dark .report-portal-hero::before {
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(126, 164, 255, 0.05) 22%, rgba(255, 255, 255, 0.12) 34%, transparent 46%);
+}
+
+body.dark .report-portal-kicker {
+  color: rgba(146, 181, 255, 0.86);
+}
+
+body.dark .report-portal-hero h2 {
+  color: rgba(242, 246, 255, 0.96);
+}
+
+body.dark .report-portal-subtitle {
+  color: rgba(221, 229, 245, 0.82);
+}
+
+body.dark .report-portal-meta span {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(218, 226, 243, 0.76);
+}
+
+body.dark .report-access-form-card,
+body.dark .report-download-card {
+  border-color: rgba(120, 152, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(18, 24, 38, 0.96), rgba(12, 18, 28, 0.94)),
+    linear-gradient(135deg, rgba(43, 61, 102, 0.16), rgba(12, 18, 28, 0.08));
+  box-shadow:
+    0 22px 42px rgba(2, 6, 23, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+body.dark .report-access-form-card::before {
+  background: radial-gradient(circle, rgba(95, 134, 255, 0.18) 0%, transparent 68%);
+}
+
+body.dark .report-access-form-card::after {
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(126, 164, 255, 0.04) 24%, rgba(255, 255, 255, 0.1) 34%, transparent 44%);
+}
+
+body.dark .report-access-form-header h3,
+body.dark .report-access-title,
+body.dark .report-download-card strong,
+body.dark .report-access-field span {
+  color: rgba(242, 246, 255, 0.96);
+}
+
+body.dark .report-access-form-intro::before,
+body.dark .report-access-form-intro::after {
+  background: linear-gradient(90deg, transparent, rgba(130, 166, 255, 0.26), transparent);
+}
+
+body.dark .report-access-section-label {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(218, 226, 243, 0.76);
+}
+
+body.dark .report-access-form-header p,
+body.dark .report-download-card p {
+  color: rgba(221, 229, 245, 0.8);
+}
+
+body.dark .report-access-field input {
+  border-color: rgba(120, 152, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(16, 22, 34, 0.96), rgba(12, 18, 28, 0.94));
+  box-shadow:
+    0 10px 22px rgba(2, 6, 23, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: rgba(242, 246, 255, 0.96);
+}
+
+body.dark .report-validation-form-grid .form-field input,
+body.dark .report-validation-form-grid .otp-input {
+  box-shadow:
+    0 10px 22px rgba(2, 6, 23, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+body.dark .report-access-field input:focus {
+  border-color: rgba(130, 166, 255, 0.28);
+  box-shadow:
+    0 0 0 4px rgba(79, 140, 255, 0.12),
+    0 14px 28px rgba(2, 6, 23, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+body.dark .report-access-trust-row span {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(218, 226, 243, 0.76);
+}
+
+body.dark .report-access-helper-note {
+  border-color: rgba(120, 152, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(23, 34, 58, 0.86), rgba(15, 23, 38, 0.8));
+}
+
+body.dark .report-access-error {
+  border-color: rgba(255, 191, 94, 0.18);
+  background:
+    linear-gradient(180deg, rgba(68, 44, 12, 0.62), rgba(44, 30, 10, 0.5));
 }
 
 body.dark .privacy-explainer {

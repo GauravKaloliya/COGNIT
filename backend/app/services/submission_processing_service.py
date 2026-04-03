@@ -56,9 +56,6 @@ from app.constants.submission_constants import (
     PARTICIPANT_META_KEY_RECENT_HARD_EVIDENCE_COUNT,
     PARTICIPANT_META_KEY_SURVEY_COUNTERS,
     SUBMISSION_META_KEY_ATTENTION,
-    SUBMISSION_META_KEY_COMBINED_SUSPICION,
-    SUBMISSION_META_KEY_ENFORCEMENT,
-    SUBMISSION_META_KEY_SOFT_REVIEW_RECOMMENDED,
     SUBMISSION_META_KEY_STRICT,
     SUBMISSION_RESPONSE_STATUS,
 )
@@ -593,11 +590,6 @@ def apply_submission_enforcement(
         for _weight, item in weighted_recent_events
         if bool(item.get("is_attention"))
         and str(item.get("attention_tier") or "") in {ATTENTION_TIER_SUSPICIOUS, ATTENTION_TIER_FAIL}
-    )
-    recent_attention_fail_count = sum(
-        1
-        for _weight, item in weighted_recent_events
-        if bool(item.get("is_attention")) and str(item.get("attention_tier") or "") == ATTENTION_TIER_FAIL
     )
     recent_hard_evidence_count = sum(
         1 for _weight, item in weighted_recent_events if bool(item.get("hard_evidence"))

@@ -1,6 +1,8 @@
 import React from "react";
+import { runtimeConfig } from "./config/runtime";
 import ServiceUnavailablePage from "./components/ServiceUnavailablePage.jsx";
 import OfflinePage from "./components/OfflinePage.jsx";
+import DataCollectionEndedPage from "./components/DataCollectionEndedPage.jsx";
 import DSButton from "./components/design/DSButton.jsx";
 import ThemeToggleIcon from "./components/ThemeToggleIcon.jsx";
 import AppContainer from "./components/app/AppContainer.jsx";
@@ -76,11 +78,29 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
   const deferredToasts = React.useDeferredValue(toasts);
   const deferredConfetti = React.useDeferredValue(showConfetti);
   const offlineResetDoneRef = React.useRef(false);
+  const dataCollectionEndsAtMs = React.useMemo(() => {
+    const parsed = Date.parse(runtimeConfig.dataCollectionEndsAtIso);
+    return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+  }, []);
+  const dataCollectionEnded = Date.now() >= dataCollectionEndsAtMs;
+  const endedAtLabel = React.useMemo(() => {
+    if (!Number.isFinite(dataCollectionEndsAtMs)) return "";
+    try {
+      return new Intl.DateTimeFormat("en-IN", {
+        dateStyle: "long",
+        timeStyle: "short",
+        timeZone: "Asia/Kolkata",
+      }).format(new Date(dataCollectionEndsAtMs));
+    } catch {
+      return runtimeConfig.dataCollectionEndsAtIso;
+    }
+  }, [dataCollectionEndsAtMs]);
   const openApiDocs = React.useCallback(() => {
     window.open(getApiOriginUrl(), "_blank", "noopener,noreferrer");
   }, []);
 
   React.useEffect(() => {
+    if (dataCollectionEnded) return;
     const media = window.matchMedia("(max-width: 767px)");
     const onScroll = () => {
       if (!media.matches) {
@@ -92,9 +112,10 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [dataCollectionEnded]);
 
   React.useEffect(() => {
+    if (dataCollectionEnded) return;
     let rafId = null;
     const scheduleScrollTelemetry = () => {
       if (rafId !== null) return;
@@ -137,20 +158,23 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("offline", onOffline);
     };
-  }, []);
+  }, [dataCollectionEnded]);
 
   React.useEffect(() => {
+    if (dataCollectionEnded) return;
     const media = window.matchMedia("(max-width: 767px)");
     if (!media.matches) return;
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  }, [stage, systemReady]);
+  }, [dataCollectionEnded, stage, systemReady]);
 
   React.useEffect(() => {
+    if (dataCollectionEnded) return;
     if (!systemReady) return;
     prefetchLikelyNextChunks(stage);
-  }, [stage, systemReady]);
+  }, [dataCollectionEnded, stage, systemReady]);
 
   React.useEffect(() => {
+    if (dataCollectionEnded) return;
     if (!isOnline) {
       if (!offlineResetDoneRef.current) {
         clearUserStorage?.(publicId);
@@ -159,7 +183,19 @@ export default function App({ darkMode, toggleDarkMode, storageOk = true }) {
       return;
     }
     offlineResetDoneRef.current = false;
-  }, [clearUserStorage, isOnline, publicId]);
+  }, [clearUserStorage, dataCollectionEnded, isOnline, publicId]);
+
+  if (dataCollectionEnded) {
+    return (
+      <ErrorBoundary onError={() => {}}>
+        <DataCollectionEndedPage
+          darkMode={darkMode}
+          onToggleDarkMode={toggleDarkMode}
+          endedAtLabel={endedAtLabel}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   if (!isOnline) {
     return (

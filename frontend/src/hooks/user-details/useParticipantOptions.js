@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { endpoints } from "../../utils/api";
-import { getErrorMessage } from "../../utils/errorRegistry";
 import { getDisplayErrorMessage } from "../../utils/appError.js";
 import { REQUEST_CODES } from "../../constants/request";
 import { prioritizeEnglishOptions } from "../../utils/userDetailsHelpers";

@@ -1,4 +1,4 @@
-"""Service helpers for participant registration and lookup flows."""
+"""Service helpers for participant registration and access resolution flows."""
 
 from __future__ import annotations
 
