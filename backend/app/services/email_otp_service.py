@@ -16,6 +16,7 @@ from typing import Optional
 
 import requests
 from requests import exceptions as requests_exceptions
+from requests.adapters import HTTPAdapter
 
 from app.config import (
     EMAIL_OTP_EXPIRY_SECONDS,
@@ -52,6 +53,21 @@ logger = logging.getLogger(__name__)
 EMAIL_OTP_EXECUTOR = ThreadPoolExecutor(
     max_workers=ASYNC_EXECUTOR_WORKERS_EMAIL_OTP,
     thread_name_prefix="email-otp",
+)
+EMAIL_OTP_SESSION = requests.Session()
+EMAIL_OTP_SESSION.trust_env = True
+EMAIL_OTP_SESSION.headers.update({
+    "Accept": "application/json, text/plain, */*",
+    "Connection": "keep-alive",
+})
+_email_otp_pool_size = max(4, int(ASYNC_EXECUTOR_WORKERS_EMAIL_OTP) * 4)
+EMAIL_OTP_SESSION.mount(
+    "https://",
+    HTTPAdapter(pool_connections=_email_otp_pool_size, pool_maxsize=_email_otp_pool_size),
+)
+EMAIL_OTP_SESSION.mount(
+    "http://",
+    HTTPAdapter(pool_connections=_email_otp_pool_size, pool_maxsize=_email_otp_pool_size),
 )
 
 
@@ -176,14 +192,21 @@ def build_email_otp_payload(*, email: str, otp: str, public_id: str) -> dict:
 def send_email_otp(payload: dict) -> None:
     token = _build_jwt()
     headers = {"Authorization": f"Bearer {token}"}
+    send_started_at = time.perf_counter()
     try:
-        response = requests.post(
+        response = EMAIL_OTP_SESSION.post(
             EMAIL_OTP_WEBHOOK_URL,
             json=payload,
             headers=headers,
             timeout=EMAIL_OTP_WEBHOOK_TIMEOUT_SECONDS,
+            allow_redirects=False,
         )
         response.raise_for_status()
+        logger.info(
+            "email_otp_webhook_sent status=%s duration_ms=%.1f",
+            int(response.status_code),
+            (time.perf_counter() - send_started_at) * 1000.0,
+        )
         return
     except requests_exceptions.Timeout as exc:
         raise EmailOtpSendError(kind="timeout", detail=str(exc)) from exc
@@ -210,10 +233,18 @@ def enqueue_email_otp(payload: dict, *, otp_id: int, idempotency_key: str | None
         return max(0.05, delay_ms / 1000.0)
 
     def _send() -> None:
+        queue_started_at = time.perf_counter()
         attempts = max(1, int(EMAIL_OTP_ASYNC_MAX_ATTEMPTS))
         for attempt in range(1, attempts + 1):
             try:
                 send_email_otp(payload)
+                logger.info(
+                    "email_otp_async_send_succeeded otp_id=%s idempotency=%s attempt=%s queue_duration_ms=%.1f",
+                    int(otp_id),
+                    idempotency_key,
+                    attempt,
+                    (time.perf_counter() - queue_started_at) * 1000.0,
+                )
                 return
             except Exception as exc:
                 logger.warning(
@@ -232,6 +263,11 @@ def enqueue_email_otp(payload: dict, *, otp_id: int, idempotency_key: str | None
                     return
                 time.sleep(_backoff_seconds(attempt))
 
+    logger.info(
+        "email_otp_async_send_enqueued otp_id=%s idempotency=%s",
+        int(otp_id),
+        idempotency_key,
+    )
     EMAIL_OTP_EXECUTOR.submit(_send)
 
 

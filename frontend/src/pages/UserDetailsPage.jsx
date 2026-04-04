@@ -2,7 +2,7 @@ import React from "react";
 import { useUserDetailsPage } from "../hooks/useUserDetailsPage";
 import { uiText } from "../utils/uiText";
 import { runtimeConfig } from "../config/runtime";
-import { sanitizeUsername } from "../utils/userDetailsHelpers";
+import { buildUserDetailsValidators, sanitizeUsername } from "../utils/userDetailsHelpers";
 import { useIsMobile } from "../hooks/useIsMobile.js";
 import UserIdentityFields from "../components/user-details/UserIdentityFields.jsx";
 import OtpVerificationField from "../components/user-details/OtpVerificationField.jsx";
@@ -87,6 +87,16 @@ export default function UserDetailsPage({
     locationOk: (demographics.location || "").trim().length >= LOCATION_MIN && !errors.location,
   }), [LOCATION_MIN, USERNAME_MIN, demographics.age, demographics.email, demographics.location, demographics.username, errors.age, errors.email, errors.location]);
   const { usernameOk, emailOk, ageOk, locationOk } = fieldStatus;
+  const validators = React.useMemo(() => buildUserDetailsValidators({
+    usernameMinLength: USERNAME_MIN,
+    ageMin: AGE_MIN,
+    ageMax: AGE_MAX,
+    locationMinLength: LOCATION_MIN,
+  }), [AGE_MAX, AGE_MIN, LOCATION_MIN, USERNAME_MIN]);
+  const emailFormatHintVisible = React.useMemo(() => {
+    if (errors.email) return false;
+    return Boolean(validators.validateEmailInput(demographics.email));
+  }, [demographics.email, errors.email, validators]);
   const identityFields = React.useMemo(() => ({
     username: demographics.username || "",
     email: demographics.email || "",
@@ -220,6 +230,7 @@ export default function UserDetailsPage({
             emailInputDisabled={emailInputDisabled}
             usernameOk={usernameOk}
             emailOk={emailOk}
+            emailFormatHintVisible={emailFormatHintVisible}
             usernameMin={USERNAME_MIN}
             showEmailGhost={showEmailGhost}
             emailPlaceholderDomain={emailPlaceholderDomain}
