@@ -230,7 +230,7 @@ export async function apiFetch(endpoint, options = {}) {
     const data = await response.json().catch(() => null);
 
     const throwParsedError = (parsedError, fallbackStatus) => {
-      const effectiveStatus = Number(parsedError?.status) || Number(fallbackStatus) || 0;
+      const effectiveStatus = Number(fallbackStatus) || Number(parsedError?.status) || 0;
       applyCodeSpecificErrorBehavior(parsedError);
       const error = new Error(parsedError.message);
       error.key = parsedError.key;
@@ -261,10 +261,10 @@ export async function apiFetch(endpoint, options = {}) {
       throw error;
     };
 
-    if (data && typeof data === "object" && data.success === false) {
+    if (!response.ok) {
       throwParsedError(parseErrorResponse(data), response.status);
     }
-    if (!response.ok) {
+    if (data && typeof data === "object" && data.success === false) {
       throwParsedError(parseErrorResponse(data), response.status);
     }
     if (data && typeof data === "object" && data.success === true) {

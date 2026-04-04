@@ -153,33 +153,7 @@ export function useUserDetailsPage({
     setSubmitPhase(PROTECTED_SUBMIT_PHASES.verifyingSecurity);
 
     try {
-      const normalizedUsername = String(demographics.username || "").trim();
       const normalizedEmail = String(demographics.email || "").trim().toLowerCase();
-
-      let usernameCheck;
-      let emailCheck;
-      try {
-        [usernameCheck, emailCheck] = await Promise.all([
-          endpoints.checkUsername(normalizedUsername),
-          endpoints.checkEmail(normalizedEmail),
-        ]);
-      } catch (error) {
-        if (error?.code === REQUEST_CODES.aborted) return;
-        setGeneralError(getDisplayErrorMessage(error, "SYS_001_0001"));
-        return;
-      }
-
-      const duplicateErrors = {};
-      if (usernameCheck?.available === false) {
-        duplicateErrors[USER_DETAIL_FIELDS.username] = getErrorMessage(USER_DETAILS_DUPLICATE_ERROR_CODES.username);
-      }
-      if (emailCheck?.available === false) {
-        duplicateErrors[USER_DETAIL_FIELDS.email] = getErrorMessage(USER_DETAILS_DUPLICATE_ERROR_CODES.email);
-      }
-      if (Object.keys(duplicateErrors).length > 0) {
-        setErrors((prev) => ({ ...prev, ...duplicateErrors }));
-        return;
-      }
 
       const participant = await onSubmit({
         onProtectedSubmitPhaseChange: setSubmitPhase,
