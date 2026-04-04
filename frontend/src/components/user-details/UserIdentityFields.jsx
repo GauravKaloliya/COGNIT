@@ -11,7 +11,7 @@ function UserIdentityFields({
   inputsLocked,
   emailInputDisabled,
   usernameOk,
-  emailOk,
+  emailFormatHintVisible,
   usernameMin,
   showEmailGhost,
   emailPlaceholderDomain,
@@ -66,7 +66,7 @@ function UserIdentityFields({
         </div>
         {checking.email && <span className="checking-text">{uiText("user.checking")}</span>}
         {emailError && <span className="error-text">{emailError}</span>}
-        {!emailOk && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
+        {emailFormatHintVisible && <span className="helper-text warning">{uiText("user.emailHint")}</span>}
       </div>
     </>
   );

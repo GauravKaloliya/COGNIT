@@ -683,7 +683,7 @@ def log_audit(
 # ────────────────────────────────────────────────
 
 def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
-    """Generate strict standardized error response."""
+    """Generate standardized error response with truthful HTTP transport status."""
     resolved_key = str(error_key or "SYS_INTERNAL_ERROR")
     if resolved_key not in ERROR_CODES:
         resolved_key = "SYS_INTERNAL_ERROR"
@@ -741,8 +741,6 @@ def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
         origin=origin,
         referer=referer,
     )
-    # Always return HTTP 200 to avoid browser console noise for expected business errors.
-    # Clients must use `error.http_status` (and `error.code`) to drive behavior.
     resp = jsonify(response)
     try:
         resp.headers.setdefault("X-COGNIT-Error-Status", str(status))
@@ -751,7 +749,7 @@ def error_response(error_key: str, **kwargs) -> tuple[Response, int]:
         resp.headers.setdefault("X-COGNIT-Error-Category", str(category))
     except Exception:
         pass
-    return resp, 200
+    return resp, status
 
 
 def success_response(data: Optional[dict[str, Any]] = None, message: Optional[str] = None) -> Response:

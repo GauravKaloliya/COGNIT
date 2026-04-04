@@ -30,6 +30,8 @@ Flask backend for the C.O.G.N.I.T. participant workflow. It handles participant 
 
 Environment variables are documented in `backend/.env.example`.
 
+API transport and error semantics are documented in `backend/STATUS_CODE_POLICY.md`.
+
 Boot requirements:
 
 - `DATABASE_URL`
